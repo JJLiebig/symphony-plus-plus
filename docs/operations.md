@@ -21,7 +21,7 @@ packaged dashboard from the same runtime.
 Install the optional Herdr plugin from the repository root:
 
 ```powershell
-herdr plugin install Pimpmuckl/symphony-plus-plus --ref main --yes
+herdr plugin install JJLiebig/symphony-plus-plus --ref main --yes
 ```
 
 When a Herdr tab contains a bound Symphony++ architect or coordinator, one

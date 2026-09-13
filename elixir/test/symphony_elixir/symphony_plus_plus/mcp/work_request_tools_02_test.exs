@@ -477,7 +477,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     equivalent_sibling =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF-SIBLING",
-        repo: "Pimpmuckl/symphony-plus-plus",
+        repo: "JJLiebig/symphony-plus-plus",
         base_branch: handoff_work_request.base_branch,
         status: "ready_for_slicing"
       )

@@ -9,7 +9,7 @@ reviews, blockers, and delivery evidence.
 Add the marketplace once:
 
 ```powershell
-codex plugin marketplace add https://github.com/Pimpmuckl/symphony-plus-plus --ref main
+codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
 ```
 
 Install the default skill-only plugin for ordinary planning:

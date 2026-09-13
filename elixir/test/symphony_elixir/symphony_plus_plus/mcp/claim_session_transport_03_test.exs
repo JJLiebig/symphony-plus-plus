@@ -557,7 +557,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
 
   test "claim_local_architect_assignment can read trusted same-repo WorkRequests without widening writes", %{repo: repo} do
     previous_trusted_remotes = Application.get_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes)
-    Application.put_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes, ["https://github.com/Pimpmuckl/symphony-plus-plus.git"])
+    Application.put_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes, ["https://github.com/JJLiebig/symphony-plus-plus.git"])
 
     on_exit(fn -> restore_app_env(:sympp_repo_identity_trusted_remotes, previous_trusted_remotes) end)
 
@@ -655,14 +655,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
 
   test "claim_local_architect_assignment accepts stale local checkout repo scopes for owner repo WorkRequests", %{repo: repo} do
     checkout_path =
-      TestSupport.git_repo_with_origin_fixture!("https://github.com/Pimpmuckl/nextide-saas-vod-intelligence.git",
+      TestSupport.git_repo_with_origin_fixture!("https://github.com/JJLiebig/nextide-saas-vod-intelligence.git",
         prefix: "sympp-local-architect-repo-alias"
       )
 
     work_request =
       create_work_request!(repo,
         id: "WR-MCP-LOCAL-ARCHITECT-REPO-ALIAS",
-        repo: "Pimpmuckl/nextide-saas-vod-intelligence",
+        repo: "JJLiebig/nextide-saas-vod-intelligence",
         base_branch: "main",
         status: "ready_for_slicing"
       )

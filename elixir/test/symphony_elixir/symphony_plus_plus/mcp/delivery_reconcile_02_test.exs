@@ -405,7 +405,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02Test do
     assert {:ok, _linked_slice} = CanonicalWorkPackageFixtures.dispatch_work_package(repo, work_request.id, approved_slice.id, "approved", package.id)
 
     try do
-      Application.put_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes, ["Pimpmuckl/frontend"])
+      Application.put_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes, ["JJLiebig/frontend"])
 
       response =
         mcp_tool(repo, session, "prepare_work_package_worktree", %{

@@ -14,7 +14,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
       output_path = Path.join(temp_root, "sympp-runtime-artifacts-stable.json")
       revision = String.duplicate("c", 40)
       dashboard_fingerprint = String.duplicate("d", 64)
-      base_url = "https://github.com/Pimpmuckl/symphony-plus-plus/releases/download/test-runtime"
+      base_url = "https://github.com/JJLiebig/symphony-plus-plus/releases/download/test-runtime"
 
       try do
         File.mkdir_p!(temp_root)
@@ -37,7 +37,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
               "-ReleaseTag",
               "test-runtime",
               "-Repository",
-              "Pimpmuckl/symphony-plus-plus",
+              "JJLiebig/symphony-plus-plus",
               "-Channel",
               "stable",
               "-ManifestVersion",
@@ -102,7 +102,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
               "-ManifestDir",
               temp_root,
               "-PublishedBaseUrl",
-              "https://github.com/Pimpmuckl/symphony-plus-plus/releases/download/test-runtime",
+              "https://github.com/JJLiebig/symphony-plus-plus/releases/download/test-runtime",
               "-ReleaseTag",
               "test-runtime"
             ],

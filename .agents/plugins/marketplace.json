@@ -8,7 +8,7 @@
       "name": "symphony-plus-plus",
       "source": {
         "source": "url",
-        "url": "https://github.com/Pimpmuckl/symphony-plus-plus.git",
+        "url": "https://github.com/JJLiebig/symphony-plus-plus.git",
         "path": "plugins/symphony-plus-plus",
         "ref": "main"
       },
@@ -22,7 +22,7 @@
       "name": "symphony-plus-plus-mcp",
       "source": {
         "source": "url",
-        "url": "https://github.com/Pimpmuckl/symphony-plus-plus.git",
+        "url": "https://github.com/JJLiebig/symphony-plus-plus.git",
         "path": "plugins/symphony-plus-plus-mcp",
         "ref": "main"
       },

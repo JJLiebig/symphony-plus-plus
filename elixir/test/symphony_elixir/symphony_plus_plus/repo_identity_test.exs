@@ -65,54 +65,54 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
   test "merges bare aliases only for trusted owner-qualified remotes" do
     catalog =
       RepoIdentity.catalog(
-        ["symphony-plus-plus", "Pimpmuckl/symphony-plus-plus"],
-        trusted_remotes: ["https://github.com/Pimpmuckl/symphony-plus-plus.git"]
+        ["symphony-plus-plus", "JJLiebig/symphony-plus-plus"],
+        trusted_remotes: ["https://github.com/JJLiebig/symphony-plus-plus.git"]
       )
 
     assert RepoIdentity.fields(catalog, "symphony-plus-plus") == %{
              repo_key: "symphony-plus-plus",
              repo_display: "symphony-plus-plus",
-             repo_remote: "Pimpmuckl/symphony-plus-plus",
-             repo_aliases: ["Pimpmuckl/symphony-plus-plus", "symphony-plus-plus"]
+             repo_remote: "JJLiebig/symphony-plus-plus",
+             repo_aliases: ["JJLiebig/symphony-plus-plus", "symphony-plus-plus"]
            }
 
-    assert RepoIdentity.fields(catalog, "Pimpmuckl/symphony-plus-plus") == %{
+    assert RepoIdentity.fields(catalog, "JJLiebig/symphony-plus-plus") == %{
              repo_key: "symphony-plus-plus",
              repo_display: "symphony-plus-plus",
-             repo_remote: "Pimpmuckl/symphony-plus-plus",
-             repo_aliases: ["Pimpmuckl/symphony-plus-plus", "symphony-plus-plus"]
+             repo_remote: "JJLiebig/symphony-plus-plus",
+             repo_aliases: ["JJLiebig/symphony-plus-plus", "symphony-plus-plus"]
            }
   end
 
   test "accepts ssh GitHub remotes as trusted aliases" do
     catalog =
       RepoIdentity.catalog(
-        ["symphony-plus-plus", "Pimpmuckl/symphony-plus-plus"],
-        trusted_remotes: ["ssh://git@github.com/Pimpmuckl/symphony-plus-plus.git"]
+        ["symphony-plus-plus", "JJLiebig/symphony-plus-plus"],
+        trusted_remotes: ["ssh://git@github.com/JJLiebig/symphony-plus-plus.git"]
       )
 
     assert RepoIdentity.fields(catalog, "symphony-plus-plus") == %{
              repo_key: "symphony-plus-plus",
              repo_display: "symphony-plus-plus",
-             repo_remote: "Pimpmuckl/symphony-plus-plus",
-             repo_aliases: ["Pimpmuckl/symphony-plus-plus", "symphony-plus-plus"]
+             repo_remote: "JJLiebig/symphony-plus-plus",
+             repo_aliases: ["JJLiebig/symphony-plus-plus", "symphony-plus-plus"]
            }
   end
 
   test "scope match accepts owner-qualified remotes for bare repos" do
-    assert RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/Pimpmuckl/symphony-plus-plus.git", trusted_remotes: ["https://github.com/Pimpmuckl/symphony-plus-plus.git"])
+    assert RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/JJLiebig/symphony-plus-plus.git", trusted_remotes: ["https://github.com/JJLiebig/symphony-plus-plus.git"])
 
-    assert RepoIdentity.scope_match?("symphony-plus-plus", "git@github.com:Pimpmuckl/symphony-plus-plus.git", trusted_remotes: ["ssh://git@github.com/Pimpmuckl/symphony-plus-plus.git"])
+    assert RepoIdentity.scope_match?("symphony-plus-plus", "git@github.com:JJLiebig/symphony-plus-plus.git", trusted_remotes: ["ssh://git@github.com/JJLiebig/symphony-plus-plus.git"])
   end
 
   test "scope match rejects owner and repo-name conflicts" do
-    refute RepoIdentity.scope_match?("Pimpmuckl/symphony-plus-plus", "https://github.com/elsewhere/symphony-plus-plus.git")
-    refute RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/Pimpmuckl/symphony-plus-plus.git")
+    refute RepoIdentity.scope_match?("JJLiebig/symphony-plus-plus", "https://github.com/elsewhere/symphony-plus-plus.git")
+    refute RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/JJLiebig/symphony-plus-plus.git")
     refute RepoIdentity.scope_match?("frontend", "https://github.com/other/frontend.git")
 
-    refute RepoIdentity.scope_match?("frontend", "https://github.com/other/frontend.git", trusted_remotes: ["https://github.com/Pimpmuckl/frontend.git"])
+    refute RepoIdentity.scope_match?("frontend", "https://github.com/other/frontend.git", trusted_remotes: ["https://github.com/JJLiebig/frontend.git"])
 
-    refute RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/Pimpmuckl/other-repo.git")
+    refute RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/JJLiebig/other-repo.git")
   end
 
   test "scope match rejects bare repos when trusted remotes make the bare name ambiguous" do
@@ -134,17 +134,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
   end
 
   test "derives canonical identity from existing local git repo paths" do
-    origin = "https://github.com/Pimpmuckl/nextide-saas-live-chat.git"
+    origin = "https://github.com/JJLiebig/nextide-saas-live-chat.git"
     repo_path = TestSupport.git_repo_with_origin_fixture!(origin, prefix: "sympp-repo-identity")
     catalog = RepoIdentity.catalog([repo_path], local_path_remotes?: true)
 
     expected = %{
       repo_key: "nextide-saas-live-chat",
       repo_display: "nextide-saas-live-chat",
-      repo_remote: "Pimpmuckl/nextide-saas-live-chat",
+      repo_remote: "JJLiebig/nextide-saas-live-chat",
       repo_aliases:
         Enum.sort_by(
-          [repo_path, "nextide-saas-live-chat", "Pimpmuckl/nextide-saas-live-chat"],
+          [repo_path, "nextide-saas-live-chat", "JJLiebig/nextide-saas-live-chat"],
           &String.downcase/1
         )
     }
@@ -153,22 +153,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
   end
 
   test "collapses matching raw remote bare alias and local path origin" do
-    origin = "https://github.com/Pimpmuckl/nextide-saas-vod-intelligence.git"
+    origin = "https://github.com/JJLiebig/nextide-saas-vod-intelligence.git"
     repo_path = TestSupport.git_repo_with_origin_fixture!(origin, prefix: "sympp-repo-identity-mixed")
 
     catalog =
       RepoIdentity.catalog(
-        ["Pimpmuckl/nextide-saas-vod-intelligence", "nextide-saas-vod-intelligence", repo_path],
+        ["JJLiebig/nextide-saas-vod-intelligence", "nextide-saas-vod-intelligence", repo_path],
         local_path_remotes?: true
       )
 
     expected_remote = %{
       repo_key: "nextide-saas-vod-intelligence",
       repo_display: "nextide-saas-vod-intelligence",
-      repo_remote: "Pimpmuckl/nextide-saas-vod-intelligence",
+      repo_remote: "JJLiebig/nextide-saas-vod-intelligence",
       repo_aliases:
         Enum.sort_by(
-          ["Pimpmuckl/nextide-saas-vod-intelligence", "nextide-saas-vod-intelligence"],
+          ["JJLiebig/nextide-saas-vod-intelligence", "nextide-saas-vod-intelligence"],
           &String.downcase/1
         )
     }
@@ -177,18 +177,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
       expected_remote
       | repo_aliases:
           Enum.sort_by(
-            [repo_path, "nextide-saas-vod-intelligence", "Pimpmuckl/nextide-saas-vod-intelligence"],
+            [repo_path, "nextide-saas-vod-intelligence", "JJLiebig/nextide-saas-vod-intelligence"],
             &String.downcase/1
           )
     }
 
-    assert RepoIdentity.fields(catalog, "Pimpmuckl/nextide-saas-vod-intelligence") == expected_remote
+    assert RepoIdentity.fields(catalog, "JJLiebig/nextide-saas-vod-intelligence") == expected_remote
     assert RepoIdentity.fields(catalog, "nextide-saas-vod-intelligence") == expected_remote
     assert RepoIdentity.fields(catalog, repo_path) == expected_path
   end
 
   test "does not promote path origin trust without matching explicit remote" do
-    origin = "https://github.com/Pimpmuckl/nextide-saas-vod-intelligence.git"
+    origin = "https://github.com/JJLiebig/nextide-saas-vod-intelligence.git"
     repo_path = TestSupport.git_repo_with_origin_fixture!(origin, prefix: "sympp-repo-identity-path-only")
 
     catalog =
@@ -207,17 +207,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
     assert RepoIdentity.fields(catalog, repo_path) == %{
              repo_key: "nextide-saas-vod-intelligence",
              repo_display: "nextide-saas-vod-intelligence",
-             repo_remote: "Pimpmuckl/nextide-saas-vod-intelligence",
+             repo_remote: "JJLiebig/nextide-saas-vod-intelligence",
              repo_aliases:
                Enum.sort_by(
-                 [repo_path, "nextide-saas-vod-intelligence", "Pimpmuckl/nextide-saas-vod-intelligence"],
+                 [repo_path, "nextide-saas-vod-intelligence", "JJLiebig/nextide-saas-vod-intelligence"],
                  &String.downcase/1
                )
            }
   end
 
   test "derives canonical identity from local bare git repo paths" do
-    origin = "https://github.com/Pimpmuckl/nextide-saas-live-chat.git"
+    origin = "https://github.com/JJLiebig/nextide-saas-live-chat.git"
     repo_path = TestSupport.unique_tmp_path("sympp-repo-identity-bare") <> ".git"
 
     ExUnit.Callbacks.on_exit(fn -> File.rm_rf(repo_path) end)
@@ -231,17 +231,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
     assert RepoIdentity.fields(catalog, repo_path) == %{
              repo_key: "nextide-saas-live-chat",
              repo_display: "nextide-saas-live-chat",
-             repo_remote: "Pimpmuckl/nextide-saas-live-chat",
+             repo_remote: "JJLiebig/nextide-saas-live-chat",
              repo_aliases:
                Enum.sort_by(
-                 [repo_path, "nextide-saas-live-chat", "Pimpmuckl/nextide-saas-live-chat"],
+                 [repo_path, "nextide-saas-live-chat", "JJLiebig/nextide-saas-live-chat"],
                  &String.downcase/1
                )
            }
   end
 
   test "keeps path-derived origin trust scoped to the path entry" do
-    origin = "https://github.com/Pimpmuckl/nextide-saas-live-chat.git"
+    origin = "https://github.com/JJLiebig/nextide-saas-live-chat.git"
     repo_path = TestSupport.git_repo_with_origin_fixture!(origin, prefix: "sympp-repo-identity-scoped")
 
     catalog =
@@ -251,12 +251,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
       )
 
     assert RepoIdentity.fields(catalog, repo_path) == %{
-             repo_key: "pimpmuckl/nextide-saas-live-chat",
-             repo_display: "Pimpmuckl/nextide-saas-live-chat",
-             repo_remote: "Pimpmuckl/nextide-saas-live-chat",
+             repo_key: "jjliebig/nextide-saas-live-chat",
+             repo_display: "JJLiebig/nextide-saas-live-chat",
+             repo_remote: "JJLiebig/nextide-saas-live-chat",
              repo_aliases:
                Enum.sort_by(
-                 [repo_path, "Pimpmuckl/nextide-saas-live-chat"],
+                 [repo_path, "JJLiebig/nextide-saas-live-chat"],
                  &String.downcase/1
                )
            }

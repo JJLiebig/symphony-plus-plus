@@ -14,7 +14,7 @@ MCP-backed worker, WorkPackage, and architect skills.
 Install or update Symphony++ through the Codex marketplace:
 
 ```powershell
-codex plugin marketplace add https://github.com/Pimpmuckl/symphony-plus-plus --ref main
+codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
 codex plugin marketplace upgrade symphony-plus-plus
 codex plugin add symphony-plus-plus@symphony-plus-plus
 ```

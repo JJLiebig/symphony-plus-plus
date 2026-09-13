@@ -2,6 +2,6 @@
   "schema_version": 1,
   "channel": "stable",
   "manifest": {
-    "url": "https://github.com/Pimpmuckl/symphony-plus-plus/releases/download/sympp-runtime-stable/sympp-runtime-artifacts-stable.json"
+    "url": "https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-runtime-stable/sympp-runtime-artifacts-stable.json"
   }
 }

@@ -339,14 +339,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
 
   test "WorkRequest architect guidance accepts local checkout repo scope aliases", %{repo: repo} do
     checkout_path =
-      TestSupport.git_repo_with_origin_fixture!("https://github.com/Pimpmuckl/nextide-saas-vod-intelligence.git",
+      TestSupport.git_repo_with_origin_fixture!("https://github.com/JJLiebig/nextide-saas-vod-intelligence.git",
         prefix: "sympp-guidance-repo-alias"
       )
 
     work_request =
       create_work_request!(repo,
         id: "WR-GUIDANCE-WR-REPO-ALIAS",
-        repo: "Pimpmuckl/nextide-saas-vod-intelligence",
+        repo: "JJLiebig/nextide-saas-vod-intelligence",
         base_branch: "main"
       )
 

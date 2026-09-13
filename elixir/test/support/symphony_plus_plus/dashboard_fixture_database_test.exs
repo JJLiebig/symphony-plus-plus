@@ -220,7 +220,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
 
   defp seed_kraken_scale!(repo) do
     work_request =
-      request!(repo, "WR-FIXTURE-KRAKEN-SCALE", "Kraken-scale storage, provenance, and migration rollout", repo: "Pimpmuckl/nextide-saas-vod-kraken")
+      request!(repo, "WR-FIXTURE-KRAKEN-SCALE", "Kraken-scale storage, provenance, and migration rollout", repo: "JJLiebig/nextide-saas-vod-kraken")
 
     groups =
       [
@@ -277,9 +277,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
   end
 
   defp kraken_package_specs do
-    kraken = "Pimpmuckl/nextide-saas-vod-kraken"
-    intelligence = "Pimpmuckl/nextide-saas-vod-intelligence"
-    creator_data = "Pimpmuckl/nextide-saas-creator-data"
+    kraken = "JJLiebig/nextide-saas-vod-kraken"
+    intelligence = "JJLiebig/nextide-saas-vod-intelligence"
+    creator_data = "JJLiebig/nextide-saas-creator-data"
 
     [
       {1, :contract, "merged", "Lock the storage, retention, backup, and cutover contract", kraken, 1112},
@@ -301,8 +301,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
       {17, :first_pass, "skipped", "Rebuild and verify VOD Intelligence evidence provenance", intelligence, nil},
       {18, :playback, "ready_for_worker", "Serve verified original-object playback descriptors from Kraken", kraken, nil},
       {19, :playback, "planned", "Resolve product proof playback in VOD Intelligence", intelligence, nil},
-      {20, :playback, "planned", "Expose authorized proof playback through VOD API", "Pimpmuckl/nextide-saas-vod-api", nil},
-      {21, :playback, "planned", "Seek directly to exact audio evidence in VOD Intelligence UI", "Pimpmuckl/nextide-saas-vod-intelligence-ui", nil},
+      {20, :playback, "planned", "Expose authorized proof playback through VOD API", "JJLiebig/nextide-saas-vod-api", nil},
+      {21, :playback, "planned", "Seek directly to exact audio evidence in VOD Intelligence UI", "JJLiebig/nextide-saas-vod-intelligence-ui", nil},
       {22, :rebuild, "closed", "Persist canonical artifact-local audio proof provenance in Kraken", kraken, nil},
       {23, :rebuild, "planned", "Build fail-closed artifact provenance repair and replay tooling", kraken, nil},
       {24, :rebuild, "planned", "Repair and replay production Kraken proof provenance", kraken, nil},
