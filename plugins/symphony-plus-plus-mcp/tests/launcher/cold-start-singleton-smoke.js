@@ -466,6 +466,7 @@ async function runCase(clientCount, shell, mode = "normal") {
   const clients = [];
   let channel;
   let backendPid = 0;
+  let externalInitializes = 0, externalToolsLists = 0;
   try {
     fs.mkdirSync(traceDir, { recursive: true });
     for (const destination of [installedRoot, sourcePluginRoot]) {
@@ -791,6 +792,9 @@ async function runCase(clientCount, shell, mode = "normal") {
       const fixtureEnvironment = Object.fromEntries(Object.entries(environment).filter(([key]) => ["SYMPP_HOME", "SYMPP_RUNTIME_FILE", "SYMPP_LOG_DIR", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT", "SYMPP_POWERSHELL", "SYMPP_AUTOSTART_FRONTEND"].includes(key)));
       writeJson(process.env.SYMPP_TEST_ATTACH_STATE, { launcher: path.join(installedRoot, "scripts/start-sympp-mcp.cmd"), environment: fixtureEnvironment, runtimeFile, backendState });
       await waitFor(() => fs.existsSync(`${process.env.SYMPP_TEST_ATTACH_STATE}.done`), "External client validation did not finish.", 300000);
+      const afterExternal = readJson(backendState);
+      externalInitializes = afterExternal.initialize - activeBackend.initialize;
+      externalToolsLists = afterExternal.tools_list - activeBackend.tools_list;
     }
     const ownersResult = spawnSync(shell, ["-NoProfile", "-NonInteractive", "-Command", "@(Get-NetTCPConnection -LocalPort $env:FIXTURE_PORT -State Listen -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique) | ConvertTo-Json -Compress"], { env: { ...process.env, FIXTURE_PORT: String(backendPort) }, encoding: "utf8", windowsHide: true });
     assert.equal(ownersResult.status, 0, ownersResult.stderr);
@@ -809,10 +813,11 @@ async function runCase(clientCount, shell, mode = "normal") {
     const recoveryMode = ["backend_loss", "owner_loss"].includes(mode) || mode.endsWith("ambiguous_tool") || backendOnlyReadRecovery;
     const recoveryRebinds = ["backend_loss", "owner_loss"].includes(mode) ? recoveryClients.length : mode.endsWith("ambiguous_tool") || backendOnlyReadRecovery ? 1 : 0;
     assert.equal(backend.starts, recoveryMode ? 2 : 1);
-    assert.equal(backend.initialize, clientCount + recoveryRebinds);
-    assert.equal(backend.tools_list, clientCount + recoveryRebinds + (backendOnlyReadRecovery ? 1 : 0) + (elevation ? 1 : 0));
+    assert.equal(backend.initialize, clientCount + recoveryRebinds + externalInitializes);
+    assert.equal(backend.tools_list, clientCount + recoveryRebinds + (backendOnlyReadRecovery ? 1 : 0) + (elevation ? 1 : 0) + externalToolsLists);
     assert.equal(backend.mutations, mode.endsWith("ambiguous_tool") ? 1 : 0);
-    assert.equal(backend.lease_peak, clientCount);
+    if (process.env.SYMPP_TEST_ATTACH_STATE) assert.ok(backend.lease_peak >= clientCount);
+    else assert.equal(backend.lease_peak, clientCount);
     assert.equal(backend.active_leases, 0);
     assert.equal(fs.readdirSync(path.join(symppHome, "runtime", "codex-plugin-leases"), { withFileTypes: true }).filter((entry) => entry.isFile()).length, 0);
     // Full adoption resolves dashboard inputs again when frontend autostart is enabled.
