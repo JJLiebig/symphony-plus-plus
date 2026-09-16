@@ -852,6 +852,11 @@ async function checkResponsiveOwnerProbe() {
       process.kill = () => { throw Object.assign(new Error("No such process"), { code: "ESRCH" }); };
       assert.equal(await bridge.livenessMatches(process.ppid, pipe, "expected"), false,
         "A missing process must remain reclaimable");
+      process.kill = () => { throw Object.assign(new Error("Probe unavailable"), { code: "EIO" }); };
+      assert.equal(await bridge.livenessMatches(process.ppid, pipe, "expected"), true,
+        "An inconclusive process probe must retain a responsive owner");
+      assert.equal(await bridge.livenessMatches(0x80000000, pipe, "expected"), false,
+        "An out-of-range PID must not be treated as live");
     } finally {
       process.kill = kill;
     }
