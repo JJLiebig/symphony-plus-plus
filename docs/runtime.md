@@ -39,6 +39,11 @@ The first client owns startup; other clients attach to that backend. The backend
 stops when the last client closes. No persistent service or Herdr launch step is
 required.
 
+On Windows, an elevated client starts the backend as the logged-in desktop
+user without administrator privileges. Elevated and normal clients share the
+same backend, including a healthy backend started by an older elevated client.
+The desktop shell must be available for an elevated client to start a new backend.
+
 The source checkout at `C:\Code\symphony-plus-plus` is a developer workspace.
 Its uncommitted files and source-root hints must not determine an installed
 session's runtime. Installed diagnostics must resolve the owning marketplace

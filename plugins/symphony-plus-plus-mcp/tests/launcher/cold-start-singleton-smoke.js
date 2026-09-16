@@ -3,7 +3,7 @@
 const assert = require("assert/strict");
 const crypto = require("crypto");
 const fs = require("fs");
-const { once } = require("events");
+const { once, EventEmitter } = require("events");
 const http = require("http");
 const net = require("net");
 const os = require("os");
@@ -92,6 +92,7 @@ function backendFixture() {
     'const tools=JSON.parse(Buffer.from(arg("--tools"),"base64").toString("utf8")),leases=new Set(),sessions=new Set();let failAfterProbeArmed=false;',
     'let previous={};try{previous=JSON.parse(fs.readFileSync(stateFile,"utf8"));}catch(_){}',
     'const state={pid:process.pid,starts:(previous.starts||0)+1,started_at:Date.now(),initialize:previous.initialize||0,tools_list:previous.tools_list||0,mutations:previous.mutations||0,attach:previous.attach||0,detach:previous.detach||0,lease_peak:previous.lease_peak||0,active_leases:0};',
+    `if(process.env.SYMPP_ELEVATION_CERTIFICATION)state.token=JSON.parse(require("child_process").execFileSync("pwsh.exe",["-NoProfile","-Command",'$i=[Security.Principal.WindowsIdentity]::GetCurrent(); @{sid=$i.User.Value;elevated=([Security.Principal.WindowsPrincipal]::new($i)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)} | ConvertTo-Json -Compress'],{encoding:"utf8",windowsHide:true}));`,
     'function save(){state.active_leases=leases.size;const t=stateFile+".tmp";fs.mkdirSync(path.dirname(stateFile),{recursive:true});fs.writeFileSync(t,JSON.stringify(state));fs.renameSync(t,stateFile);}',
     'function body(r){return new Promise(q=>{const c=[];r.on("data",x=>c.push(x));r.on("end",()=>q(Buffer.concat(c).toString("utf8")));});}',
     'function send(r,s,v,h={}){const b=typeof v==="string"?v:JSON.stringify(v);r.writeHead(s,{"Content-Type":"application/json","Content-Length":Buffer.byteLength(b),...h});r.end(b);}',
@@ -193,8 +194,55 @@ function traceOrder(traceDir, before, after) {
   });
 }
 
+// File-backed stdio lets one elevated certification host exercise real medium
+// clients without repeated UAC prompts or touching installed runtime state.
+async function fileClient() {
+  const [, , , prefix, barrier, launcher] = process.argv;
+  const child = spawn(process.execPath, [__filename, "--barrier-client", barrier, launcher], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  for (const stream of ["stdout", "stderr"]) child[stream].on("data", (data) => fs.appendFileSync(`${prefix}.${stream}`, data));
+  let offset = 0;
+  const timer = setInterval(() => {
+    const input = fs.readFileSync(`${prefix}.stdin`);
+    if (input.length > offset) { child.stdin.write(input.subarray(offset)); offset = input.length; }
+    if (fs.existsSync(`${prefix}.end`)) { clearInterval(timer); child.stdin.end(); }
+  }, 20);
+  child.on("close", (code) => { clearInterval(timer); writeJson(`${prefix}.exit`, { code }); });
+}
+
+function startNormalClient(barrier, launcher, environment, index) {
+  const prefix = path.join(path.dirname(barrier), `normal-client-${index}`);
+  for (const stream of ["stdin", "stdout", "stderr"]) fs.writeFileSync(`${prefix}.${stream}`, "");
+  const launchScript = [
+    '. $env:FIXTURE_HELPERS; . $env:FIXTURE_NATIVE;',
+    '$command=[pscustomobject]@{file=$env:FIXTURE_NODE;args=@($env:FIXTURE_TEST,"--file-client",$env:FIXTURE_PREFIX,$env:FIXTURE_BARRIER,$env:FIXTURE_LAUNCHER)};',
+    '$p=Start-SymppWindowsBackend $command (Split-Path $env:FIXTURE_PREFIX) ($env:FIXTURE_PREFIX+".stdin") ($env:FIXTURE_PREFIX+".host-out") ($env:FIXTURE_PREFIX+".host-err"); $p.Id'
+  ].join(" ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-Command", launchScript], { encoding: "utf8", windowsHide: true, env: { ...environment,
+    FIXTURE_HELPERS: path.join(pluginRoot, "scripts/sympp-mcp-launcher-helpers.ps1"), FIXTURE_NATIVE: path.join(pluginRoot, "scripts/sympp-windows-backend.ps1"),
+    FIXTURE_NODE: process.execPath, FIXTURE_TEST: __filename, FIXTURE_PREFIX: prefix, FIXTURE_BARRIER: barrier, FIXTURE_LAUNCHER: launcher } });
+  assert.equal(result.status, 0, result.stderr);
+  const child = new EventEmitter();
+  child.pid = Number(result.stdout.trim()); child.exitCode = null;
+  child.stdin = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+  child.stdin.write = (data) => fs.appendFileSync(`${prefix}.stdin`, data);
+  child.stdin.end = () => fs.writeFileSync(`${prefix}.end`, "");
+  const offsets = { stdout: 0, stderr: 0 };
+  const timer = setInterval(() => {
+    for (const stream of ["stdout", "stderr"]) {
+      const data = fs.readFileSync(`${prefix}.${stream}`);
+      if (data.length > offsets[stream]) { child[stream].emit("data", data.subarray(offsets[stream])); offsets[stream] = data.length; }
+    }
+    const exit = readJson(`${prefix}.exit`);
+    if (exit) { clearInterval(timer); child.exitCode = exit.code; child.emit("close", exit.code); }
+  }, 20);
+  child.stopRelay = () => clearInterval(timer);
+  return child;
+}
+
 function startClient(barrier, launcher, environment, clients, latencies, readyTarget) {
-  const child = spawn(process.execPath, [__filename, "--barrier-client", barrier, launcher], { env: environment, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  const child = environment.SYMPP_TEST_NORMAL_CLIENT
+    ? startNormalClient(barrier, launcher, environment, clients.length)
+    : spawn(process.execPath, [__filename, "--barrier-client", barrier, launcher], { env: environment, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   const client = { child, stderr: "", stdout: "", ready: false, result: null, pending: new Map() };
   clients.push(client);
   child.stderr.on("data", (chunk) => { client.stderr += chunk; });
@@ -395,6 +443,8 @@ function assertLockFree(shell, startupLock, artifactLock) {
 }
 
 async function runCase(clientCount, shell, mode = "normal") {
+  const elevation = mode.startsWith("elevation_") ? mode.slice("elevation_".length) : null;
+  if (elevation) mode = "normal";
   const prepared = mode.startsWith("prepared_");
   if (prepared) mode = mode.slice("prepared_".length);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `sympp-cold-${mode}-`));
@@ -421,6 +471,10 @@ async function runCase(clientCount, shell, mode = "normal") {
     for (const destination of [installedRoot, sourcePluginRoot]) {
       fs.mkdirSync(destination, { recursive: true });
       fs.cpSync(path.join(pluginRoot, "scripts"), path.join(destination, "scripts"), { recursive: true });
+      if (elevation === "legacy") {
+        const runtime = path.join(destination, "scripts/sympp-mcp-process-runtime.ps1");
+        fs.writeFileSync(runtime, fs.readFileSync(runtime, "utf8").replace("$LogDir -NormalUserBackend", "$LogDir"));
+      }
     }
     fs.mkdirSync(path.join(installedRoot, "assets"), { recursive: true });
     fs.cpSync(path.join(pluginRoot, ".codex-plugin"), path.join(installedRoot, ".codex-plugin"), { recursive: true });
@@ -519,13 +573,20 @@ async function runCase(clientCount, shell, mode = "normal") {
     const allReady = new Promise((resolve) => { readyResolve = resolve; });
     const latencies = [];
     const jobCertification = mode === "job_certification";
+    const firstBarrier = elevation && elevation !== "simultaneous" ? `${barrier}.first` : barrier;
     for (let index = 0; index < clientCount; index++) {
       if (jobCertification) startJobClient(root, barrier, path.join(installedRoot, "scripts", "start-sympp-mcp.cmd"), environment, clients, latencies, readyTarget, index);
-      else startClient(barrier, path.join(installedRoot, "scripts", "start-sympp-mcp.cmd"), environment, clients, latencies, readyTarget);
+      else startClient(index === 0 ? firstBarrier : barrier, path.join(installedRoot, "scripts", "start-sympp-mcp.cmd"),
+        elevation ? { ...environment, SYMPP_TEST_NORMAL_CLIENT: (elevation === "normal_first" ? index === 0 : index > 0) ? "1" : "" } : environment,
+        clients, latencies, readyTarget);
     }
     await waitFor(() => jobCertification ? clients.every((client) => client.jobReady) : clients.every((client) => client.stderr.includes("BARRIER_READY")), "Clients did not reach the start barrier.");
     readyTarget.startedAt = Date.now();
     for (const client of clients) client.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "cold-herd", version: "1" } } })}\n`);
+    if (firstBarrier !== barrier) {
+      fs.writeFileSync(firstBarrier, "go");
+      await waitFor(() => clients[0].ready, `First ${elevation} client did not initialize.`);
+    }
     fs.writeFileSync(barrier, "go");
 
     if (mode === "manifest_death") {
@@ -716,6 +777,21 @@ async function runCase(clientCount, shell, mode = "normal") {
       await waitFor(() => readJson(backendState)?.active_leases === expectedRecoveredLeases, "Recovered adapters did not retain their replacement backend leases.");
     }
     const activeBackend = readJson(backendState);
+    if (elevation) {
+      assert.equal(activeBackend.token.elevated, elevation === "legacy", JSON.stringify(activeBackend.token));
+      if (process.env.SYMPP_TEST_SHELL_SID && elevation !== "legacy") assert.equal(activeBackend.token.sid, process.env.SYMPP_TEST_SHELL_SID);
+      assert.equal(activeBackend.starts, 1);
+      clients[0].child.stdin.end();
+      assert.equal((await clients[0].result).code, 0, clients[0].stderr);
+      const surviving = await requestClient(clients[1], 9100, "tools/list");
+      assert.equal(surviving.result.tools.length, expectedTools.length, "First client exit must leave its peer attached.");
+      assert.equal(readJson(backendState).pid, activeBackend.pid, "First client exit replaced the shared backend.");
+    }
+    if (process.env.SYMPP_TEST_ATTACH_STATE) {
+      const fixtureEnvironment = Object.fromEntries(Object.entries(environment).filter(([key]) => ["SYMPP_HOME", "SYMPP_RUNTIME_FILE", "SYMPP_LOG_DIR", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT", "SYMPP_POWERSHELL", "SYMPP_AUTOSTART_FRONTEND"].includes(key)));
+      writeJson(process.env.SYMPP_TEST_ATTACH_STATE, { launcher: path.join(installedRoot, "scripts/start-sympp-mcp.cmd"), environment: fixtureEnvironment, runtimeFile, backendState });
+      await waitFor(() => fs.existsSync(`${process.env.SYMPP_TEST_ATTACH_STATE}.done`), "External client validation did not finish.", 300000);
+    }
     const ownersResult = spawnSync(shell, ["-NoProfile", "-NonInteractive", "-Command", "@(Get-NetTCPConnection -LocalPort $env:FIXTURE_PORT -State Listen -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique) | ConvertTo-Json -Compress"], { env: { ...process.env, FIXTURE_PORT: String(backendPort) }, encoding: "utf8", windowsHide: true });
     assert.equal(ownersResult.status, 0, ownersResult.stderr);
     assert.deepEqual([].concat(JSON.parse(ownersResult.stdout.trim())), [activeBackend.pid]);
@@ -734,7 +810,7 @@ async function runCase(clientCount, shell, mode = "normal") {
     const recoveryRebinds = ["backend_loss", "owner_loss"].includes(mode) ? recoveryClients.length : mode.endsWith("ambiguous_tool") || backendOnlyReadRecovery ? 1 : 0;
     assert.equal(backend.starts, recoveryMode ? 2 : 1);
     assert.equal(backend.initialize, clientCount + recoveryRebinds);
-    assert.equal(backend.tools_list, clientCount + recoveryRebinds + (backendOnlyReadRecovery ? 1 : 0));
+    assert.equal(backend.tools_list, clientCount + recoveryRebinds + (backendOnlyReadRecovery ? 1 : 0) + (elevation ? 1 : 0));
     assert.equal(backend.mutations, mode.endsWith("ambiguous_tool") ? 1 : 0);
     assert.equal(backend.lease_peak, clientCount);
     assert.equal(backend.active_leases, 0);
@@ -767,6 +843,7 @@ async function runCase(clientCount, shell, mode = "normal") {
     assert.ok(percentile(latencies, 0.95) < 60000 && Math.max(...latencies) < 90000);
     return { mode, prepared, shell: path.basename(shell), clients: clientCount, p95_ms: percentile(latencies, 0.95), max_ms: Math.max(...latencies), manifest: channel.counts.manifest_successes, manifest_attempts: channel.counts.manifest_attempts, artifact: channel.counts.archive_successes, artifact_attempts: channel.counts.archive_attempts, preparations: traceCount(traceDir, "artifact_prepare_end"), backends: backend.starts, pids: recoveryMode ? 2 : 1, listeners: 0, initializes: backend.initialize, tools_list: backend.tools_list, mutations: backend.mutations, lease_peak: backend.lease_peak, leases_after: backend.active_leases, adopted: traceCount(traceDir, "backend_adopted"), recovery_leaders: recoveryLeaders };
   } finally {
+    for (const client of clients) client.child.stopRelay?.();
     terminateTrees(clients.filter((client) => client.child.exitCode === null).map((client) => client.child.pid));
     if (!backendPid) backendPid = readJson(backendState)?.pid || 0;
     await stopBackend(backendPort, backendPid);
@@ -880,6 +957,15 @@ async function main() {
   const pwsh = spawnSync("where.exe", ["pwsh.exe"], { encoding: "utf8" }).stdout.trim().split(/\r?\n/)[0];
   const windowsPowerShell = spawnSync("where.exe", ["powershell.exe"], { encoding: "utf8" }).stdout.trim().split(/\r?\n/)[0];
   assert.ok(pwsh && windowsPowerShell, "Both pwsh and Windows PowerShell 5.1 are required.");
+  if (process.env.SYMPP_ELEVATION_CERTIFICATION && !process.env.SYMPP_COLD_ONLY) {
+    const elevated = spawnSync(pwsh, ["-NoProfile", "-Command", "([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"], { encoding: "utf8", windowsHide: true });
+    assert.equal(elevated.stdout.trim(), "True", "Run mixed-elevation certification from an elevated process.");
+    for (const order of ["elevated_first", "normal_first", "simultaneous", "legacy"]) {
+      const result = await runCase(3, pwsh, `elevation_${order}`);
+      console.log(JSON.stringify({ ...result, order }));
+    }
+    return;
+  }
   if (process.env.SYMPP_COLD_ONLY) {
     const result = await runCase(Number(process.env.SYMPP_COLD_CLIENTS || 3), process.env.SYMPP_COLD_SHELL === "powershell" ? windowsPowerShell : pwsh, process.env.SYMPP_COLD_ONLY);
     process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -902,5 +988,6 @@ async function main() {
 }
 
 if (process.argv[2] === "--probe-peer") probePeer().catch((error) => { console.error(error); process.exit(1); });
+else if (process.argv[2] === "--file-client") fileClient().catch((error) => { process.stderr.write(`${error.stack || error}\n`); process.exit(1); });
 else if (process.argv[2] === "--barrier-client") barrierClient().catch((error) => { process.stderr.write(`${error.stack || error}\n`); process.exit(1); });
 else main().catch((error) => { process.stderr.write(`${error.stack || error}\n`); process.exit(1); });
