@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Security.AccessControl;
 using System.Text;
 
 namespace Sympp {
@@ -25,6 +26,8 @@ namespace Sympp {
     struct StartupInfoEx { public StartupInfo startup; public IntPtr attributes; }
     [StructLayout(LayoutKind.Sequential)]
     struct ProcessInfo { public IntPtr process, thread; public int pid, tid; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct SecurityAttributes { public int length; public IntPtr descriptor; public int inherit; }
     [DllImport("user32.dll")] static extern IntPtr GetShellWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out int pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
@@ -39,7 +42,7 @@ namespace Sympp {
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, IntPtr attribute, IntPtr value, IntPtr size, IntPtr previous, IntPtr returned);
     [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    static extern bool CreateProcessW(string application, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit, uint flags, IntPtr environment, string directory, ref StartupInfoEx startup, out ProcessInfo process);
+    static extern bool CreateProcessW(string application, StringBuilder command, ref SecurityAttributes processSecurity, ref SecurityAttributes threadSecurity, bool inherit, uint flags, IntPtr environment, string directory, ref StartupInfoEx startup, out ProcessInfo process);
 
     static void Check(bool success) { if (!success) throw new Win32Exception(Marshal.GetLastWin32Error()); }
 
@@ -62,6 +65,7 @@ namespace Sympp {
       IntPtr shell = OpenProcess(0x80 | 0x40 | 0x1000, false, shellPid);
       if (shell == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
       IntPtr token = IntPtr.Zero, userEnvironment = IntPtr.Zero, environment = IntPtr.Zero;
+      IntPtr securityDescriptor = IntPtr.Zero;
       IntPtr attributes = IntPtr.Zero, parentValue = IntPtr.Zero, handleValues = IntPtr.Zero;
       bool initialized = false;
       var remoteHandles = new List<IntPtr>();
@@ -76,8 +80,10 @@ namespace Sympp {
         foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables()) values[(string)entry.Key] = (string)entry.Value;
         // Preserve explicit configuration for UAC elevation of the same account.
         // An alternate administrator must not redirect the shell user to its profile.
+        string shellSid;
         using (var caller = WindowsIdentity.GetCurrent())
         using (var shellIdentity = new WindowsIdentity(token)) {
+          shellSid = shellIdentity.User.Value;
           if (caller.User != shellIdentity.User) {
             foreach (string name in new[] { "USERPROFILE", "USERNAME", "USERDOMAIN", "USERDOMAIN_ROAMINGPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP" }) {
               string value;
@@ -119,8 +125,18 @@ namespace Sympp {
         startup.startup.stdin = remoteHandles[0]; startup.startup.stdout = remoteHandles[1]; startup.startup.stderr = remoteHandles[2];
         startup.attributes = attributes;
         ProcessInfo child;
-        Check(CreateProcessW(application, new StringBuilder(command), IntPtr.Zero, IntPtr.Zero, true,
-          0x08000000 | 0x00080000 | 0x400 | (uint)Process.GetCurrentProcess().PriorityClass, environment, directory, ref startup, out child));
+        uint flags = 0x08000000 | 0x00080000 | 0x400 | (uint)Process.GetCurrentProcess().PriorityClass;
+        // Parent selection does not lower the process/thread object's security.
+        // Elevated defaults can prevent the child from querying its own priority.
+        // Grant control to its desktop user, SYSTEM and administrators only.
+        var descriptor = new RawSecurityDescriptor("D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + shellSid + ")S:(ML;;NW;;;ME)");
+        var securityBytes = new byte[descriptor.BinaryLength];
+        descriptor.GetBinaryForm(securityBytes, 0);
+        securityDescriptor = Marshal.AllocHGlobal(securityBytes.Length);
+        Marshal.Copy(securityBytes, 0, securityDescriptor, securityBytes.Length);
+        var security = new SecurityAttributes { length = Marshal.SizeOf(typeof(SecurityAttributes)), descriptor = securityDescriptor };
+        Check(CreateProcessW(application, new StringBuilder(command), ref security, ref security, true,
+          flags, environment, directory, ref startup, out child));
         try { return Process.GetProcessById(child.pid); }
         finally { CloseHandle(child.thread); CloseHandle(child.process); }
       } finally {
@@ -130,6 +146,7 @@ namespace Sympp {
         }
         if (initialized) DeleteProcThreadAttributeList(attributes);
         Marshal.FreeHGlobal(attributes); Marshal.FreeHGlobal(parentValue); Marshal.FreeHGlobal(handleValues); Marshal.FreeHGlobal(environment);
+        Marshal.FreeHGlobal(securityDescriptor);
         if (userEnvironment != IntPtr.Zero) DestroyEnvironmentBlock(userEnvironment);
         if (token != IntPtr.Zero) CloseHandle(token);
         CloseHandle(shell);

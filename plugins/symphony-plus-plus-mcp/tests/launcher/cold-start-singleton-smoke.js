@@ -105,6 +105,9 @@ function backendFixture() {
     ' send(res,404,{error:"not found"});',
     '});',
     'server.on("connection",socket=>{if(!failAfterProbeArmed)return;failAfterProbeArmed=false;socket.on("close",()=>{server.close();server.closeAllConnections?.();setTimeout(()=>process.exit(0),10);});});',
+    // Old elevated runtimes cannot be force-stopped by normal clients. Model the
+    // real ClientLeases idle policy only here; other cases still prove PID cleanup.
+    'if(process.env.SYMPP_TEST_LEGACY_IDLE_SHUTDOWN){state.shutdown_on_idle=process.env.SYMPP_MCP_SHUTDOWN_ON_IDLE==="1";setInterval(()=>{if(state.shutdown_on_idle&&state.attach>0&&leases.size===0)server.close(()=>process.exit(0));},100);}',
     'fs.mkdirSync(path.dirname(ledger),{recursive:true});fs.writeFileSync(ledger,"fixture");save();function listen(){if(bindRelease&&!fs.existsSync(bindRelease))return setTimeout(listen,25);server.listen(port,"127.0.0.1",save);}listen();'
   ].join("\n");
 }
@@ -503,6 +506,7 @@ async function runCase(clientCount, shell, mode = "normal") {
       SYMPP_COLD_START_TIMEOUT_SEC: "90", SYMPP_BACKEND_STARTUP_TIMEOUT_SEC: "60", SYMPP_BACKEND_PORT_RELEASE_TIMEOUT_SEC: "1",
       SYMPP_ELIXIR_SETUP_TIMEOUT_SEC: "30", SYMPP_AUTOSTART_FRONTEND: "0", SYMPP_MCP_HTTP_TIMEOUT_SEC: "30", TEMP: path.join(root, "tmp"), TMP: path.join(root, "tmp") };
     if (mode === "shutdown_during_recovery") environment.SYMPP_MCP_CLIENT_HEARTBEAT_SEC = "5";
+    if (elevation === "legacy") environment.SYMPP_TEST_LEGACY_IDLE_SHUTDOWN = "1";
     if (mode.startsWith("powershell_fallback")) environment.SYMPP_NODE_BRIDGE = "0";
     for (const name of ["SYMPP_REPO_ROOT", "SYMPP_BACKEND_URL", "SYMPP_DASHBOARD_ORIGIN", "SYMPP_DATABASE", "SYMPP_SOURCE_FALLBACK", "SYMPP_ARTIFACT_RUNTIME"]) delete environment[name];
     fs.mkdirSync(environment.TEMP, { recursive: true });
@@ -780,6 +784,7 @@ async function runCase(clientCount, shell, mode = "normal") {
     const activeBackend = readJson(backendState);
     if (elevation) {
       assert.equal(activeBackend.token.elevated, elevation === "legacy", JSON.stringify(activeBackend.token));
+      if (elevation === "legacy") assert.equal(activeBackend.shutdown_on_idle, true, "Managed artifact backend must enable idle shutdown.");
       if (process.env.SYMPP_TEST_SHELL_SID && elevation !== "legacy") assert.equal(activeBackend.token.sid, process.env.SYMPP_TEST_SHELL_SID);
       assert.equal(activeBackend.starts, 1);
       clients[0].child.stdin.end();
