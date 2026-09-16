@@ -92,7 +92,7 @@ function backendFixture() {
     'const tools=JSON.parse(Buffer.from(arg("--tools"),"base64").toString("utf8")),leases=new Set(),sessions=new Set();let failAfterProbeArmed=false;',
     'let previous={};try{previous=JSON.parse(fs.readFileSync(stateFile,"utf8"));}catch(_){}',
     'const state={pid:process.pid,starts:(previous.starts||0)+1,started_at:Date.now(),initialize:previous.initialize||0,tools_list:previous.tools_list||0,mutations:previous.mutations||0,attach:previous.attach||0,detach:previous.detach||0,lease_peak:previous.lease_peak||0,active_leases:0};',
-    `if(process.env.SYMPP_ELEVATION_CERTIFICATION)state.token=JSON.parse(require("child_process").execFileSync("pwsh.exe",["-NoProfile","-Command",'$i=[Security.Principal.WindowsIdentity]::GetCurrent(); @{sid=$i.User.Value;elevated=([Security.Principal.WindowsPrincipal]::new($i)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)} | ConvertTo-Json -Compress'],{encoding:"utf8",windowsHide:true}));`,
+    `if(process.env.SYMPP_ELEVATION_CERTIFICATION||process.env.SYMPP_JOB_ELEVATED)state.token=JSON.parse(require("child_process").execFileSync("pwsh.exe",["-NoProfile","-Command",'$i=[Security.Principal.WindowsIdentity]::GetCurrent(); @{sid=$i.User.Value;elevated=([Security.Principal.WindowsPrincipal]::new($i)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)} | ConvertTo-Json -Compress'],{encoding:"utf8",windowsHide:true}));`,
     'function save(){state.active_leases=leases.size;const t=stateFile+".tmp";fs.mkdirSync(path.dirname(stateFile),{recursive:true});fs.writeFileSync(t,JSON.stringify(state));fs.renameSync(t,stateFile);}',
     'function body(r){return new Promise(q=>{const c=[];r.on("data",x=>c.push(x));r.on("end",()=>q(Buffer.concat(c).toString("utf8")));});}',
     'function send(r,s,v,h={}){const b=typeof v==="string"?v:JSON.stringify(v);r.writeHead(s,{"Content-Type":"application/json","Content-Length":Buffer.byteLength(b),...h});r.end(b);}',
@@ -353,6 +353,22 @@ async function certifyJobs({ clients, shell, runtimeFile, backendState, backendP
   assert.equal(traceCount(traceDir, "runtime_ready_published"), 1);
   assert.deepEqual(listenerPids(shell, backendPort), [initial.pid]);
   await waitFor(() => activeLeasePids(symppHome).length === 32, "Initial adapters did not publish 32 active leases.");
+  if (process.env.SYMPP_JOB_ELEVATED) {
+    assert.equal(initial.token.elevated, false);
+    assert.ok(clients.every((client) => !jobState(client).active.includes(initial.pid)), "Normal backend must be outside elevated client Jobs.");
+    const starter = await jobOwner(clients, Number(readJson(runtimeFile).publication.owner_adapter_pid));
+    const survivor = clients.find((client) => client !== starter);
+    await closeJob(starter);
+    assert.deepEqual(listenerPids(shell, backendPort), [initial.pid]);
+    assert.equal((await requestClient(survivor, 4900, "tools/list")).result?.tools?.length, expectedTools.length);
+    for (const client of clients) if (client !== survivor && client.child.exitCode === null) await closeJob(client);
+    assert.equal(readJson(backendState).starts, 1, "Client Job closure must not replace the shell-owned backend.");
+    assert.equal((await requestClient(survivor, 4901, "tools/list")).result?.tools?.length, expectedTools.length);
+    await closeJob(survivor, true);
+    await waitFor(() => portAvailable(backendPort), "Final elevated client did not clean up its normal backend.");
+    await waitFor(() => !processAlive(initial.pid) && activeLeasePids(symppHome).length === 0, "Elevated client cleanup retained backend or leases.");
+    return { mode: "job_certification", elevated_backend: true, clients: 32, initial_epochs: 1, owner_job_survived: true, original_stdio: true, processes_after: 0, listeners_after: 0, active_leases_after: 0 };
+  }
   const initialOwner = await jobOwner(clients, initial.pid);
   assert.ok(jobState(initialOwner).active.includes(initial.pid), "Initial backend was not owned by its adapter Job.");
   const sentinel = clients.find((client) => client !== initialOwner);

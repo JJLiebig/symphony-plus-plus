@@ -597,8 +597,8 @@ $jobCertificationJson = & (Join-Path $PSScriptRoot "run-job-object-certification
 $jobCertificationExitCode = $LASTEXITCODE
 Assert-True ($jobCertificationExitCode -eq 0) "Windows Job Object certification must pass"
 $jobCertification = $jobCertificationJson | ConvertFrom-Json
-Assert-True ($jobCertification.clients -eq 32 -and $jobCertification.initial_epochs -eq 1 -and $jobCertification.owner_rotations -eq 3) "Independent Job clients must preserve singleton startup and three owner rotations"
-Assert-True ($jobCertification.backend_recoveries -eq 2 -and $jobCertification.mutations -eq 1 -and $jobCertification.original_stdio) "Job clients must preserve backend recovery, ambiguous-call safety, and original follower STDIO"
+$jobOwnershipVerified = if ($jobCertification.elevated_backend) { $jobCertification.owner_job_survived } else { $jobCertification.owner_rotations -eq 3 -and $jobCertification.backend_recoveries -eq 2 -and $jobCertification.mutations -eq 1 }
+Assert-True ($jobCertification.clients -eq 32 -and $jobCertification.initial_epochs -eq 1 -and $jobCertification.original_stdio -and $jobOwnershipVerified) "Job clients must preserve singleton startup and original follower STDIO through shell-owned survival or client-owned recovery"
 Assert-True ($jobCertification.processes_after -eq 0 -and $jobCertification.listeners_after -eq 0 -and $jobCertification.active_leases_after -eq 0) "Final Job close must leave no owned process, listener, or active lease"
 $persistentRuntime = @(& (Join-Path $PSScriptRoot "persistent-artifact-runtime-smoke.ps1"))[-1] | ConvertFrom-Json
 Assert-True ($persistentRuntime.installed_waves -eq 2 -and $persistentRuntime.initialize_and_tools_list -eq 3 -and $persistentRuntime.installed_pids_distinct) "Installed command must stop the artifact-static runtime and start a new backend PID for the next wave"
