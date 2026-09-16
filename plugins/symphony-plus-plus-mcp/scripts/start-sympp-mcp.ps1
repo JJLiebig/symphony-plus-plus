@@ -1684,7 +1684,7 @@ function Stop-ManagedServersIfUnused([string]$RuntimeFile, [string]$RuntimeKey) 
   }
 }
 
-function Start-LoggedProcess([string]$FilePath, [string[]]$ArgumentList, [string]$WorkingDirectory, [hashtable]$Environment, [string]$LogPrefix, [string]$LogDir) {
+function Start-LoggedProcess([string]$FilePath, [string[]]$ArgumentList, [string]$WorkingDirectory, [hashtable]$Environment, [string]$LogPrefix, [string]$LogDir, [switch]$NormalUserBackend) {
   New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
   $stdoutPath = Join-Path $LogDir "$LogPrefix-$stamp.out.log"
@@ -1707,7 +1707,13 @@ function Start-LoggedProcess([string]$FilePath, [string[]]$ArgumentList, [string
       RedirectStandardInput = $stdinPath; RedirectStandardOutput = $stdoutPath; RedirectStandardError = $stderrPath; PassThru = $true
     }
     if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) { $startArgs["WindowStyle"] = "Hidden" }
-    $process = Start-Process @startArgs
+    if ($NormalUserBackend -and (Test-SymppWindowsPlatform) -and
+        ([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+      . (Join-Path $PSScriptRoot 'sympp-windows-backend.ps1')
+      $process = Start-SymppWindowsBackend $startCommand $WorkingDirectory $stdinPath $stdoutPath $stderrPath
+    } else {
+      $process = Start-Process @startArgs
+    }
   } finally {
     foreach ($key in @($Environment.Keys)) {
       [Environment]::SetEnvironmentVariable([string]$key, $oldEnvironment[$key], "Process")

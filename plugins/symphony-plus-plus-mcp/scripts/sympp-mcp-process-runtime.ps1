@@ -286,7 +286,7 @@ function Start-Backend($Plan, [string]$DashboardOrigin, [string]$ElixirDir, [str
     $command.environment["SYMPP_MCP_SHUTDOWN_ON_IDLE"] = "1"
   }
 
-  $launch = Start-LoggedProcess $command.file $command.args $command.working_directory $command.environment "backend-$($Plan.port)" $LogDir
+  $launch = Start-LoggedProcess $command.file $command.args $command.working_directory $command.environment "backend-$($Plan.port)" $LogDir -NormalUserBackend
   $reportedPid = [int]$launch.process.Id
   if ($OnStarted) {
     & $OnStarted $reportedPid (Get-ProcessStartIdentity $launch.process)

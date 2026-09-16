@@ -6,6 +6,7 @@ $root = Join-Path ([System.IO.Path]::GetTempPath()) ("sympp-job-client-" + [guid
 $previousRunner = $env:SYMPP_JOB_CLIENT
 $previousAssembly = $env:SYMPP_JOB_HELPER_ASSEMBLY
 $previousCertification = $env:SYMPP_JOB_CERTIFICATION
+$previousElevated = $env:SYMPP_JOB_ELEVATED
 try {
   New-Item -ItemType Directory -Path $root | Out-Null
   $assembly = Join-Path $root "job-client.dll"
@@ -13,12 +14,14 @@ try {
   $env:SYMPP_JOB_CLIENT = Join-Path $PSScriptRoot "job-client.ps1"
   $env:SYMPP_JOB_HELPER_ASSEMBLY = $assembly
   $env:SYMPP_JOB_CERTIFICATION = "1"
+  $env:SYMPP_JOB_ELEVATED = if (([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { "1" } else { $null }
   & (Get-Command node.exe -ErrorAction Stop).Source (Join-Path $PSScriptRoot "cold-start-singleton-smoke.js")
   if ($LASTEXITCODE -ne 0) { throw "Windows Job Object certification failed with exit code $LASTEXITCODE." }
 } finally {
   $env:SYMPP_JOB_CLIENT = $previousRunner
   $env:SYMPP_JOB_HELPER_ASSEMBLY = $previousAssembly
   $env:SYMPP_JOB_CERTIFICATION = $previousCertification
+  $env:SYMPP_JOB_ELEVATED = $previousElevated
   $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
   $resolvedRoot = [System.IO.Path]::GetFullPath($root)
   if ($resolvedRoot.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $resolvedRoot -Recurse -Force -ErrorAction SilentlyContinue }
