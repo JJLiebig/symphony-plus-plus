@@ -295,9 +295,14 @@ function generationKey(pluginRoot, sourceRoot) {
   }
 }
 
+function validPid(pid) {
+  return Number.isInteger(Number(pid)) && Number(pid) > 0 && Number(pid) <= 0x7fffffff;
+}
+
 function processAlive(pid) {
-  if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return false;
-  try { process.kill(Number(pid), 0); return true; } catch (_) { return false; }
+  if (!validPid(pid)) return false;
+  // Permission to signal a process is not required to attach to its healthy endpoint.
+  try { process.kill(Number(pid), 0); return true; } catch (error) { return error.code !== "ESRCH"; }
 }
 
 function ensureLivenessProbe() {
@@ -354,7 +359,7 @@ async function tryAcquireProcessLock(lockFile) {
     if (["EACCES", "EBUSY", "EPERM"].includes(error.code)) return null;
     if (error.code !== "EEXIST") throw error;
     const owner = readJson(lockFile);
-    const ownerValid = owner && owner.lock_id && owner.owner_pipe && owner.owner_token && Number(owner.owner_pid) > 0;
+    const ownerValid = owner && owner.lock_id && owner.owner_pipe && owner.owner_token && validPid(owner.owner_pid);
     let reclaim = ownerValid && !await livenessMatches(owner.owner_pid, owner.owner_pipe, owner.owner_token);
     let staleStamp;
     if (!ownerValid) {
