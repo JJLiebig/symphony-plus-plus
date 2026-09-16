@@ -5,7 +5,7 @@ $scripts = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../scripts'))
 . (Join-Path $scripts 'sympp-mcp-launcher-helpers.ps1')
 . (Join-Path $scripts 'sympp-windows-backend.ps1')
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$testRoot = Join-Path $tempRoot ('sympp backend &' + [guid]::NewGuid().ToString('N'))
+$testRoot = Join-Path $tempRoot ('sympp-backend&' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($testRoot)
 $child = $null
 $previousTestValue = $env:SYMPP_BACKEND_TEST_VALUE
@@ -28,6 +28,7 @@ $priority = $currentProcess.GetType().GetProperty('PriorityClass').GetValue($cur
   directory = [Environment]::CurrentDirectory
   stdin_eof = [Console]::In.ReadToEnd() -eq ''
   value = $env:SYMPP_BACKEND_TEST_VALUE
+  batch_argument = $env:SYMPP_BACKEND_TEST_ARGUMENT
 } | ConvertTo-Json -Compress | Write-Output
 [Console]::Error.WriteLine('redirected error')
 Start-Sleep -Seconds 15
@@ -54,13 +55,14 @@ Start-Sleep -Seconds 15
   if (-not $cleanup.WaitForExit(10000)) { & taskkill.exe /PID $cleanup.Id /T /F | Out-Null; throw 'Normal peer cleanup timed out' }
   if ((Get-Content (Join-Path $testRoot 'cleanup.out') -Raw).Trim() -ne 'normal-cleanup') { throw 'Normal peer could not query and stop the backend' }
   $child.WaitForExit()
-  $batch = Join-Path $testRoot 'backend wrapper.cmd'
-  [IO.File]::WriteAllText($batch, ('@"' + (Get-Command pwsh).Source + '" -NoProfile -NonInteractive -EncodedCommand ' + $encoded))
-  $child = Start-SymppWindowsBackend ([pscustomobject]@{ file = $batch; args = @() }) $testRoot $stdin $stdout $stderr
+  $batch = Join-Path $testRoot 'backend&wrapper.cmd'
+  [IO.File]::WriteAllText($batch, ('@set "SYMPP_BACKEND_TEST_ARGUMENT=%~1"' + "`r`n" + '@"' + (Get-Command pwsh).Source + '" -NoProfile -NonInteractive -EncodedCommand ' + $encoded))
+  $child = Start-SymppWindowsBackend ([pscustomobject]@{ file = $batch; args = @('path&value') }) $testRoot $stdin $stdout $stderr
   $deadline = [DateTime]::UtcNow.AddSeconds(10)
   while ((Get-Item $stdout).Length -eq 0 -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
   $batchResult = Get-Content $stdout -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($batchResult.elevated -or $batchResult.value -ne $env:SYMPP_BACKEND_TEST_VALUE) { throw 'Batch backend launch lost its token or environment' }
+  if ($batchResult.batch_argument -ne 'path&value') { throw 'Batch backend argument was interpreted as a command' }
   $result | Add-Member parent_elevated ([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
   if ($ResultPath) { $result | ConvertTo-Json | Set-Content -LiteralPath $ResultPath -Encoding UTF8 }
   $result | ConvertTo-Json -Compress

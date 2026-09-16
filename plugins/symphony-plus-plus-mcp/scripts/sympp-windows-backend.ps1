@@ -162,7 +162,11 @@ function Start-SymppWindowsBackend($Command, [string]$WorkingDirectory, [string]
   $executable = (Get-Command $Command.file -ErrorAction Stop | Select-Object -First 1).Source
   $arguments = @($Command.args)
   if ([IO.Path]::GetExtension($executable) -in @('.bat', '.cmd')) {
-    $batchCommand = Join-ProcessArgumentList (@($executable) + $arguments)
+    # cmd treats metacharacters as operators even when CRT quoting needs no quotes.
+    $batchCommand = (@($executable) + $arguments | ForEach-Object {
+      $argument = ConvertTo-ProcessArgument $_
+      if ($argument.StartsWith('"')) { $argument } else { '"' + $argument + '"' }
+    }) -join ' '
     $executable = Join-Path $env:SystemRoot 'System32/cmd.exe'
     $commandLine = (ConvertTo-ProcessArgument $executable) + ' /d /s /c "' + $batchCommand + '"'
   } else {
