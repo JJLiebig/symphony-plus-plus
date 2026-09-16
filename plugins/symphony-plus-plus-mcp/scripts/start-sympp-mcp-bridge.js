@@ -297,7 +297,8 @@ function generationKey(pluginRoot, sourceRoot) {
 
 function processAlive(pid) {
   if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return false;
-  try { process.kill(Number(pid), 0); return true; } catch (_) { return false; }
+  // Permission to signal a process is not required to attach to its healthy endpoint.
+  try { process.kill(Number(pid), 0); return true; } catch (error) { return error.code === "EPERM"; }
 }
 
 function ensureLivenessProbe() {

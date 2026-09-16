@@ -842,6 +842,19 @@ async function checkResponsiveOwnerProbe() {
     server.on("connection", (connection) => connection.end("expected"));
     assert.equal(await bridge.livenessMatches(process.ppid, pipe, "wrong"), false, "A wrong token must not retain a stale owner");
     assert.equal(await bridge.livenessMatches(process.ppid, pipe, "expected"), true);
+    const kill = process.kill;
+    try {
+      process.kill = () => { throw Object.assign(new Error("Access denied"), { code: "EPERM" }); };
+      assert.equal(await bridge.livenessMatches(process.ppid, pipe, "expected"), true,
+        "A responsive owner must survive a permission-denied process probe");
+      assert.equal(await bridge.livenessMatches(process.ppid, pipe, "wrong"), false,
+        "Permission denial must not bypass ownership verification");
+      process.kill = () => { throw Object.assign(new Error("No such process"), { code: "ESRCH" }); };
+      assert.equal(await bridge.livenessMatches(process.ppid, pipe, "expected"), false,
+        "A missing process must remain reclaimable");
+    } finally {
+      process.kill = kill;
+    }
     server.removeAllListeners("connection");
     server.on("connection", (connection) => { socket = connection; });
     assert.equal(await bridge.livenessMatches(process.ppid, pipe, "expected"), true, "An unresponsive live owner must not lose its lock");
