@@ -63,8 +63,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
     work_request_ids = Enum.map(work_requests, & &1.id)
 
     with {:ok, question_context} <- question_context(repo, work_request_ids),
-         {:ok, work_packages} <- work_packages(repo, work_request_ids),
-         {:ok, comment_context} <- card_comment_context(repo, work_requests, work_packages) do
+         {:ok, work_packages} <- work_packages(repo, work_request_ids, opts),
+         {:ok, comment_context} <- card_comment_context(repo, work_requests, work_packages, opts) do
       work_packages_by_request = Enum.group_by(work_packages, & &1.work_request_id)
       work_package_counts = work_packages |> Enum.map(&{&1.work_request_id, &1.status}) |> status_counts()
 
@@ -178,7 +178,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
     with {:ok, question_context} <- question_context(repo, work_request_ids),
          {:ok, decision_counts} <- decision_counts(repo, work_request_ids),
          {:ok, work_packages} <- work_packages(repo, work_request_ids),
-         {:ok, comment_context} <- card_comment_context(repo, work_requests, work_packages),
+         {:ok, comment_context} <- card_comment_context(repo, work_requests, work_packages, opts),
          {:ok, work_package_contexts} <- card_work_package_contexts(repo, work_packages, opts) do
       question_counts = question_context.counts
       work_packages_by_request = Enum.group_by(work_packages, & &1.work_request_id)
@@ -323,12 +323,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
     end
   end
 
-  defp card_comment_context(repo, work_requests, work_packages) do
+  defp card_comment_context(repo, work_requests, work_packages, opts) do
     targets =
       Enum.map(work_requests, &{"work_request", &1.id}) ++
         Enum.map(work_packages, &{"work_package", &1.id})
 
-    Dashboard.comment_count_context(repo, targets)
+    case Keyword.fetch(opts, :comment_count_context) do
+      {:ok, comment_count_context} when is_map(comment_count_context) -> {:ok, comment_count_context}
+      :error -> Dashboard.comment_count_context(repo, targets)
+      {:ok, _other} -> {:error, :not_found}
+    end
   end
 
   defp visible_work_packages_by_request(work_requests, work_packages_by_request, delivery_boards) do
@@ -409,16 +413,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
   end
 
   defp work_packages(repo, work_request_ids) do
-    rows =
-      chunked_work_request_rows(work_request_ids, fn chunk ->
-        from(work_package in WorkPackage,
-          where: work_package.work_request_id in ^chunk,
-          order_by: [asc: work_package.work_request_id, asc: work_package.sequence, asc: work_package.inserted_at]
-        )
-        |> repo.all()
-      end)
+    work_packages(repo, work_request_ids, [])
+  end
 
-    {:ok, rows}
+  defp work_packages(repo, work_request_ids, opts) do
+    case Keyword.fetch(opts, :work_packages) do
+      {:ok, work_packages} when is_list(work_packages) ->
+        work_request_id_set = MapSet.new(work_request_ids)
+        {:ok, Enum.filter(work_packages, &MapSet.member?(work_request_id_set, &1.work_request_id))}
+
+      :error ->
+        rows =
+          chunked_work_request_rows(work_request_ids, fn chunk ->
+            from(work_package in WorkPackage,
+              where: work_package.work_request_id in ^chunk,
+              order_by: [asc: work_package.work_request_id, asc: work_package.sequence, asc: work_package.inserted_at]
+            )
+            |> repo.all()
+          end)
+
+        {:ok, rows}
+    end
   rescue
     error in Exqlite.Error -> normalize_exqlite_error(error)
   end

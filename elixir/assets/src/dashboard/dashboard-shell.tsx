@@ -13,6 +13,7 @@ import { AppDialogState } from "./dashboard-state";
 import { ArchivedRequestsDialog, DashboardSettingsDialog, ThemeToggle } from "./dashboard-settings";
 import { CardDetailSelection, DASHBOARD_LOGO_URL, DashboardConnectionIssue, DashboardTheme, DashboardUpdateAnimations, ResolveContextComment, SubmitContextComment, TopPanelKey, WorkPackageArchiveMutation, WorkPackageBlockerClearMutation, WorkPackageStateMutation, WorkRequestMutation, WorkRequestStateMutation, WorkspaceTab } from "./runtime";
 import { DashboardDeferredDialogs } from "./dashboard-deferred-dialogs";
+import type { DashboardRefreshInvalidation } from "./dashboard-refresh-invalidation";
 import { LiveLedgerBadge } from "./status-cards";
 import { RepoSummary } from "./dashboard-data";
 import { DashboardSearchControl } from "./dashboard-search-control";
@@ -72,13 +73,13 @@ export function DashboardShell({
   onUpdateSoloSessionDeleteAfterDays,
   onWorkspaceTabChange,
   refreshing,
+  refreshInvalidation,
   requestDetails,
   repos,
   showUpdateSimulationControls,
   openDashboardOnBoot,
   showWelcomeToast,
   soloSessionDeleteAfterDays,
-  surfaceRefreshVersion,
   theme,
   toggleTheme,
   updateAnimations,
@@ -127,13 +128,13 @@ export function DashboardShell({
   onUpdateSoloSessionDeleteAfterDays: (deleteAfterDays: number) => Promise<void>;
   onWorkspaceTabChange: (tab: WorkspaceTab) => void;
   refreshing: boolean;
+  refreshInvalidation: DashboardRefreshInvalidation;
   requestDetails: WorkRequestDetail[];
   repos: RepoSummary[];
   showUpdateSimulationControls: boolean;
   openDashboardOnBoot: boolean;
   showWelcomeToast: boolean;
   soloSessionDeleteAfterDays: number;
-  surfaceRefreshVersion: number;
   theme: DashboardTheme;
   toggleTheme: () => void;
   updateAnimations: DashboardUpdateAnimations;
@@ -200,7 +201,7 @@ export function DashboardShell({
                 requests={archivedRequests}
                 onOpen={onOpenArchivedRequests}
                 onRestoreWorkRequest={onRestoreWorkRequest}
-                refreshVersion={surfaceRefreshVersion}
+                refreshInvalidation={refreshInvalidation}
               />
               <Button variant="outline" size="sm" onClick={() => void onRefreshDashboard()} disabled={refreshing} className="button-lift">
                 {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}

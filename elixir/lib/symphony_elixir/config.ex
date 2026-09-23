@@ -28,11 +28,15 @@ defmodule SymphonyElixir.Config do
           turn_sandbox_policy: map()
         }
 
+  @settings_cache_key {__MODULE__, :settings_cache}
+  @fallback_environment_names ["LINEAR_API_KEY", "LINEAR_ASSIGNEE"]
+  @environment_reference_pattern ~r/^\$([A-Za-z_][A-Za-z0-9_]*)$/
+
   @spec settings() :: {:ok, Schema.t()} | {:error, term()}
   def settings do
     case Workflow.current() do
       {:ok, %{config: config}} when is_map(config) ->
-        Schema.parse(config)
+        cached_settings(config)
 
       {:error, reason} ->
         {:error, reason}
@@ -115,6 +119,57 @@ defmodule SymphonyElixir.Config do
       end
     end
   end
+
+  defp cached_settings(config) do
+    case :persistent_term.get(@settings_cache_key, nil) do
+      {^config, environment_names, environment_values, {:ok, settings}} ->
+        if environment_values == current_environment_values(environment_names) do
+          {:ok, settings}
+        else
+          parse_and_cache_settings(config, environment_names)
+        end
+
+      _cache_miss ->
+        parse_and_cache_settings(config, environment_names(config))
+    end
+  end
+
+  defp parse_and_cache_settings(config, environment_names) do
+    environment_values = current_environment_values(environment_names)
+    result = Schema.parse(config)
+
+    if match?({:ok, _settings}, result) do
+      :persistent_term.put(@settings_cache_key, {config, environment_names, environment_values, result})
+    end
+
+    result
+  end
+
+  defp environment_names(config) do
+    @fallback_environment_names
+    |> Enum.concat(environment_reference_names(config))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  defp current_environment_values(environment_names), do: Enum.map(environment_names, &System.get_env/1)
+
+  defp environment_reference_names(value) when is_map(value) do
+    value
+    |> Map.values()
+    |> Enum.flat_map(&environment_reference_names/1)
+  end
+
+  defp environment_reference_names(value) when is_list(value), do: Enum.flat_map(value, &environment_reference_names/1)
+
+  defp environment_reference_names(value) when is_binary(value) do
+    case Regex.run(@environment_reference_pattern, value) do
+      [_match, env_name] -> [env_name]
+      nil -> []
+    end
+  end
+
+  defp environment_reference_names(_value), do: []
 
   defp validate_semantics(settings) do
     cond do

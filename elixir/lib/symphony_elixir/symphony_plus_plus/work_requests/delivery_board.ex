@@ -51,7 +51,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
   def project(repo, work_request_id, opts \\ []) when is_atom(repo) and is_binary(work_request_id) and is_list(opts) do
     with {:ok, work_request} <- work_request(repo, work_request_id, opts),
          {:ok, work_packages} <- work_packages(repo, work_request_id, opts),
-         {:ok, deliveries_by_slice_id} <- work_package_deliveries_by_id(repo, work_request_id, work_packages),
+         {:ok, deliveries_by_slice_id} <- delivery_context(repo, work_request_id, work_packages, opts),
          visible_work_packages = work_packages,
          {:ok, execution_graphs} <-
            Signals.execution_graphs(
@@ -63,7 +63,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
            ),
          {:ok, context} <- projection_context(repo, visible_work_packages, deliveries_by_slice_id, opts) do
       slices_by_scope = work_packages_by_scope(visible_work_packages)
-      context = Map.put(context, :execution_graphs, execution_graphs)
+
+      context =
+        context
+        |> Map.put(:execution_graphs, execution_graphs)
+        |> Map.put(:dependency_indexes, Signals.dependency_context(execution_graphs))
 
       slices =
         Enum.map(visible_work_packages, fn %WorkPackage{} = work_package ->
@@ -104,13 +108,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
       when is_atom(repo) and is_list(work_requests) and is_map(work_packages_by_request) and is_list(opts) do
     with :ok <- validate_work_packages_by_request(work_requests, work_packages_by_request),
          work_packages = all_work_packages(work_requests, work_packages_by_request),
-         {:ok, deliveries_by_slice_id} <- work_package_deliveries_by_id(repo, work_packages),
+         {:ok, deliveries_by_slice_id} <- delivery_context(repo, work_packages, opts),
          visible_work_packages_by_request = work_packages_by_request,
          visible_work_packages = all_work_packages(work_requests, visible_work_packages_by_request),
          {:ok, execution_graphs} <-
            Signals.execution_graphs(repo, work_requests, work_packages_by_request, deliveries_by_slice_id, opts),
          {:ok, context} <- projection_context(repo, visible_work_packages, deliveries_by_slice_id, opts) do
-      context = Map.put(context, :execution_graphs, execution_graphs)
+      context =
+        context
+        |> Map.put(:execution_graphs, execution_graphs)
+        |> Map.put(:dependency_indexes, Signals.dependency_context(execution_graphs))
 
       {:ok,
        Map.new(
@@ -175,6 +182,37 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
 
   defp work_package_for_work_request?(_value, _work_request_id), do: false
 
+  defp delivery_context(repo, work_request_id, work_packages, opts) do
+    case Keyword.fetch(opts, :deliveries_by_slice_id) do
+      {:ok, deliveries_by_slice_id} -> validate_delivery_context(deliveries_by_slice_id, work_packages)
+      :error -> work_package_deliveries_by_id(repo, work_request_id, work_packages)
+    end
+  end
+
+  defp delivery_context(repo, work_packages, opts) do
+    case Keyword.fetch(opts, :deliveries_by_slice_id) do
+      {:ok, deliveries_by_slice_id} -> validate_delivery_context(deliveries_by_slice_id, work_packages)
+      :error -> work_package_deliveries_by_id(repo, work_packages)
+    end
+  end
+
+  defp validate_delivery_context(deliveries_by_slice_id, work_packages) when is_map(deliveries_by_slice_id) do
+    valid_keys = MapSet.new(work_packages, &{&1.work_request_id, &1.id})
+
+    if Enum.all?(deliveries_by_slice_id, fn {key, delivery} ->
+         MapSet.member?(valid_keys, key) and delivery_key(delivery) == key
+       end) do
+      {:ok, deliveries_by_slice_id}
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp validate_delivery_context(_deliveries_by_slice_id, _work_packages), do: {:error, :not_found}
+
+  defp delivery_key(%WorkPackageDelivery{work_request_id: work_request_id, work_package_id: work_package_id}),
+    do: {work_request_id, work_package_id}
+
   defp work_package_deliveries_by_id(_repo, _work_request_id, []), do: {:ok, %{}}
 
   defp work_package_deliveries_by_id(repo, work_request_id, work_packages) do
@@ -195,9 +233,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
     error in Exqlite.Error -> normalize_exqlite_error(error)
   end
 
-  defp work_package_deliveries_by_id(_repo, []), do: {:ok, %{}}
+  @spec work_package_deliveries_by_id(repo(), [WorkPackage.t()]) :: {:ok, map()} | {:error, error()}
+  def work_package_deliveries_by_id(_repo, []), do: {:ok, %{}}
 
-  defp work_package_deliveries_by_id(repo, work_packages) do
+  def work_package_deliveries_by_id(repo, work_packages) do
     deliveries =
       Enum.flat_map(work_package_chunks(work_packages), fn work_package_chunk ->
         work_package_ids = Enum.map(work_package_chunk, & &1.id)

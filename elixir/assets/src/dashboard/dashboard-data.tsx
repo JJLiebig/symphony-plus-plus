@@ -12,14 +12,6 @@ import { packageHasActiveBlocker } from "./workstream-data";
 
 export const FINISHED_HIGHLIGHT_LIMIT = 80;
 
-export function dashboardContentFingerprint(payload: DashboardPayload | null) {
-  if (!payload) return "null";
-
-  const content = { ...payload } as Record<string, unknown>;
-  delete content.generated_at;
-  return JSON.stringify(content);
-}
-
 export type RepoSummary = {
   repoKey: string;
   repo: string;

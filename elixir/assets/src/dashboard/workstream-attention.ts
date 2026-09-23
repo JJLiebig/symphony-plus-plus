@@ -10,6 +10,15 @@ import { activeBlockerEdgesForRequest } from "./workstream-progress";
 type AttentionContextSelection = Extract<CardDetailSelection, { kind: "request" | "slice" | "package" }>;
 type BlockerSelection = Extract<CardDetailSelection, { kind: "blocker" }>;
 
+type SliceGuidanceCache = {
+  guidanceItems: GuidanceItem[];
+  pkg?: WorkPackageCard;
+  items: GuidanceItem[];
+};
+
+const sliceGuidanceCache = new WeakMap<WorkRequestPackage, SliceGuidanceCache>();
+const requestClarificationCache = new WeakMap<WorkRequestDetail, { guidanceItems: GuidanceItem[]; items: AttentionItem[] }>();
+
 export type AttentionItem =
   | { kind: "guidance"; key: string; label: string; tone: "guidance"; item: GuidanceItem }
   | { kind: "blocker"; key: string; label: string; tone: "blocked"; selection: BlockerSelection }
@@ -243,13 +252,18 @@ function requestAllAttentionItems(
 }
 
 function requestClarificationItems(detail: WorkRequestDetail, guidanceItems: GuidanceItem[]) {
+  const cached = requestClarificationCache.get(detail);
+  if (cached?.guidanceItems === guidanceItems) return cached.items;
+
   const questions = (detail.clarification_questions ?? [])
     .filter((question) => question.status === "open")
     .map((question) => attentionItemForGuidance(clarificationGuidanceItem(detail, question)));
   const projected = guidanceItems
     .filter((item) => item.source === "clarification" && item.workRequestId === detail.work_request.id)
     .map(attentionItemForGuidance);
-  return uniqueAttentionItems([...questions, ...projected]);
+  const items = uniqueAttentionItems([...questions, ...projected]);
+  requestClarificationCache.set(detail, { guidanceItems, items });
+  return items;
 }
 
 function guidanceAttentionItemsForSlice(
@@ -258,11 +272,13 @@ function guidanceAttentionItemsForSlice(
   guidanceItems: GuidanceItem[],
 ) {
   if (workPackageIsTerminal(slice, pkg)) return [];
+  const cached = sliceGuidanceCache.get(slice);
+  if (cached?.guidanceItems === guidanceItems && cached.pkg === pkg) return cached.items.map(attentionItemForGuidance);
+
   const ids = sliceIds(slice, pkg);
-  const guidance = guidanceItems
-    .filter((item) => item.source === "guidance" && ids.has(item.packageId))
-    .map(attentionItemForGuidance);
-  return guidance;
+  const items = guidanceItems.filter((item) => item.source === "guidance" && ids.has(item.packageId));
+  sliceGuidanceCache.set(slice, { guidanceItems, pkg, items });
+  return items.map(attentionItemForGuidance);
 }
 
 function blockerAttentionItemsForSlice(

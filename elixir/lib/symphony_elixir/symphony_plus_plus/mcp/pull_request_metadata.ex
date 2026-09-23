@@ -115,7 +115,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.PullRequestMetadata do
   def maybe_upsert_artifact(_repo, %Session{}, _payload, true), do: :ok
 
   def maybe_upsert_artifact(repo, %Session{} = session, payload, false) do
-    PullRequestArtifact.upsert(repo, session.assignment.work_package_id, payload)
+    case PullRequestArtifact.upsert(repo, session.assignment.work_package_id, payload) do
+      {:ok, _changed?} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp github_pr_metadata_payload(repo, %Session{} = session, arguments, source_tool) do

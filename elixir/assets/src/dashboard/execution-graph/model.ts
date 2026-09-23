@@ -1,5 +1,6 @@
 import { isFinishedBoardStatus } from "@/lib/operational-state";
 import { layoutGroupChildren, projectGroupDependencies } from "./group-layout";
+import { topologicalEntityOrder } from "./topological-order";
 import { entityRect, layoutRootEntities, orderWithinRanks } from "./layout";
 export type DependencyPathState = "satisfied" | "active" | "waiting" | "blocked";
 export type GraphOrientation = "desktop" | "mobile";
@@ -166,12 +167,17 @@ export function graphCardSize(orientation: GraphOrientation) {
   const value = metrics[orientation]; return { width: value.cardWidth, height: value.cardHeight, xGap: value.xGap, yGap: value.yGap };
 }
 export function graphGroupHeaderSize(orientation: GraphOrientation) { return metrics[orientation].groupHeader; }
-export function defaultExpandedGroupIds(graph?: WorkRequestExecutionGraphModel) { const expanded = new Set<string>(); if (graph) for (const [id, state] of graphContext(graph).groupStates) if (state.tone === "blocked") expanded.add(id); return expanded; }
+export function defaultExpandedGroupIds(graph?: WorkRequestExecutionGraphModel) {
+  const expanded = new Set<string>();
+  if (graph) defaultExpandedGroupIdsFromContext(graphContext(graph), expanded);
+  return expanded;
+}
+
 export function buildExecutionGraphLayout(graph: WorkRequestExecutionGraphModel, orientation: GraphOrientation, expandedGroupIds = defaultExpandedGroupIds(), renderedGroupIds = expandedGroupIds, wrapRootRanks = true): ExecutionGraphLayoutModel {
   const context = graphContext(graph);
   const rootKeys = rootEntityKeys(context);
-  const rootDependencies = projectedRootDependencies(graphDependencies(graph), context);
-  const order = topologicalEntityOrder(rootKeys, rootDependencies, context);
+  const rootDependencies = projectedRootDependencies(context.dependencies, context);
+  const order = topologicalEntityOrder(rootKeys, rootDependencies, (left, right) => compareEntityKeys(left, right, context));
   const depths = entityDepths(order, rootDependencies);
   const rankedOrder = orderWithinRanks(order, depths, rootDependencies);
   const sizes = new Map(rankedOrder.map((key) => [key, entitySize(key, orientation, expandedGroupIds, context)]));
@@ -183,7 +189,7 @@ export function buildExecutionGraphLayout(graph: WorkRequestExecutionGraphModel,
   const visibleRects = rootRects.flatMap((rect) => [rect, ...layoutExpandedChildren(rect, orientation, expandedGroupIds, context)]);
   const rects = rootRects.flatMap((rect) => [rect, ...layoutExpandedChildren(rect, orientation, renderedGroupIds, context, expandedGroupIds)]);
   const rectByKey = new Map(visibleRects.map((rect) => [rect.key, rect]));
-  const dependencies = visibleDependencies(graphDependencies(graph), rectByKey, context);
+  const dependencies = visibleDependencies(context.dependencies, rectByKey, context);
   const incoming = groupBy(dependencies, (dependency) => dependency.target_key);
   const crossBandDependencyCount = dependencies.filter((dependency) => (
     rootRow(dependency.source_key, rectByKey) !== rootRow(dependency.target_key, rectByKey)
@@ -227,9 +233,17 @@ function graphContext(graph: WorkRequestExecutionGraphModel) {
   const groups = new Map((graph.groups ?? []).map((group) => [group.id, group]));
   const refs = new Map(graph.work_packages.map((item) => [item.id, item]));
   const signals = new Map(graph.work_packages.map((item) => [item.id, item]));
-  const childDependencies = graphDependencies(graph).map(({ prerequisite, dependent }) => ({ source: endpointKey(prerequisite), target: endpointKey(dependent) }));
+  const dependencies = graphDependencies(graph);
+  const childDependencies = dependencies.map(({ prerequisite, dependent }) => ({ source: endpointKey(prerequisite), target: endpointKey(dependent) }));
   const childGroups = groupBy([...groups.values()].filter((group) => group.parent_group_id), (group) => group.parent_group_id as string);
   const directPackages = groupBy(graph.work_packages.filter((item) => item.group_id), (item) => item.group_id as string);
+  const childKeysByGroup = new Map<string, string[]>();
+  for (const [id] of groups) {
+    childKeysByGroup.set(id, [
+      ...(childGroups.get(id) ?? []).sort(compareGroups).map((group) => groupKey(group.id)),
+      ...(directPackages.get(id) ?? []).sort(comparePackages).map((ref) => packageKey(ref.id)),
+    ]);
+  }
   const groupMembers = new Map<string, string[]>();
   const members = (groupId: string, seen = new Set<string>()): string[] => {
     if (groupMembers.has(groupId)) return groupMembers.get(groupId) ?? [];
@@ -256,10 +270,14 @@ function graphContext(graph: WorkRequestExecutionGraphModel) {
       .filter((entry): entry is readonly [string, ExecutionGraphRepoScope] => Boolean(entry[1])),
   );
 
-  return { groups, refs, signals, childGroups, directPackages, groupMembers, groupStates, groupScopes, packageScopes, childDependencies };
+  return { groups, refs, signals, childGroups, directPackages, childKeysByGroup, groupMembers, groupStates, groupScopes, packageScopes, childDependencies, dependencies };
 }
 
 type GraphContext = ReturnType<typeof graphContext>;
+
+function defaultExpandedGroupIdsFromContext(context: GraphContext, expanded: Set<string>) {
+  for (const [id, state] of context.groupStates) if (state.tone === "blocked") expanded.add(id);
+}
 
 function sharedExternalScope(
   memberIds: string[],
@@ -373,45 +391,6 @@ function projectedRootDependencies(intents: ExecutionGraphDependencyIntent[], co
     keys.add(key);
     return [{ source, target }];
   });
-}
-
-function topologicalEntityOrder(
-  keys: string[],
-  dependencies: Array<{ source: string; target: string }>,
-  context: GraphContext,
-) {
-  const incoming = new Map(keys.map((key) => [key, 0]));
-  const predecessors = groupBy(dependencies, (dependency) => dependency.target);
-  const outgoing = groupBy(dependencies, (dependency) => dependency.source);
-  const placed = new Map<string, number>();
-  // ponytail: greedy parent affinity keeps connected work nearby; use a global crossing optimizer only if measured fixtures outgrow it.
-  const compareReady = (left: string, right: string) => {
-    const affinity = (key: string) => (predecessors.get(key) ?? [])
-      .map((dependency) => placed.get(dependency.source))
-      .filter((value): value is number => value != null);
-    const leftParents = affinity(left);
-    const rightParents = affinity(right);
-    return (Math.max(-1, ...rightParents) - Math.max(-1, ...leftParents))
-      || (rightParents.length - leftParents.length)
-      || compareEntityKeys(left, right, context);
-  };
-  dependencies.forEach((dependency) => incoming.set(dependency.target, (incoming.get(dependency.target) ?? 0) + 1));
-  const ready = keys.filter((key) => (incoming.get(key) ?? 0) === 0).sort(compareReady);
-  const order: string[] = [];
-  while (ready.length) {
-    const key = ready.shift() as string;
-    order.push(key);
-    placed.set(key, order.length - 1);
-    for (const dependency of outgoing.get(key) ?? []) {
-      const next = (incoming.get(dependency.target) ?? 0) - 1;
-      incoming.set(dependency.target, next);
-      if (next === 0) {
-        ready.push(dependency.target);
-        ready.sort(compareReady);
-      }
-    }
-  }
-  return order.length === keys.length ? order : keys.toSorted((left, right) => compareEntityKeys(left, right, context));
 }
 
 function entityDepths(order: string[], dependencies: Array<{ source: string; target: string }>) {
@@ -561,10 +540,7 @@ function rootGroupId(groupId: string, groups: Map<string, ExecutionGraphGroup>) 
 }
 
 function directChildKeys(groupId: string, context: GraphContext) {
-  return [
-    ...(context.childGroups.get(groupId) ?? []).sort(compareGroups).map((group) => groupKey(group.id)),
-    ...(context.directPackages.get(groupId) ?? []).sort(comparePackages).map((ref) => packageKey(ref.id)),
-  ];
+  return context.childKeysByGroup.get(groupId) ?? [];
 }
 
 function compareEntityKeys(left: string, right: string, context: GraphContext) {
@@ -593,8 +569,13 @@ function packageKey(id: string) {
   return `work_package:${id}`;
 }
 
-function groupBy<T>(items: T[], key: (item: T) => string) {
+function groupBy<T>(items: T[], keyOf: (item: T) => string) {
   const grouped = new Map<string, T[]>();
-  for (const item of items) grouped.set(key(item), [...(grouped.get(key(item)) ?? []), item]);
+  for (const item of items) {
+    const key = keyOf(item);
+    const values = grouped.get(key);
+    if (values) values.push(item);
+    else grouped.set(key, [item]);
+  }
   return grouped;
 }

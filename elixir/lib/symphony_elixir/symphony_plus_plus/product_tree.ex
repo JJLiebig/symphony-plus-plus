@@ -8,6 +8,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree do
   @spec tree_for_work_request(module(), String.t()) :: {:ok, map()} | {:error, term()}
   defdelegate tree_for_work_request(repo, work_request_id), to: Repository
 
+  @spec trees_for_work_requests(module(), [String.t()]) :: {:ok, map()} | {:error, term()}
+  defdelegate trees_for_work_requests(repo, work_request_ids), to: Repository
+
   @spec create_node(module(), map()) :: {:ok, term()} | {:error, term()}
   defdelegate create_node(repo, attrs), to: Repository
 

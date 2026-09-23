@@ -69,13 +69,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
   end
 
   defp work_request_board_details_context(repo, work_request_ids, opts) do
-    with {:ok, work_requests_by_id} <- WorkRequestBulkRepository.get_many(repo, work_request_ids),
-         {:ok, work_requests} <- Dashboard.work_requests_in_input_order(work_request_ids, work_requests_by_id),
+    with {:ok, work_requests} <- board_work_requests(repo, work_request_ids, opts),
          {:ok, questions_by_request} <- WorkRequestBulkRepository.list_questions_many(repo, work_request_ids),
-         {:ok, work_packages_by_request} <- WorkRequestBulkRepository.list_work_packages_many(repo, work_request_ids),
+         {:ok, work_packages_by_request} <- board_work_packages_by_request(repo, work_request_ids, work_requests, opts),
          all_work_packages = Dashboard.all_work_packages(work_requests, work_packages_by_request),
-         {:ok, work_package_contexts} <- Dashboard.work_package_work_package_contexts(repo, all_work_packages),
-         {:ok, comment_context} <- work_request_board_detail_comment_context(repo, work_requests, all_work_packages) do
+         {:ok, work_package_contexts} <- board_work_package_contexts(repo, all_work_packages, opts),
+         {:ok, comment_context} <-
+           work_request_board_detail_comment_context(repo, work_requests, all_work_packages, opts) do
       {:ok,
        %{
          work_requests: work_requests,
@@ -85,6 +85,67 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
          repo_identity_catalog: Dashboard.repo_identity_catalog_from_opts(opts, Enum.map(work_requests, & &1.repo)),
          comment_context: comment_context
        }}
+    end
+  end
+
+  defp board_work_requests(repo, work_request_ids, opts) do
+    case Keyword.fetch(opts, :work_requests) do
+      {:ok, work_requests} when is_list(work_requests) ->
+        work_requests
+        |> Map.new(&{&1.id, &1})
+        |> then(&Dashboard.work_requests_in_input_order(work_request_ids, &1))
+
+      :error ->
+        with {:ok, work_requests_by_id} <- WorkRequestBulkRepository.get_many(repo, work_request_ids) do
+          Dashboard.work_requests_in_input_order(work_request_ids, work_requests_by_id)
+        end
+
+      {:ok, _other} ->
+        {:error, :not_found}
+    end
+  end
+
+  defp board_work_packages_by_request(repo, work_request_ids, work_requests, opts) do
+    case Keyword.fetch(opts, :work_packages_by_request) do
+      {:ok, work_packages_by_request} when is_map(work_packages_by_request) ->
+        work_packages_by_request = Map.take(work_packages_by_request, work_request_ids)
+
+        if Enum.all?(work_requests, &work_packages_match_work_request?(&1, work_packages_by_request)) do
+          {:ok, work_packages_by_request}
+        else
+          {:error, :not_found}
+        end
+
+      :error ->
+        WorkRequestBulkRepository.list_work_packages_many(repo, work_request_ids)
+
+      {:ok, _other} ->
+        {:error, :not_found}
+    end
+  end
+
+  defp work_packages_match_work_request?(%WorkRequest{} = work_request, work_packages_by_request) do
+    work_packages_by_request
+    |> Map.get(work_request.id, [])
+    |> Enum.all?(&(&1.work_request_id == work_request.id))
+  end
+
+  defp board_work_package_contexts(repo, work_packages, opts) do
+    case Keyword.fetch(opts, :work_package_contexts) do
+      {:ok, preloaded_contexts} when is_map(preloaded_contexts) ->
+        work_package_ids = work_packages |> Enum.map(& &1.id) |> MapSet.new()
+        selected_contexts = Map.take(preloaded_contexts, MapSet.to_list(work_package_ids))
+        missing_work_packages = Enum.reject(work_packages, &Map.has_key?(selected_contexts, &1.id))
+
+        with {:ok, missing_contexts} <- Dashboard.work_package_work_package_contexts(repo, missing_work_packages) do
+          {:ok, Map.merge(selected_contexts, missing_contexts)}
+        end
+
+      :error ->
+        Dashboard.work_package_work_package_contexts(repo, work_packages)
+
+      {:ok, _other} ->
+        {:error, :not_found}
     end
   end
 
@@ -118,13 +179,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
       scoped_work_package_contexts = request_work_package_contexts(scoped_work_packages, work_package_contexts)
 
       with {:ok, delivery_board_contexts} <-
-             delivery_board_work_package_contexts(repo, scoped_work_requests, scoped_work_package_contexts),
+             delivery_board_work_package_contexts(repo, scoped_work_requests, scoped_work_package_contexts, opts),
            {:ok, delivery_boards} <-
              DeliveryBoard.project_many(
                repo,
                scoped_work_requests,
                work_packages_by_request,
-               delivery_board_many_opts(delivery_board_contexts, opts)
+               delivery_board_many_opts(delivery_board_contexts, scoped_work_packages, opts)
              ) do
         {:cont, {:ok, Map.merge(acc, delivery_boards)}}
       else
@@ -143,7 +204,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
            repo_identity_catalog: repo_identity_catalog,
            comment_context: comment_context
          },
-         _opts,
+         opts,
          {:ok, delivery_board}
        ) do
     questions = Map.get(questions_by_request, work_request.id, [])
@@ -189,7 +250,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
        work_request: work_request_payload,
        clarification_questions: Enum.map(questions, &Dashboard.clarification_question/1),
        work_packages: work_package_payloads,
-       product_tree: ProductTree.project(repo, work_request.id, work_package_payloads),
+       product_tree: product_tree_projection(repo, work_request.id, work_package_payloads, opts),
        summary: Dashboard.work_request_board_summary(questions, work_packages, work_request_comment_context)
      }}
   end
@@ -217,12 +278,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
     Enum.map(work_packages, &Map.merge(&1, Map.get(signals_by_id, Map.fetch!(&1, :id), %{})))
   end
 
-  defp work_request_board_detail_comment_context(repo, work_requests, work_packages) do
+  defp work_request_board_detail_comment_context(repo, work_requests, work_packages, opts) do
     targets =
       Enum.map(work_requests, &{"work_request", &1.id}) ++
         Enum.map(work_packages, &{"work_package", &1.id})
 
-    Dashboard.comment_count_context(repo, targets)
+    case Keyword.fetch(opts, :comment_count_context) do
+      {:ok, comment_count_context} when is_map(comment_count_context) -> {:ok, comment_count_context}
+      :error -> Dashboard.comment_count_context(repo, targets)
+      {:ok, _other} -> {:error, :not_found}
+    end
   end
 
   defp work_request_detail_comment_context(repo, work_requests, work_packages) do
@@ -262,7 +327,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
     request_work_package_contexts = request_work_package_contexts(work_packages, work_package_contexts)
 
     with {:ok, delivery_board_contexts} <-
-           delivery_board_work_package_contexts(repo, work_request, request_work_package_contexts),
+           delivery_board_work_package_contexts(repo, work_request, request_work_package_contexts, opts),
          delivery_board_opts = delivery_board_opts(work_request, work_packages, delivery_board_contexts, opts),
          {:ok, delivery_board} <- DeliveryBoard.project(repo, work_request.id, delivery_board_opts) do
       all_work_packages = Dashboard.ordered_sequence_records(work_packages)
@@ -303,7 +368,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
          clarification_questions: Enum.map(questions, &Dashboard.clarification_question/1),
          decision_logs: Enum.map(decisions, &Dashboard.decision_log_entry/1),
          work_packages: work_package_payloads,
-         product_tree: ProductTree.project(repo, work_request.id, work_package_payloads),
+         product_tree: product_tree_projection(repo, work_request.id, work_package_payloads, opts),
          delivery_board: Dashboard.redacted_json(delivery_board),
          comments: CommentProjection.comments_for(comment_context, "work_request", work_request.id),
          summary: Dashboard.work_request_summary(questions, decisions, work_packages, comment_context)
@@ -330,26 +395,65 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
     }
   end
 
-  defp delivery_board_opts(%WorkRequest{} = work_request, work_packages, work_package_contexts, _opts) do
+  defp delivery_board_opts(%WorkRequest{} = work_request, work_packages, work_package_contexts, opts) do
     [
       work_request: work_request,
       work_packages: work_packages,
       visible_work_package_ids: Map.keys(work_package_contexts),
       work_package_contexts: work_package_contexts
-    ]
+    ] ++ preloaded_delivery_board_opts(work_packages, opts)
   end
 
-  defp delivery_board_many_opts(work_package_contexts, _opts) do
+  defp delivery_board_many_opts(work_package_contexts, work_packages, opts) do
     [
       visible_work_package_ids: Map.keys(work_package_contexts),
       work_package_contexts: work_package_contexts
-    ]
+    ] ++ preloaded_delivery_board_opts(work_packages, opts)
   end
 
-  defp delivery_board_work_package_contexts(repo, work_requests, work_package_contexts) when is_list(work_requests) do
-    loaded_ids = Map.keys(work_package_contexts)
-    successor_ids = delivery_board_successor_work_package_ids(repo, Enum.map(work_requests, & &1.id))
-    missing_successor_ids = Enum.reject(successor_ids, &(&1 in loaded_ids))
+  defp preloaded_delivery_board_opts(work_packages, opts) do
+    product_tree_opts = Keyword.take(opts, [:product_trees_by_request])
+
+    delivery_opts =
+      case Keyword.fetch(opts, :deliveries_by_slice_id) do
+        {:ok, deliveries_by_slice_id} when is_map(deliveries_by_slice_id) ->
+          work_package_keys = work_packages |> Enum.map(&{&1.work_request_id, &1.id}) |> MapSet.new()
+          deliveries_by_slice_id = Map.take(deliveries_by_slice_id, MapSet.to_list(work_package_keys))
+          [deliveries_by_slice_id: deliveries_by_slice_id]
+
+        {:ok, _other} ->
+          [deliveries_by_slice_id: %{}]
+
+        :error ->
+          []
+      end
+
+    product_tree_opts ++ delivery_opts
+  end
+
+  defp product_tree_projection(repo, work_request_id, work_package_payloads, opts) do
+    product_tree_opts =
+      case Keyword.fetch(opts, :product_trees_by_request) do
+        {:ok, product_trees_by_request} when is_map(product_trees_by_request) ->
+          case Map.fetch(product_trees_by_request, work_request_id) do
+            {:ok, context} -> [product_tree_context: context]
+            :error -> []
+          end
+
+        {:ok, _other} ->
+          []
+
+        :error ->
+          []
+      end
+
+    ProductTree.project(repo, work_request_id, work_package_payloads, product_tree_opts)
+  end
+
+  defp delivery_board_work_package_contexts(repo, work_requests, work_package_contexts, opts) when is_list(work_requests) do
+    loaded_ids = work_package_contexts |> Map.keys() |> MapSet.new()
+    successor_ids = delivery_board_successor_work_package_ids(repo, Enum.map(work_requests, & &1.id), opts)
+    missing_successor_ids = Enum.reject(successor_ids, &MapSet.member?(loaded_ids, &1))
 
     successor_contexts =
       repo
@@ -360,10 +464,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
     {:ok, Map.merge(work_package_contexts, successor_contexts)}
   end
 
-  defp delivery_board_work_package_contexts(repo, %WorkRequest{} = work_request, work_package_contexts) do
-    loaded_ids = Map.keys(work_package_contexts)
-    successor_ids = delivery_board_successor_work_package_ids(repo, work_request.id)
-    missing_successor_ids = Enum.reject(successor_ids, &(&1 in loaded_ids))
+  defp delivery_board_work_package_contexts(repo, %WorkRequest{} = work_request, work_package_contexts, opts) do
+    loaded_ids = work_package_contexts |> Map.keys() |> MapSet.new()
+    successor_ids = delivery_board_successor_work_package_ids(repo, work_request.id, opts)
+    missing_successor_ids = Enum.reject(successor_ids, &MapSet.member?(loaded_ids, &1))
 
     successor_contexts =
       repo
@@ -392,21 +496,35 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
     )
   end
 
-  defp delivery_board_successor_work_package_ids(_repo, []), do: []
+  defp delivery_board_successor_work_package_ids(repo, work_request_ids, opts) when is_list(work_request_ids) do
+    case Keyword.fetch(opts, :deliveries_by_slice_id) do
+      {:ok, deliveries_by_slice_id} when is_map(deliveries_by_slice_id) ->
+        work_request_ids = MapSet.new(work_request_ids)
 
-  defp delivery_board_successor_work_package_ids(repo, work_request_ids) when is_list(work_request_ids) do
-    repo.all(
-      from(delivery in WorkPackageDelivery,
-        where: delivery.work_request_id in ^work_request_ids,
-        where: not is_nil(delivery.successor_work_package_id),
-        select: delivery.successor_work_package_id
-      )
-    )
-    |> Enum.filter(&Dashboard.filled_string?/1)
-    |> Enum.uniq()
+        deliveries_by_slice_id
+        |> Map.values()
+        |> Enum.filter(&MapSet.member?(work_request_ids, &1.work_request_id))
+        |> Enum.map(& &1.successor_work_package_id)
+        |> Enum.filter(&Dashboard.filled_string?/1)
+        |> Enum.uniq()
+
+      {:ok, _other} ->
+        []
+
+      :error ->
+        repo.all(
+          from(delivery in WorkPackageDelivery,
+            where: delivery.work_request_id in ^work_request_ids,
+            where: not is_nil(delivery.successor_work_package_id),
+            distinct: true,
+            select: delivery.successor_work_package_id
+          )
+        )
+        |> Enum.filter(&Dashboard.filled_string?/1)
+    end
   end
 
-  defp delivery_board_successor_work_package_ids(repo, work_request_id) do
-    delivery_board_successor_work_package_ids(repo, [work_request_id])
+  defp delivery_board_successor_work_package_ids(repo, work_request_id, opts) when is_binary(work_request_id) do
+    delivery_board_successor_work_package_ids(repo, [work_request_id], opts)
   end
 end

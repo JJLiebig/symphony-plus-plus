@@ -301,7 +301,11 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   def operator_sync_github_prs(conn, params) do
     send_local_operator_response(conn, :delivery_reconcile_apply, Target.new(:dashboard), :operator_sync_github_prs, fn repo ->
       with {:ok, sync} <- MergeReconciler.reconcile(repo, LocalOperatorActions.github_sync_opts(params)) do
-        json(conn, mutation_success_payload(%{sync: sync}))
+        changed? = github_sync_changed?(sync)
+
+        conn
+        |> json(mutation_success_payload(%{sync: sync}, %{dashboard: changed?}))
+        |> Conn.put_private(:sympp_skip_dashboard_invalidation, not changed?)
       end
     end)
   end
@@ -629,7 +633,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
     do: DashboardPubSub.coalesce_changed(fn -> fun.(repo) end)
 
   defp finalize_local_operator_result(%Conn{} = conn, action, false) do
-    maybe_broadcast_dashboard_change(action)
+    unless conn.private[:sympp_skip_dashboard_invalidation], do: maybe_broadcast_dashboard_change(action)
     conn
   end
 
@@ -739,6 +743,10 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
     payload
     |> Map.put(:ok, true)
     |> Map.put(:refresh, Map.merge(%{dashboard: true}, refresh))
+  end
+
+  defp github_sync_changed?(sync) when is_map(sync) do
+    Map.get(sync, :dashboard_changed, false) == true
   end
 
   defp script_name_prefix(%Conn{script_name: []}), do: ""

@@ -63,7 +63,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   defp reconcile_work_package(repo, %WorkPackage{} = work_package, client, client_opts) do
     with {:ok, state} <- PlanningRepository.get_state(repo, work_package.id),
          {:ok, pr_context} <- current_pr_context(state.progress_events) do
-      fetch_and_reconcile(repo, work_package, pr_context, client, client_opts)
+      fetch_and_reconcile(repo, work_package, state.progress_events, pr_context, client, client_opts)
     else
       {:error, :missing_attached_pr} -> :ignore
       {:error, reason} -> error_result(work_package, nil, reason)
@@ -112,56 +112,108 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
       repo
       |> DeliveryReconciler.reconcile_work_package(work_package.id, recorded_by: @operator_source_tool)
       |> terminal_delivery_result(result)
+      |> maybe_mark_dashboard_changed(false)
     else
       {:error, reason} -> {:ok, error_result(work_package, payload, reason)}
     end
   end
 
-  defp reconcile_verified_terminal_merge(repo, %WorkPackage{} = work_package, _progress_events, payload, metadata) do
-    with :ok <- validate_strong_merge_evidence(payload),
-         {:ok, _event} <- append_sync_snapshot(repo, work_package, payload),
-         :ok <- PullRequestArtifact.upsert(repo, work_package.id, payload, metadata: %{"source_tool" => @operator_source_tool}) do
-      repo
-      |> reconcile_transition_delivery(work_package, transition_merged(repo, work_package, payload, metadata))
-    else
-      {:error, reason} -> {:ok, error_result(work_package, payload, reason)}
+  defp reconcile_verified_terminal_merge(repo, %WorkPackage{} = work_package, progress_events, payload, metadata) do
+    case validate_strong_merge_evidence(payload) do
+      :ok ->
+        result =
+          after_sync_write(repo, work_package, payload, progress_events, fn ->
+            repo
+            |> reconcile_transition_delivery(work_package, transition_merged(repo, work_package, payload, metadata))
+          end)
+
+        if is_map(result), do: {:ok, result}, else: result
+
+      {:error, reason} ->
+        {:ok, error_result(work_package, payload, reason)}
     end
   end
 
   defp reconcile_transition_delivery(repo, %WorkPackage{} = work_package, %{status: "merged"} = result) do
     repo
     |> DeliveryReconciler.reconcile_work_package(work_package.id, recorded_by: @operator_source_tool)
-    |> terminal_delivery_result(result)
+    |> terminal_delivery_result(result, true)
   end
 
   defp reconcile_transition_delivery(_repo, %WorkPackage{}, result), do: {:ok, result}
 
-  defp terminal_delivery_result({:ok, delivery}, result),
-    do: {:ok, Map.put(result, :delivery_reconciliation, delivery)}
+  defp terminal_delivery_result(delivery, result), do: terminal_delivery_result(delivery, result, false)
 
-  defp terminal_delivery_result({:error, reason}, result) do
-    {:ok,
-     result
-     |> Map.put(:status, "error")
-     |> Map.put(:reason, "delivery_reconciliation_failed")
-     |> Map.put(:delivery_error, delivery_error_reason(reason))}
+  defp terminal_delivery_result({:ok, delivery}, result, dashboard_changed?) do
+    result = Map.put(result, :delivery_reconciliation, delivery)
+    {:ok, maybe_mark_dashboard_changed(result, dashboard_changed?)}
   end
+
+  defp terminal_delivery_result({:error, reason}, result, dashboard_changed?) do
+    result =
+      result
+      |> Map.put(:status, "error")
+      |> Map.put(:reason, "delivery_reconciliation_failed")
+      |> Map.put(:delivery_error, delivery_error_reason(reason))
+
+    {:ok, maybe_mark_dashboard_changed(result, dashboard_changed?)}
+  end
+
+  defp after_sync_write(repo, work_package, payload, progress_events, callback) do
+    snapshot_written? = sync_snapshot_written?(progress_events, work_package, payload)
+
+    case append_sync_snapshot(repo, work_package, payload) do
+      {:ok, _event} ->
+        case PullRequestArtifact.upsert(repo, work_package.id, payload, metadata: %{"source_tool" => @operator_source_tool}) do
+          {:ok, artifact_changed?} -> run_after_sync_write(snapshot_written? or artifact_changed?, callback)
+          {:error, reason} -> error_result(work_package, payload, reason, snapshot_written?)
+        end
+
+      {:error, reason} ->
+        error_result(work_package, payload, reason)
+    end
+  end
+
+  defp run_after_sync_write(snapshot_written?, callback) do
+    case callback.() do
+      result when is_map(result) -> maybe_mark_dashboard_changed(result, snapshot_written?)
+      {:ok, result} when is_map(result) -> {:ok, maybe_mark_dashboard_changed(result, snapshot_written?)}
+    end
+  end
+
+  defp maybe_mark_dashboard_changed(result, snapshot_written?) when is_map(result) do
+    if snapshot_written? or result.status == "merged" or delivery_applied?(result) do
+      Map.put(result, :dashboard_changed, true)
+    else
+      result
+    end
+  end
+
+  defp maybe_mark_dashboard_changed({:ok, result}, snapshot_written?) when is_map(result) do
+    {:ok, maybe_mark_dashboard_changed(result, snapshot_written?)}
+  end
+
+  defp sync_snapshot_written?(progress_events, work_package, payload) do
+    idempotency_key = "operator_sync_pr:#{work_package.id}:#{metadata_idempotency_key(payload)}"
+    not Enum.any?(progress_events, &(&1.idempotency_key == idempotency_key))
+  end
+
+  defp delivery_applied?(%{delivery_reconciliation: %{applied_count: applied_count}}) when is_integer(applied_count),
+    do: applied_count > 0
+
+  defp delivery_applied?(_result), do: false
 
   defp delivery_error_reason({:delivery_reconciliation_failed, reason}), do: error_reason(reason)
   defp delivery_error_reason(reason), do: error_reason(reason)
 
-  defp fetch_and_reconcile(repo, %WorkPackage{} = work_package, pr_context, client, client_opts) do
+  defp fetch_and_reconcile(repo, %WorkPackage{} = work_package, progress_events, pr_context, client, client_opts) do
     with {:ok, metadata} <- Client.fetch_pull_request(client, pr_context.ref, client_opts),
          {:ok, payload} <- PullRequest.metadata(metadata, pr_context.ref, nil) do
       payload = Map.put(payload, "source_tool", "sync_pr")
 
-      with {:ok, _event} <- append_sync_snapshot(repo, work_package, payload),
-           :ok <-
-             PullRequestArtifact.upsert(repo, work_package.id, payload, metadata: %{"source_tool" => @operator_source_tool}) do
+      after_sync_write(repo, work_package, payload, progress_events, fn ->
         maybe_transition_merged(repo, work_package, pr_context, payload, metadata)
-      else
-        {:error, reason} -> error_result(work_package, payload, reason)
-      end
+      end)
     else
       {:error, reason} -> error_result(work_package, pr_ref_payload(pr_context.ref), reason)
     end
@@ -370,15 +422,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     |> Map.merge(Map.new(extras))
   end
 
-  defp error_result(%WorkPackage{} = work_package, payload, reason) do
-    work_package
-    |> base_result(payload || %{})
-    |> Map.merge(%{
-      status: "error",
-      reason: error_reason(reason),
-      before_status: work_package.status,
-      after_status: work_package.status
-    })
+  defp error_result(%WorkPackage{} = work_package, payload, reason, dashboard_changed \\ false) do
+    result =
+      work_package
+      |> base_result(payload || %{})
+      |> Map.merge(%{
+        status: "error",
+        reason: error_reason(reason),
+        before_status: work_package.status,
+        after_status: work_package.status
+      })
+
+    if dashboard_changed, do: Map.put(result, :dashboard_changed, true), else: result
   end
 
   defp base_result(%WorkPackage{} = work_package, payload) do
@@ -394,12 +449,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   end
 
   defp summary(results) do
+    dashboard_changed = Enum.any?(results, &Map.get(&1, :dashboard_changed, false))
+
     %{
       total_count: length(results),
       synced_count: Enum.count(results, &(&1.status in ["synced", "skipped", "merged"])),
       merged_count: Enum.count(results, &(&1.status == "merged")),
       skipped_count: Enum.count(results, &(&1.status == "skipped")),
       error_count: Enum.count(results, &(&1.status == "error")),
+      dashboard_changed: dashboard_changed,
       results: results
     }
   end
@@ -411,6 +469,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
       merged_count: 0,
       skipped_count: 0,
       error_count: 0,
+      dashboard_changed: false,
       reason: reason,
       results: []
     }

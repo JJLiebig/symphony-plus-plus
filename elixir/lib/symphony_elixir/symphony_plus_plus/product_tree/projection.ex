@@ -30,13 +30,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   @spec project(module(), String.t(), [map()], keyword()) :: map()
   def project(repo, work_request_id, work_package_payloads, opts \\ [])
       when is_atom(repo) and is_binary(work_request_id) and is_list(work_package_payloads) and is_list(opts) do
-    case ProductTree.tree_for_work_request(repo, work_request_id) do
+    case product_tree_context(repo, work_request_id, opts) do
       {:ok, tree} ->
         execution_graph = ExecutionGraph.evaluate(tree, work_package_payloads, [])
         project_tree(tree, execution_graph, work_package_payloads, opts)
 
       {:error, reason} ->
         unavailable_projection(reason, work_package_payloads)
+    end
+  end
+
+  defp product_tree_context(repo, work_request_id, opts) do
+    case Keyword.fetch(opts, :product_tree_context) do
+      {:ok, nil} -> ProductTree.tree_for_work_request(repo, work_request_id)
+      {:ok, context} -> context
+      :error -> ProductTree.tree_for_work_request(repo, work_request_id)
     end
   end
 
@@ -70,25 +78,30 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
       |> Enum.map(&map_value(&1, "id"))
       |> MapSet.new()
 
+    work_packages_by_node_id = Enum.group_by(work_package_payloads, &group_id/1)
+    child_counts_by_parent_id = Enum.frequencies_by(nodes, & &1.parent_id)
+
     projected_nodes =
       nodes
-      |> Enum.map(&node_payload(&1, work_package_payloads))
+      |> Enum.map(&node_payload(&1, Map.get(work_packages_by_node_id, &1.id, [])))
       |> rollup_node_completion()
-      |> Enum.map(&put_child_counts(&1, nodes))
+      |> Enum.map(&Map.put(&1, :child_node_count, Map.get(child_counts_by_parent_id, &1.id, 0)))
 
     root_work_package_ids =
       Enum.reject(work_package_ids, &(is_nil(&1) or MapSet.member?(node_work_package_ids, &1)))
+
+    root_ids = root_node_ids(projected_nodes)
 
     %{
       available: true,
       schema_version: "product_tree.v4",
       mode: if(nodes == [], do: "direct_work_packages", else: "product_tree"),
-      root_node_ids: root_node_ids(projected_nodes),
+      root_node_ids: root_ids,
       root_work_package_ids: root_work_package_ids,
       nodes: projected_nodes,
       dependency_edges: Enum.map(dependency_edges, &dependency_edge_payload/1),
       execution_graph: execution_graph,
-      summary: summary(projected_nodes, root_work_package_ids, work_package_payloads),
+      summary: summary(projected_nodes, length(root_ids), root_work_package_ids, work_package_payloads),
       latest_revision: revision_payload(latest_revision)
     }
   end
@@ -169,10 +182,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   defp visible_dependency_endpoint?(_kind, _id, _visible_node_ids, _visible_work_package_ids), do: false
 
   defp node_payload(%Node{} = node, work_packages) do
-    node_work_packages =
-      work_packages
-      |> Enum.filter(&(group_id(&1) == node.id))
-      |> Enum.sort_by(&{map_value(&1, "sequence") || 0, map_value(&1, "id") || ""})
+    node_work_packages = Enum.sort_by(work_packages, &{map_value(&1, "sequence") || 0, map_value(&1, "id") || ""})
 
     work_package_ids = Enum.map(node_work_packages, &map_value(&1, "id"))
     computed_mark = computed_completion_mark(node_work_packages)
@@ -203,15 +213,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   defp rollup_node_completion(nodes) do
     children_by_parent_id = Enum.group_by(nodes, & &1.parent_id)
 
-    Enum.map(nodes, &rollup_node(&1, children_by_parent_id, []))
+    Enum.map(nodes, &rollup_node(&1, children_by_parent_id, %{}))
   end
 
-  @spec rollup_node(map(), map(), [String.t()]) :: map()
+  @spec rollup_node(map(), map(), map()) :: map()
   defp rollup_node(%{id: id} = node, children_by_parent_id, ancestors) when is_binary(id) do
-    if id in ancestors do
+    if Map.has_key?(ancestors, id) do
       node
     else
-      ancestors = [id | ancestors]
+      ancestors = Map.put(ancestors, id, true)
       children = children_by_parent_id |> Map.get(id, []) |> Enum.map(&rollup_node(&1, children_by_parent_id, ancestors))
       child_marks = Enum.map(children, & &1.computed_completion_mark)
       mark = rollup_completion_mark(node, child_marks)
@@ -263,10 +273,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
     end
   end
 
-  defp put_child_counts(node, nodes) do
-    Map.put(node, :child_node_count, Enum.count(nodes, &(&1.parent_id == node.id)))
-  end
-
   defp computed_completion_mark([]), do: "unknown"
 
   defp computed_completion_mark(work_packages) do
@@ -311,12 +317,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
     }
   end
 
-  defp summary(nodes, root_work_package_ids, work_package_payloads) do
+  defp summary(nodes, root_node_count, root_work_package_ids, work_package_payloads) do
     marks = Enum.map(nodes, & &1.computed_completion_mark)
 
     %{
       node_count: length(nodes),
-      root_node_count: length(root_node_ids(nodes)),
+      root_node_count: root_node_count,
       root_work_package_count: length(root_work_package_ids),
       work_package_count: length(work_package_payloads),
       node_work_package_count: Enum.sum(Enum.map(nodes, & &1.work_package_count)),

@@ -8,6 +8,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Repository do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
 
   @revision_number_retry_count 3
+  @tree_read_chunk_size 400
   @revision_number_unique_index "sympp_product_tree_revisions_work_request_revision_unique_index"
   @id_collision_constraints [
     "sympp_product_tree_nodes_pkey",
@@ -50,6 +51,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Repository do
        dependency_edges: list_dependency_edges!(repo, work_request_id),
        latest_revision: latest_revision!(repo, work_request_id)
      }}
+  rescue
+    error in Exqlite.Error -> normalize_exqlite_error(error)
+  end
+
+  @spec trees_for_work_requests(repo(), [String.t()]) :: {:ok, %{optional(String.t()) => map()}} | {:error, error()}
+  def trees_for_work_requests(repo, work_request_ids) when is_atom(repo) and is_list(work_request_ids) do
+    work_request_ids = Enum.uniq(work_request_ids)
+
+    nodes_by_request = list_nodes_for_work_requests!(repo, work_request_ids)
+    edges_by_request = list_dependency_edges_for_work_requests!(repo, work_request_ids)
+    revisions_by_request = latest_revisions_for_work_requests!(repo, work_request_ids)
+
+    {:ok,
+     Map.new(work_request_ids, fn work_request_id ->
+       {work_request_id,
+        %{
+          nodes: Map.get(nodes_by_request, work_request_id, []),
+          dependency_edges: Map.get(edges_by_request, work_request_id, []),
+          latest_revision: Map.get(revisions_by_request, work_request_id)
+        }}
+     end)}
   rescue
     error in Exqlite.Error -> normalize_exqlite_error(error)
   end
@@ -246,6 +268,79 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Repository do
       )
     )
   end
+
+  defp list_nodes_for_work_requests!(repo, work_request_ids) do
+    work_request_ids
+    |> tree_read_chunks()
+    |> Enum.flat_map(fn work_request_id_chunk ->
+      repo.all(
+        from(node in Node,
+          where: node.work_request_id in ^work_request_id_chunk,
+          order_by: [
+            asc: node.work_request_id,
+            asc: node.parent_id,
+            asc: node.position,
+            asc: node.created_at,
+            asc: node.id
+          ]
+        )
+      )
+    end)
+    |> Enum.group_by(& &1.work_request_id)
+  end
+
+  defp list_dependency_edges_for_work_requests!(repo, work_request_ids) do
+    work_request_ids
+    |> tree_read_chunks()
+    |> Enum.flat_map(fn work_request_id_chunk ->
+      repo.all(
+        from(edge in DependencyEdge,
+          where: edge.work_request_id in ^work_request_id_chunk,
+          order_by: [asc: edge.work_request_id, asc: edge.kind, asc: edge.created_at, asc: edge.id]
+        )
+      )
+    end)
+    |> Enum.group_by(& &1.work_request_id)
+  end
+
+  defp latest_revisions_for_work_requests!(repo, work_request_ids) do
+    work_request_ids
+    |> tree_read_chunks()
+    |> Enum.flat_map(fn work_request_id_chunk ->
+      ranked_revisions =
+        from(revision in Revision,
+          where: revision.work_request_id in ^work_request_id_chunk,
+          windows: [
+            latest: [
+              partition_by: [revision.work_request_id],
+              order_by: [desc: revision.revision_number]
+            ]
+          ],
+          select: %{id: revision.id, row_number: over(row_number(), :latest)}
+        )
+
+      repo.all(
+        from(revision in Revision,
+          join: ranked_revision in subquery(ranked_revisions),
+          on: ranked_revision.id == revision.id,
+          where: ranked_revision.row_number == 1,
+          select: %{
+            id: revision.id,
+            work_request_id: revision.work_request_id,
+            revision_number: revision.revision_number,
+            reason: revision.reason,
+            decision_ref: revision.decision_ref,
+            created_by: revision.created_by,
+            created_at: revision.created_at
+          }
+        )
+      )
+    end)
+    |> Enum.map(&struct(Revision, &1))
+    |> Map.new(&{&1.work_request_id, &1})
+  end
+
+  defp tree_read_chunks(work_request_ids), do: Enum.chunk_every(work_request_ids, @tree_read_chunk_size)
 
   defp update_node(repo, %{"id" => id, "work_request_id" => work_request_id} = attrs)
        when is_binary(work_request_id) and work_request_id != "" do
