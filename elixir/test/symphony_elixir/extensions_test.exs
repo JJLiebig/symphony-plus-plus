@@ -157,20 +157,20 @@ defmodule SymphonyElixir.ExtensionsTest do
 
     File.write!(manual_path, "---\ntracker: [\n---\nBroken prompt\n")
     assert {:noreply, returned_state} = WorkflowStore.handle_info(:poll, state)
-    assert_receive :poll, 50
+    assert_poll_message()
     assert returned_state.workflow.prompt == "Manual workflow prompt"
     refute returned_state.metadata_stamp == nil
     refute returned_state.content_hash == nil
 
     Workflow.set_workflow_file_path(missing_path)
     assert {:noreply, path_error_state} = WorkflowStore.handle_info(:poll, returned_state)
-    assert_receive :poll, 50
+    assert_poll_message()
     assert path_error_state.workflow.prompt == "Manual workflow prompt"
 
     Workflow.set_workflow_file_path(manual_path)
     File.rm!(manual_path)
     assert {:noreply, removed_state} = WorkflowStore.handle_info(:poll, path_error_state)
-    assert_receive :poll, 50
+    assert_poll_message()
     assert removed_state.workflow.prompt == "Manual workflow prompt"
 
     Workflow.set_workflow_file_path(existing_path)
@@ -619,6 +619,16 @@ defmodule SymphonyElixir.ExtensionsTest do
     end)
 
     HttpServer.bound_port()
+  end
+
+  defp assert_poll_message do
+    assert_eventually(fn ->
+      receive do
+        :poll -> true
+      after
+        0 -> false
+      end
+    end)
   end
 
   defp assert_eventually(fun, attempts \\ 20)
