@@ -146,6 +146,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
 
     assert {:ok, replay} = MergeReconciler.reconcile_work_package(repo, package.id, client: FakeGitHubClient)
     assert replay.status == "already_merged"
+    refute Map.get(replay, :dashboard_changed, false)
     assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
   end
 
@@ -170,6 +171,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
     assert {:ok, result} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
 
     assert result.merged_count == 0
+    assert result.dashboard_changed
     assert [%{status: "skipped", reason: "head_mismatch", expected_head_sha: "expected-head"}] = result.results
     assert {:ok, updated} = WorkPackageRepository.get(repo, package.id)
     assert updated.status == "ready_for_merge"
@@ -211,6 +213,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
     assert {:ok, first_result} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
 
     assert first_result.merged_count == 0
+    assert first_result.dashboard_changed
     assert [%{status: "skipped", reason: "head_mismatch", expected_head_sha: "old-head"}] = first_result.results
     assert {:ok, ready_package} = WorkPackageRepository.get(repo, package.id)
     assert ready_package.status == "ready_for_merge"
@@ -218,6 +221,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
     assert {:ok, second_result} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
 
     assert second_result.merged_count == 0
+    refute second_result.dashboard_changed
     assert [%{status: "skipped", reason: "head_mismatch", expected_head_sha: "old-head"}] = second_result.results
     assert {:ok, updated} = WorkPackageRepository.get(repo, package.id)
     assert updated.status == "ready_for_merge"
@@ -282,6 +286,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
     assert {:ok, result} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
 
     assert result.error_count == 1
+    assert result.dashboard_changed
     assert [%{status: "error", reason: "merge_evidence_conflict"}] = result.results
     assert {:ok, updated} = WorkPackageRepository.get(repo, package.id)
     assert updated.status == "ready_for_merge"
@@ -336,6 +341,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
       assert result.reason == reason
       assert result.results == []
       assert result.total_count == 0
+      refute result.dashboard_changed
     end
   end
 

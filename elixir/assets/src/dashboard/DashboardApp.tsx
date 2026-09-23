@@ -7,7 +7,8 @@ import { DashboardShell } from "./dashboard-shell";
 import { DashboardDebugTools } from "./dashboard-debug-tools";
 import { SoloSessions } from "./solo-sessions";
 import { WorkstreamsPane } from "./workspace-tabs";
-import { activeBlockerItems, allGuidanceItems, allPackages, dashboardContentFingerprint, guidanceAnswerUrl, repoSummaries } from "./dashboard-data";
+import { activeBlockerItems, allGuidanceItems, allPackages, guidanceAnswerUrl, repoSummaries } from "./dashboard-data";
+import { dashboardContentEqual } from "./dashboard-content-equality";
 import { appDialogReducer, appStateReducer, createInitialAppState, initialAppDialogState } from "./dashboard-state";
 import { applyDashboardTheme, repoWorkstreamHasWorkItems, shouldShowUpdateSimulationControls, writeDashboardUiStateValue, writeStoredTheme } from "./dashboard-persistence";
 import { useDashboardOperatorSettings } from "./dashboard-operator-settings";
@@ -15,6 +16,7 @@ import { filterWorkstreamsBySearch } from "./dashboard-search";
 import { dashboardWorkRequestDetails, packageSelectionIndex, requestDetailsByRepoKey } from "./workstream-data";
 import { useDashboardUpdateAnimations } from "./update-animations";
 import { useDashboardSurfaceLoading } from "./dashboard-surface-loading";
+import { createDashboardRefreshInvalidation } from "./dashboard-refresh-invalidation";
 import { createDashboardEventRefresh, useBestEffortGithubSync } from "./dashboard-demand-loading";
 import { attentionTargetForGuidance, dashboardAttentionItems, type AttentionJumpDestination, type AttentionJumpTarget, type AttentionTarget } from "./workstream-attention";
 type DashboardLoadMode = "initial" | "refresh" | "silent";
@@ -32,15 +34,13 @@ function useDashboardController() {
   const [appState, dispatchApp] = useReducer(appStateReducer, null, createInitialAppState);
   const { dashboard, error, hideEmptyWorkstreams, loading, refreshing, showWelcomeToast, showWorkstreamContextBar, theme, workspaceTab } = appState;
   const [dialogState, dispatchDialog] = useReducer(appDialogReducer, initialAppDialogState);
+  const [refreshInvalidation] = useState(createDashboardRefreshInvalidation);
   const [connectionIssue, setConnectionIssue] = useState<DashboardConnectionIssue | null>(null);
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState("");
   const [attentionJumpTarget, setAttentionJumpTarget] = useState<AttentionJumpTarget | null>(null);
-  const [surfaceRefreshVersion, setSurfaceRefreshVersion] = useState(0);
   const [animationBaselineReady, setAnimationBaselineReady] = useState(false);
   const showUpdateSimulationControls = useMemo(() => shouldShowUpdateSimulationControls(), []);
   const dashboardRef = useRef<DashboardPayload | null>(dashboard);
-  const initialDashboardFingerprint = useMemo(() => dashboardContentFingerprint(dashboard), [dashboard]);
-  const dashboardFingerprintRef = useRef(initialDashboardFingerprint);
   const connectionIssueRef = useRef<DashboardConnectionIssue | null>(null);
   const failureVersionRef = useRef(0);
   const refreshQueueRef = useRef(createLatestTaskQueue<DashboardLoadMode>());
@@ -50,9 +50,7 @@ function useDashboardController() {
   const mutationVersionRef = useRef(0);
   const attentionJumpSequenceRef = useRef(0);
   const setDashboard = useCallback((nextDashboard: DashboardPayload | null) => {
-    const nextFingerprint = dashboardContentFingerprint(nextDashboard);
-    if (dashboardFingerprintRef.current === nextFingerprint) return;
-    dashboardFingerprintRef.current = nextFingerprint;
+    if (dashboardContentEqual(dashboardRef.current, nextDashboard)) return;
     dashboardRef.current = nextDashboard;
     setAnimationBaselineReady((ready) => ready || Boolean(nextDashboard && !nextDashboard.deferred?.dashboard_sections));
     dispatchApp({ type: "patch", state: { dashboard: nextDashboard } });
@@ -106,13 +104,13 @@ function useDashboardController() {
   );
   const applyDashboardResponse = useCallback(
     async (response: Response, fallbackMessage: string, selectDashboard: DashboardResponseSelector = (payload) => payload as DashboardPayload, loadMutationVersion = mutationVersionRef.current, shouldApply: () => boolean = () => true, failureVersion = failureVersionRef.current) => {
+      if (!shouldApply() || loadMutationVersion !== mutationVersionRef.current) return null;
       const payload = await readDashboardApiResponse(response, fallbackMessage);
-      if (!shouldApply()) return null;
+      if (!shouldApply() || loadMutationVersion !== mutationVersionRef.current) return null;
       const nextDashboard = selectDashboard(payload);
       if (!nextDashboard) {
         throw new Error(fallbackMessage);
       }
-      if (loadMutationVersion !== mutationVersionRef.current) return nextDashboard;
       setDashboard(mergeDashboardPayload(dashboardRef.current, nextDashboard));
       clearConnectionFailure(failureVersion);
       return nextDashboard;
@@ -139,12 +137,12 @@ function useDashboardController() {
       const config = await ensureDashboardRuntimeConfig();
       const bootstrap = mode === "initial" ? dashboardBootstrapFromRuntimeConfig(config) : null;
       if (isCurrentBootstrap(bootstrap, loadSequence, loadSequenceRef.current, loadMutationVersion, mutationVersionRef.current)) {
-        setDashboard(mergeDashboardPayload(dashboardRef.current, bootstrap)); clearConnectionFailure(failureVersion); setSurfaceRefreshVersion((version) => version + 1); return;
+        setDashboard(mergeDashboardPayload(dashboardRef.current, bootstrap)); clearConnectionFailure(failureVersion); refreshInvalidation.publish(); return;
       }
       const response = await fetch(operatorApiUrl(dashboardRefreshPath()), { headers: jsonHeaders() });
       if (loadSequence !== loadSequenceRef.current) return;
-      const loaded = await applyDashboardResponse(response, "Dashboard API unavailable", undefined, loadMutationVersion, () => loadSequence === loadSequenceRef.current, failureVersion);
-      if (loaded) setSurfaceRefreshVersion((version) => version + 1);
+      const responseApplied = await applyDashboardResponse(response, "Dashboard API unavailable", undefined, loadMutationVersion, () => loadSequence === loadSequenceRef.current, failureVersion);
+      if (responseApplied) refreshInvalidation.publish();
     } catch (caught) {
       recordDashboardLoadFailure(loadSequence, caught, mode);
     } finally {
@@ -156,7 +154,7 @@ function useDashboardController() {
         setRefreshing(false);
       }
     }
-  }, [applyDashboardResponse, clearConnectionFailure, recordDashboardLoadFailure, setDashboard, setLoading, setRefreshing]);
+  }, [applyDashboardResponse, clearConnectionFailure, recordDashboardLoadFailure, refreshInvalidation, setDashboard, setLoading, setRefreshing]);
   const loadDashboard = useCallback(
     (mode: DashboardLoadMode = "refresh") =>
       enqueueLatestTask(refreshQueueRef.current, mode, runDashboardLoad),
@@ -185,7 +183,7 @@ function useDashboardController() {
     clearFailure: clearConnectionFailure,
     failureVersionRef,
     recordFailure: recordConnectionFailure,
-    refreshVersion: surfaceRefreshVersion,
+    refreshInvalidation,
     setDashboard,
     soloOpen: dashboard !== null && workspaceTab === "solo",
   });
@@ -385,9 +383,7 @@ function useDashboardController() {
       cancelled = true;
     };
   }, [loadDashboard]);
-  useEffect(() => {
-    if (dashboard?.deferred?.dashboard_sections) void loadDashboardDeferred();
-  }, [dashboard, dashboard?.deferred?.dashboard_sections, loadDashboardDeferred, surfaceRefreshVersion]);
+  useEffect(() => refreshInvalidation.subscribe(() => void loadDashboardDeferred()), [loadDashboardDeferred, refreshInvalidation]);
 
   const dashboardReady = dashboard !== null;
 
@@ -550,13 +546,13 @@ function useDashboardController() {
     onUpdateSoloSessionDeleteAfterDays: updateSoloSessionDeleteAfterDays,
     onWorkspaceTabChange: setWorkspaceTab,
     refreshing,
+    refreshInvalidation,
     requestDetails,
     repos,
     showUpdateSimulationControls,
     openDashboardOnBoot,
     showWelcomeToast,
     soloSessionDeleteAfterDays,
-    surfaceRefreshVersion,
     theme,
     toggleTheme,
     updateAnimations,

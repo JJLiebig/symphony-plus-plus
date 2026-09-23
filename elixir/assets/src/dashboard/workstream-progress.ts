@@ -10,6 +10,13 @@ export type ActiveBlockerEntityCounts = {
   sliceBlockerKeys: Map<string, Set<string>>;
 };
 
+type BlockerRequestCache = {
+  edges: ActiveBlockingEdge[];
+  result: ActiveBlockingEdge[];
+};
+
+const blockerRequestCache = new WeakMap<WorkRequestDetail, BlockerRequestCache>();
+
 export function requestProgress(detail: WorkRequestDetail, packageById: Map<string, WorkPackageCard>) {
   const slices = detail.work_packages ?? [];
   const treeProgress = productTreeRootProgress(detail, slices, packageById);
@@ -88,9 +95,14 @@ function edgeTargetsTerminalPackage(edge: ActiveBlockingEdge, terminalPackageIds
 }
 
 export function activeBlockerEdgesForRequest(edges: ActiveBlockingEdge[], detail: WorkRequestDetail) {
+  const cached = blockerRequestCache.get(detail);
+  if (cached?.edges === edges) return cached.result;
+
   const requestId = detail.work_request.id;
   const requestIndex = blockerRequestIndex([detail]);
-  return edges.filter((edge) => activeBlockerRequestIds(edge, requestIndex).has(requestId));
+  const result = edges.filter((edge) => activeBlockerRequestIds(edge, requestIndex).has(requestId));
+  blockerRequestCache.set(detail, { edges, result });
+  return result;
 }
 
 type ActiveBlockerEntityKeySets = {

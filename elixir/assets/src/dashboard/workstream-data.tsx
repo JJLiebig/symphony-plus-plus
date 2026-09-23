@@ -4,6 +4,7 @@ import { sortedCopy } from "@/lib/collections";
 import type { CardDetailSelection } from "./runtime";
 import type { WorkstreamCategoryCounts } from "./dashboard-state";
 import { repoIdentityKey } from "./dashboard-persistence";
+import { reconciledValue } from "./dashboard-content-equality";
 
 export function requestDetailsByRepoKey(details: WorkRequestDetail[]) {
   return details.reduce<Map<string, WorkRequestDetail[]>>((byRepo, detail) => {
@@ -21,11 +22,11 @@ export function dashboardWorkRequestDetails(dashboard: DashboardPayload | null):
   const details = (dashboard?.work_request_details ?? []).map((detail) => {
     const request = priorityById.get(detail.work_request.id);
     if (!request) return detail;
-    return {
+    return reconciledValue(detail, {
       ...detail,
       work_request: { ...detail.work_request, ...request },
       summary: priorityRequestSummary(request, detail.summary),
-    };
+    });
   });
   const detailedIds = new Set(details.map((detail) => detail.work_request.id));
   const priorityOnly: WorkRequestDetail[] = [];

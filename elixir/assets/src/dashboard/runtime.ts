@@ -1,5 +1,6 @@
 import type { ActiveBlockingEdge, ContextComment, DashboardPayload, HandoffCopyState, WorkRequestPackage, SoloSession, WorkPackageCard, WorkRequestCard, WorkRequestDetail } from "@/types/dashboard";
 import type { UpdateMotion } from "@/components/dashboard/motion";
+import { reconciledArrayById } from "./dashboard-content-equality";
 export { removeDashboardWorkRequest } from "./dashboard-removal";
 
 declare global {
@@ -342,26 +343,36 @@ export function patchDashboardWorkRequest(
 export function mergeDashboardPayload(dashboard: DashboardPayload | null, patch: DashboardPayload | null | undefined): DashboardPayload | null {
   if (!dashboard || !patch) return patch ?? dashboard;
 
-  const activeIds = patch.work_requests?.work_requests?.map((request) => request.id);
-  const currentDetails = activeIds
-    ? dashboard.work_request_details?.filter((detail) => activeIds.includes(detail.work_request.id))
+  const activeIds = patch.work_requests?.work_requests;
+  const activeIdSet = activeIds ? new Set(activeIds.map((request) => request.id)) : null;
+  const currentDetails = activeIdSet
+    ? dashboard.work_request_details?.filter((detail) => activeIdSet.has(detail.work_request.id))
     : dashboard.work_request_details;
-  const workRequestDetails = patch.work_request_details ?? currentDetails;
-  const hydratedCards = hydrateWorkRequestCards(patch.work_requests ?? dashboard.work_requests, patch.work_request_details);
+  const workRequestDetails = reconciledArrayById(
+    currentDetails,
+    patch.work_request_details,
+    (detail) => detail.work_request.id,
+  );
+  const workRequests = hydrateWorkRequestCards(patch.work_requests ?? dashboard.work_requests, patch.work_request_details);
 
   return {
     ...dashboard,
     ...patch,
     deferred: { ...dashboard.deferred, ...patch.deferred },
     work_request_details: workRequestDetails,
-    work_requests: hydratedCards,
+    work_requests: workRequests,
   };
 }
 
 function hydrateWorkRequestCards(section: DashboardPayload["work_requests"], details: WorkRequestDetail[] | undefined) {
   if (!section || !details) return section;
   const detailsById = new Map(details.map((detail) => [detail.work_request.id, detail.work_request]));
-  return { ...section, work_requests: section.work_requests?.map((card) => ({ ...card, ...detailsById.get(card.id) })) };
+  const cards = section.work_requests;
+  if (!cards) return section;
+
+  const nextCards = cards.map((card) => ({ ...card, ...detailsById.get(card.id) }));
+  const reconciledCards = reconciledArrayById(cards, nextCards, (card) => card.id);
+  return reconciledCards === cards ? section : { ...section, work_requests: reconciledCards };
 }
 
 function patchWorkRequestCards(cards: WorkRequestCard[], workRequest: WorkRequestMutationPatch, archive: boolean) {

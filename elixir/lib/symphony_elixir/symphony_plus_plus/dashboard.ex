@@ -31,6 +31,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.State
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.SoloSession
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
@@ -38,6 +39,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
@@ -91,17 +93,64 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
     end)
   end
 
+  @spec operator_projection_context(repo(), [WorkRequest.t()]) :: {:ok, map()} | {:error, dashboard_error()}
+  def operator_projection_context(repo, work_requests)
+      when is_atom(repo) and is_list(work_requests) do
+    with {:ok, work_packages} <- WorkPackageRepository.list(repo) do
+      operator_projection_context(repo, work_requests, work_packages)
+    end
+  end
+
+  @spec operator_projection_context(repo(), [WorkRequest.t()], [WorkPackage.t()]) ::
+          {:ok, map()} | {:error, dashboard_error()}
+  def operator_projection_context(repo, work_requests, work_packages)
+      when is_atom(repo) and is_list(work_requests) and is_list(work_packages) do
+    safe_read(fn ->
+      work_request_ids = MapSet.new(work_requests, & &1.id)
+
+      work_packages_by_request =
+        work_packages
+        |> Enum.filter(&MapSet.member?(work_request_ids, &1.work_request_id))
+        |> Enum.group_by(& &1.work_request_id)
+
+      linked_work_packages = all_work_packages(work_requests, work_packages_by_request)
+
+      comment_targets =
+        Enum.map(work_requests, &{"work_request", &1.id}) ++
+          Enum.map(linked_work_packages, &{"work_package", &1.id})
+
+      with {:ok, work_package_contexts} <- work_package_work_package_contexts(repo, linked_work_packages),
+           {:ok, product_trees_by_request} <-
+             product_tree_contexts_for_work_requests(repo, MapSet.to_list(work_request_ids)),
+           {:ok, deliveries_by_slice_id} <-
+             DeliveryBoard.work_package_deliveries_by_id(repo, linked_work_packages),
+           {:ok, comment_count_context} <- comment_count_context(repo, comment_targets) do
+        {:ok,
+         %{
+           work_packages: work_packages,
+           work_packages_by_request: work_packages_by_request,
+           work_package_contexts: work_package_contexts,
+           product_trees_by_request: product_trees_by_request,
+           deliveries_by_slice_id: deliveries_by_slice_id,
+           comment_count_context: comment_count_context
+         }}
+      end
+    end)
+  end
+
   @spec operator_work_package_signals(repo(), [String.t()], keyword()) :: {:ok, map()} | {:error, dashboard_error()}
   def operator_work_package_signals(repo, work_package_ids, opts)
       when is_atom(repo) and is_list(work_package_ids) and is_list(opts) do
     safe_read(fn ->
       visible_ids = MapSet.difference(MapSet.new(work_package_ids), hidden_work_package_ids(opts))
 
-      with {:ok, work_packages} <- WorkPackageRepository.list(repo),
-           work_packages = Enum.filter(work_packages, &MapSet.member?(visible_ids, &1.id)),
-           {:ok, repo_identity_catalog} <- repo_identity_catalog_from_repo(repo, opts, Enum.map(work_packages, & &1.repo)),
-           {:ok, contexts} <- card_contexts_for_packages(repo, work_packages, repo_identity_catalog),
-           {:ok, active_blocking_edges} <- active_blocking_edges_from_card_contexts(repo, contexts) do
+      with {:ok, all_work_packages} <- operator_signal_work_packages(repo, opts),
+           work_packages = Enum.filter(all_work_packages, &MapSet.member?(visible_ids, &1.id)),
+           {:ok, repo_identity_catalog} <-
+             operator_signal_repo_identity_catalog(repo, opts, work_packages),
+           {:ok, contexts} <- card_contexts_for_packages(repo, work_packages, repo_identity_catalog, opts),
+           {:ok, active_blocking_edges} <-
+             operator_signal_blocking_edges(repo, contexts, all_work_packages) do
         signals =
           contexts
           |> Enum.map(&compact_operator_work_package_signal(&1.card))
@@ -110,6 +159,42 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
         {:ok, %{work_packages: signals, active_blocking_edges: active_blocking_edges}}
       end
     end)
+  end
+
+  defp operator_signal_blocking_edges(repo, contexts, all_work_packages) do
+    active_blocking_edges_from_card_contexts(repo, contexts, all_work_packages)
+  end
+
+  defp operator_signal_work_packages(repo, opts) do
+    case Keyword.fetch(opts, :work_packages) do
+      {:ok, work_packages} when is_list(work_packages) -> {:ok, work_packages}
+      :error -> WorkPackageRepository.list(repo)
+    end
+  end
+
+  defp operator_signal_repo_identity_catalog(repo, opts, work_packages) do
+    repo_identity_catalog_from_repo(repo, opts, Enum.map(work_packages, & &1.repo))
+  end
+
+  defp product_tree_contexts_for_work_requests(repo, work_request_ids) do
+    case ProductTree.trees_for_work_requests(repo, work_request_ids) do
+      {:ok, trees} ->
+        {:ok, Map.new(trees, fn {work_request_id, tree} -> {work_request_id, {:ok, tree}} end)}
+
+      {:error, reason} = error ->
+        if missing_product_tree_schema_error?(reason) do
+          {:ok, Map.new(work_request_ids, &{&1, error})}
+        else
+          error
+        end
+    end
+  end
+
+  defp missing_product_tree_schema_error?(reason) do
+    reason
+    |> inspect()
+    |> String.downcase()
+    |> String.contains?("no such table: sympp_product_tree_")
   end
 
   defp compact_operator_work_package_signal(card) do
@@ -138,6 +223,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
        repo
        |> repo_identity_repo_values()
        |> build_repo_identity_catalog(local_operator_trusted_repo_remotes(), local_path_remotes?: true)}
+    end)
+  end
+
+  @spec local_operator_repo_identity_catalog(repo(), [WorkPackage.t()], [WorkRequest.t()]) ::
+          {:ok, RepoIdentity.catalog()} | {:error, dashboard_error()}
+  def local_operator_repo_identity_catalog(repo, work_packages, work_requests)
+      when is_atom(repo) and is_list(work_packages) and is_list(work_requests) do
+    safe_read(fn ->
+      repo_values =
+        Enum.map(work_packages, & &1.repo) ++
+          Enum.map(work_requests, & &1.repo) ++ repo_values(repo, SoloSession)
+
+      {:ok, build_repo_identity_catalog(repo_values, local_operator_trusted_repo_remotes(), local_path_remotes?: true)}
     end)
   end
 
@@ -872,15 +970,47 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
   end
 
   defp card_contexts_for_packages(repo, work_packages, repo_identity_catalog) do
-    work_package_contexts = work_package_contexts(repo, work_packages)
-    targets = Enum.map(work_packages, &{"work_package", &1.id})
+    card_contexts_for_packages(repo, work_packages, repo_identity_catalog, [])
+  end
 
-    with {:ok, comment_context} <- comment_count_context(repo, targets) do
-      {:ok,
-       Enum.map(work_packages, fn work_package ->
-         context = work_package_contexts |> Map.fetch!(work_package.id) |> card_context_projection(work_package)
-         build_card_context(repo, work_package, repo_identity_catalog, comment_context, context)
-       end)}
+  defp card_contexts_for_packages(repo, work_packages, repo_identity_catalog, opts) do
+    with {:ok, work_package_contexts} <- work_package_contexts_for_packages(repo, work_packages, opts) do
+      targets = Enum.map(work_packages, &{"work_package", &1.id})
+
+      with {:ok, comment_context} <- comment_count_context_for_packages(repo, targets, opts) do
+        {:ok,
+         Enum.map(work_packages, fn work_package ->
+           context = work_package_contexts |> Map.fetch!(work_package.id) |> card_context_projection(work_package)
+           build_card_context(repo, work_package, repo_identity_catalog, comment_context, context)
+         end)}
+      end
+    end
+  end
+
+  defp work_package_contexts_for_packages(repo, work_packages, opts) do
+    case Keyword.fetch(opts, :work_package_contexts) do
+      :error ->
+        work_package_work_package_contexts(repo, work_packages)
+
+      {:ok, preloaded_contexts} when is_map(preloaded_contexts) ->
+        work_package_ids = work_packages |> Enum.map(& &1.id) |> MapSet.new()
+        selected_contexts = Map.take(preloaded_contexts, MapSet.to_list(work_package_ids))
+        missing_work_packages = Enum.reject(work_packages, &Map.has_key?(selected_contexts, &1.id))
+
+        with {:ok, missing_contexts} <- work_package_work_package_contexts(repo, missing_work_packages) do
+          {:ok, Map.merge(selected_contexts, missing_contexts)}
+        end
+
+      {:ok, _other} ->
+        {:error, :not_found}
+    end
+  end
+
+  defp comment_count_context_for_packages(repo, targets, opts) do
+    case Keyword.fetch(opts, :comment_count_context) do
+      {:ok, comment_count_context} when is_map(comment_count_context) -> {:ok, comment_count_context}
+      :error -> comment_count_context(repo, targets)
+      {:ok, _other} -> {:error, :not_found}
     end
   end
 
@@ -898,6 +1028,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
   defp active_blocking_edges_from_card_contexts(_repo, []), do: {:ok, []}
 
   defp active_blocking_edges_from_card_contexts(repo, contexts) do
+    with {:ok, work_packages} <- WorkPackageRepository.list(repo) do
+      active_blocking_edges_from_card_contexts(repo, contexts, work_packages)
+    end
+  end
+
+  defp active_blocking_edges_from_card_contexts(_repo, [], _all_work_packages), do: {:ok, []}
+
+  defp active_blocking_edges_from_card_contexts(repo, contexts, all_work_packages) do
     context_edges =
       contexts
       |> Enum.flat_map(fn %{work_package: work_package, blockers: blockers} ->
@@ -906,7 +1044,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
         |> Enum.map(&active_blocking_edge(&1, work_package))
       end)
 
-    with {:ok, targeted_edges} <- targeted_active_blocking_edges(repo, contexts) do
+    with {:ok, targeted_edges} <- targeted_active_blocking_edges(repo, contexts, all_work_packages) do
       edges =
         (context_edges ++ targeted_edges)
         |> Enum.uniq_by(& &1.id)
@@ -916,7 +1054,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
     end
   end
 
-  defp targeted_active_blocking_edges(repo, contexts) do
+  defp targeted_active_blocking_edges(repo, contexts, all_work_packages) do
     target_ids = Enum.map(contexts, & &1.work_package.id)
 
     with {:ok, events} <-
@@ -924,23 +1062,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
              repo,
              target_ids
            ) do
-      targeted_active_blocking_edges(repo, events, MapSet.new(target_ids))
+      targeted_active_blocking_edges(repo, events, MapSet.new(target_ids), all_work_packages)
     end
   end
 
-  defp targeted_active_blocking_edges(_repo, [], _target_ids), do: {:ok, []}
+  defp targeted_active_blocking_edges(_repo, [], _target_ids, _all_work_packages), do: {:ok, []}
 
-  defp targeted_active_blocking_edges(repo, events, target_ids) do
-    with {:ok, work_packages} <- WorkPackageRepository.list(repo) do
-      work_packages_by_id = Map.new(work_packages, &{&1.id, &1})
+  defp targeted_active_blocking_edges(_repo, events, target_ids, all_work_packages) do
+    work_packages_by_id = Map.new(all_work_packages, &{&1.id, &1})
 
-      edges =
-        events
-        |> Enum.group_by(& &1.work_package_id)
-        |> Enum.flat_map(&targeted_edges_for_owner(&1, work_packages_by_id, target_ids))
+    edges =
+      events
+      |> Enum.group_by(& &1.work_package_id)
+      |> Enum.flat_map(&targeted_edges_for_owner(&1, work_packages_by_id, target_ids))
 
-      {:ok, edges}
-    end
+    {:ok, edges}
   end
 
   defp targeted_edges_for_owner({owner_id, events}, work_packages_by_id, target_ids) do

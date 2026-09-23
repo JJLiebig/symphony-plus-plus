@@ -2580,12 +2580,28 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
           |> json_response(200)
 
         assert payload["sync"]["merged_count"] == 1
+        assert payload["sync"]["dashboard_changed"] == true
         assert [%{"work_package_id" => "SYMPP-LOCAL-OPERATOR-GH-SYNC", "status" => "merged"}] = payload["sync"]["results"]
         refute Map.has_key?(payload, "dashboard")
         assert get_in(payload, ["refresh", "dashboard"]) == true
 
         assert {:ok, updated} = WorkPackageRepository.get(repo, work_package.id)
         assert updated.status == "merged"
+      end)
+    end)
+  end
+
+  test "local operator GitHub sync skips dashboard refresh when no state changes" do
+    with_local_operator_endpoint(fn ->
+      with_operator_github_client(fn ->
+        payload =
+          local_operator_conn()
+          |> post("/api/v1/sympp/operator/github/sync-prs", %{mode: "auto"})
+          |> json_response(200)
+
+        assert payload["sync"]["total_count"] == 0
+        assert payload["sync"]["dashboard_changed"] == false
+        assert get_in(payload, ["refresh", "dashboard"]) == false
       end)
     end)
   end

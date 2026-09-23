@@ -120,10 +120,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
 
     with {:ok, relationships} <- list_relationships(repo, work_package_ids) do
       relationships = relationships_visible_to_packages(relationships, work_package_ids)
+      relationships_by_source_id = Enum.group_by(relationships, & &1.source_work_package_id)
+      relationships_by_target_id = Enum.group_by(relationships, & &1.target_work_package_id)
 
       {:ok,
        Map.new(work_packages, fn
-         %WorkPackage{} = work_package -> {work_package.id, package_lineage(work_package, relationships)}
+         %WorkPackage{} = work_package ->
+           outgoing = Map.get(relationships_by_source_id, work_package.id, [])
+           incoming = Map.get(relationships_by_target_id, work_package.id, [])
+           {work_package.id, package_lineage(work_package, outgoing, incoming)}
        end)}
     end
   end
@@ -172,6 +177,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
   defp package_lineage(%WorkPackage{} = work_package, relationships) do
     outgoing = Enum.filter(relationships, &(&1.source_work_package_id == work_package.id))
     incoming = Enum.filter(relationships, &(&1.target_work_package_id == work_package.id))
+    package_lineage(work_package, outgoing, incoming)
+  end
+
+  defp package_lineage(%WorkPackage{} = work_package, outgoing, incoming) do
     outgoing_by_relationship = Enum.group_by(outgoing, & &1.relationship)
     incoming_by_relationship = Enum.group_by(incoming, & &1.relationship)
     outgoing_successors = Enum.filter(outgoing, &successor_relationship?/1)

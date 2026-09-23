@@ -23,32 +23,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
 
   defp load_execution_graphs(repo, work_requests, work_packages_by_request, deliveries_by_slice_id, opts) do
     work_request_ids = Enum.map(work_requests, & &1.id)
+    product_trees_by_request = preloaded_product_trees(opts)
+    missing_work_request_ids = Enum.reject(work_request_ids, &Map.has_key?(product_trees_by_request, &1))
 
-    nodes_by_request =
-      work_request_ids
-      |> Enum.chunk_every(@request_chunk_size)
-      |> Enum.flat_map(fn request_id_chunk ->
-        repo.all(
-          from(node in Node,
-            where: node.work_request_id in ^request_id_chunk,
-            order_by: [asc: node.work_request_id, asc: node.parent_id, asc: node.position, asc: node.created_at, asc: node.id]
-          )
-        )
-      end)
-      |> Enum.group_by(& &1.work_request_id)
-
-    edges_by_request =
-      work_request_ids
-      |> Enum.chunk_every(@request_chunk_size)
-      |> Enum.flat_map(fn request_id_chunk ->
-        repo.all(
-          from(edge in DependencyEdge,
-            where: edge.work_request_id in ^request_id_chunk,
-            order_by: [asc: edge.work_request_id, asc: edge.kind, asc: edge.created_at, asc: edge.id]
-          )
-        )
-      end)
-      |> Enum.group_by(& &1.work_request_id)
+    nodes_by_request = execution_nodes_by_request(repo, missing_work_request_ids)
+    edges_by_request = execution_edges_by_request(repo, missing_work_request_ids)
 
     deliveries_by_request =
       deliveries_by_slice_id
@@ -60,15 +39,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
         work_packages = Map.get(work_packages_by_request, work_request.id, [])
         deliveries = Map.get(deliveries_by_request, work_request.id, [])
 
-        graph =
-          ExecutionGraph.evaluate(
-            %{
-              nodes: Map.get(nodes_by_request, work_request.id, []),
-              dependency_edges: Map.get(edges_by_request, work_request.id, [])
-            },
-            work_packages,
-            deliveries
+        product_tree =
+          product_tree_for_request(
+            work_request.id,
+            product_trees_by_request,
+            nodes_by_request,
+            edges_by_request
           )
+
+        graph = ExecutionGraph.evaluate(product_tree, work_packages, deliveries)
 
         {work_request.id, scope_execution_graph(graph, work_packages, opts)}
       end)
@@ -77,6 +56,62 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   rescue
     error in Exqlite.Error ->
       if missing_product_tree_schema_error?(error), do: {:ok, %{}}, else: normalize_exqlite_error(error)
+  end
+
+  defp preloaded_product_trees(opts) do
+    case Keyword.fetch(opts, :product_trees_by_request) do
+      {:ok, product_trees} when is_map(product_trees) -> product_trees
+      :error -> %{}
+      {:ok, _other} -> %{}
+    end
+  end
+
+  defp product_tree_for_request(work_request_id, product_trees_by_request, nodes_by_request, edges_by_request) do
+    case Map.fetch(product_trees_by_request, work_request_id) do
+      {:ok, {:ok, product_tree}} ->
+        product_tree
+
+      {:ok, {:error, _reason}} ->
+        %{nodes: [], dependency_edges: []}
+
+      :error ->
+        %{
+          nodes: Map.get(nodes_by_request, work_request_id, []),
+          dependency_edges: Map.get(edges_by_request, work_request_id, [])
+        }
+    end
+  end
+
+  defp execution_nodes_by_request(_repo, []), do: %{}
+
+  defp execution_nodes_by_request(repo, work_request_ids) do
+    work_request_ids
+    |> Enum.chunk_every(@request_chunk_size)
+    |> Enum.flat_map(fn request_id_chunk ->
+      repo.all(
+        from(node in Node,
+          where: node.work_request_id in ^request_id_chunk,
+          order_by: [asc: node.work_request_id, asc: node.parent_id, asc: node.position, asc: node.created_at, asc: node.id]
+        )
+      )
+    end)
+    |> Enum.group_by(& &1.work_request_id)
+  end
+
+  defp execution_edges_by_request(_repo, []), do: %{}
+
+  defp execution_edges_by_request(repo, work_request_ids) do
+    work_request_ids
+    |> Enum.chunk_every(@request_chunk_size)
+    |> Enum.flat_map(fn request_id_chunk ->
+      repo.all(
+        from(edge in DependencyEdge,
+          where: edge.work_request_id in ^request_id_chunk,
+          order_by: [asc: edge.work_request_id, asc: edge.kind, asc: edge.created_at, asc: edge.id]
+        )
+      )
+    end)
+    |> Enum.group_by(& &1.work_request_id)
   end
 
   @spec pr(map(), map() | nil) :: map()
@@ -142,32 +177,61 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
 
   def review(%WorkPackage{}, _metadata, _observation), do: %{status: "unavailable"}
 
+  @spec dependency_context(map()) :: map()
+  def dependency_context(execution_graphs) when is_map(execution_graphs) do
+    effective_edges =
+      execution_graphs
+      |> Map.values()
+      |> Enum.flat_map(&(map_value(&1, "effective_edges") |> List.wrap()))
+
+    unmet_dependencies =
+      execution_graphs
+      |> Map.values()
+      |> Enum.flat_map(&(map_value(&1, "unmet_dependencies") |> List.wrap()))
+
+    %{
+      incoming_by_work_package_id:
+        effective_edges
+        |> Enum.group_by(&map_value(&1, "dependent_work_package_id"))
+        |> Map.new(fn {work_package_id, edges} ->
+          incoming_ids =
+            edges
+            |> Enum.map(&map_value(&1, "prerequisite_work_package_id"))
+            |> Enum.filter(&filled_string?/1)
+            |> Enum.uniq()
+            |> Enum.sort()
+
+          {work_package_id, incoming_ids}
+        end),
+      unmet_by_work_package_id:
+        unmet_dependencies
+        |> Map.new(fn dependency ->
+          {map_value(dependency, "work_package_id"), dependency |> map_value("prerequisite_work_package_ids") |> List.wrap() |> MapSet.new()}
+        end)
+    }
+  end
+
   @spec dependency(WorkPackage.t(), map()) :: map() | nil
   def dependency(%WorkPackage{} = work_package, context) do
-    graph = get_in(context, [:execution_graphs, work_package.work_request_id])
+    dependency_indexes =
+      Map.get(context, :dependency_indexes) ||
+        context
+        |> Map.get(:execution_graphs, %{})
+        |> dependency_context()
 
     incoming_ids =
-      graph
-      |> map_value("effective_edges")
-      |> List.wrap()
-      |> Enum.filter(&(map_value(&1, "dependent_work_package_id") == work_package.id))
-      |> Enum.map(&map_value(&1, "prerequisite_work_package_id"))
-      |> Enum.filter(&filled_string?/1)
-      |> Enum.uniq()
-      |> Enum.sort()
+      dependency_indexes
+      |> Map.get(:incoming_by_work_package_id, %{})
+      |> Map.get(work_package.id, [])
+
+    unmet_ids =
+      dependency_indexes
+      |> Map.get(:unmet_by_work_package_id, %{})
+      |> Map.get(work_package.id, MapSet.new())
 
     if incoming_ids == [] do
       nil
     else
-      unmet_ids =
-        graph
-        |> map_value("unmet_dependencies")
-        |> List.wrap()
-        |> Enum.find(&(map_value(&1, "work_package_id") == work_package.id))
-        |> map_value("prerequisite_work_package_ids")
-        |> List.wrap()
-        |> MapSet.new()
-
       inputs =
         Enum.map(incoming_ids, fn prerequisite_id ->
           %{

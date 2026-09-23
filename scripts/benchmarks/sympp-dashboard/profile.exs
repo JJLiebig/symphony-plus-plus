@@ -1,3 +1,11 @@
+{:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
+{:ok, _} = Application.ensure_all_started(:jason)
+
+case Task.Supervisor.start_link(name: SymphonyElixir.TaskSupervisor) do
+  {:ok, _pid} -> :ok
+  {:error, {:already_started, _pid}} -> :ok
+end
+
 defmodule DashboardPayloadProfile do
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard
@@ -17,9 +25,18 @@ defmodule DashboardPayloadProfile do
         Map.new(endpoints, fn {name, load} ->
           measurements =
             Enum.map(1..samples, fn _index ->
+              :erlang.garbage_collect()
+              {reductions_before, _memory_before} = :erlang.statistics(:reductions)
               {assembly_us, {:ok, payload}} = :timer.tc(load, [Repo])
               {encoding_us, json} = :timer.tc(Jason, :encode!, [payload])
-              %{assembly_ms: assembly_us / 1_000, encoding_ms: encoding_us / 1_000, bytes: byte_size(json)}
+              {reductions_after, _memory_after} = :erlang.statistics(:reductions)
+
+              %{
+                assembly_ms: assembly_us / 1_000,
+                encoding_ms: encoding_us / 1_000,
+                reductions: reductions_after - reductions_before,
+                bytes: byte_size(json)
+              }
             end)
 
           {:ok, payload} = load.(Repo)
@@ -28,6 +45,7 @@ defmodule DashboardPayloadProfile do
            %{
              assembly_ms_p50: median(measurements, :assembly_ms),
              encoding_ms_p50: median(measurements, :encoding_ms),
+             reductions_p50: median(measurements, :reductions),
              bytes: measurements |> hd() |> Map.fetch!(:bytes),
              largest_fields: largest_fields(payload)
            }}

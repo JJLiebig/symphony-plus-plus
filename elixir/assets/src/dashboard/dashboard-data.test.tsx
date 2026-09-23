@@ -2,11 +2,29 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { activeBlockerItems, allPackages, FINISHED_HIGHLIGHT_LIMIT, recentFinishedHighlights, repoSummaries } from "./dashboard-data";
+import { dashboardContentEqual } from "./dashboard-content-equality";
 import { RepoSummaryStrip } from "./repo-workstream";
-import type { ActiveBlockingEdge, WorkPackageCard, WorkRequestCard, WorkRequestDetail } from "@/types/dashboard";
+import type { ActiveBlockingEdge, DashboardPayload, WorkPackageCard, WorkRequestCard, WorkRequestDetail } from "@/types/dashboard";
 import type { RepoSummary } from "./dashboard-data";
 
 describe("dashboard data helpers", () => {
+  it("compares dashboard content structurally while ignoring only the top-level timestamp", () => {
+    const left = {
+      generated_at: "2026-01-01T00:00:00Z",
+      work_requests: { work_requests: [{ id: "wr-1", title: "One" }], total_count: 1 },
+      nested: { generated_at: "left" },
+    } as unknown as DashboardPayload;
+    const equal = {
+      nested: { generated_at: "left" },
+      work_requests: { total_count: 1, work_requests: [{ title: "One", id: "wr-1" }] },
+      generated_at: "2026-02-02T00:00:00Z",
+    } as unknown as DashboardPayload;
+
+    expect(dashboardContentEqual(left, equal)).toBe(true);
+    expect(dashboardContentEqual(left, { ...equal, nested: { generated_at: "right" } } as unknown as DashboardPayload)).toBe(false);
+    expect(dashboardContentEqual(left, { ...equal, work_requests: { work_requests: [{ id: "wr-1", title: "Changed" }], total_count: 1 } } as unknown as DashboardPayload)).toBe(false);
+  });
+
   it("caps finished highlights to the most recent records", () => {
     const packages = Array.from({ length: FINISHED_HIGHLIGHT_LIMIT + 4 }, (_, index) =>
       finishedPackage(`pkg-${index}`, new Date(Date.UTC(2026, 5, 4, 12, 0, index)).toISOString()),

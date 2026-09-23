@@ -45,10 +45,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
     work_packages = Enum.sort_by(work_packages, &value(&1, :id))
     work_package_ids = Enum.map(work_packages, &value(&1, :id))
     work_package_id_set = MapSet.new(work_package_ids)
-    group_members = group_members(nodes, work_packages)
+    hard_dependency_edges = Enum.filter(dependency_edges, &(value(&1, :kind) in @hard_edge_kinds))
+    group_members = group_members(nodes, work_packages, referenced_group_ids(hard_dependency_edges))
 
     effective_edges =
-      dependency_edges
+      hard_dependency_edges
       |> effective_edges(group_members)
       |> Enum.filter(
         &(MapSet.member?(work_package_id_set, &1.prerequisite_work_package_id) and
@@ -64,6 +65,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
   @spec scope(graph(), Enumerable.t()) :: graph()
   def scope(%{available: true} = graph, visible_work_package_ids) do
     visible_ids = MapSet.new(visible_work_package_ids)
+    graph_work_package_ids = MapSet.new(graph.work_package_ids)
+
+    if MapSet.subset?(graph_work_package_ids, visible_ids) do
+      graph
+    else
+      scope_graph(graph, visible_ids)
+    end
+  end
+
+  def scope(graph, _visible_work_package_ids), do: graph
+
+  defp scope_graph(%{available: true} = graph, visible_ids) do
     visible? = &MapSet.member?(visible_ids, &1)
     work_package_ids = Enum.filter(graph.work_package_ids, visible?)
 
@@ -76,8 +89,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
 
     build_graph(work_package_ids, effective_edges, resolutions)
   end
-
-  def scope(graph, _visible_work_package_ids), do: graph
 
   defp build_graph(work_package_ids, effective_edges, resolutions) do
     pairs = Enum.map(effective_edges, &{&1.prerequisite_work_package_id, &1.dependent_work_package_id})
@@ -109,23 +120,35 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
     end
   end
 
-  defp group_members(nodes, work_packages) do
+  defp group_members(nodes, work_packages, referenced_group_ids) do
     direct_members = Enum.group_by(work_packages, &package_group_id/1, &value(&1, :id))
     children = Enum.group_by(nodes, &value(&1, :parent_id), &value(&1, :id))
 
-    Map.new(nodes, fn node ->
-      id = value(node, :id)
-      {id, descendant_members(id, children, direct_members, [])}
+    Map.new(referenced_group_ids, fn group_id ->
+      {group_id, descendant_members(group_id, children, direct_members, MapSet.new())}
     end)
+  end
+
+  defp referenced_group_ids(dependency_edges) do
+    dependency_edges
+    |> Enum.flat_map(fn edge ->
+      [endpoint(edge, :source), endpoint(edge, :target)]
+    end)
+    |> Enum.flat_map(fn
+      {"product_node", id} when is_binary(id) -> [id]
+      _endpoint -> []
+    end)
+    |> MapSet.new()
+    |> MapSet.to_list()
   end
 
   defp package_group_id(work_package), do: value(work_package, :group_id) || value(work_package, :product_tree_node_id)
 
   defp descendant_members(group_id, children, direct_members, visited) do
-    if group_id in visited do
+    if MapSet.member?(visited, group_id) do
       []
     else
-      visited = [group_id | visited]
+      visited = MapSet.put(visited, group_id)
 
       (Map.get(direct_members, group_id, []) ++
          Enum.flat_map(Map.get(children, group_id, []), &descendant_members(&1, children, direct_members, visited)))
@@ -136,7 +159,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
 
   defp effective_edges(dependency_edges, group_members) do
     dependency_edges
-    |> Enum.filter(&(value(&1, :kind) in @hard_edge_kinds))
     |> Enum.sort_by(&{value(&1, :created_at), value(&1, :id)})
     |> Enum.reduce(%{}, fn edge, acc ->
       {prerequisite_endpoint, dependent_endpoint} =
@@ -147,11 +169,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
 
       prerequisite_ids = expand_endpoint(prerequisite_endpoint, group_members)
       dependent_ids = expand_endpoint(dependent_endpoint, group_members)
-      shared_ids = Enum.filter(prerequisite_ids, &(&1 in dependent_ids))
+      dependent_id_set = MapSet.new(dependent_ids)
+      shared_ids = MapSet.new(Enum.filter(prerequisite_ids, &MapSet.member?(dependent_id_set, &1)))
 
       for prerequisite_id <- prerequisite_ids,
           dependent_id <- dependent_ids,
-          not (prerequisite_id in shared_ids and dependent_id in shared_ids),
+          not (MapSet.member?(shared_ids, prerequisite_id) and MapSet.member?(shared_ids, dependent_id)),
           reduce: acc do
         edges ->
           Map.update(edges, {prerequisite_id, dependent_id}, [value(edge, :id)], fn ids ->

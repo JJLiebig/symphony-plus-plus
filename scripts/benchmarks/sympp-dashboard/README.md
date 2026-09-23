@@ -6,7 +6,7 @@ From `elixir/`, create the fixture:
 
 ```powershell
 $env:MIX_ENV = "test"
-mise exec -- mix run ../scripts/benchmarks/sympp-dashboard/fixture.exs ../scripts/benchmarks/sympp-dashboard/fixture.sqlite3
+mise exec -- mix run --no-start ../scripts/benchmarks/sympp-dashboard/fixture.exs ../scripts/benchmarks/sympp-dashboard/fixture.sqlite3
 ```
 
 Start the isolated fixture server:
@@ -37,9 +37,9 @@ node scripts/benchmarks/sympp-dashboard/measure.mjs --url http://127.0.0.1:20051
 
 The weekly canary retains detailed measurements without limits. Current-main fixture runs produce variable byte and request counts, so no deterministic ceiling is enforced yet. Timing also remains observational until three comparable hosted runs establish stability.
 
-Profile backend assembly, JSON encoding, response bytes, and the largest serialized fields against the same fixture:
+Profile backend assembly, JSON encoding, BEAM reductions, response bytes, and the largest serialized fields against the same fixture:
 
 ```powershell
 $env:MIX_ENV = "test"
-mise exec -- mix run ../scripts/benchmarks/sympp-dashboard/profile.exs ../scripts/benchmarks/sympp-dashboard/fixture.sqlite3 11
+mise exec -- mix run --no-start ../scripts/benchmarks/sympp-dashboard/profile.exs ../scripts/benchmarks/sympp-dashboard/fixture.sqlite3 11
 ```

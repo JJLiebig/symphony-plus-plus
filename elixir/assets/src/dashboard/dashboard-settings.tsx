@@ -14,6 +14,7 @@ import { DashboardTheme, REPO_SUMMARY_PLATE_TONES, RepoSummaryPlateTone, WorkReq
 import { detailDate } from "./detail-utils";
 import { repoDisplayName, useStoredUseFocusBoard, writeStoredUseFocusBoard } from "./dashboard-persistence";
 import { sortableTime } from "./workstream-data";
+import type { DashboardRefreshInvalidation } from "./dashboard-refresh-invalidation";
 
 export function ThemeToggle({ theme, onToggle }: { theme: DashboardTheme; onToggle: () => void }) {
   const dark = theme === "dark";
@@ -352,13 +353,13 @@ export function ArchivedRequestsDialog({
   requests,
   onOpen,
   onRestoreWorkRequest,
-  refreshVersion,
+  refreshInvalidation,
 }: {
   loading: boolean;
   requests: WorkRequestCard[];
   onOpen: () => Promise<void>;
   onRestoreWorkRequest: WorkRequestMutation;
-  refreshVersion: number;
+  refreshInvalidation: DashboardRefreshInvalidation;
 }) {
   const [open, setOpen] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -367,7 +368,12 @@ export function ArchivedRequestsDialog({
 
   useEffect(() => {
     if (open) void onOpen();
-  }, [onOpen, open, refreshVersion]);
+  }, [onOpen, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    return refreshInvalidation.subscribe(() => void onOpen());
+  }, [onOpen, open, refreshInvalidation]);
 
   async function restoreRequest(workRequestId: string) {
     setPendingId(workRequestId);

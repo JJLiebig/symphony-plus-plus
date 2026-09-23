@@ -996,6 +996,10 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.tracker.api_key == api_key
     assert config.workspace.root == workspace_root
     assert config.codex.command == "#{codex_bin} app-server"
+
+    changed_workspace_root = Path.join("/tmp", "symphony-workspace-root-changed")
+    System.put_env(workspace_env_var, changed_workspace_root)
+    assert Config.settings!().workspace.root == changed_workspace_root
   end
 
   test "config preserves env-backed remote workspace roots for remote shell expansion" do
@@ -1100,6 +1104,31 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
              limits: {"state names must not be blank", []},
              limits: {"limits must be positive integers", []}
            ]
+  end
+
+  test "config cache follows environment-backed tracker values" do
+    previous_api_key = System.get_env("LINEAR_API_KEY")
+    previous_assignee = System.get_env("LINEAR_ASSIGNEE")
+
+    on_exit(fn ->
+      restore_env("LINEAR_API_KEY", previous_api_key)
+      restore_env("LINEAR_ASSIGNEE", previous_assignee)
+    end)
+
+    write_workflow_file!(Workflow.workflow_file_path(), tracker_api_token: nil, tracker_assignee: nil)
+    System.put_env("LINEAR_API_KEY", "test-linear-token-a")
+    System.put_env("LINEAR_ASSIGNEE", "test-linear-user-a")
+
+    first = Config.settings!()
+    assert first.tracker.api_key == "test-linear-token-a"
+    assert first.tracker.assignee == "test-linear-user-a"
+
+    System.put_env("LINEAR_API_KEY", "test-linear-token-b")
+    System.put_env("LINEAR_ASSIGNEE", "test-linear-user-b")
+
+    second = Config.settings!()
+    assert second.tracker.api_key == "test-linear-token-b"
+    assert second.tracker.assignee == "test-linear-user-b"
   end
 
   test "schema parse normalizes policy keys and env-backed fallbacks" do

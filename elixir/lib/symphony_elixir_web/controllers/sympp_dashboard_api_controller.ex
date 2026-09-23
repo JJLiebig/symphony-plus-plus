@@ -301,7 +301,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   def operator_sync_github_prs(conn, params) do
     send_local_operator_response(conn, :delivery_reconcile_apply, Target.new(:dashboard), :operator_sync_github_prs, fn repo ->
       with {:ok, sync} <- MergeReconciler.reconcile(repo, LocalOperatorActions.github_sync_opts(params)) do
-        json(conn, mutation_success_payload(%{sync: sync}))
+        json(conn, mutation_success_payload(%{sync: sync}, %{dashboard: github_sync_changed?(sync)}))
       end
     end)
   end
@@ -739,6 +739,10 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
     payload
     |> Map.put(:ok, true)
     |> Map.put(:refresh, Map.merge(%{dashboard: true}, refresh))
+  end
+
+  defp github_sync_changed?(sync) when is_map(sync) do
+    Map.get(sync, :dashboard_changed, false) == true
   end
 
   defp script_name_prefix(%Conn{script_name: []}), do: ""

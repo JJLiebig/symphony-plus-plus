@@ -1,4 +1,5 @@
 import type { DashboardPayload } from "@/types/dashboard";
+import type { DashboardRefreshInvalidation } from "./dashboard-refresh-invalidation";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -16,17 +17,17 @@ export function useDashboardSurfaceLoading({
   clearFailure,
   failureVersionRef,
   recordFailure,
+  refreshInvalidation,
   setDashboard,
   soloOpen,
-  refreshVersion,
 }: {
   dashboardRef: RefObject<DashboardPayload | null>;
   clearFailure: (failureVersion?: number) => void;
   failureVersionRef: RefObject<number>;
   recordFailure: (message: string, immediate?: boolean) => void;
+  refreshInvalidation: DashboardRefreshInvalidation;
   setDashboard: (dashboard: DashboardPayload | null) => void;
   soloOpen: boolean;
-  refreshVersion: number;
 }) {
   const [loading, setLoading] = useState<Record<DashboardSurface, boolean>>({ archived: false, solo: false });
   const requestVersions = useRef<Record<DashboardSurface, number>>({ archived: 0, solo: 0 });
@@ -63,7 +64,12 @@ export function useDashboardSurfaceLoading({
     return () => {
       cancelled = true;
     };
-  }, [loadSurface, refreshVersion, soloOpen]);
+  }, [loadSurface, soloOpen]);
+
+  useEffect(() => {
+    if (!soloOpen) return;
+    return refreshInvalidation.subscribe(() => void loadSurface("solo"));
+  }, [loadSurface, refreshInvalidation, soloOpen]);
 
   return {
     archivedLoading: loading.archived,
