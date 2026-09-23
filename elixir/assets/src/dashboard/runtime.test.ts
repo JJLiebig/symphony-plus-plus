@@ -275,6 +275,21 @@ describe("dashboard runtime mutation helpers", () => {
     expect(merged?.work_requests?.work_requests?.[0]).toBe(dashboard.work_requests.work_requests[0]);
   });
 
+  it("keeps a changed detail order while reusing unchanged details", () => {
+    const dashboard = {
+      ...dashboardWithRequest({ id: "wr-1", title: "One" }),
+      work_requests: { work_requests: [{ id: "wr-1", title: "One" }, { id: "wr-2", title: "Two" }], total_count: 2 },
+      work_request_details: [{ work_request: { id: "wr-1" } }, { work_request: { id: "wr-2" } }],
+    } satisfies DashboardPayload;
+
+    const merged = mergeDashboardPayload(dashboard, {
+      work_request_details: [...dashboard.work_request_details].reverse(),
+    });
+
+    expect(merged?.work_request_details?.map((detail) => detail.work_request.id)).toEqual(["wr-2", "wr-1"]);
+    expect(merged?.work_request_details?.[0]).toBe(dashboard.work_request_details[1]);
+  });
+
   it("preserves lazy surfaces and drops stale active details during a priority refresh", () => {
     const dashboard = {
       ...dashboardWithRequest({ id: "wr-1", title: "Hydrated" }),

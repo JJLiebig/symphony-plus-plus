@@ -9,7 +9,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestArtifact do
 
   @type repo :: module()
 
-  @spec upsert(repo(), String.t(), map(), keyword()) :: :ok | {:error, term()}
+  @spec upsert(repo(), String.t(), map(), keyword()) :: {:ok, boolean()} | {:error, term()}
   def upsert(repo, work_package_id, payload, opts \\ [])
       when is_atom(repo) and is_binary(work_package_id) and is_map(payload) and is_list(opts) do
     attrs =
@@ -43,8 +43,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestArtifact do
 
   defp append_artifact(repo, attrs) do
     case PlanningRepository.append_artifact(repo, attrs) do
-      {:ok, _artifact} -> :ok
-      {:error, :id_already_exists} -> :ok
+      {:ok, _artifact} -> {:ok, true}
+      {:error, :id_already_exists} -> {:ok, false}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -52,9 +52,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestArtifact do
   defp update_artifact(repo, %Artifact{} = artifact, attrs) do
     attrs = Map.take(attrs, [:title, :kind, :uri, :metadata])
 
-    case PlanningRepository.update_artifact(repo, artifact, attrs) do
-      {:ok, _artifact} -> :ok
-      {:error, reason} -> {:error, reason}
+    if Enum.all?(attrs, fn {key, value} -> Map.get(artifact, key) == value end) do
+      {:ok, false}
+    else
+      case PlanningRepository.update_artifact(repo, artifact, attrs) do
+        {:ok, _artifact} -> {:ok, true}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 

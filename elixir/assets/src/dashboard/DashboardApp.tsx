@@ -46,6 +46,7 @@ function useDashboardController() {
   const refreshQueueRef = useRef(createLatestTaskQueue<DashboardLoadMode>());
   const loadSequenceRef = useRef(0);
   const deferredLoadSequenceRef = useRef(0);
+  const deferredLoadingDashboardRef = useRef<DashboardPayload | null>(null);
   const refreshingSequenceRef = useRef(0);
   const mutationVersionRef = useRef(0);
   const attentionJumpSequenceRef = useRef(0);
@@ -162,7 +163,8 @@ function useDashboardController() {
     );
   const loadDashboardDeferred = useCallback(async () => {
     const baseDashboard = dashboardRef.current;
-    if (!baseDashboard?.deferred?.dashboard_sections) return;
+    if (!baseDashboard?.deferred?.dashboard_sections || deferredLoadingDashboardRef.current === baseDashboard) return;
+    deferredLoadingDashboardRef.current = baseDashboard;
     const failureVersion = failureVersionRef.current; const loadMutationVersion = mutationVersionRef.current;
     const loadSequence = deferredLoadSequenceRef.current + 1;
     deferredLoadSequenceRef.current = loadSequence;
@@ -176,6 +178,8 @@ function useDashboardController() {
     } catch (caught) {
       if (loadSequence !== deferredLoadSequenceRef.current) return;
       recordConnectionFailure(dashboardCaughtMessage(caught, "Dashboard details unavailable"));
+    } finally {
+      if (deferredLoadingDashboardRef.current === baseDashboard) deferredLoadingDashboardRef.current = null;
     }
   }, [clearConnectionFailure, recordConnectionFailure, setDashboard]);
   const { archivedLoading, loadArchived, soloLoading } = useDashboardSurfaceLoading({
@@ -384,6 +388,9 @@ function useDashboardController() {
     };
   }, [loadDashboard]);
   useEffect(() => refreshInvalidation.subscribe(() => void loadDashboardDeferred()), [loadDashboardDeferred, refreshInvalidation]);
+  useEffect(() => {
+    if (dashboard?.deferred?.dashboard_sections) void loadDashboardDeferred();
+  }, [dashboard, loadDashboardDeferred]);
 
   const dashboardReady = dashboard !== null;
 

@@ -43,10 +43,10 @@ export function reconciledArrayById<T>(current: T[] | undefined, next: T[] | und
 
   const currentById = new Map(current.map((item) => [idOf(item), item]));
   let changed = current.length !== next.length;
-  const reconciled = next.map((item) => {
+  const reconciled = next.map((item, index) => {
     const previous = currentById.get(idOf(item));
     const value = previous && jsonValueEqual(previous, item) ? previous : item;
-    if (value !== previous) changed = true;
+    if (value !== current[index]) changed = true;
     return value;
   });
 

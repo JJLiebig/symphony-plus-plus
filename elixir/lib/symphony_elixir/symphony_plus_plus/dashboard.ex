@@ -233,7 +233,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
     safe_read(fn ->
       repo_values =
         Enum.map(work_packages, & &1.repo) ++
-          Enum.map(work_requests, & &1.repo) ++ repo_values(repo, SoloSession)
+          Enum.map(work_requests, & &1.repo) ++
+          repo_values(repo, WorkRequest) ++ repo_values(repo, SoloSession)
 
       {:ok, build_repo_identity_catalog(repo_values, local_operator_trusted_repo_remotes(), local_path_remotes?: true)}
     end)

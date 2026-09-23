@@ -162,7 +162,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     case append_sync_snapshot(repo, work_package, payload) do
       {:ok, _event} ->
         case PullRequestArtifact.upsert(repo, work_package.id, payload, metadata: %{"source_tool" => @operator_source_tool}) do
-          :ok -> run_after_sync_write(snapshot_written?, callback)
+          {:ok, artifact_changed?} -> run_after_sync_write(snapshot_written? or artifact_changed?, callback)
           {:error, reason} -> error_result(work_package, payload, reason, snapshot_written?)
         end
 

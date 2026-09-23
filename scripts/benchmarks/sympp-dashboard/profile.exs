@@ -26,10 +26,10 @@ defmodule DashboardPayloadProfile do
           measurements =
             Enum.map(1..samples, fn _index ->
               :erlang.garbage_collect()
-              {reductions_before, _memory_before} = :erlang.statistics(:reductions)
+              {reductions_before, _memory_before} = :erlang.statistics(:exact_reductions)
               {assembly_us, {:ok, payload}} = :timer.tc(load, [Repo])
               {encoding_us, json} = :timer.tc(Jason, :encode!, [payload])
-              {reductions_after, _memory_after} = :erlang.statistics(:reductions)
+              {reductions_after, _memory_after} = :erlang.statistics(:exact_reductions)
 
               %{
                 assembly_ms: assembly_us / 1_000,

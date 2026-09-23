@@ -158,9 +158,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
     assert {:ok, result} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
 
     assert result.merged_count == 0
+    assert result.dashboard_changed
     assert [%{status: "synced", reason: "pr_not_merged"}] = result.results
     assert {:ok, updated} = WorkPackageRepository.get(repo, package.id)
     assert updated.status == "ready_for_merge"
+
+    assert {:ok, replay} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
+    refute replay.dashboard_changed
+
+    assert [artifact] = repo.all(Artifact)
+    repo.delete!(artifact)
+    assert {:ok, recovered} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
+    assert recovered.dashboard_changed
+    assert [_artifact] = repo.all(Artifact)
   end
 
   test "merged PR with mismatched head syncs but does not transition", %{repo: repo} do

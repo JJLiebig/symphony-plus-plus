@@ -2096,6 +2096,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
+  test "preloaded repo identities include archived WorkRequest repos", %{repo: repo} do
+    create_work_request!(repo, id: "WR-REPO-ACTIVE", repo: "shared")
+    archived = create_work_request!(repo, id: "WR-REPO-ARCHIVED", repo: "beta/shared")
+    set_work_request_archived_at!(archived, repo, DateTime.utc_now(:microsecond))
+
+    assert {:ok, active_requests} = WorkRequestRepository.list(repo)
+    assert length(active_requests) == 1
+    assert {:ok, packages} = WorkPackageRepository.list(repo)
+    assert {:ok, expected} = Dashboard.local_operator_repo_identity_catalog(repo)
+    assert {:ok, actual} = Dashboard.local_operator_repo_identity_catalog(repo, packages, active_requests)
+    assert actual == expected
+  end
+
   test "local operator dashboard exposes active blocking edges", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       work_request =
@@ -2593,15 +2606,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
   test "local operator GitHub sync skips dashboard refresh when no state changes" do
     with_local_operator_endpoint(fn ->
-      with_operator_github_client(fn ->
+      with_operator_authenticated_github_client(fn ->
+        assert :ok = DashboardPubSub.subscribe()
+
         payload =
           local_operator_conn()
           |> post("/api/v1/sympp/operator/github/sync-prs", %{mode: "auto"})
           |> json_response(200)
 
         assert payload["sync"]["total_count"] == 0
+        refute Map.has_key?(payload["sync"], "reason")
         assert payload["sync"]["dashboard_changed"] == false
         assert get_in(payload, ["refresh", "dashboard"]) == false
+        refute_receive :operator_dashboard_changed, 50
       end)
     end)
   end
