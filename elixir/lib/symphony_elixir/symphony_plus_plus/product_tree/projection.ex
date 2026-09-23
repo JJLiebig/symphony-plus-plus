@@ -213,15 +213,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   defp rollup_node_completion(nodes) do
     children_by_parent_id = Enum.group_by(nodes, & &1.parent_id)
 
-    Enum.map(nodes, &rollup_node(&1, children_by_parent_id, MapSet.new()))
+    Enum.map(nodes, &rollup_node(&1, children_by_parent_id, %{}))
   end
 
-  @spec rollup_node(map(), map(), MapSet.t()) :: map()
+  @spec rollup_node(map(), map(), map()) :: map()
   defp rollup_node(%{id: id} = node, children_by_parent_id, ancestors) when is_binary(id) do
-    if MapSet.member?(ancestors, id) do
+    if Map.has_key?(ancestors, id) do
       node
     else
-      ancestors = MapSet.put(ancestors, id)
+      ancestors = Map.put(ancestors, id, true)
       children = children_by_parent_id |> Map.get(id, []) |> Enum.map(&rollup_node(&1, children_by_parent_id, ancestors))
       child_marks = Enum.map(children, & &1.computed_completion_mark)
       mark = rollup_completion_mark(node, child_marks)

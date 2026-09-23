@@ -162,7 +162,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     case append_sync_snapshot(repo, work_package, payload) do
       {:ok, _event} ->
         case PullRequestArtifact.upsert(repo, work_package.id, payload, metadata: %{"source_tool" => @operator_source_tool}) do
-          :ok -> run_after_sync_write(work_package, payload, snapshot_written?, callback)
+          :ok -> run_after_sync_write(snapshot_written?, callback)
           {:error, reason} -> error_result(work_package, payload, reason, snapshot_written?)
         end
 
@@ -171,11 +171,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     end
   end
 
-  defp run_after_sync_write(work_package, payload, snapshot_written?, callback) do
+  defp run_after_sync_write(snapshot_written?, callback) do
     case callback.() do
       result when is_map(result) -> maybe_mark_dashboard_changed(result, snapshot_written?)
       {:ok, result} when is_map(result) -> {:ok, maybe_mark_dashboard_changed(result, snapshot_written?)}
-      {:error, reason} -> error_result(work_package, payload, reason, snapshot_written?)
     end
   end
 
@@ -190,8 +189,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   defp maybe_mark_dashboard_changed({:ok, result}, snapshot_written?) when is_map(result) do
     {:ok, maybe_mark_dashboard_changed(result, snapshot_written?)}
   end
-
-  defp maybe_mark_dashboard_changed({:error, reason}, _snapshot_written?), do: {:error, reason}
 
   defp sync_snapshot_written?(progress_events, work_package, payload) do
     idempotency_key = "operator_sync_pr:#{work_package.id}:#{metadata_idempotency_key(payload)}"

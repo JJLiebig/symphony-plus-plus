@@ -125,7 +125,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
     children = Enum.group_by(nodes, &value(&1, :parent_id), &value(&1, :id))
 
     Map.new(referenced_group_ids, fn group_id ->
-      {group_id, descendant_members(group_id, children, direct_members, MapSet.new())}
+      {group_id, descendant_members(group_id, children, direct_members, %{})}
     end)
   end
 
@@ -145,10 +145,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
   defp package_group_id(work_package), do: value(work_package, :group_id) || value(work_package, :product_tree_node_id)
 
   defp descendant_members(group_id, children, direct_members, visited) do
-    if MapSet.member?(visited, group_id) do
+    if Map.has_key?(visited, group_id) do
       []
     else
-      visited = MapSet.put(visited, group_id)
+      visited = Map.put(visited, group_id, true)
 
       (Map.get(direct_members, group_id, []) ++
          Enum.flat_map(Map.get(children, group_id, []), &descendant_members(&1, children, direct_members, visited)))
