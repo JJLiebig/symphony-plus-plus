@@ -121,10 +121,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   defp reconcile_verified_terminal_merge(repo, %WorkPackage{} = work_package, progress_events, payload, metadata) do
     case validate_strong_merge_evidence(payload) do
       :ok ->
-        after_sync_write(repo, work_package, payload, progress_events, fn ->
-          repo
-          |> reconcile_transition_delivery(work_package, transition_merged(repo, work_package, payload, metadata))
-        end)
+        case after_sync_write(repo, work_package, payload, progress_events, fn ->
+               repo
+               |> reconcile_transition_delivery(work_package, transition_merged(repo, work_package, payload, metadata))
+             end) do
+          %{} = result -> {:ok, result}
+          {:ok, result} -> {:ok, result}
+        end
 
       {:error, reason} ->
         {:ok, error_result(work_package, payload, reason)}

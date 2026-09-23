@@ -207,6 +207,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
     assert {:ok, second} = ProductTree.record_revision(repo, work_request.id, %{id: "revision_two", reason: "Second"})
     assert second.revision_number == 2
 
+    assert {:ok, trees} = ProductTree.trees_for_work_requests(repo, [work_request.id])
+    assert trees[work_request.id].latest_revision.id == second.id
+
     %{rows: rows} =
       SQL.query!(repo, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sympp_product_tree_slice_links'")
 

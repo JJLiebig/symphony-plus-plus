@@ -337,7 +337,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Repository do
       )
     end)
     |> Enum.map(&struct(Revision, &1))
-    |> Enum.group_by(& &1.work_request_id)
+    |> Map.new(&{&1.work_request_id, &1})
   end
 
   defp tree_read_chunks(work_request_ids), do: Enum.chunk_every(work_request_ids, @tree_read_chunk_size)
