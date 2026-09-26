@@ -30,6 +30,9 @@ skills can make raw Linear GraphQL calls.
 
 If a claimed issue moves to a terminal state (`Done`, `Closed`, `Cancelled`, or `Duplicate`),
 Symphony stops the active agent for that issue and cleans up matching workspaces.
+Managed Rust worktree removal makes a best-effort Cargo cleanup for one tracked
+workspace. Cargo failures do not block removal; shared target and build
+directories are left alone.
 
 ## How to use it
 
