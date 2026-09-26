@@ -515,7 +515,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
          :ok <- require_git_worktree(worktree_path, repo_root, opts),
          {:ok, work_package} <- persist_cleanup_proof(repo, work_package, worktree_path, repo_root, opts),
          opts <- cleanup_removal_context_opts(opts, work_package, worktree_path, repo_root),
-         :ok <- clean_cargo_build(worktree_path, repo_root, opts),
+         :ok <- clean_cargo_build(worktree_path, opts),
          :ok <- git(repo_root, ["worktree", "remove", "--force", worktree_path], opts),
          :ok <- remove_proven_residue(work_package, worktree_path),
          :ok <- git(repo_root, ["worktree", "prune"], opts),
@@ -642,17 +642,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
     })
   end
 
-  defp clean_cargo_build(worktree_path, repo_root, opts) do
+  defp clean_cargo_build(worktree_path, opts) do
     with cargo when not is_nil(cargo) <- opts[:cargo] || System.find_executable("cargo"),
          {:ok, files} <- git_output(worktree_path, ["ls-files", "--", "Cargo.toml", "*/Cargo.toml"], opts),
          manifest when is_binary(manifest) <-
            files |> String.split(~r/\R/, trim: true) |> Enum.min_by(&length(Path.split(&1)), fn -> nil end),
          manifest = Path.join(worktree_path, manifest),
-         {:ok, %{"target_directory" => target_dir} = metadata} <- cargo_metadata(cargo, worktree_path, manifest),
-         true <-
-           is_binary(target_dir) and
-             cargo_directories_private?(cargo, worktree_path, repo_root, manifest, metadata) do
-      _ = run_cargo(cargo, worktree_path, ["clean", "--manifest-path", manifest, "--offline", "--locked", "--quiet"])
+         {:ok, metadata} <- cargo_metadata(cargo, worktree_path, manifest),
+         {:ok, workspace_root} <- canonicalize(metadata["workspace_root"]),
+         true <- inside_root?(workspace_root, worktree_path),
+         {:ok, target_dir, build_dir} <- cargo_directories(metadata),
+         true <- cargo_build_private?(cargo, worktree_path, manifest, build_dir),
+         {:ok, target_args} <- cargo_target_args(cargo, worktree_path, manifest, target_dir, build_dir) do
+      _ = run_cargo(cargo, worktree_path, ["clean", "--manifest-path", manifest, "--offline", "--locked", "--quiet"] ++ target_args)
     end
 
     :ok
@@ -660,41 +662,54 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
     _error -> :ok
   end
 
-  defp cargo_directories_private?(cargo, worktree_path, repo_root, manifest, metadata) do
-    dirs = [metadata["target_directory"], metadata["build_directory"] || metadata["target_directory"]]
-    external_dirs = Enum.reject(dirs, &inside_root?(&1, worktree_path))
+  defp cargo_directories(metadata) do
+    target = metadata["target_directory"]
+    build = metadata["build_directory"] || target
 
-    cond do
-      Enum.any?(dirs, &(inside_root?(worktree_path, &1) or inside_root?(repo_root, &1))) ->
-        false
-
-      external_dirs == [] ->
-        true
-
-      true ->
-        base_manifest = Path.join(repo_root, Path.relative_to(manifest, worktree_path))
-
-        case cargo_metadata(cargo, repo_root, base_manifest) do
-          {:ok, base_metadata} ->
-            base_dirs = [base_metadata["target_directory"], base_metadata["build_directory"] || base_metadata["target_directory"]]
-            cargo_dirs_disjoint?(external_dirs, base_dirs)
-
-          _ ->
-            false
-        end
+    with true <- is_binary(target) and is_binary(build),
+         {:ok, target} <- canonicalize(target),
+         {:ok, build} <- canonicalize(build) do
+      {:ok, target, build}
     end
   end
 
-  defp cargo_dirs_disjoint?(dirs, base_dirs) do
-    Enum.all?(dirs, fn dir ->
-      Enum.all?(base_dirs, fn base ->
-        is_binary(base) and not inside_root?(dir, base) and not inside_root?(base, dir)
-      end)
-    end)
+  defp cargo_build_private?(cargo, worktree_path, manifest, build_dir) do
+    if inside_root?(build_dir, worktree_path) do
+      not same_path?(build_dir, worktree_path)
+    else
+      config = ~s|build.build-dir="{cargo-cache-home}/build/{workspace-path-hash}"|
+
+      with {:ok, metadata} <- cargo_metadata(cargo, worktree_path, manifest, ["--config", config]),
+           {:ok, _target, expected_build} <- cargo_directories(metadata) do
+        same_path?(build_dir, expected_build) and
+          same_path?(expected_build, metadata["build_directory"])
+      else
+        _ -> false
+      end
+    end
   end
 
-  defp cargo_metadata(cargo, repo_root, manifest) do
-    case run_cargo(cargo, repo_root, ["metadata", "--manifest-path", manifest, "--no-deps", "--offline", "--locked", "--format-version", "1", "--quiet"]) do
+  defp cargo_target_args(cargo, worktree_path, manifest, target_dir, build_dir) do
+    if inside_root?(target_dir, worktree_path) and not same_path?(target_dir, worktree_path) do
+      {:ok, []}
+    else
+      target = Path.join(worktree_path, ".sympp-cargo-clean-target")
+      config = "build.target-dir=#{inspect(String.replace(target, "\\", "/"))}"
+
+      with {:ok, resolved_target} <- canonicalize(target),
+           true <- inside_root?(resolved_target, worktree_path) and not same_path?(resolved_target, worktree_path),
+           {:ok, metadata} <- cargo_metadata(cargo, worktree_path, manifest, ["--config", config]),
+           {:ok, _target, overridden_build} <- cargo_directories(metadata),
+           true <- same_path?(overridden_build, build_dir) do
+        {:ok, ["--target-dir", target]}
+      end
+    end
+  end
+
+  defp cargo_metadata(cargo, repo_root, manifest, extra_args \\ []) do
+    args = ["metadata", "--manifest-path", manifest, "--no-deps", "--offline", "--locked", "--format-version", "1", "--quiet"] ++ extra_args
+
+    case run_cargo(cargo, repo_root, args) do
       {metadata, 0} -> Jason.decode(metadata)
       _ -> :error
     end

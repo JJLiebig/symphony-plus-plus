@@ -45,11 +45,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesCleanupOwnershipTest do
     assert File.dir?(prepared_again.worktree_path)
   end
 
-  test "cleanup best-effort cleans private Cargo builds without wiping a shared target", %{repo: repo} do
+  test "cleanup cleans private Cargo builds without touching external targets or shared builds", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cargo-cleanup")
     codex_home = Path.join(fixture.root, "codex-home")
+    layouts = [:local, :central_private, :central_shared, :shared_build]
+    layouts = if TestSupport.symlink_supported?(), do: layouts ++ [:symlink_target], else: layouts
 
-    for {layout, number} <- Enum.with_index([:local, :central_private, :central_shared]) do
+    for {layout, number} <- Enum.with_index(layouts) do
       assert {:ok, package} =
                Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-WT-CARGO-#{number}", kind: "mcp", base_branch: "main"))
 
@@ -63,25 +65,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesCleanupOwnershipTest do
 
       File.write!(Path.join(prepared.worktree_path, "Cargo.toml"), "[workspace]\n")
       TestSupport.git_output!(prepared.worktree_path, ["add", "Cargo.toml"])
-      target = if layout == :local, do: Path.join(prepared.worktree_path, "target"), else: Path.join(fixture.root, "central-target-#{layout}")
-      base_target = if layout == :central_shared, do: target, else: Path.join(fixture.root, "base-target")
-      build = Path.join(fixture.root, ".cargo/build/worktree-#{number}")
-      base_build = Path.join(fixture.root, ".cargo/build/base")
+      local_target = Path.join(prepared.worktree_path, "target")
+      shared_target = Path.join(fixture.root, "shared-target")
+
+      if layout == :symlink_target do
+        File.mkdir_p!(shared_target)
+        File.ln_s!(shared_target, local_target)
+      end
+
+      target = if layout in [:local, :shared_build, :symlink_target], do: local_target, else: Path.join(fixture.root, "central-target-#{layout}")
+      private_build = Path.join(fixture.root, ".cargo/build/worktree-#{number}")
+      build = if layout == :shared_build, do: Path.join(fixture.root, ".cargo/build/shared"), else: private_build
       test_pid = self()
 
-      cargo = fn path, [command | _args] ->
-        send(test_pid, {:cargo, command, path, File.dir?(path)})
+      cargo = fn path, [command | args] ->
+        send(test_pid, {:cargo, command, args, path, File.dir?(path)})
 
         case command do
           "metadata" ->
-            {target_dir, build_dir} =
-              if normalized_path(path) == normalized_path(fixture.repo_root) do
-                {base_target, base_build}
-              else
-                {target, build}
-              end
-
-            {Jason.encode!(%{target_directory: target_dir, build_directory: build_dir}), 0}
+            target_dir = if Enum.any?(args, &String.starts_with?(&1, "build.target-dir=")), do: Path.join(prepared.worktree_path, ".sympp-cargo-clean-target"), else: target
+            build_dir = if Enum.any?(args, &String.starts_with?(&1, "build.build-dir=")), do: private_build, else: build
+            {Jason.encode!(%{workspace_root: prepared.worktree_path, target_directory: target_dir, build_directory: build_dir}), 0}
 
           "clean" ->
             {"simulated Cargo failure", 101}
@@ -90,17 +94,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesCleanupOwnershipTest do
 
       assert {:ok, cleaned} = WorktreeLifecycle.cleanup(repo, package.id, codex_home: codex_home, cargo: cargo)
       assert cleaned.status == "cleaned"
-      assert_received {:cargo, "metadata", _, true}
-      assert_received {:cargo, "metadata", base_path, true}
-      assert normalized_path(base_path) == normalized_path(fixture.repo_root)
+      assert_received {:cargo, "metadata", _, _, true}
 
-      if layout == :central_shared do
-        refute_received {:cargo, "clean", _, _}
+      if layout == :shared_build do
+        refute_received {:cargo, "clean", _, _, _}
       else
-        assert_received {:cargo, "clean", _, true}
+        assert_received {:cargo, "clean", clean_args, _, true}
+        assert "--target-dir" in clean_args == (layout != :local)
       end
 
       refute File.exists?(prepared.worktree_path)
+      if layout == :symlink_target, do: assert(File.dir?(shared_target))
     end
   end
 
