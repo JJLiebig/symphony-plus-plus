@@ -515,6 +515,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
          :ok <- require_git_worktree(worktree_path, repo_root, opts),
          {:ok, work_package} <- persist_cleanup_proof(repo, work_package, worktree_path, repo_root, opts),
          opts <- cleanup_removal_context_opts(opts, work_package, worktree_path, repo_root),
+         :ok <- clean_cargo_build(worktree_path, repo_root, opts),
          :ok <- git(repo_root, ["worktree", "remove", "--force", worktree_path], opts),
          :ok <- remove_proven_residue(work_package, worktree_path),
          :ok <- git(repo_root, ["worktree", "prune"], opts),
@@ -640,6 +641,67 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
       resolved_worktree_path: worktree_path
     })
   end
+
+  defp clean_cargo_build(worktree_path, repo_root, opts) do
+    with cargo when not is_nil(cargo) <- opts[:cargo] || System.find_executable("cargo"),
+         {:ok, files} <- git_output(worktree_path, ["ls-files", "--", "Cargo.toml", "*/Cargo.toml"], opts),
+         manifest when is_binary(manifest) <-
+           files |> String.split(~r/\R/, trim: true) |> Enum.min_by(&length(Path.split(&1)), fn -> nil end),
+         manifest = Path.join(worktree_path, manifest),
+         {:ok, %{"target_directory" => target_dir} = metadata} <- cargo_metadata(cargo, worktree_path, manifest),
+         true <-
+           is_binary(target_dir) and
+             cargo_directories_private?(cargo, worktree_path, repo_root, manifest, metadata) do
+      _ = run_cargo(cargo, worktree_path, ["clean", "--manifest-path", manifest, "--offline", "--locked", "--quiet"])
+    end
+
+    :ok
+  rescue
+    _error -> :ok
+  end
+
+  defp cargo_directories_private?(cargo, worktree_path, repo_root, manifest, metadata) do
+    dirs = [metadata["target_directory"], metadata["build_directory"] || metadata["target_directory"]]
+    external_dirs = Enum.reject(dirs, &inside_root?(&1, worktree_path))
+
+    cond do
+      Enum.any?(dirs, &(inside_root?(worktree_path, &1) or inside_root?(repo_root, &1))) ->
+        false
+
+      external_dirs == [] ->
+        true
+
+      true ->
+        base_manifest = Path.join(repo_root, Path.relative_to(manifest, worktree_path))
+
+        case cargo_metadata(cargo, repo_root, base_manifest) do
+          {:ok, base_metadata} ->
+            base_dirs = [base_metadata["target_directory"], base_metadata["build_directory"] || base_metadata["target_directory"]]
+            cargo_dirs_disjoint?(external_dirs, base_dirs)
+
+          _ ->
+            false
+        end
+    end
+  end
+
+  defp cargo_dirs_disjoint?(dirs, base_dirs) do
+    Enum.all?(dirs, fn dir ->
+      Enum.all?(base_dirs, fn base ->
+        is_binary(base) and not inside_root?(dir, base) and not inside_root?(base, dir)
+      end)
+    end)
+  end
+
+  defp cargo_metadata(cargo, repo_root, manifest) do
+    case run_cargo(cargo, repo_root, ["metadata", "--manifest-path", manifest, "--no-deps", "--offline", "--locked", "--format-version", "1", "--quiet"]) do
+      {metadata, 0} -> Jason.decode(metadata)
+      _ -> :error
+    end
+  end
+
+  defp run_cargo(cargo, worktree_path, args) when is_function(cargo, 2), do: cargo.(worktree_path, args)
+  defp run_cargo(cargo, worktree_path, args), do: System.cmd(cargo, args, cd: worktree_path, stderr_to_stdout: true)
 
   defp validate_existing_worktree_cleanup(%WorkPackage{} = work_package, worktree_path, opts) do
     opts = cleanup_status_context_opts(opts, worktree_path)
