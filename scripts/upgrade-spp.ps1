@@ -16,7 +16,8 @@ if (-not $state.backend.managed) { throw 'The current S++ backend is not managed
 
 $backend = if ($state.backend.pid) { Get-Process -Id $state.backend.pid -ErrorAction SilentlyContinue }
 if ($backend) {
-    $runtimeRoot = [IO.Path]::GetFullPath($state.publication.backend.runtime_root).TrimEnd('\') + '\'
+    $recordedRoot = if ($state.runtime_mode -eq 'artifact') { $state.artifact.root } else { $state.publication.backend.runtime_root }
+    $runtimeRoot = [IO.Path]::GetFullPath($recordedRoot).TrimEnd('\') + '\'
     if (-not $backend.Path.StartsWith($runtimeRoot, [StringComparison]::OrdinalIgnoreCase) -or
         $backend.StartTime.ToUniversalTime().Ticks.ToString() -ne $state.publication.backend.process_start_time_utc_ticks) {
         throw 'The recorded S++ process identity changed. Refusing to stop it.'
