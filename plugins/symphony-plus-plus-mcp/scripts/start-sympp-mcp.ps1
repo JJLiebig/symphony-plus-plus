@@ -2846,7 +2846,7 @@ try {
     superseded_runtimes = $supersededStates
   }
   if ($installedHttpCold) {
-    $readyRoot = if ($runtimeMode -eq "artifact" -and $artifactRuntime) { [string]$artifactRuntime.root } elseif ($repoRoot) { [string]$repoRoot } else { [string]$state.artifact.root }
+    $readyRoot = if ($runtimeMode -eq "artifact") { [string]$state.artifact.root } elseif ($repoRoot) { [string]$repoRoot } else { [string]$state.artifact.root }
     $readyStartIdentity = Get-ProcessStartIdentity (Get-Process -Id ([int]$state.backend.pid) -ErrorAction SilentlyContinue)
     [void](Set-SymppRuntimePublication $state "ready" $installedIdentity $publicationControls $backendPlan $readyRoot $readyStartIdentity)
   }

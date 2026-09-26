@@ -55,31 +55,35 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       }
       function Invoke-RestMethod { return @{ status = 'ok'; source = @{ revision = 'test' } } }
 
-      foreach ($global:scenario in @('preview', 'wrong-identity', 'success', 'upgrade-failure')) {
+      foreach ($global:scenario in @('preview', 'wrong-identity', 'success', 'upgrade-failure', 'artifact-preview', 'artifact-wrong-root', 'artifact-success')) {
           $global:server = Start-Process -FilePath $powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep 300')
           try {
               $global:upgraded = 0
               $global:restarted = 0
               $ticks = $global:server.StartTime.ToUniversalTime().Ticks.ToString()
               if ($global:scenario -eq 'wrong-identity') { $ticks = '0' }
+              $artifactMode = $global:scenario.StartsWith('artifact-')
+              $artifactRoot = if ($global:scenario -eq 'artifact-wrong-root') { $PSScriptRoot } else { Split-Path $powershell }
               @{
                   plugin_root = Join-Path $PSScriptRoot '1.0.0'
+                  runtime_mode = if ($artifactMode) { 'artifact' } else { 'source' }
+                  artifact = @{ root = $artifactRoot }
                   backend = @{ pid = $global:server.Id; managed = $true; url = 'http://127.0.0.1:1' }
                   publication = @{ backend = @{
-                      runtime_root = Split-Path $powershell
+                      runtime_root = if ($artifactMode) { $PSScriptRoot } else { Split-Path $powershell }
                       process_start_time_utc_ticks = $ticks
                   } }
               } | ConvertTo-Json -Depth 5 | Set-Content $env:SYMPP_RUNTIME_FILE
               $failure = ''
-              try { & $upgrade -WhatIf:($global:scenario -eq 'preview') }
+              try { & $upgrade -WhatIf:($global:scenario -in @('preview', 'artifact-preview')) }
               catch { $failure = $_.Exception.Message }
-              if ($global:scenario -in @('preview', 'wrong-identity')) {
+              if ($global:scenario -in @('preview', 'wrong-identity', 'artifact-preview', 'artifact-wrong-root')) {
                   if ($global:server.HasExited -or $global:upgraded -or $global:restarted) { throw 'Preview or identity rejection changed runtime' }
-                  if ($global:scenario -eq 'wrong-identity' -and $failure -notmatch 'identity changed') { throw "Wrong rejection: $failure" }
-                  if ($global:scenario -eq 'preview' -and $failure) { throw $failure }
+                  if ($global:scenario -in @('wrong-identity', 'artifact-wrong-root') -and $failure -notmatch 'identity changed') { throw "Wrong rejection: $failure" }
+                  if ($global:scenario -in @('preview', 'artifact-preview') -and $failure) { throw $failure }
               } else {
                   if (-not $global:server.HasExited -or $global:upgraded -ne 1 -or $global:restarted -ne 1) { throw 'Shutdown/upgrade/restart sequence failed' }
-                  if ($global:scenario -eq 'success' -and $failure) { throw $failure }
+                  if ($global:scenario -in @('success', 'artifact-success') -and $failure) { throw $failure }
                   if ($global:scenario -eq 'upgrade-failure' -and $failure -notmatch 'Marketplace upgrade failed') { throw "Lost upgrade failure: $failure" }
               }
               if (Test-Path "$env:SYMPP_RUNTIME_FILE.cold.lock") { throw 'Upgrade left the startup lock behind' }
