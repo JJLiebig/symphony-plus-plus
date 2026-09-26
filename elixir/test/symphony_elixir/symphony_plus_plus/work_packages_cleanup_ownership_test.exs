@@ -48,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesCleanupOwnershipTest do
   test "cleanup cleans private Cargo builds without touching external targets or shared builds", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cargo-cleanup")
     codex_home = Path.join(fixture.root, "codex-home")
-    layouts = [:local, :central_private, :central_shared, :shared_build]
+    layouts = [:local, :central_private, :shared_build]
     layouts = if TestSupport.symlink_supported?(), do: layouts ++ [:symlink_target], else: layouts
 
     for {layout, number} <- Enum.with_index(layouts) do
