@@ -4,6 +4,12 @@ Symphony++ is a local planning and orchestration cockpit. Humans see product
 progress while agents receive bounded execution assignments from the same
 ledger.
 
+For delivery-tracked work, a WorkRequest is usually created after the human and
+an agent have explored the problem and refined it into a sufficiently concrete
+goal, spec, or direction. The agent can then take the architect role, slice the
+WorkRequest into bounded execution, dispatch ready work, and oversee delivery.
+Solo Sessions cover lighter-weight planning that does not need a WorkRequest.
+
 ## WorkRequest
 
 A WorkRequest is the product goal and the primary dashboard item. It records
