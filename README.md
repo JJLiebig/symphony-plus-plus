@@ -4,6 +4,23 @@ Symphony++ gives Codex agents a local planning board, MCP tools, and a
 dashboard for coordinating real work across WorkRequests, WorkPackages,
 reviews, blockers, and delivery evidence.
 
+## Where Symphony++ Starts
+
+Symphony++ does not need to own the early ideation loop. A typical delivery
+flow starts with the human and an agent exploring the problem, refining the
+goal, and agreeing on a sufficiently concrete spec or direction. Once that
+work is ready to be operationalized, they create a WorkRequest in Symphony++.
+
+From there, an architect can take ownership of the WorkRequest, clarify and
+slice it into WorkPackages, define dependencies and acceptance criteria,
+dispatch ready workers, answer guidance, and oversee delivery through review
+and merge.
+
+Solo Sessions remain available when lightweight planning memory is useful
+before or outside a WorkRequest. Symphony++ coordinates delivery work; it does
+not own terminal sessions, model accounts, or the human's interactive coding
+environment.
+
 ## Install
 
 Add the marketplace once:
