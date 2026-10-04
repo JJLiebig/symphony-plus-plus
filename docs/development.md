@@ -67,7 +67,9 @@ See [Runtime](runtime.md) for installed artifact ownership and repair.
 
 ## Documentation Changes
 
-Document only current behavior. Update the owning skill when agent procedure
-changes, the code/tests when behavior changes, and these docs when the human
-model changes. Do not add migration diaries or completed implementation plans
-to the active tree.
+Current guides describe implemented behavior. Approved beta target contracts
+belong under `docs/design/`, explicitly labeled and linked from the index; they
+do not replace current operating procedures. Update the owning skill when agent
+procedure changes, code/tests when behavior changes, and the current guides
+when the human model changes. Do not keep duplicate plans, migration diaries,
+or completed implementation plans in the active tree.
