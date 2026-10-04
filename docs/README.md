@@ -26,6 +26,7 @@ documents do not remain in the active documentation tree.
 - Review trust boundaries: [Security](security.md)
 - Develop and validate changes: [Development](development.md)
 - Diagnose installed runtime behavior: [Runtime](runtime.md)
+- Install portable Codex/Claude procedures: [Portable skills](portable-skills.md)
 - Repair delivery state: [Delivery recovery](runbooks/delivery-recovery.md)
 - Respond to a permission or secret incident:
   [Security incident](runbooks/security-incident.md)

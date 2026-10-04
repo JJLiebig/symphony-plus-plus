@@ -1,4 +1,6 @@
 ---
+metadata:
+  internal: true
 name: commit
 description:
   Create a well-formed git commit from current changes using session history for

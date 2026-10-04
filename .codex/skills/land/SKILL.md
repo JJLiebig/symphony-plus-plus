@@ -1,4 +1,6 @@
 ---
+metadata:
+  internal: true
 name: land
 description:
   Land a PR by monitoring conflicts, resolving them, waiting for checks, and

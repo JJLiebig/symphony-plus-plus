@@ -1,4 +1,6 @@
 ---
+metadata:
+  internal: true
 name: debug
 description:
   Investigate stuck runs and execution failures by tracing Symphony and Codex

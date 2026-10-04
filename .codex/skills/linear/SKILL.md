@@ -1,4 +1,6 @@
 ---
+metadata:
+  internal: true
 name: linear
 description: |
   Use Symphony's `linear_graphql` client tool for raw Linear GraphQL
