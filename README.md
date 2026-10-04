@@ -1,117 +1,68 @@
 # Symphony++
 
-Symphony++ gives Codex agents a local planning board, MCP tools, and a
-dashboard for coordinating real work across WorkRequests, WorkPackages,
-reviews, blockers, and delivery evidence.
+Symphony++ is a local planning and delivery cockpit for coding agents. Its
+ledger, MCP tools, and dashboard connect WorkRequests, bounded WorkPackages,
+decisions, blockers, and GitHub delivery evidence.
 
-## Where Symphony++ Starts
-
-Symphony++ does not need to own the early ideation loop. A typical delivery
-flow starts with the human and an agent exploring the problem, refining the
-goal, and agreeing on a sufficiently concrete spec or direction. Once that
-work is ready to be operationalized, they create a WorkRequest in Symphony++.
-
-From there, an architect can take ownership of the WorkRequest, clarify and
-slice it into WorkPackages, define dependencies and acceptance criteria,
-dispatch ready workers, answer guidance, and oversee delivery through review
-and merge.
-
-Solo Sessions use MCP when lightweight persistent planning memory is useful
-before or outside a WorkRequest. Symphony++ coordinates delivery work; it does
-not own terminal sessions, model accounts, or the human's interactive coding
-environment.
+A human and agent can explore a problem before creating a WorkRequest. An
+architect then slices and oversees tracked delivery. Ordinary workers and
+coordinators also work without a backend; optional Solo Sessions provide
+lightweight planning memory through MCP. Symphony++ does not own model
+accounts or terminal sessions.
 
 ## Install
 
-For portable Codex or Claude Code procedures, use:
+Portable procedures for Codex or Claude Code:
 
 ```sh
 npx skills add JJLiebig/symphony-plus-plus
 ```
 
-See [portable Skills installation](docs/portable-skills.md) for host selection,
-updates, removal, and separate MCP setup. This installs procedures only; the
-backend must be running and configured separately.
+This installs procedures only. See [Portable skills](docs/portable-skills.md)
+for host selection, updates, removal, and separate MCP setup.
 
-The Codex marketplace route remains available:
-
-Add the marketplace once:
+For Codex marketplace installation, add the marketplace once:
 
 ```powershell
 codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
 ```
 
-Install the default skill-only plugin for ordinary workers and coordinators:
+Choose the skill-only plugin for ordinary workers/coordinators:
 
 ```powershell
 codex plugin add symphony-plus-plus@symphony-plus-plus
 ```
 
-Install the MCP companion for persistent Solo planning or WorkRequest/WorkPackage sessions:
+Or choose the MCP companion for persistent Solo or WorkRequest/WorkPackage
+sessions:
 
 ```powershell
 codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
 ```
 
-Update installed packages:
+Update packages and open a fresh Codex session:
 
 ```powershell
 codex plugin marketplace upgrade
 ```
 
-Restart or open a fresh Codex session after installing or upgrading so Codex
-loads the new plugin metadata. Do not install both plugins in the same Codex
-home unless you intentionally want both skill prefixes visible.
+Do not install both plugins in the same Codex home unless you intentionally
+want both skill prefixes visible. The MCP companion starts or reuses the local
+runtime and serves its dashboard. See [Runtime](docs/runtime.md) for actual
+endpoint lookup, lifecycle, beta isolation, and repair.
 
-## Dashboard
+## Documentation
 
-When the MCP companion starts, it launches or reuses the local Symphony++
-runtime.
-
-The launcher prefers loopback port `19998`, then tries higher available ports. On Windows, read the active
-dashboard URL with:
-
-```powershell
-(Get-Content "$env:USERPROFILE\.agents\splusplus\runtime\codex-plugin.json" -Raw | ConvertFrom-Json).frontend.url
-```
-
-The same runtime file records the MCP endpoint as `backend.mcp_url`.
-
-Installed artifact runtimes serve the packaged dashboard from the selected
-backend endpoint. A separate `19999` dashboard listener is only a source/Vite
-development detail. Set `SYMPP_BACKEND_PORT` only to prefer a specific backend
-port; the launcher can fall back when it is unavailable.
-
-The launcher records the actual URLs here:
-
-```text
-%USERPROFILE%\.agents\splusplus\runtime\codex-plugin.json
-```
-
-## Features
-
-- Solo Sessions: lightweight local planning memory for normal single-agent
-  work.
-- WorkRequests: product-facing work with decisions, comments, WorkPackages,
-  and delivery status.
-- WorkPackages: scoped execution records for agents, including branch, PR,
-  validation, blocker, review, and readiness evidence.
-- Architect flows: split larger requests, dispatch workers, answer guidance,
-  and close delivery cleanly.
-- Dashboard: scan active work, blockers, PRs, reviews, and runtime status from
-  one local page.
-- Herdr execution inspector: keep the active architect or coordinator frontier
-  beside its agent pane without changing Herdr itself.
-- Marketplace runtime: installed sessions use the marketplace cache and
-  runtime artifacts instead of compiling from a developer checkout.
-
-## Need More Detail?
-
-- Default plugin: `plugins/symphony-plus-plus/README.md`
-- MCP companion: `plugins/symphony-plus-plus-mcp/README.md`
-- Product and operator docs: `docs/README.md`
-- Installed runtime and MCP startup: `docs/runtime.md`
+- [Documentation index](docs/README.md): current system, operations, security,
+  development, and recovery.
+- [Default plugin](plugins/symphony-plus-plus/README.md) and
+  [MCP companion](plugins/symphony-plus-plus-mcp/README.md): package boundaries.
+- [Product](PRODUCT.md) and [Design](DESIGN.md): purpose and interface principles.
+- [Factory workflow](docs/design/factory-workflow.md): approved **beta target**
+  with the editable human diagram; proposed capabilities are labeled separately
+  from current behavior.
+- [Upstream specification](SPEC.md): upstream Symphony behavior.
 
 ## License
 
-Apache 2.0. See `LICENSE`.
+Apache 2.0. See [LICENSE](LICENSE).

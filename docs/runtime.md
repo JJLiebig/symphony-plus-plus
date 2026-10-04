@@ -1,5 +1,21 @@
 # Installed Runtime And MCP Startup
 
+## Active Endpoints
+
+The installed launcher prefers loopback backend port `19998`, then higher
+available ports. `SYMPP_BACKEND_PORT` requests a preferred port; the launcher
+can fall back if it is unavailable. The packaged dashboard and HTTP MCP share
+the selected backend endpoint. A separate `19999` listener is a source/Vite
+development detail.
+
+On Windows, read the actual endpoints from the runtime file:
+
+```powershell
+$symppRuntime = Get-Content "$env:USERPROFILE\.agents\splusplus\runtime\codex-plugin.json" -Raw | ConvertFrom-Json
+$symppRuntime.frontend.url
+$symppRuntime.backend.mcp_url
+```
+
 ## Normal Installed Flow
 
 The supported user path is:

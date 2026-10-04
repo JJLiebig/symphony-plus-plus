@@ -15,6 +15,8 @@
 ## Documentation And Planning Assets
 
 - Treat `docs/` as the current human-facing product and operator guide.
+- Keep approved beta target contracts under `docs/design/`, clearly labeled
+  and linked from the index. Do not present target behavior as implemented.
 - Treat packaged `plugins/**/skills/**/SKILL.md` files as the authoritative
   agent procedures. Link to them instead of copying their workflows into docs.
 - Use the WorkPackage ledger, MCP resources, and package-specific assignment

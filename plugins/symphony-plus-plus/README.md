@@ -53,7 +53,7 @@ See the authoritative operator docs:
 - [Operations](../../docs/operations.md) for supported workflows.
 - [Installed runtime and MCP startup](../../docs/runtime.md) for runtime
   ownership, diagnosis, and repair.
-- [Architecture](../../docs/architecture.md) for the product boundary.
+- [Current system](../../docs/system.md) for the model and product boundary.
 - [Development](../../docs/development.md) for source-checkout validation.
 
 ## Development
