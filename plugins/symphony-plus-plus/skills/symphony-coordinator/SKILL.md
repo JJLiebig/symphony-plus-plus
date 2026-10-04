@@ -1,18 +1,22 @@
 ---
 name: symphony-coordinator
-description: Use when acting as a parent Codex agent coordinating ordinary non-MCP repo work across one or more subagents, including scouting, slicing, worker dispatch, review convergence, and PR/evidence integration.
+description: Use when acting as a parent Codex agent coordinating ordinary repo work without required Symphony++ persistence across one or more subagents, including scouting, slicing, worker dispatch, review convergence, and PR/evidence integration.
 ---
 
 # Symphony++ Coordinator
 
-Use for ordinary non-MCP coordination. For WorkRequests, WorkPackages,
+Use for ordinary repository coordination. For WorkRequests, WorkPackages,
 ledger-backed claims, scoped grants, delivery boards, or MCP merge gates, use
 `symphony-plus-plus-mcp:symphony-architect`.
 
 ## Start
 
 - Optionally attach a coordinator-owned `symphony-plus-plus:symphony-solo-session`
-  for parent planning. Do not share that session with workers.
+  for parent planning through configured MCP tools. Do not share that session
+  with workers. Persistence is optional: ordinary delegation needs no Symphony++
+  backend when no ledger state is requested. Required ledger work needs MCP;
+  report missing tools and recover the connection instead of substituting CLI
+  business commands or private state files.
 - Scout repo context before slicing.
 - Identify outcome, base branch, acceptance, owned/forbidden areas, optional
   validation context, review profile, risk, and any assigned size budget.

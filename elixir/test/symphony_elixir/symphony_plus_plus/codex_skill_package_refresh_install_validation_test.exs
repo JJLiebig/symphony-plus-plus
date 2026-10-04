@@ -27,13 +27,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshInstallValidat
               "-ValidateInstalledCache"
             ],
             stderr_to_stdout: true,
-            env: [{"SYMPP_LAUNCHER", "direct"}, {"SYMPP_MIX", fake_mix}]
+            env: [{"SYMPP_LAUNCHER", "direct"}, {"SYMPP_MIX", fake_mix}, {"SYMPP_HOME", Path.join(temp_codex_home, "sympp-home")}]
           )
 
         assert status == 0, output
-        assert output =~ "Mix 1.99.0 test"
         assert output =~ "Symphony++ MCP launcher validation passed."
-        assert output =~ "Symphony++ Solo Session wrapper validation passed."
         assert output =~ "Validated installed Symphony++ plugin cache:"
         assert output =~ "cache: #{@plugin_version}"
         refute File.exists?(published_plugin_cache_path(temp_codex_home, ["local"], "symphony-plus-plus-mcp"))

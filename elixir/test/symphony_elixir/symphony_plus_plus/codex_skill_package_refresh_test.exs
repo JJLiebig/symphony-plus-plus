@@ -108,13 +108,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshTest do
   end
 
   @tag :ci_slow
-  test "refresh script validates installed default cache wrapper from cache roots" do
+  test "refresh script validates installed skill-only cache without a runtime" do
     powershell = System.find_executable("pwsh")
     temp_codex_home = unique_temp_path("sympp-plugin-refresh")
 
     if powershell do
-      fake_mix = fake_mix_executable(temp_codex_home)
-
       try do
         expected_version =
           @plugin_manifest_path
@@ -135,13 +133,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshTest do
               "symphony-plus-plus",
               "-ValidateInstalledCache"
             ],
-            stderr_to_stdout: true,
-            env: [{"SYMPP_LAUNCHER", "direct"}, {"SYMPP_MIX", fake_mix}]
+            stderr_to_stdout: true
           )
 
         assert status == 0, output
-        assert output =~ "Mix 1.99.0 test"
-        assert output =~ "Symphony++ Solo Session wrapper validation passed."
         assert output =~ "Validated installed Symphony++ plugin cache:"
         assert output =~ "cache: #{expected_version}"
 
@@ -154,52 +149,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshTest do
           refute File.exists?(source_hint_path)
           assert File.read!(generated_marker_path) =~ "generated_by=refresh-local-plugin.ps1"
         end
-      after
-        File.rm_rf!(temp_codex_home)
-      end
-    end
-  end
-
-  test "Solo wrapper ignores sibling installed cache hints without marketplace or explicit override" do
-    powershell = System.find_executable("pwsh")
-    temp_codex_home = unique_temp_path("sympp-plugin-solo-cache-hints")
-
-    if powershell do
-      fake_mix = fake_mix_executable(temp_codex_home)
-      default_cache_root = published_plugin_cache_path(temp_codex_home, ["1.0.0"])
-      companion_hint_path = published_plugin_cache_path(temp_codex_home, ["1.0.0", ".sympp-source-root"], "symphony-plus-plus-mcp")
-      wrapper_path = Path.join(default_cache_root, "scripts/sympp-solo.ps1")
-
-      try do
-        File.mkdir_p!(Path.dirname(wrapper_path))
-        File.cp!(@plugin_solo_script_path, wrapper_path)
-        File.cp!(Path.join(Path.dirname(@plugin_solo_script_path), "sympp-launcher-runtime.ps1"), Path.join(Path.dirname(wrapper_path), "sympp-launcher-runtime.ps1"))
-        File.mkdir_p!(Path.dirname(companion_hint_path))
-        File.write!(companion_hint_path, "#{@repo_root}\n")
-
-        {output, status} =
-          System.cmd(
-            powershell,
-            ["-NoProfile", "-File", wrapper_path, "-ValidateOnly"],
-            cd: temp_codex_home,
-            stderr_to_stdout: true,
-            env: [{"SYMPP_LAUNCHER", "direct"}, {"SYMPP_MIX", fake_mix}, {"SYMPP_REPO_ROOT", ""}]
-          )
-
-        assert status != 0
-        assert output =~ "Cannot infer the Symphony++ runtime source"
-
-        {override_output, override_status} =
-          System.cmd(
-            powershell,
-            ["-NoProfile", "-File", wrapper_path, "-ValidateOnly"],
-            cd: temp_codex_home,
-            stderr_to_stdout: true,
-            env: [{"SYMPP_LAUNCHER", "direct"}, {"SYMPP_MIX", fake_mix}, {"SYMPP_REPO_ROOT", @repo_root}]
-          )
-
-        assert override_status == 0, override_output
-        assert override_output =~ "Symphony++ Solo Session wrapper validation passed."
       after
         File.rm_rf!(temp_codex_home)
       end

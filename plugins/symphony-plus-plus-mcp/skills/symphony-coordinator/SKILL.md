@@ -12,7 +12,11 @@ ledger-backed claims, scoped grants, delivery boards, or MCP merge gates, use
 ## Start
 
 - Optionally attach a coordinator-owned `symphony-plus-plus-mcp:symphony-solo-session`
-  for parent planning. Do not share that session with workers.
+  for parent planning through configured MCP tools. Do not share that session
+  with workers. Persistence is optional: ordinary delegation needs no Symphony++
+  backend when no ledger state is requested. Required ledger work needs MCP;
+  report missing tools and recover the connection instead of substituting CLI
+  business commands or private state files.
 - Scout repo context before slicing.
 - Identify outcome, base branch, acceptance, owned/forbidden areas, optional
   validation and review context, risk, and any assigned size budget.

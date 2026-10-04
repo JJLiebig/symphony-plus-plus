@@ -1,14 +1,14 @@
 ---
 name: symphony-solo-session
-description: Use when Codex needs lightweight local planning memory for one normal single-agent repo, worktree, or task without Symphony++ WorkRequest or WorkPackage orchestration. Creates or attaches a local Solo Session, appends task plan, finding, progress, blocker, decision, and validation entries, reads the ledger, and completes or archives the session through the Symphony++ plugin wrapper.
+description: Use when Codex needs lightweight local planning memory for one normal single-agent repo, worktree, or task without Symphony++ WorkRequest or WorkPackage orchestration. Creates or attaches a local Solo Session, appends task plan, finding, progress, blocker, decision, and validation entries, reads the ledger, and completes or archives the session through configured Symphony++ MCP tools.
 ---
 
 # Symphony++ Solo Session
 
-Use Solo Sessions for ordinary single-agent work, non-MCP worker tasks, and
-lightweight parent coordination that needs durable local planning memory
-without WorkRequest or WorkPackage orchestration. This is the default MCP-free
-Symphony++ planning path for real agents.
+Use Solo Sessions when ordinary single-agent work or parent coordination needs
+durable planning memory without WorkRequest or WorkPackage orchestration.
+Persistence is optional; ordinary repo work may proceed without a Symphony++
+backend when no ledger state is requested.
 
 Do not use this as authority for assigned WorkPackages, WorkRequests,
 architect orchestration, bound MCP planning resources, ledger-backed claims, or
@@ -29,8 +29,8 @@ secret hashes, secret-bearing commands, or claim lease internals.
 
 ## Tools
 
-Prefer MCP tools from the `symphony_plus_plus` namespace when available in an
-unbound session. The exposed tool names are:
+Use configured MCP tools from the `symphony_plus_plus` namespace in an
+unbound session for every ledger read and write. The exposed tool names are:
 
 ```text
 solo_attach
@@ -49,20 +49,15 @@ solo_complete
 solo_archive
 ```
 
-Otherwise use the wrapper:
+If persistence is required and MCP tools are missing, report the unavailable
+connection to the parent/operator and recover the dedicated MCP session before
+continuing ledger work. Do not substitute shell business commands, direct
+SQLite access, or private state files. Shell tools remain available for
+installation, startup, diagnosis, upgrade, and connection recovery.
 
-```powershell
-pwsh <plugin-root>/scripts/sympp-solo.ps1 -Help
-pwsh <plugin-root>/scripts/sympp-solo.ps1 -ValidateOnly
-```
-
-Do not set `SYMPP_REPO_ROOT` to the caller/task repository. It is an optional
-Symphony++ source-checkout override only, used when installed cache source hints
-cannot locate the checkout that contains `elixir/mix.exs`.
-
-By default the wrapper uses the shared local ledger at
-`$HOME/.agents/splusplus/symphony_plus_plus.sqlite3`. Set `SYMPP_DATABASE` or
-`--database` only for an intentional isolated ledger.
+After a connection failure, reconnect and inspect the session with `solo_show`
+or `solo_list` before retrying a mutation whose outcome is uncertain. Never
+blindly replay it through another interface.
 
 ## Attach
 
@@ -78,10 +73,10 @@ Derive:
 - `caller_id`: stable local id like `codex:<repo>:<workspace-leaf>`.
 - `title`: short task title.
 
-```powershell
-pwsh <plugin-root>/scripts/sympp-solo.ps1 attach `
-  --repo <repo> --base-branch <base> --workspace-path <path> `
-  --caller-id <caller> --title "<task title>"
+Call `solo_attach` with:
+
+```json
+{"repo":"<repo>","base_branch":"<base>","workspace_path":"<absolute path>","caller_id":"<caller>","title":"<task title>"}
 ```
 
 ## Record
@@ -89,35 +84,24 @@ pwsh <plugin-root>/scripts/sympp-solo.ps1 attach `
 Record only meaningful state changes. Use non-secret idempotency keys.
 Entry bodies are human-facing Markdown; keep summaries and status labels plain.
 
-Use intent-shaped commands rather than choosing raw entry kinds:
+Use the intent-shaped MCP tools:
 
-- `plan` / `solo_record_task_plan`: phases, strategy changes, current next steps.
-- `progress` / `solo_append_progress`: implementation step, handoff, or status update.
-- `finding` / `solo_append_finding`: durable discovery, root cause, rejected hypothesis, evidence.
-- `decision` / `solo_record_decision`: local technical decision with rationale.
-- `blocker` / `solo_report_blocker`: active issue requiring user/operator input.
-- `resolve-blocker` / `solo_resolve_blocker`: append-only blocker resolution by `blocker_id`.
-- `validation` / `solo_record_validation`: command result, blocked validation, residual risk.
-
-```powershell
-pwsh <plugin-root>/scripts/sympp-solo.ps1 progress `
-  --session-id <id> --summary "Implemented Solo helper surface" `
-  --status active --idempotency-key "solo:<id>:progress:helpers"
-
-pwsh <plugin-root>/scripts/sympp-solo.ps1 validation `
-  --session-id <id> --summary "Focused tests passed" `
-  --result passed --command "<command>" `
-  --idempotency-key "solo:<id>:validation:focused"
-```
+- `solo_record_task_plan`: phases, strategy changes, current next steps.
+- `solo_append_progress`: implementation step, handoff, or status update.
+- `solo_append_finding`: durable discovery, root cause, rejected hypothesis, evidence.
+- `solo_record_decision`: local technical decision with rationale.
+- `solo_report_blocker`: active issue requiring user/operator input.
+- `solo_resolve_blocker`: append-only blocker resolution by `blocker_id`.
+- `solo_record_validation`: command result, blocked validation, residual risk.
 
 Keep large logs out of the ledger; summarize and reference local files if
 needed.
 
 ## Read And Lifecycle
 
-Use `show` after pauses, before major decisions, and before final response.
-Use `list` to recover active sessions by repo/base/workspace/caller.
-When using MCP tools, close or move sessions with `solo_pause`, `solo_resume`,
+Use `solo_show` after pauses, before major decisions, and before final response.
+Use `solo_list` to recover active sessions by repo/base/workspace/caller.
+Close or move sessions with `solo_pause`, `solo_resume`,
 `solo_complete`, or `solo_archive`. The tool reads the current status itself.
 
 Lifecycle:
@@ -126,8 +110,3 @@ Lifecycle:
 - `paused`: intentionally stopped but resumable.
 - `completed`: requested work done and validation/review status recorded.
 - `archived`: stale or no-longer-needed history.
-
-```powershell
-pwsh <plugin-root>/scripts/sympp-solo.ps1 show --session-id <id>
-pwsh <plugin-root>/scripts/sympp-solo.ps1 complete --session-id <id>
-```

@@ -38,11 +38,16 @@ uses the same frontier projection as the dashboard.
 
 | Need | Entry point |
 |---|---|
-| Ordinary single-agent planning | `symphony-plus-plus:symphony-solo-session` |
+| Persistent single-agent planning | `symphony-plus-plus-mcp:symphony-solo-session` |
 | Implement one assigned package | `symphony-plus-plus-mcp:symphony-worker` and `symphony-plus-plus-mcp:symphony-work-package` |
 | Clarify and slice a WorkRequest | `symphony-plus-plus-mcp:symphony-architect` |
-| Coordinate non-MCP repository work | `symphony-plus-plus:symphony-coordinator` |
+| Coordinate ordinary repository work without required persistence | `symphony-plus-plus:symphony-coordinator` |
 | Inspect human progress | Dashboard focus board and execution graph |
+
+All agent-facing Symphony++ ledger reads and writes use configured MCP tools.
+Workers and coordinators may operate without a backend when persistence is not
+requested. Shell commands remain for installation, startup, diagnosis, upgrade,
+and recovery; recover MCP before continuing required ledger work.
 
 The packaged skill is the procedure. Assignment text should contain only the
 specific goal, scope, evidence, constraints, review requirement, and desired

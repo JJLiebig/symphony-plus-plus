@@ -66,7 +66,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
         File.mkdir_p!(Path.join(marketplace_root, "elixir"))
         File.write!(Path.join(marketplace_root, "elixir/mix.exs"), "defmodule SymphonyElixir.MixProject do\nend\n")
         File.mkdir_p!(Path.join(marketplace_root, "elixir/lib/mix/tasks"))
-        File.write!(Path.join(marketplace_root, "elixir/lib/mix/tasks/sympp.solo.ex"), "")
         File.mkdir_p!(Path.join(marketplace_root, "scripts"))
         File.write!(Path.join(marketplace_root, "scripts/refresh-local-plugin.ps1"), "")
         File.write!(Path.join(marketplace_root, "scripts/smoke-sympp-mcp-http.ps1"), "")

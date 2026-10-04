@@ -1,9 +1,15 @@
 # Symphony++ Codex Plugin
 
-This is the default, MCP-free Symphony++ plugin. It provides the Solo Session,
+This is the default, skill-only Symphony++ plugin. It provides the Solo Session,
 worker, and coordinator skills for ordinary repository work. Its manifest is
 skill-only and the package does not contain a root `.mcp.json`, so enabling it
 does not start Symphony++ MCP in generic sessions or review lanes.
+
+Ordinary workers and coordinators can operate without a Symphony++ backend
+when no persistent planning state is requested. All Symphony++ ledger operations,
+including Solo Sessions, require configured MCP tools; this package provides no
+business CLI or private-file fallback. Use the MCP companion in a dedicated
+session when persistence is needed.
 
 WorkRequest and WorkPackage orchestration belongs to the sibling
 `symphony-plus-plus-mcp` plugin. That package contains the authoritative

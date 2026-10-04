@@ -2424,7 +2424,7 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
     $actions += New-ReadinessAction "upgrade_default_plugin_cache" "solo_session" "Install or repair the skill-only Symphony++ plugin from the configured marketplace." (New-CodexMarketplaceUpgradeCommand $CodexHomePath $defaultMarketplace)
   } elseif (-not $defaultMarketplaceAmbiguous -and -not $crossMarketplacePairingAmbiguous -and $configExists -and $defaultEnabled -ne $true -and -not $companionProvidesSoloSkills) {
     $defaultConfigKey = Get-ActivationConfigKey "symphony-plus-plus" $defaultMarketplace
-    $actions += New-ReadinessAction "enable_default_plugin" "solo_session" "Enable the default skill-only plugin for MCP-free Symphony++ planning: [plugins.`"$defaultConfigKey`"] enabled = true."
+    $actions += New-ReadinessAction "enable_default_plugin" "solo_session" "Enable the default skill-only plugin for ordinary work without persistence; Symphony++ ledger work requires configured MCP tools: [plugins.`"$defaultConfigKey`"] enabled = true."
   }
 
   $companionArtifactStatus = if ($null -ne $companionPackage -and $null -ne $companionPackage.runtime_artifact) {
@@ -2600,7 +2600,7 @@ function Write-DoctorSummary($Summary) {
   }
   Write-Host "  config: $($Summary.codex_config.path)"
   Write-Host ""
-  Write-Host "MCP-free skill package"
+  Write-Host "Skill-only package (ledger work requires MCP tools)"
   Write-Host "  status: $($readiness.solo_session.status)"
   Write-Host "  config key: $($readiness.solo_session.plugin_config_key)"
   Write-Host "  enabled: $($readiness.solo_session.plugin_enabled)"

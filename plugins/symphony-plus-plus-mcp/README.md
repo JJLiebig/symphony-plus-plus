@@ -5,7 +5,7 @@ This package is the explicit MCP-backed companion to the default
 dedicated Symphony++ WorkRequest and WorkPackage sessions.
 
 Use the default plugin for generic sessions, review-suite lanes, `codex review`,
-visible desktop cockpit threads, and MCP-free planning. Use this opt-in
+visible desktop cockpit threads, and ordinary work without persistence. Use this opt-in
 plugin only in a dedicated Codex config, alternate Codex home, managed
 app-server session, or worker/architect subprocess where starting
 `symphony_plus_plus` MCP before session startup is intentional. In MCP mode,
@@ -28,8 +28,8 @@ This plugin intentionally bundles:
 - `assets/sympp-runtime-artifacts.json`, a stable release-channel pointer for
   prebuilt installed-runtime artifacts.
 - The MCP-mode Solo Session, worker, coordinator, architect, and WorkPackage skills.
-- The local MCP launcher plus the Solo wrapper script needed after
-  marketplace/cache packaging. The cutover helper
+- The local MCP launcher needed after marketplace/cache packaging. All agent
+  ledger reads and writes, including Solo planning, use MCP tools. The cutover helper
   discovers the full Codex marketplace source clone automatically, so normal
   marketplace installs do not require users to set `SYMPP_REPO_ROOT`.
 
