@@ -1,4 +1,6 @@
 ---
+metadata:
+  internal: true
 name: push
 description:
   Push current branch changes to origin and create or update the corresponding

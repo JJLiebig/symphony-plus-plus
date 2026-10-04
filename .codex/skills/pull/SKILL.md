@@ -1,4 +1,6 @@
 ---
+metadata:
+  internal: true
 name: pull
 description:
   Pull latest origin/main into the current local branch and resolve merge

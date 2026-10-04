@@ -23,6 +23,18 @@ environment.
 
 ## Install
 
+For portable Codex or Claude Code procedures, use:
+
+```sh
+npx skills add JJLiebig/symphony-plus-plus
+```
+
+See [portable Skills installation](docs/portable-skills.md) for host selection,
+updates, removal, and separate MCP setup. This installs procedures only; the
+backend must be running and configured separately.
+
+The Codex marketplace route remains available:
+
 Add the marketplace once:
 
 ```powershell
