@@ -7,8 +7,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
   @plugin_marketplace_name "symphony-plus-plus"
   @plugin_manifest_path Path.join(@repo_root, "plugins/symphony-plus-plus/.codex-plugin/plugin.json")
   @plugin_version @plugin_manifest_path |> File.read!() |> Jason.decode!() |> Map.fetch!("version")
-  @plugin_solo_script_path Path.join(@repo_root, "plugins/symphony-plus-plus/scripts/sympp-solo.ps1")
-  @mcp_plugin_solo_script_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/sympp-solo.ps1")
   @mcp_plugin_start_script_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.ps1")
 
   test "Windows upgrade stops only its server and restarts even when the marketplace upgrade fails" do
@@ -125,8 +123,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
         File.write!(Path.join(mcp_cache_root, ".sympp-source-root"), "#{stale_source_root}\n")
 
         launchers = [
-          {write_cached_script(default_cache_root, @plugin_solo_script_path), "Symphony++ Solo Session wrapper validation passed."},
-          {write_cached_script(mcp_cache_root, @mcp_plugin_solo_script_path), "Symphony++ Solo Session wrapper validation passed."},
           {write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path), "Symphony++ MCP launcher validation passed."}
         ]
 
@@ -138,6 +134,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
               cd: Path.dirname(Path.dirname(script_path)),
               stderr_to_stdout: true,
               env: [
+                {"SYMPP_HOME", Path.join(temp_codex_home, "sympp-home")},
                 {"SYMPP_LAUNCHER", "direct"},
                 {"SYMPP_MIX", fake_mix},
                 {"SYMPP_REPO_ROOT", ""},
@@ -148,39 +145,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
           assert status == 0, output
           assert output =~ expected
           assert normalize_path_fragment(output) =~ "reporoot: #{normalize_path_fragment(marketplace_root)}"
-        end
-      after
-        File.rm_rf!(temp_codex_home)
-      end
-    end
-  end
-
-  test "installed Solo wrapper help derives usage from cache package name" do
-    powershell = System.find_executable("pwsh")
-    temp_codex_home = unique_temp_path("sympp-plugin-help-cache-path")
-
-    if powershell do
-      default_cache_root = plugin_cache_path(temp_codex_home, ["1.0.0"])
-      mcp_cache_root = plugin_cache_path(temp_codex_home, ["1.0.0"], "symphony-plus-plus-mcp")
-
-      try do
-        wrappers = [
-          {write_cached_script(default_cache_root, @plugin_solo_script_path), "pwsh plugins/symphony-plus-plus/scripts/sympp-solo.ps1 -Help"},
-          {write_cached_script(mcp_cache_root, @mcp_plugin_solo_script_path), "pwsh plugins/symphony-plus-plus-mcp/scripts/sympp-solo.ps1 -Help"}
-        ]
-
-        for {script_path, expected_usage} <- wrappers do
-          {output, status} =
-            System.cmd(
-              powershell,
-              ["-NoProfile", "-File", script_path, "-Help"],
-              cd: Path.dirname(Path.dirname(script_path)),
-              stderr_to_stdout: true
-            )
-
-          assert status == 0, output
-          assert output =~ expected_usage
-          refute output =~ "plugins/1.0.0/scripts/sympp-solo.ps1"
         end
       after
         File.rm_rf!(temp_codex_home)
@@ -201,7 +165,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
 
       try do
         launchers = [
-          {write_cached_script(mcp_cache_root, @mcp_plugin_solo_script_path), "Symphony++ Solo Session wrapper validation passed."},
           {write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path), "Symphony++ MCP launcher validation passed."}
         ]
 
@@ -232,7 +195,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
     end
   end
 
-  test "Solo wrapper keeps direct default for source checkouts without mise config" do
+  test "MCP launcher keeps direct default for source checkouts without mise config" do
     powershell = System.find_executable("pwsh")
     temp_codex_home = unique_temp_path("sympp-plugin-marketplace-direct-default")
 
@@ -243,7 +206,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       sympp_home = Path.join(temp_codex_home, "sympp-home")
 
       try do
-        script_path = write_cached_script(mcp_cache_root, @mcp_plugin_solo_script_path)
+        script_path = write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path)
 
         {output, status} =
           System.cmd(
@@ -251,11 +214,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
             ["-NoProfile", "-File", script_path, "-ValidateOnly"],
             cd: Path.dirname(Path.dirname(script_path)),
             stderr_to_stdout: true,
-            env: [{"SYMPP_MIX", fake_mix}, {"SYMPP_REPO_ROOT", ""}, {"SYMPP_HOME", sympp_home}]
+            env: [{"SYMPP_MIX", fake_mix}, {"SYMPP_REPO_ROOT", ""}, {"SYMPP_HOME", sympp_home}, {"SYMPP_SOURCE_FALLBACK", "1"}]
           )
 
         assert status == 0, output
-        assert output =~ "Symphony++ Solo Session wrapper validation passed."
+        assert output =~ "Symphony++ MCP launcher validation passed."
         assert output =~ "Mix 1.99.0 test"
         assert output =~ "launcher: direct"
         assert normalize_path_fragment(output) =~ "mixbuildroot: #{normalize_path_fragment(sympp_home)}"
@@ -278,7 +241,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       sympp_home = Path.join(temp_codex_home, "sympp-home")
 
       try do
-        script_path = write_cached_script(mcp_cache_root, @mcp_plugin_solo_script_path)
+        script_path = write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path)
 
         {output, status} =
           System.cmd(
@@ -290,12 +253,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
               {"SYMPP_MISE", fake_mise},
               {"SYMPP_MIX", fake_mix},
               {"SYMPP_REPO_ROOT", ""},
-              {"SYMPP_HOME", sympp_home}
+              {"SYMPP_HOME", sympp_home},
+              {"SYMPP_SOURCE_FALLBACK", "1"}
             ]
           )
 
         assert status == 0, output
-        assert output =~ "Symphony++ Solo Session wrapper validation passed."
+        assert output =~ "Symphony++ MCP launcher validation passed."
         assert output =~ "Mix 1.99.0 test"
         assert output =~ "launcher: direct"
         assert normalize_path_fragment(output) =~ "mixbuildroot: #{normalize_path_fragment(sympp_home)}"
@@ -334,6 +298,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
             env: [
               {"SYMPP_ELIXIR_SETUP_TIMEOUT_SEC", "5"},
               {"SYMPP_FAKE_MIX_LOG", fake_mix_log},
+              {"SYMPP_HOME", Path.join(temp_codex_home, "sympp-home")},
               {"SYMPP_LAUNCHER", "direct"},
               {"SYMPP_LOG_DIR", log_dir},
               {"SYMPP_MCP_BRIDGE_MODE", "direct_stdio"},
@@ -361,80 +326,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
 
         assert ["deps.get --check-locked", "compile", mcp_call] = fake_mix_calls
         assert String.starts_with?(mcp_call, "sympp.mcp ")
-      after
-        File.rm_rf!(temp_codex_home)
-      end
-    end
-  end
-
-  test "Solo wrapper validates and prepares locked deps before running Solo task" do
-    powershell = System.find_executable("pwsh")
-    temp_codex_home = unique_temp_path("sympp-plugin-solo-deps")
-
-    if powershell do
-      fake_mix = fake_mix_executable(temp_codex_home)
-      write_minimal_marketplace_source(temp_codex_home)
-      mcp_cache_root = plugin_cache_path(temp_codex_home, ["1.0.0"], "symphony-plus-plus-mcp")
-      fake_mix_log = Path.join(temp_codex_home, "fake-mix.log")
-      sympp_home = Path.join(temp_codex_home, "sympp-home")
-
-      try do
-        script_path = write_cached_script(mcp_cache_root, @mcp_plugin_solo_script_path)
-
-        {validate_output, validate_status} =
-          System.cmd(
-            powershell,
-            ["-NoProfile", "-File", script_path, "-ValidateOnly"],
-            cd: Path.dirname(Path.dirname(script_path)),
-            stderr_to_stdout: true,
-            env: [
-              {"SYMPP_FAKE_MIX_LOG", fake_mix_log},
-              {"SYMPP_HOME", sympp_home},
-              {"SYMPP_LAUNCHER", "direct"},
-              {"SYMPP_MIX", fake_mix},
-              {"SYMPP_REPO_ROOT", ""},
-              {"SYMPP_SOURCE_FALLBACK", "1"}
-            ]
-          )
-
-        assert validate_status == 0, validate_output
-        assert File.dir?(Path.join(sympp_home, "build/solo/direct"))
-
-        {solo_output, solo_status} =
-          System.cmd(
-            powershell,
-            ["-NoProfile", "-File", script_path, "list", "--repo", "demo"],
-            cd: Path.dirname(Path.dirname(script_path)),
-            stderr_to_stdout: true,
-            env: [
-              {"SYMPP_FAKE_MIX_LOG", fake_mix_log},
-              {"SYMPP_HOME", sympp_home},
-              {"SYMPP_LAUNCHER", "direct"},
-              {"SYMPP_MIX", fake_mix},
-              {"SYMPP_REPO_ROOT", ""},
-              {"SYMPP_SOURCE_FALLBACK", "1"}
-            ]
-          )
-
-        assert solo_status == 0, solo_output
-
-        fake_mix_calls =
-          fake_mix_log
-          |> File.read!()
-          |> String.split("\n", trim: true)
-          |> Enum.map(&String.trim/1)
-          |> Enum.map(&String.replace(&1, "\"", ""))
-          |> Enum.filter(
-            &(String.contains?(&1, "deps.get") or &1 == "sympp.solo --help" or
-                String.starts_with?(&1, "sympp.solo "))
-          )
-
-        assert [
-                 "deps.get --check-locked",
-                 "sympp.solo --help",
-                 "deps.get --check-locked",
-                 "sympp.solo list --repo demo"
-               ] = fake_mix_calls
       after
         File.rm_rf!(temp_codex_home)
       end
@@ -494,7 +385,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
     File.mkdir_p!(Path.join(marketplace_root, "elixir"))
     File.write!(Path.join(marketplace_root, "elixir/mix.exs"), "defmodule SymphonyElixir.MixProject do\nend\n")
     File.mkdir_p!(Path.join(marketplace_root, "elixir/lib/mix/tasks"))
-    File.write!(Path.join(marketplace_root, "elixir/lib/mix/tasks/sympp.solo.ex"), "")
     File.mkdir_p!(Path.join(marketplace_root, "scripts"))
     File.write!(Path.join(marketplace_root, "scripts/refresh-local-plugin.ps1"), "")
     File.write!(Path.join(marketplace_root, "scripts/smoke-sympp-mcp-http.ps1"), "")
@@ -530,7 +420,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
     source_root = Path.join(codex_home, "stale-source")
     File.mkdir_p!(Path.join(source_root, "elixir/lib/mix/tasks"))
     File.write!(Path.join(source_root, "elixir/mix.exs"), "defmodule Stale.MixProject do\nend\n")
-    File.write!(Path.join(source_root, "elixir/lib/mix/tasks/sympp.solo.ex"), "")
     source_root
   end
 
@@ -589,9 +478,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       if "%~1"=="sympp.mcp" (
         exit /b 0
       )
-      if "%~1"=="sympp.solo" (
-        exit /b 0
-      )
       echo unexpected mix args: %*
       exit /b 2
       """
@@ -617,9 +503,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       if [ "$1" = "sympp.mcp" ]; then
         exit 0
       fi
-      if [ "$1" = "sympp.solo" ]; then
-        exit 0
-      fi
       echo "unexpected mix args: $*" >&2
       exit 2
       """
@@ -638,9 +521,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       if "%~1"=="exec" if "%~2"=="--" if "%~3"=="mix" if "%~4"=="deps.get" if "%~5"=="--check-locked" (
         exit /b 0
       )
-      if "%~1"=="exec" if "%~2"=="--" if "%~3"=="mix" if "%~4"=="sympp.solo" if "%~5"=="--help" (
-        exit /b 0
-      )
       echo unexpected mise args: %*
       exit /b 2
       """
@@ -655,9 +535,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
         exit 0
       fi
       if [ "$1" = "exec" ] && [ "$2" = "--" ] && [ "$3" = "mix" ] && [ "$4" = "deps.get" ] && [ "$5" = "--check-locked" ]; then
-        exit 0
-      fi
-      if [ "$1" = "exec" ] && [ "$2" = "--" ] && [ "$3" = "mix" ] && [ "$4" = "sympp.solo" ] && [ "$5" = "--help" ]; then
         exit 0
       fi
       echo "unexpected mise args: $*" >&2

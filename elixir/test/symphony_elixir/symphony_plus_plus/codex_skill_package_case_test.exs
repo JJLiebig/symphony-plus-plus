@@ -22,7 +22,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
       @plugin_default_solo_skill_path Path.join(@repo_root, "plugins/symphony-plus-plus/skills/symphony-solo-session/SKILL.md")
       @plugin_default_worker_skill_path Path.join(@repo_root, "plugins/symphony-plus-plus/skills/symphony-worker/SKILL.md")
       @plugin_default_coordinator_skill_path Path.join(@repo_root, "plugins/symphony-plus-plus/skills/symphony-coordinator/SKILL.md")
-      @plugin_solo_script_path Path.join(@repo_root, "plugins/symphony-plus-plus/scripts/sympp-solo.ps1")
       @plugin_lifecycle_diagnostic_path Path.join(@repo_root, "plugins/symphony-plus-plus/scripts/diagnose-mcp-lifecycle.ps1")
       @plugin_lifecycle_diagnostic_helper_names ~w(
           sympp-diagnostic-runtime-artifacts.ps1
@@ -41,7 +40,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
       @mcp_plugin_start_script_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.ps1")
       @mcp_plugin_start_cmd_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.cmd")
       @mcp_plugin_helper_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-launcher-helpers.ps1")
-      @mcp_plugin_solo_script_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/sympp-solo.ps1")
       @marketplace_path Path.join(@repo_root, ".agents/plugins/marketplace.json")
       @plugin_marketplace_name "symphony-plus-plus"
       @plugin_readme_path Path.join(@repo_root, "plugins/symphony-plus-plus/README.md")
@@ -129,9 +127,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
           if "%~1"=="deps.get" if "%~2"=="--check-locked" (
             exit /b 0
           )
-          if "%~1"=="sympp.solo" if "%~2"=="--help" (
-            exit /b 0
-          )
           echo unexpected mix args: %*
           exit /b 2
           """
@@ -143,9 +138,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
             exit 0
           fi
           if [ "$1" = "deps.get" ] && [ "$2" = "--check-locked" ]; then
-            exit 0
-          fi
-          if [ "$1" = "sympp.solo" ] && [ "$2" = "--help" ]; then
             exit 0
           fi
           echo "unexpected mix args: $*" >&2

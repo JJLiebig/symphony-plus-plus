@@ -16,7 +16,7 @@ slice it into WorkPackages, define dependencies and acceptance criteria,
 dispatch ready workers, answer guidance, and oversee delivery through review
 and merge.
 
-Solo Sessions remain available when lightweight planning memory is useful
+Solo Sessions use MCP when lightweight persistent planning memory is useful
 before or outside a WorkRequest. Symphony++ coordinates delivery work; it does
 not own terminal sessions, model accounts, or the human's interactive coding
 environment.
@@ -29,13 +29,13 @@ Add the marketplace once:
 codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
 ```
 
-Install the default skill-only plugin for ordinary planning:
+Install the default skill-only plugin for ordinary workers and coordinators:
 
 ```powershell
 codex plugin add symphony-plus-plus@symphony-plus-plus
 ```
 
-Install the MCP companion for dedicated WorkRequest or WorkPackage sessions:
+Install the MCP companion for persistent Solo planning or WorkRequest/WorkPackage sessions:
 
 ```powershell
 codex plugin add symphony-plus-plus-mcp@symphony-plus-plus

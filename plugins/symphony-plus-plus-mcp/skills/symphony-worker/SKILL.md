@@ -22,6 +22,9 @@ PR-sized assignment.
    - No WorkPackage: when durable task memory helps, use
      `symphony-plus-plus-mcp:symphony-solo-session`.
      Each worker uses its own session; short read-only scouts need no Solo ledger.
+     If optional persistence is unavailable, continue ordinary work without it.
+     If ledger work is required, report missing MCP and recover the connection;
+     do not use business CLI commands or private state files.
 3. Implement only the assigned scope.
 4. Complete the required checks in Review.
 5. Return a review-green, merge-ready PR, or a no-PR evidence packet for

@@ -405,7 +405,7 @@ function Assert-CachePluginConfig([string]$TargetRoot, [string]$ExpectedVersion)
     foreach ($requiredDefaultSkill in @("symphony-solo-session", "symphony-worker", "symphony-coordinator")) {
       $requiredDefaultSkillPath = Join-Path $TargetRoot "skills/$requiredDefaultSkill/SKILL.md"
       if (-not (Test-Path -LiteralPath $requiredDefaultSkillPath)) {
-        throw "Default installed plugin cache is missing MCP-free base skill '$requiredDefaultSkill': $requiredDefaultSkillPath"
+        throw "Default installed plugin cache is missing skill-only base skill '$requiredDefaultSkill': $requiredDefaultSkillPath"
       }
     }
 
@@ -479,15 +479,6 @@ function Invoke-InstalledCacheValidation([string]$TargetRoot, [string]$Label, [s
       if ($LASTEXITCODE -ne 0) {
         throw "Installed plugin MCP launcher validation failed for $Label cache with exit code $LASTEXITCODE."
       }
-    }
-
-    & $powershell @(
-      "-NoProfile",
-      "-Command",
-      "`$env:PSExecutionPolicyPreference='Bypass'; & 'scripts/sympp-solo.ps1' -ValidateOnly"
-    )
-    if ($LASTEXITCODE -ne 0) {
-      throw "Installed plugin Solo Session wrapper validation failed for $Label cache with exit code $LASTEXITCODE."
     }
   } finally {
     if ($null -eq $oldRepoRoot) {

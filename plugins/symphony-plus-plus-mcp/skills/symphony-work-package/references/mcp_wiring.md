@@ -64,15 +64,15 @@ agent config file. Do not add S++ MCP to generic worker, reviewer, or
 review-suite configs.
 
 The Windows desktop app has no proven per-visible-thread S++ profile picker.
-App cockpit threads should use the default skill-only plugin plus Solo Session
-CLI planning. When the cockpit needs heavy S++ orchestration, launch a managed
+App cockpit threads may use the default skill-only plugin for ordinary work
+without persistence. For Solo ledger work or S++ orchestration, launch a managed
 architect or worker subprocess/app-server session with explicit top-level MCP
 configuration or the sibling opt-in MCP plugin before that session starts.
 That managed subprocess is the supported replacement for app-visible
 WorkPackage and architect execution until the desktop host can attach MCP tools
 to one already-open thread. Do not invoke this MCP-dependent skill from a
 generic visible app thread that does not already show S++ MCP tools; use the
-Solo/cockpit handoff path instead.
+dedicated MCP-enabled session handoff instead.
 
 The opt-in MCP package reference is intentionally generic. It should not embed
 bearer tokens, access-grant verifiers, or operator-local secret material.

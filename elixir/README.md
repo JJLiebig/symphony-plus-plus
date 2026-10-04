@@ -75,65 +75,19 @@ mise exec -- ./bin/symphony ./WORKFLOW.md
 
 ## Solo Sessions
 
-Symphony++ Solo Sessions provide local planning memory for one repo/worktree
-without creating WorkRequests, WorkPackages, Linear state, worker grants, or
-dispatch. Agents can use the Mix task directly against a SQLite ledger;
-successful command output is JSON, while failures exit non-zero with normal
-`Mix.Error` messages:
-
-```bash
-mix sympp.solo attach \
-  --repo nextide/symphony-plus-plus \
-  --base-branch main \
-  --workspace-path /path/to/worktree \
-  --caller-id codex-local \
-  --title "Solo CLI pass"
-```
-
-Record and read entries with the returned `solo_session.id`:
-
-```bash
-mix sympp.solo progress \
-  --session-id <solo-session-id> \
-  --summary "Implemented CLI surface" \
-  --body "Added attach, progress, show, list, and lifecycle commands." \
-  --idempotency-key solo-cli-progress-1
-
-mix sympp.solo validation \
-  --session-id <solo-session-id> \
-  --summary "Focused tests passed" \
-  --result passed \
-  --command "mix test test/mix/tasks/sympp_solo_test.exs" \
-  --idempotency-key solo-cli-validation-1
-
-mix sympp.solo show --session-id <solo-session-id>
-```
-
-Entry commands are `plan`, `progress`, `finding`, `decision`, `blocker`,
-`resolve-blocker`, and `validation`. Friendly status aliases such as `active`
-and `done` are normalized by `plan`, `progress`, and `finding`; blockers use
-`blocker` to open and `resolve-blocker` to clear. Validation records use the
-typed `--result passed|failed|skipped|blocked|not_run`. The task also supports
-`list` filters for `repo`, `base_branch`, `workspace_path`, `caller_id`, and
-`status`, plus `pause`, `resume`, `complete`, and `archive` lifecycle verbs. If
-`--database` is omitted, the task uses the shared machine-local Symphony++
-default ledger, preferring `$HOME/.agents/splusplus/symphony_plus_plus.sqlite3`
-(`%USERPROFILE%\.agents\splusplus\symphony_plus_plus.sqlite3` on Windows) and
-falling back under a temp/relative `.agents/splusplus` root if home is
-unavailable,
-matching cockpit and WorkRequest/WorkPackage CLI defaults. The database must be
-a durable local filesystem path; `:memory:` and SQLite `file:` URIs are
-rejected because Solo Sessions must persist across CLI invocations. `attach`
-may create the ledger database; other commands require the resolved local
-database file to already exist. Pass `--database <sqlite-path>` only for
-intentional isolation in tests, development, or manual experiments.
+Symphony++ Solo Sessions provide persistent planning memory for one repo/worktree
+without creating WorkRequests or WorkPackages. Agents use configured MCP tools
+for every Solo ledger read and write. Follow the packaged
+[Solo Session procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-solo-session/SKILL.md).
+Ordinary work without requested persistence needs no Symphony++ backend.
+If required MCP tools are unavailable, recover the connection before ledger work;
+there is no business CLI or private-file fallback.
 
 ## WorkRequest Planned-Slice Dispatch
 
 Normal Symphony++ WorkRequest planned-slice dispatch returns a ledger-backed
 worker bootstrap instead of a private worker secret handoff. MCP responses expose
-`worker_bootstrap`, and the Mix task includes the same data under
-`create_work.worker_bootstrap`. The bootstrap uses `type: "ledger_claim"` and
+`worker_bootstrap`. The bootstrap uses `type: "ledger_claim"` and
 `mode: "local_assignment"`, names the `claim_local_assignment` MCP claim path,
 lists the required worker skills, and includes the resolved local ledger
 database when dispatch can identify one.
