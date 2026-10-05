@@ -3,11 +3,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
 
   import Ecto.Query, only: [from: 2]
 
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.Repository, as: ProductTreeRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
 
-  @resolved_statuses ["skipped", "merged", "closed", "abandoned"]
   @hard_edge_kinds ["depends_on", "blocks"]
 
   @type graph :: %{
@@ -18,7 +19,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
           cycles: [[String.t()]],
           unmet_dependencies: [map()],
           dependency_ready_work_package_ids: [String.t()],
-          resolutions: [map()]
+          resolutions: [map()],
+          merge_eligibility: [map()]
         }
 
   @spec evaluate(module(), String.t()) :: {:ok, graph()} | {:error, term()}
@@ -33,14 +35,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
       when is_atom(repo) and is_binary(work_request_id) and is_list(work_packages) do
     with {:ok, tree} <- ProductTreeRepository.tree_for_work_request(repo, work_request_id) do
       deliveries = repo.all(from(delivery in WorkPackageDelivery, where: delivery.work_request_id == ^work_request_id))
-      {:ok, evaluate(tree, work_packages, deliveries)}
+
+      with {:ok, context} <- DependencyInputs.context(repo, work_packages, Enum.any?(tree.dependency_edges, & &1.candidate_head_sha)) do
+        {:ok, evaluate(tree, work_packages, deliveries, context)}
+      end
     end
   rescue
     error in Exqlite.Error -> {:error, {:storage_failed, Exception.message(error)}}
   end
 
   @spec evaluate(map(), [map() | struct()], [map() | struct()]) :: graph()
-  def evaluate(%{nodes: nodes, dependency_edges: dependency_edges}, work_packages, deliveries)
+  def evaluate(%{} = tree, work_packages, deliveries), do: evaluate(tree, work_packages, deliveries, %{})
+
+  @spec evaluate(map(), [map() | struct()], [map() | struct()], map()) :: graph()
+  def evaluate(%{nodes: nodes, dependency_edges: dependency_edges}, work_packages, deliveries, context)
       when is_list(nodes) and is_list(dependency_edges) and is_list(work_packages) and is_list(deliveries) do
     work_packages = Enum.sort_by(work_packages, &value(&1, :id))
     work_package_ids = Enum.map(work_packages, &value(&1, :id))
@@ -56,8 +64,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
             MapSet.member?(work_package_id_set, &1.dependent_work_package_id))
       )
 
+    packages = Map.new(work_packages, &{value(&1, :id), &1})
     deliveries_by_work_package_id = Map.new(deliveries, &{value(&1, :work_package_id), &1})
-    resolutions = Enum.map(work_packages, &resolution(&1, deliveries_by_work_package_id))
+    successors = Map.get(context, :successors, %{})
+    resolutions = Enum.map(work_packages, &resolution(&1, packages, deliveries_by_work_package_id, successors))
+    effective_edges = DependencyInputs.evaluate(effective_edges, packages, deliveries_by_work_package_id, context)
 
     build_graph(work_package_ids, effective_edges, resolutions)
   end
@@ -88,13 +99,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
     resolutions = Enum.filter(graph.resolutions, &visible?.(&1.work_package_id))
 
     build_graph(work_package_ids, effective_edges, resolutions)
+    |> Map.put(:merge_eligibility, Enum.filter(graph.merge_eligibility, &visible?.(&1.work_package_id)))
   end
 
   defp build_graph(work_package_ids, effective_edges, resolutions) do
     pairs = Enum.map(effective_edges, &{&1.prerequisite_work_package_id, &1.dependent_work_package_id})
     {topological_order, cycles} = topology(work_package_ids, pairs)
-    resolved_ids = resolutions |> Enum.filter(& &1.resolved) |> Enum.map(& &1.work_package_id) |> MapSet.new()
-    unmet_dependencies = unmet_dependencies(work_package_ids, effective_edges, resolved_ids)
+    unmet_dependencies = unmet_dependencies(work_package_ids, effective_edges)
     unmet_ids = unmet_dependencies |> Enum.map(& &1.work_package_id) |> MapSet.new()
 
     %{
@@ -105,7 +116,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
       cycles: cycles,
       unmet_dependencies: unmet_dependencies,
       dependency_ready_work_package_ids: if(cycles == [], do: Enum.reject(work_package_ids, &MapSet.member?(unmet_ids, &1)), else: []),
-      resolutions: resolutions
+      resolutions: resolutions,
+      merge_eligibility: DependencyInputs.merge_eligibility(work_package_ids, effective_edges, resolutions, cycles)
     }
   end
 
@@ -177,20 +189,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
           not (MapSet.member?(shared_ids, prerequisite_id) and MapSet.member?(shared_ids, dependent_id)),
           reduce: acc do
         edges ->
-          Map.update(edges, {prerequisite_id, dependent_id}, [value(edge, :id)], fn ids ->
-            [value(edge, :id) | ids]
+          Map.update(edges, {prerequisite_id, dependent_id}, [constraint(edge)], fn constraints ->
+            [constraint(edge) | constraints]
           end)
       end
     end)
-    |> Enum.map(fn {{prerequisite_id, dependent_id}, dependency_ids} ->
+    |> Enum.map(fn {{prerequisite_id, dependent_id}, constraints} ->
       %{
         prerequisite_work_package_id: prerequisite_id,
         dependent_work_package_id: dependent_id,
-        dependency_ids: dependency_ids |> Enum.uniq() |> Enum.sort()
+        dependency_ids: constraints |> Enum.map(& &1.dependency_id) |> Enum.uniq() |> Enum.sort(),
+        constraints: Enum.sort_by(constraints, & &1.dependency_id)
       }
     end)
     |> Enum.sort_by(&{&1.prerequisite_work_package_id, &1.dependent_work_package_id})
   end
+
+  defp constraint(edge), do: %{dependency_id: value(edge, :id), candidate_head_sha: value(edge, :candidate_head_sha), updated_at: value(edge, :updated_at)}
 
   defp endpoint(edge, side), do: {value(edge, String.to_atom("#{side}_kind")), value(edge, String.to_atom("#{side}_id"))}
   defp expand_endpoint({"work_package", id}, _group_members), do: [id]
@@ -246,36 +261,28 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
     end)
   end
 
-  defp resolution(work_package, deliveries_by_work_package_id) do
+  defp resolution(work_package, packages, deliveries, successors) do
     work_package_id = value(work_package, :id)
     status = value(work_package, :status) || value(work_package, :raw_status)
-
-    delivery_outcome =
-      value(work_package, :delivery_outcome) ||
-        work_package |> value(:operational_state) |> value(:delivery_outcome) ||
-        deliveries_by_work_package_id |> Map.get(work_package_id) |> value(:outcome)
-
-    resolved = status in @resolved_statuses or delivery_outcome in WorkPackageDelivery.outcomes()
 
     %{
       work_package_id: work_package_id,
       status: status,
-      delivery_outcome: delivery_outcome,
-      resolved: resolved
+      delivery_outcome: deliveries |> Map.get(work_package_id) |> value(:outcome),
+      resolved: DeliveryResolution.resolved?(work_package_id, packages, deliveries, successors)
     }
   end
 
-  defp unmet_dependencies(work_package_ids, effective_edges, resolved_ids) do
-    prerequisites = Enum.group_by(effective_edges, & &1.dependent_work_package_id, & &1.prerequisite_work_package_id)
+  defp unmet_dependencies(work_package_ids, effective_edges) do
+    prerequisites =
+      effective_edges
+      |> Enum.reject(&Enum.all?(&1.constraints, fn constraint -> constraint.available end))
+      |> Enum.group_by(& &1.dependent_work_package_id, & &1.prerequisite_work_package_id)
 
-    work_package_ids
-    |> Enum.flat_map(fn work_package_id ->
-      unmet = prerequisites |> Map.get(work_package_id, []) |> Enum.reject(&MapSet.member?(resolved_ids, &1)) |> Enum.uniq() |> Enum.sort()
-
-      if unmet == [] do
-        []
-      else
-        [%{work_package_id: work_package_id, prerequisite_work_package_ids: unmet}]
+    Enum.flat_map(work_package_ids, fn work_package_id ->
+      case Map.get(prerequisites, work_package_id, []) |> Enum.uniq() |> Enum.sort() do
+        [] -> []
+        unmet -> [%{work_package_id: work_package_id, prerequisite_work_package_ids: unmet}]
       end
     end)
   end

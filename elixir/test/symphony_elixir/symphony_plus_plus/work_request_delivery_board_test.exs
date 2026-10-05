@@ -668,8 +668,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
       linked_slice!(repo, work_request,
         id: "WP-GRAPH-SATISFIED",
         work_package_id: "WP-GRAPH-SATISFIED",
-        status: "skipped"
+        status: "reviewing"
       )
+
+    assert {:ok, _delivery} =
+             Repository.record_work_package_delivery(
+               repo,
+               work_request.id,
+               satisfied.id,
+               delivery_attrs(%{outcome: "completed_no_pr", idempotency_key: "graph-satisfied", no_pr_evidence: "Required contract delivered."})
+             )
 
     {_active, active} =
       linked_slice!(repo, work_request,

@@ -496,7 +496,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
       delivery_outcome: delivery && delivery.outcome,
       successor_work_package_id: visible_work_package_id(delivery && delivery.successor_work_package_id, context),
       operational_state: operational_state,
-      attention_reason_codes: Map.fetch!(operational_state, :attention_reason_codes)
+      merge_eligibility: merge_eligibility(work_package, context),
+      attention_reason_codes: Enum.uniq(Map.fetch!(operational_state, :attention_reason_codes) ++ dependency_attention(work_package, context))
     }
   end
 
@@ -513,8 +514,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
       work_package_hidden?: hidden_work_package?(work_package.id, context),
       successor: successor,
       operational_state: operational_state,
-      attention_reason_codes: Map.fetch!(operational_state, :attention_reason_codes)
+      merge_eligibility: merge_eligibility(work_package, context),
+      attention_reason_codes: Enum.uniq(Map.fetch!(operational_state, :attention_reason_codes) ++ dependency_attention(work_package, context))
     }
+  end
+
+  defp merge_eligibility(work_package, context) do
+    context
+    |> get_in([:execution_graphs, work_package.work_request_id])
+    |> case do
+      %{merge_eligibility: entries} -> Enum.find(entries, &(&1.work_package_id == work_package.id)) || %{eligible: false, reason_codes: ["dependencies_unavailable"]}
+      _unavailable -> %{eligible: false, reason_codes: ["dependencies_unavailable"]}
+    end
+  end
+
+  defp dependency_attention(work_package, context) do
+    merge_eligibility(work_package, context).reason_codes
+    |> Enum.filter(&(&1 in ["candidate_pin_stale", "dependency_inputs_stale", "delivery_order_violation"]))
   end
 
   defp slice_work_package_summary(work_package_id, delivery, context, opts) do

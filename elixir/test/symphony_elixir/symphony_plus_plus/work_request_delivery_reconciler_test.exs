@@ -18,6 +18,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Repository, as: PhaseRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.Revision
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
@@ -26,6 +27,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryReconciler
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -110,6 +112,42 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
     assert delivery.work_package_id == work_package.id
     assert delivery.recorded_by == "reconciler-test"
     assert repo.get!(WorkPackage, linked_package.id).status == "merged"
+  end
+
+  test "reconciliation preserves an out-of-order external merge and keeps its violation visible", %{repo: repo} do
+    {request, ui, _linked} = linked_slice!(repo, work_request_id: "WR-ORDER-VIOLATION", work_package_id: "UI-ORDER", status: "ready_for_merge")
+    assert {:ok, backend} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "BACKEND-ORDER", kind: "docs", status: "reviewing"))
+
+    assert {:ok, _edge} =
+             ProductTree.create_dependency_edge(repo, %{
+               work_request_id: request.id,
+               source_kind: "work_package",
+               source_id: ui.id,
+               target_kind: "work_package",
+               target_id: backend.id,
+               kind: "depends_on",
+               reason: "Backend must deliver first."
+             })
+
+    append_merged_pr_evidence!(repo, ui, 1902, "head-ui")
+    assert {:ok, applied} = DeliveryReconciler.reconcile(repo, request.id, mode: :apply, recorded_by: "reconciler-test")
+    assert applied.applied_count == 1
+    row = Enum.find(applied.delivery_board.work_packages, &(&1.id == ui.id))
+    assert row.delivery_outcome == "pr_merged"
+    assert "delivery_order_violation" in row.attention_reason_codes
+
+    assert {:ok, _delivery} =
+             WorkRequestRepository.record_work_package_delivery(repo, request.id, backend.id, %{
+               outcome: "completed_no_pr",
+               idempotency_key: "late-backend",
+               recorded_by: "test",
+               no_pr_evidence: "Backend delivered after the external UI merge."
+             })
+
+    assert {:ok, board} = DeliveryBoard.project(repo, request.id)
+    row = Enum.find(board.work_packages, &(&1.id == ui.id))
+    assert row.delivery_outcome == "pr_merged"
+    assert "delivery_order_violation" in row.merge_eligibility.reason_codes
   end
 
   test "apply records merged PR closeout when only stale agent runtime evidence remains", %{repo: repo} do

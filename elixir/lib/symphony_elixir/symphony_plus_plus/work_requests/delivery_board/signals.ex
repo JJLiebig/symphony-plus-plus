@@ -6,7 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.Sanitizer
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
-  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.{DependencyEdge, ExecutionGraph, Node}
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.{DependencyEdge, DependencyInputs, ExecutionGraph, Node}
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -47,7 +47,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
             edges_by_request
           )
 
-        graph = ExecutionGraph.evaluate(product_tree, work_packages, deliveries)
+        {:ok, input_context} = DependencyInputs.context(repo, work_packages, Enum.any?(product_tree.dependency_edges, & &1.candidate_head_sha))
+        graph = ExecutionGraph.evaluate(product_tree, work_packages, deliveries, input_context)
 
         {work_request.id, scope_execution_graph(graph, work_packages, opts)}
       end)

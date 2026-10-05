@@ -30,13 +30,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   @spec project(module(), String.t(), [map()], keyword()) :: map()
   def project(repo, work_request_id, work_package_payloads, opts \\ [])
       when is_atom(repo) and is_binary(work_request_id) and is_list(work_package_payloads) and is_list(opts) do
-    case product_tree_context(repo, work_request_id, opts) do
-      {:ok, tree} ->
-        execution_graph = ExecutionGraph.evaluate(tree, work_package_payloads, [])
-        project_tree(tree, execution_graph, work_package_payloads, opts)
-
-      {:error, reason} ->
-        unavailable_projection(reason, work_package_payloads)
+    with {:ok, tree} <- product_tree_context(repo, work_request_id, opts),
+         {:ok, execution_graph} <- ExecutionGraph.evaluate(repo, work_request_id) do
+      project_tree(tree, execution_graph, work_package_payloads, opts)
+    else
+      {:error, reason} -> unavailable_projection(reason, work_package_payloads)
     end
   end
 
@@ -297,6 +295,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
       source: %{kind: edge.source_kind, id: edge.source_id},
       target: %{kind: edge.target_kind, id: edge.target_id},
       kind: edge.kind,
+      candidate_head_sha: edge.candidate_head_sha,
       reason: Sanitizer.redacted_text(edge.reason),
       decision_ref: Sanitizer.redacted_json(edge.decision_ref),
       created_by: Sanitizer.redacted_text(edge.created_by),

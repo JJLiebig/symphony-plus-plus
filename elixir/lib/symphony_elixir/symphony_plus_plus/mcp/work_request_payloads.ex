@@ -24,7 +24,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     with {:ok, work_request} <- WorkRequestService.get(repo, context_anchor.work_request_id),
          {:ok, work_packages} <- WorkRequestService.list_work_packages(repo, work_request.id),
          {:ok, tree} <- ProductTree.tree_for_work_request(repo, work_request.id),
-         execution_graph = ProductTree.ExecutionGraph.evaluate(tree, work_packages, []),
+         {:ok, execution_graph} <- ProductTree.ExecutionGraph.evaluate(repo, work_request.id, work_packages),
          {:ok, selected_decisions} <-
            selected_worker_decisions(
              repo,
@@ -54,6 +54,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
          "status" => work_request.status
        })
        |> Map.put("direct_dependencies", direct_dependencies)
+       |> Map.put("dependency_selections", Enum.filter(execution_graph.effective_edges, &(&1.dependent_work_package_id == context_anchor.id)))
        |> Map.put("selected_decisions", selected_decisions)}
     end
   end
@@ -317,6 +318,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       "dependent" => dependency_endpoint_payload(dependent),
       "prerequisite" => dependency_endpoint_payload(prerequisite),
       "reason" => Redactor.redact_text(edge.reason),
+      "candidate_head_sha" => edge.candidate_head_sha,
       "decision_ref" => Redactor.redact_output(edge.decision_ref),
       "created_by" => Redactor.redact_text(edge.created_by),
       "created_at" => timestamp(edge.created_at)
@@ -507,7 +509,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       {dependent, prerequisite} = dependency_endpoints(Map.get(edge, "kind"), endpoint_tuple(source), endpoint_tuple(target))
 
       edge
-      |> Map.take(["id", "reason", "decision_ref", "created_by", "created_at"])
+      |> Map.take(["id", "reason", "candidate_head_sha", "decision_ref", "created_by", "created_at"])
       |> Map.put("dependent", dependency_endpoint_payload(dependent))
       |> Map.put("prerequisite", dependency_endpoint_payload(prerequisite))
     end)

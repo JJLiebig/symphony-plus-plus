@@ -918,6 +918,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         "dependency_id" => described_string_schema("Optional existing dependency id. Omit to create a dependency."),
         "dependent" => dependency_endpoint_schema(),
         "prerequisite" => dependency_endpoint_schema(),
+        "candidate_head_sha" => %{
+          "type" => ["string", "null"],
+          "pattern" => "^[0-9a-fA-F]{40}$",
+          "description" => "Optional exact head of a concrete prerequisite WorkPackage qualified by the caller using native checks/review. Enables wiring before delivery; null removes the pin."
+        },
         "reason" => markdown_string_schema("Why this dependency exists."),
         "decision_ref" => object_schema(),
         "created_by" => described_string_schema("Optional architect identity for audit display.")

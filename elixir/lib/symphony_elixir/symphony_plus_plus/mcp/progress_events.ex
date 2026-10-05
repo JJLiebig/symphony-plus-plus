@@ -11,6 +11,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Service, as: PlanningService
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
 
@@ -179,7 +180,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
   defp append_new_or_replay(repo, %Session{} = session, work_package_id, attrs, idempotency_key, tool) do
     transaction_fun = fn ->
       with :ok <- PlanningService.require_valid_assignment(repo, session.assignment),
-           :ok <- reject_ready_evidence_mutation(repo, session, work_package_id, tool) do
+           :ok <- reject_ready_evidence_mutation(repo, session, work_package_id, tool),
+           :ok <- DependencyInputs.validate_progress(repo, work_package_id, attrs) do
         PlanningService.append_authenticated_progress_event_for_work_package(
           repo,
           session.assignment,

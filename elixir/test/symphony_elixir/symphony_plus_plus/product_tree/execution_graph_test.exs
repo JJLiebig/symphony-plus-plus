@@ -93,7 +93,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
         []
       )
 
-    assert graph.effective_edges == [
+    assert Enum.map(graph.effective_edges, &Map.drop(&1, [:constraints])) == [
              %{
                dependent_work_package_id: "wp_child_a",
                dependency_ids: ["dep_nested_groups"],
@@ -110,7 +110,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
     assert graph.topological_order == ["wp_parent", "wp_child_a", "wp_child_b"]
   end
 
-  test "skipped, terminal, and every delivery outcome resolve dependencies without trapping dependents" do
+  test "retired attempts do not resolve required scope without a delivered successor" do
     group = group("resolved_group")
 
     work_packages = [
@@ -137,8 +137,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
         deliveries
       )
 
-    assert graph.unmet_dependencies == []
-    assert "wp_target" in graph.dependency_ready_work_package_ids
+    assert [%{work_package_id: "wp_target", prerequisite_work_package_ids: unmet}] = graph.unmet_dependencies
+    assert unmet == ["wp_abandoned", "wp_closed", "wp_delivery_abandoned", "wp_merged", "wp_skipped", "wp_superseded"]
+    refute "wp_target" in graph.dependency_ready_work_package_ids
+
+    delivered = delivery("wp_successor", "completed_no_pr")
+    packages = work_packages ++ [work_package("wp_successor")]
+    superseded = %{delivery("wp_superseded", "superseded") | successor_work_package_id: "wp_successor"}
+
+    graph =
+      ExecutionGraph.evaluate(
+        %{nodes: [group], dependency_edges: [dependency("dep_successor", "work_package", "wp_target", "work_package", "wp_superseded")]},
+        packages,
+        [superseded, delivered]
+      )
+
     assert :ok = ExecutionGraph.require_ready(graph, "wp_target")
   end
 
@@ -171,7 +184,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
            } = ExecutionGraph.scope(graph, ["wp_visible"])
   end
 
-  test "uses projected Group and delivery evidence without rereading packages" do
+  test "requires canonical delivery evidence rather than a projected outcome label" do
     graph =
       ExecutionGraph.evaluate(
         %{
@@ -185,11 +198,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
         []
       )
 
-    assert graph.unmet_dependencies == []
-    assert :ok = ExecutionGraph.require_ready(graph, "wp_target")
-
-    assert %{delivery_outcome: "pr_merged", resolved: true} =
-             Enum.find(graph.resolutions, &(&1.work_package_id == "wp_source"))
+    assert {:error, {:unmet_work_package_dependencies, "wp_target", ["wp_source"]}} = ExecutionGraph.require_ready(graph, "wp_target")
   end
 
   test "drops dependency endpoints outside the projected WorkPackage set" do
@@ -205,7 +214,62 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
 
     assert graph.effective_edges == []
     assert graph.topological_order == ["wp_visible"]
-    assert [%{status: "skipped", resolved: true}] = graph.resolutions
+    assert [%{status: "skipped", resolved: false}] = graph.resolutions
+  end
+
+  test "expanded overlapping constraints are ANDed and pins never bypass current-head matching" do
+    head = String.duplicate("a", 40)
+    other_head = String.duplicate("b", 40)
+    packages = [work_package("backend", nil, "ready_for_merge"), work_package("ui", "uis")]
+    pin = %{dependency("pin", "product_node", "uis", "work_package", "backend") | candidate_head_sha: head}
+    ordinary = dependency("delivered", "work_package", "ui", "work_package", "backend")
+    other_pin = %{pin | id: "other-pin", candidate_head_sha: other_head}
+    context = %{events: %{"backend" => candidate_events(head)}}
+
+    evaluate = fn edges, deliveries ->
+      ExecutionGraph.evaluate(%{nodes: [group("uis")], dependency_edges: edges}, packages, deliveries, context)
+    end
+
+    assert :ok = ExecutionGraph.require_ready(evaluate.([pin], []), "ui")
+
+    assert {:error, {:unmet_work_package_dependencies, "ui", ["backend"]}} =
+             ExecutionGraph.require_ready(evaluate.([pin, ordinary], []), "ui")
+
+    assert [%{constraints: constraints}] = evaluate.([pin, ordinary], []).effective_edges
+    assert length(constraints) == 2
+    assert {:error, _} = ExecutionGraph.require_ready(evaluate.([pin, other_pin], []), "ui")
+    assert :ok = ExecutionGraph.require_ready(evaluate.([pin, ordinary], [delivery("backend", "pr_merged")]), "ui")
+    assert {:error, _} = ExecutionGraph.require_ready(evaluate.([pin, other_pin], [delivery("backend", "pr_merged")]), "ui")
+
+    changed = %{events: %{"backend" => candidate_events(other_head)}}
+    stale = ExecutionGraph.evaluate(%{nodes: [group("uis")], dependency_edges: [pin]}, packages, [], changed)
+    assert {:error, _} = ExecutionGraph.require_ready(stale, "ui")
+    assert [%{constraints: [%{candidate_state: "stale_head"}]}] = stale.effective_edges
+
+    group_pin =
+      DependencyEdge.create_changeset(%{
+        id: "bad",
+        work_request_id: "wr",
+        source_kind: "work_package",
+        source_id: "ui",
+        target_kind: "product_node",
+        target_id: "uis",
+        kind: "depends_on",
+        reason: "Backend",
+        candidate_head_sha: head
+      })
+
+    refute group_pin.valid?
+    assert Keyword.has_key?(group_pin.errors, :candidate_head_sha)
+  end
+
+  defp candidate_events(head) do
+    alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
+
+    [
+      %ProgressEvent{sequence: 1, payload: %{"type" => "branch", "source_tool" => "attach_branch", "head_sha" => head}},
+      %ProgressEvent{sequence: 2, payload: %{"type" => "pr", "source_tool" => "attach_pr", "head_sha" => head, "url" => "https://github.com/example/repo/pull/1"}}
+    ]
   end
 
   defp group(id), do: %Node{id: id, parent_id: nil}
