@@ -93,14 +93,3 @@ export function RowBadgeSlot({
     </span>
   );
 }
-
-export function RequestProgressBar({ progress }: { progress: number }) {
-  const value = Math.max(0, Math.min(100, Math.round(progress)));
-
-  return (
-    <span className="v3-request-progress" role="progressbar" aria-label="WorkRequest progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
-      <span className="v3-progress-bar" aria-hidden="true"><span style={{ width: `${value}%` }} /></span>
-      <span className="v3-progress-value" aria-hidden="true">{value}%</span>
-    </span>
-  );
-}

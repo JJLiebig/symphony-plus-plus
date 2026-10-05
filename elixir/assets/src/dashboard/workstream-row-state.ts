@@ -42,7 +42,7 @@ export function statusBadgeWidthForRequestDetails(details: WorkRequestDetail[], 
 
 export function workRequestIsTerminal(detail: WorkRequestDetail) {
   const request = detail.work_request;
-  return Boolean(request.completed_at || request.archived_at || [request.status, request.operational_state?.key].includes("completed"));
+  return Boolean(request.completed_at || request.archived_at || request.status === "completed");
 }
 
 export function workPackageIsTerminal(slice: WorkRequestPackage, pkg?: WorkPackageCard) {
@@ -65,18 +65,15 @@ export function requestBoardState(
   detail: WorkRequestDetail,
   packageById: Map<string, WorkPackageCard>,
   counts: { blockerCount: number; guidanceCount: number },
-  progress: number,
 ): BoardRowState {
   const request = detail.work_request;
   const rawStatus = request.operational_state?.key || request.status;
   return aggregateBoardRowState({
     blockerCount: counts.blockerCount,
-    childrenComplete: productTreeIsComplete(detail),
-    completionDone: isFinishedBoardStatus(rawStatus),
+    completionDone: workRequestIsTerminal(detail),
     fallbackLabel: operationalLabel(request.operational_state, request.status),
     fallbackStatus: rawStatus,
     guidanceCount: counts.guidanceCount,
-    progress,
     slices: detail.work_packages ?? [],
     packageById,
   });
@@ -114,31 +111,24 @@ function productNodeStatusLabel(node: ProductTreeNode, mark = node.computed_comp
 
 function aggregateBoardRowState({
   blockerCount,
-  childrenComplete = true,
-  completionDeferred = false,
   completionDone = false,
   fallbackLabel,
   fallbackStatus,
   guidanceCount,
   packageById,
-  progress,
   slices,
 }: {
   blockerCount: number;
-  childrenComplete?: boolean;
-  completionDeferred?: boolean;
   completionDone?: boolean;
   fallbackLabel?: string | null;
   fallbackStatus?: string | null;
   guidanceCount: number;
   packageById: Map<string, WorkPackageCard>;
-  progress: number;
   slices: WorkRequestPackage[];
 }): BoardRowState {
   const childState = aggregateChildSliceState(slices, packageById);
   const derived = firstMatchingBoardRowState([
-    [completionDone, "done", finishedFallbackLabel(fallbackLabel)],
-    [completionDeferred, "deferred", fallbackLabel],
+    [completionDone, "done"],
     [blockerCount > 0, "blocked"],
     [guidanceCount > 0, "guidance"],
     [childState.recovery, "recovery"],
@@ -146,9 +136,8 @@ function aggregateBoardRowState({
     [childState.waiting, "waiting"],
     [childState.ready, "ready"],
     [childState.planned, "planned"],
-    [childState.done && childrenComplete, "done", finishedFallbackLabel(fallbackLabel)],
-    [progress > 0 || fallbackStatus === "partial", "partial"],
-    [childState.deferred, "deferred", fallbackLabel],
+    [childState.delivered || fallbackStatus === "partial", "partial"],
+    [childState.deferred, "deferred"],
     [childState.notStarted, "not_started"],
   ]);
 
@@ -158,7 +147,7 @@ function aggregateBoardRowState({
 type AggregateChildSliceState = {
   active: boolean;
   deferred: boolean;
-  done: boolean;
+  delivered: boolean;
   notStarted: boolean;
   planned: boolean;
   ready: boolean;
@@ -170,7 +159,7 @@ function aggregateChildSliceState(slices: WorkRequestPackage[], packageById: Map
   const state: AggregateChildSliceState = {
     active: false,
     deferred: false,
-    done: slices.length > 0,
+    delivered: false,
     notStarted: false,
     planned: slices.length > 0,
     ready: false,
@@ -187,10 +176,16 @@ function aggregateChildSliceState(slices: WorkRequestPackage[], packageById: Map
     state.ready ||= kind === "ready";
     state.recovery ||= kind === "recovery";
     state.waiting ||= kind === "waiting";
-    state.done &&= kind === "done";
+    state.delivered ||= sliceHasDelivery(slice, packageById.get(slice.work_package_id || ""));
   }
 
   return state;
+}
+
+function sliceHasDelivery(slice: WorkRequestPackage, pkg?: WorkPackageCard) {
+  const outcome = slice.delivery?.outcome || sliceOperationalState(slice, pkg)?.delivery_outcome;
+  const status = slice.work_package_status || pkg?.status || slice.status;
+  return ["pr_merged", "completed_no_pr"].includes(outcome || "") || ["delivered", "merged", "completed_no_pr"].includes(status || "");
 }
 
 function sliceBoardStateKind(slice: WorkRequestPackage, pkg?: WorkPackageCard): BoardRowStateKind {
@@ -199,22 +194,17 @@ function sliceBoardStateKind(slice: WorkRequestPackage, pkg?: WorkPackageCard): 
   return firstMatchingBoardRowKind([
     [sliceHasFailedGate(slice), "recovery"],
     [sliceHasActiveWork(slice, pkg, status), "active"],
+    [statusIn(DEFERRED_STATUSES, status), "deferred"],
     [isFinishedBoardStatus(status), "done"],
     [statusIn(WAITING_STATUSES, status), "waiting"],
     [statusIn(READY_STATUSES, status), "ready"],
     [statusIn(PLANNED_STATUSES, status), "planned"],
-    [statusIn(DEFERRED_STATUSES, status), "deferred"],
     [statusIn(NOT_STARTED_STATUSES, status), "not_started"],
   ]) ?? "unknown";
 }
 
 function sliceHasFailedGate(slice: WorkRequestPackage) {
   return slice.review_signal?.status === "failed" || slice.pr_signal?.checks?.status === "failing";
-}
-
-function productTreeIsComplete(detail: WorkRequestDetail) {
-  const nodes = detail.product_tree?.nodes ?? [];
-  return nodes.length === 0 || nodes.every((node) => ["done", "deferred"].includes(node.computed_completion_mark || node.completion_mark || "unknown"));
 }
 
 function sliceHasActiveWork(slice: WorkRequestPackage, pkg: WorkPackageCard | undefined, status?: string | null) {
@@ -233,7 +223,6 @@ function boardRowState(kind: BoardRowStateKind, label?: string | null): BoardRow
 function boardRowStateFromStatus(status?: string | null, label?: string | null): BoardRowState {
   return firstMatchingBoardRowState([
     [statusIn(ACTIVE_WORK_STATUSES, status), "active"],
-    [isFinishedBoardStatus(status), "done", finishedFallbackLabel(label)],
     [statusIn(WAITING_STATUSES, status), "waiting", label],
     [statusIn(READY_STATUSES, status), "ready", label],
     [statusIn(PLANNED_STATUSES, status), "planned", label],
@@ -257,11 +246,6 @@ function firstMatchingBoardRowKind(rules: Array<[boolean, BoardRowStateKind]>) {
 
 function statusIn(statuses: Set<string>, status?: string | null) {
   return statuses.has(status || "");
-}
-
-function finishedFallbackLabel(label?: string | null) {
-  const text = label?.trim();
-  return text && !["Finished", "Unknown"].includes(text) ? text : "Done";
 }
 
 const ACTIVE_WORK_STATUSES = new Set([

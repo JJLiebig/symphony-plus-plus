@@ -31,7 +31,7 @@ describe("focus board", () => {
         dependency: { satisfied: 2, required: 2, active: 0, blocked: 1, unmet_work_package_ids: ["upstream"], inputs: [] },
       })]),
       request("wr-recent", "Just shipped", [slice("merged", "merged")], { completedAt: "2026-07-21T09:30:00Z" }),
-      request("wr-delivery", "Delivery fallback", [slice("delivered", "merged", { recordedAt: "2026-07-21T09:00:00Z" })]),
+      request("wr-delivery", "Delivery fallback", [slice("delivered", "merged", { recordedAt: "2026-07-21T09:00:00Z" })], { status: "completed" }),
       request("wr-old", "Old news", [slice("old", "merged")], { completedAt: "2026-07-19T10:00:00Z" }),
     ], "2026-07-21T10:00:00Z", new Map(), new Map([
       ["wr-human", { blockerCount: 0, guidanceCount: 1 }],
@@ -49,6 +49,28 @@ describe("focus board", () => {
       ["wr-delivery", "recent"],
     ]);
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+  });
+
+  it("keeps unresolved retired and partially delivered requests visible outside Recent", () => {
+    const skipped = request("skipped", "All skipped", [slice("skipped", "skipped")]);
+    skipped.work_request.operational_state = { key: "completed", label: "Completed" };
+    const cycle = request("cycle", "Successor cycle", [slice("a", "superseded", { recordedAt: "2026-07-21T09:00:00Z" }), slice("b", "superseded")]);
+    const partial = request("partial", "Some delivered", [slice("delivered", "merged", { recordedAt: "2026-07-21T09:00:00Z" }), slice("abandoned", "abandoned")]);
+    expect(buildFocusBoardItems([skipped, cycle, partial], "2026-07-21T10:00:00Z").map(({ id, lane }) => [id, lane])).toEqual([
+      ["skipped", "waiting"], ["cycle", "waiting"], ["partial", "waiting"],
+    ]);
+  });
+
+  it("uses canonical completion time for mixed skipped and multiple-successor deliveries", () => {
+    const delivered = request("completed", "Accepted scope", [
+      slice("original", "superseded", { recordedAt: "2026-07-21T09:50:00Z" }),
+      slice("successor-a", "completed_no_pr", { recordedAt: "2026-07-21T09:00:00Z" }),
+      slice("successor-b", "merged", { recordedAt: "2026-07-21T09:30:00Z" }),
+      slice("planned-skip", "skipped"),
+    ], { completedAt: "2026-07-21T09:40:00Z" });
+    expect(buildFocusBoardItems([delivered], "2026-07-21T10:00:00Z")).toMatchObject([
+      { id: "completed", lane: "recent", finishedAt: "2026-07-21T09:40:00Z" },
+    ]);
   });
 
   it("uses package runtime and explicit attention context for request lanes", () => {

@@ -55,7 +55,7 @@ describe("workstream row state", () => {
       work_packages: [],
     };
 
-    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }, 0);
+    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 });
 
     expect(state.label).toBe("Clarifying");
     expect(state.kind).toBe("waiting");
@@ -73,7 +73,7 @@ describe("workstream row state", () => {
       work_packages: [],
     };
 
-    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }, 0);
+    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 });
 
     expect(state.label).toBe("Ready For Slicing");
     expect(state.badgeVariant).toBe("ready");
@@ -90,7 +90,7 @@ describe("workstream row state", () => {
       work_packages: [plannedSlice("slice-planned", undefined, "planned", "Planned")],
     };
 
-    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }, 50);
+    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 });
 
     expect(state.kind).toBe("planned");
     expect(state.label).toBe("Planned");
@@ -108,7 +108,7 @@ describe("workstream row state", () => {
       work_packages: [plannedSlice("slice-active-child", "pkg-active", "active", "Active")],
     };
 
-    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }, 50);
+    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 });
 
     expect(state.label).toBe("Active");
     expect(state.tone).toBe("implementing");
@@ -124,14 +124,14 @@ describe("workstream row state", () => {
       work_packages: [plannedSlice("slice-ready-finish-child", "pkg-ready-finish", "ready_to_finish", "Ready To Finish")],
     };
 
-    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }, 50);
+    const state = requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 });
 
     expect(state.kind).toBe("ready");
     expect(state.label).toBe("Ready");
     expect(state.tone).toBe("ready");
   });
 
-  it("keeps active rows active at 100 percent plan progress until finished", () => {
+  it("keeps completed package plans separate from request delivery", () => {
     const detail: WorkRequestDetail = {
       work_request: {
         id: "wr-active-full-progress",
@@ -144,7 +144,7 @@ describe("workstream row state", () => {
       ["pkg-active", { id: "pkg-active", status: "active", plan: { completed_count: 1, total_count: 1 } }],
     ]);
 
-    const requestState = requestBoardState(detail, packages, { blockerCount: 0, guidanceCount: 0 }, 100);
+    const requestState = requestBoardState(detail, packages, { blockerCount: 0, guidanceCount: 0 });
 
     expect(requestState.kind).toBe("active");
   });
@@ -156,7 +156,7 @@ describe("workstream row state", () => {
       work_packages: [plannedSlice("slice-done", undefined, "delivered", "Delivered")],
     };
 
-    expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }, 100).kind).toBe("partial");
+    expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }).kind).toBe("partial");
   });
 
   it("uses current slice operational state ahead of stale terminal projections", () => {
@@ -165,20 +165,21 @@ describe("workstream row state", () => {
     slice.delivery = { outcome: "delivered" };
     const detail: WorkRequestDetail = { work_request: { id: "wr-current", status: "sliced" }, work_packages: [slice] };
 
-    expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }, 100).kind).toBe("active");
+    expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }).kind).toBe("active");
   });
 
   it("keeps terminal request state ahead of stale active children", () => {
     const detail: WorkRequestDetail = {
       work_request: {
         id: "wr-done-active-child",
-        status: "delivered",
+        status: "sliced",
+        completed_at: "2026-10-05T06:00:00Z",
         operational_state: { key: "delivered", label: "Delivered" },
       },
       work_packages: [plannedSlice("slice-stale-active", "pkg-active", "active", "Active")],
     };
     const packages = new Map<string, WorkPackageCard>([["pkg-active", { id: "pkg-active", status: "active" }]]);
-    const requestState = requestBoardState(detail, packages, { blockerCount: 0, guidanceCount: 0 }, 100);
+    const requestState = requestBoardState(detail, packages, { blockerCount: 0, guidanceCount: 0 });
 
     expect(requestState.kind).toBe("done");
   });
@@ -187,17 +188,46 @@ describe("workstream row state", () => {
     const detail: WorkRequestDetail = {
       work_request: {
         id: "wr-done-blocked",
-        status: "delivered",
+        status: "sliced",
+        completed_at: "2026-10-05T06:00:00Z",
         operational_state: { key: "delivered", label: "Delivered" },
       },
       work_packages: [],
     };
 
-    const state = requestBoardState(detail, new Map(), { blockerCount: 1, guidanceCount: 0 }, 100);
+    const state = requestBoardState(detail, new Map(), { blockerCount: 1, guidanceCount: 0 });
 
-    expect(state.label).toBe("Delivered");
+    expect(state.label).toBe("Done");
     expect(state.tone).toBe("finished");
     expect(state.badgeVariant).toBe("success");
+  });
+
+  it("keeps unresolved retired scope deferred even when child or promoted request state is terminal", () => {
+    for (const status of ["skipped", "superseded", "abandoned"]) {
+      const slice = plannedSlice("retired", undefined, status, status);
+      slice.delivery = status === "skipped" ? undefined : { outcome: status, successor_work_package_id: "retired" };
+      const detail: WorkRequestDetail = {
+        work_request: { id: "wr-retired", status: "sliced", completed_at: null, operational_state: { key: "completed", label: "Completed" } },
+        work_packages: [slice],
+        product_tree: { nodes: [{ id: "old-scope", completion_mark: "done" }] },
+      };
+      expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 })).toMatchObject({ kind: "deferred", label: "Deferred" });
+    }
+  });
+
+  it("shows actual partial delivery without inferring completion from finished children", () => {
+    const delivered = plannedSlice("delivered", undefined, "completed_no_pr", "Completed Without PR");
+    delivered.delivery = { outcome: "completed_no_pr" };
+    const detail: WorkRequestDetail = {
+      work_request: { id: "wr-mixed", status: "sliced", completed_at: null, operational_state: { key: "completed_no_pr" } },
+      work_packages: [plannedSlice("retired", undefined, "superseded", "Superseded"), delivered],
+    };
+    expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }).kind).toBe("partial");
+    detail.work_packages = [delivered];
+    expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }).kind).toBe("partial");
+    detail.work_request.completed_at = "2026-10-05T06:00:00Z";
+    detail.work_packages.push(plannedSlice("planned-skip", undefined, "skipped", "Skipped"));
+    expect(requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 }).kind).toBe("done");
   });
 
   it("keeps failed gates and status-only blockers out of red attention state", () => {
@@ -209,13 +239,11 @@ describe("workstream row state", () => {
       { work_request: { id: "wr-review", status: "sliced" }, work_packages: [reviewFailed] },
       new Map(),
       { blockerCount: 0, guidanceCount: 0 },
-      50,
     );
     const waiting = requestBoardState(
       { work_request: { id: "wr-blocked", status: "sliced" }, work_packages: [blocked] },
       new Map(),
       { blockerCount: 0, guidanceCount: 0 },
-      50,
     );
 
     expect(recovery).toMatchObject({ kind: "recovery", badgeVariant: "warning", tone: "review" });

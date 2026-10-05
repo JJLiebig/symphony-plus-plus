@@ -1,8 +1,7 @@
 import type { WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
 
 import type { RequestFrontierMode } from "./workstream-board";
-import { requestProgress } from "./workstream-progress";
-import { requestBoardState, type BoardRowStateKind } from "./workstream-row-state";
+import { requestBoardState, workRequestIsTerminal, type BoardRowStateKind } from "./workstream-row-state";
 import type { ActionableAttentionCounts } from "./workstream-attention";
 
 export type FocusBoardLane = RequestFrontierMode;
@@ -31,8 +30,8 @@ export function buildFocusBoardItems(
   for (const detail of details) {
     const requestId = detail.work_request.id;
     const counts = attentionCountsByRequestId.get(requestId) ?? { blockerCount: 0, guidanceCount: 0 };
-    const state = requestBoardState(detail, packageById, counts, requestProgress(detail, packageById));
-    if (state.kind === "done") {
+    const state = requestBoardState(detail, packageById, counts);
+    if (workRequestIsTerminal(detail)) {
       const finishedAt = terminalTimestamp(detail);
       if (finishedAt && timestampIsRecent(finishedAt, nowMs)) items.push({ detail, finishedAt, id: requestId, lane: "recent" });
     } else {

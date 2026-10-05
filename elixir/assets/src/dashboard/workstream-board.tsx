@@ -7,9 +7,8 @@ import { lazy, Suspense, type CSSProperties, type ReactNode, useCallback, useEff
 import { copyTextToClipboard, CardDetailSelect, DashboardUpdateAnimations } from "./runtime";
 import { clarificationGuidanceItem } from "./dashboard-data";
 import { finishedRequestChildrenStorageKey, sortWorkRequestPackages, sortWorkRequestDetails } from "./workstream-data";
-import { requestProgress } from "./workstream-progress";
 import { requestBoardState, statusBadgeWidthForLabels, type BoardRowStateKind } from "./workstream-row-state";
-import { RequestAttentionBadge, RequestIdentityCopyButton, RequestInfoButton, RequestProgressBar } from "./workstream-row-ui";
+import { RequestAttentionBadge, RequestIdentityCopyButton, RequestInfoButton } from "./workstream-row-ui";
 import { requestUpdateKey } from "./update-animations";
 import { dashboardPrefersReducedMotion, updateMotionAttributes } from "@/components/dashboard/motion-utils";
 import { useAutoCollapseWhenDone } from "./workstream-auto-collapse";
@@ -196,11 +195,10 @@ export function ProductRequestRow({
   const requestTitle = request.title || request.id;
   const requestPath = useMemo(() => [{ id: request.id, label: requestTitle }], [request.id, requestTitle]);
   const slices = useMemo(() => sortWorkRequestPackages(detail.work_packages ?? []), [detail.work_packages]);
-  const progress = requestProgress(detail, packageById);
   const counts = requestActionableAttentionCounts(detail, packageById, activeBlockingEdges, guidanceItems);
   const openQuestion = detail.clarification_questions?.find((question) => question.status === "open");
   const branch = visibleRequestBranch(request.base_branch, primaryBranch);
-  const requestState = requestBoardState(detail, packageById, counts, progress);
+  const requestState = requestBoardState(detail, packageById, counts);
   const tone = requestState.tone;
   const requestLabel = requestState.label;
   const badgeLabel = requestBadgeLabel(requestLabel, detail, packageById, now);
@@ -253,7 +251,6 @@ export function ProductRequestRow({
               <RequestIdentity detail={detail} branch={branch} />
             </button>
           </div>
-          <RequestProgressBar progress={progress} />
           {frontierNode}
         </div>
         {inlineExpandedBody}
