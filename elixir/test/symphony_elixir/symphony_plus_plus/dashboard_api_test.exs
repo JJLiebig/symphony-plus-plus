@@ -24,12 +24,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.BlockerProjection
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.MetadataProjection
+  alias SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards
   alias SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.GuidanceRequest
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Repository, as: GuidanceRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Server
+  alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.RetentionThrottle
@@ -710,7 +712,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
     assert {:ok, payload} = Dashboard.work_request_detail(repo, work_request.id)
     assert payload.work_request.status == "sliced"
-    assert payload.work_request.completed_at != nil
+    assert payload.work_request.completed_at == nil
     assert payload.work_request.archived_at == nil
     assert payload.work_request.operational_state.key == "needs_closeout"
     assert payload.work_request.operational_state.label == "Needs Closeout"
@@ -725,6 +727,80 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert slice.operational_state.key == "needs_closeout"
     assert slice.operational_state.raw_status == "merged"
     assert slice.attention_reason_codes == ["terminal_package_without_delivery_outcome"]
+  end
+
+  test "dashboard completion preserves delivery pointers and unresolved missing recuts", %{repo: repo} do
+    request = create_work_request!(repo, id: "WR-DASH-SUCCESSOR-SCOPE", status: "ready_for_slicing")
+
+    [original, successor] =
+      for id <- ["original", "successor"] do
+        assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WRS-DASH-#{id}"))
+        package
+      end
+
+    assert {:ok, superseded} =
+             WorkRequestRepository.record_work_package_delivery(repo, request.id, original.id, %{
+               outcome: "superseded",
+               idempotency_key: "dashboard-pointer-only",
+               successor_work_package_id: successor.id,
+               superseded_reason: "Replacement scope delivers the goal."
+             })
+
+    record_completed_delivery!(repo, successor)
+    assert {:ok, completed} = WorkRequestService.refresh_completion(repo, request.id)
+    assert %DateTime{} = completed.completed_at
+    assert {:ok, cards} = Dashboard.work_requests(repo)
+    assert Enum.find(cards.work_requests, &(&1.id == request.id)).completed_at != nil
+    assert {:ok, detail} = Dashboard.work_request_detail(repo, request.id)
+    assert detail.work_request.completed_at != nil
+
+    assert {:ok, _recut} =
+             OperationalLineage.record_recut_as(repo, original.id, successor.id, %{
+               reason: "The delivered recut cannot hide an unresolved immutable pointer.",
+               decision: %{work_request_id: request.id}
+             })
+
+    assert {:ok, contexts} = Dashboard.work_package_work_package_contexts(repo, [original, successor])
+    deliveries = Map.new(repo.all(WorkPackageDelivery), &{{&1.work_request_id, &1.work_package_id}, &1})
+    deliveries = Map.put(deliveries, {request.id, original.id}, %{superseded | successor_work_package_id: "missing"})
+
+    for projection <- [:operational_state, :full] do
+      assert {:ok, boards} =
+               DeliveryBoard.project_many(repo, [request], %{request.id => [original, successor]},
+                 deliveries_by_slice_id: deliveries,
+                 work_package_contexts: contexts,
+                 slice_projection: projection
+               )
+
+      payload =
+        WorkRequestCards.work_request_payload(
+          completed,
+          [],
+          [original, successor],
+          contexts,
+          %{},
+          %{},
+          delivery_board: boards[request.id]
+        )
+
+      assert payload.completed_at == nil
+    end
+
+    assert {:ok, _missing_recut} =
+             PlanningRepository.append_progress_event(repo, %{
+               work_package_id: original.id,
+               summary: "Historical replacement target is missing.",
+               status: "operational_lineage_recorded",
+               idempotency_key: "dashboard-missing-recut",
+               payload: %{type: "operational_lineage", source_tool: "record_operational_lineage", relationship: "recut_as", target_work_package_id: "missing"}
+             })
+
+    assert {:ok, incomplete} = WorkRequestService.refresh_completion(repo, request.id)
+    assert incomplete.completed_at == nil
+    assert {:ok, cards} = Dashboard.work_requests(repo)
+    assert Enum.find(cards.work_requests, &(&1.id == request.id)).completed_at == nil
+    assert {:ok, detail} = Dashboard.work_request_detail(repo, request.id)
+    assert detail.work_request.completed_at == nil
   end
 
   test "WorkRequest delivery truth stays primary over lifecycle gates", %{repo: repo} do
@@ -795,14 +871,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert detail.work_request.operational_state.raw_status == "human_info_needed"
   end
 
-  test "derived completed WorkRequest stays completed over clarification gates", %{repo: repo} do
+  test "actual no-PR delivery stays visible over clarification gates", %{repo: repo} do
     work_request = create_work_request!(repo, id: "WR-DASH-DERIVED-COMPLETED-GATED", status: "ready_for_slicing")
 
     assert {:ok, work_package} =
              CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_package_attrs(id: "WRS-DERIVED-COMPLETED-GATED"))
 
-    assert {:ok, _skipped_slice} = WorkRequestRepository.skip_work_package(repo, work_request.id, work_package.id, "planned")
-    mark_non_scratch_skipped_slice!(repo, work_package.id)
+    record_completed_delivery!(repo, work_package)
+    assert {:ok, _completed} = WorkRequestService.refresh_completion(repo, work_request.id)
 
     work_request
     |> Ecto.Changeset.change(status: "clarifying")
@@ -811,11 +887,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert {:ok, payload} = Dashboard.work_requests(repo)
     card = Enum.find(payload.work_requests, &(&1.id == work_request.id))
 
-    assert card.operational_state.key == "completed"
+    assert card.operational_state.key == "completed_no_pr"
     assert card.operational_state.raw_status == "clarifying"
 
     assert {:ok, detail} = Dashboard.work_request_detail(repo, work_request.id)
-    assert detail.work_request.operational_state.key == "completed"
+    assert detail.work_request.operational_state.key == "completed_no_pr"
     assert detail.work_request.operational_state.raw_status == "clarifying"
   end
 
@@ -1085,8 +1161,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                })
 
       assert {:ok, slice} = CanonicalWorkPackageFixtures.add_work_package(repo, archived_request.id, work_package_attrs(id: "WRS-OPERATOR-ARCHIVE"))
-      assert {:ok, _skipped} = WorkRequestRepository.skip_work_package(repo, archived_request.id, slice.id, "planned")
-      mark_non_scratch_skipped_slice!(repo, slice.id)
+      record_completed_delivery!(repo, slice)
 
       archived_request
       |> Ecto.Changeset.change(completed_at: %{~U[2026-05-01 00:00:00Z] | microsecond: {0, 6}})
@@ -2807,7 +2882,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   test "local operator can tune archive cutoff and restore archived WorkRequests", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       completed_at = DateTime.add(DateTime.utc_now(:microsecond), -2 * 24 * 60 * 60, :second)
-      request = create_completed_skipped_work_request!(repo, "WR-LOCAL-ARCHIVE-SETTINGS", completed_at)
+      request = create_completed_delivered_work_request!(repo, "WR-LOCAL-ARCHIVE-SETTINGS", completed_at)
 
       dashboard_payload = local_operator_dashboard_payload()
 
@@ -2913,7 +2988,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       stale_at = DateTime.add(DateTime.utc_now(:microsecond), -2 * 24 * 60 * 60, :second)
       fresh_at = DateTime.utc_now(:microsecond)
 
-      expired = create_completed_skipped_work_request!(repo, "WR-LOCAL-DELETE-ARCHIVED", stale_at)
+      expired = create_completed_delivered_work_request!(repo, "WR-LOCAL-DELETE-ARCHIVED", stale_at)
       assert {:ok, expired} = WorkRequestService.archive(repo, expired.id)
       expired = set_work_request_archived_at!(expired, repo, stale_at)
       expired_slice_id = "WRS-#{expired.id}"
@@ -2944,7 +3019,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         |> Ecto.Changeset.change(status: "sliced", completed_at: stale_at, archived_at: stale_at, updated_at: stale_at)
         |> repo.update!()
 
-      recent = create_completed_skipped_work_request!(repo, "WR-LOCAL-KEEP-ARCHIVED", stale_at)
+      recent = create_completed_delivered_work_request!(repo, "WR-LOCAL-KEEP-ARCHIVED", stale_at)
       assert {:ok, recent} = WorkRequestService.archive(repo, recent.id)
       recent = set_work_request_archived_at!(recent, repo, fresh_at)
 
@@ -3002,7 +3077,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert {:ok, _settings} = OperatorSettingsRepository.update(repo, %{"work_request_archive_after_days" => 1})
 
       completed_at = DateTime.add(DateTime.utc_now(:microsecond), -2 * 24 * 60 * 60, :second)
-      request = create_completed_skipped_work_request!(repo, "WR-LOCAL-REFRESH-RETENTION", completed_at)
+      request = create_completed_delivered_work_request!(repo, "WR-LOCAL-REFRESH-RETENTION", completed_at)
 
       run_operator_retention(repo)
       payload = local_operator_dashboard_payload()
@@ -3024,7 +3099,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         stale_at = DateTime.add(DateTime.utc_now(:microsecond), -8 * 24 * 60 * 60, :second)
 
-        first_request = create_completed_skipped_work_request!(repo, "WR-LOCAL-THROTTLE-FIRST", stale_at)
+        first_request = create_completed_delivered_work_request!(repo, "WR-LOCAL-THROTTLE-FIRST", stale_at)
 
         first_solo =
           repo
@@ -3037,7 +3112,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert Enum.any?(first_payload["archived_work_requests"]["work_requests"], &(&1["id"] == first_request.id))
         assert Enum.any?(first_payload["solo_sessions"]["solo_sessions"], &(&1["id"] == first_solo.id and &1["status"] == "archived"))
 
-        second_request = create_completed_skipped_work_request!(repo, "WR-LOCAL-THROTTLE-SECOND", stale_at)
+        second_request = create_completed_delivered_work_request!(repo, "WR-LOCAL-THROTTLE-SECOND", stale_at)
 
         second_solo =
           repo
@@ -3064,14 +3139,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  })
 
         stale_at = DateTime.add(DateTime.utc_now(:microsecond), -2 * 24 * 60 * 60, :second)
-        first_request = create_completed_skipped_work_request!(repo, "WR-LOCAL-THROTTLE-EXPIRED-FIRST", stale_at)
+        first_request = create_completed_delivered_work_request!(repo, "WR-LOCAL-THROTTLE-EXPIRED-FIRST", stale_at)
 
         run_operator_retention(repo)
         first_payload = local_operator_dashboard_payload()
 
         assert Enum.any?(first_payload["archived_work_requests"]["work_requests"], &(&1["id"] == first_request.id))
 
-        second_request = create_completed_skipped_work_request!(repo, "WR-LOCAL-THROTTLE-EXPIRED-SECOND", stale_at)
+        second_request = create_completed_delivered_work_request!(repo, "WR-LOCAL-THROTTLE-EXPIRED-SECOND", stale_at)
 
         Process.sleep(25)
 
@@ -3201,7 +3276,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   test "local operator can manually archive completed WorkRequests only", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       completed_at = DateTime.add(DateTime.utc_now(:microsecond), -24 * 60 * 60, :second)
-      completed = create_completed_skipped_work_request!(repo, "WR-LOCAL-MANUAL-ARCHIVE", completed_at)
+      completed = create_completed_delivered_work_request!(repo, "WR-LOCAL-MANUAL-ARCHIVE", completed_at)
 
       archive_payload =
         local_operator_conn()
@@ -4053,14 +4128,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     work_request
   end
 
-  defp create_completed_skipped_work_request!(repo, id, completed_at) do
+  defp create_completed_delivered_work_request!(repo, id, completed_at) do
     work_request = create_work_request!(repo, id: id, status: "ready_for_slicing")
 
     assert {:ok, work_package} =
              CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_package_attrs(id: "WRS-#{id}"))
 
-    assert {:ok, _skipped} = WorkRequestRepository.skip_work_package(repo, work_request.id, work_package.id, "planned")
-    mark_non_scratch_skipped_slice!(repo, work_package.id)
+    record_completed_delivery!(repo, work_package)
     assert {:ok, completed} = WorkRequestService.refresh_completion(repo, work_request.id)
 
     completed
@@ -4068,12 +4142,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     |> repo.update!()
   end
 
-  defp mark_non_scratch_skipped_slice!(repo, work_package_id) do
-    work_package = repo.get!(WorkPackage, work_package_id)
-
-    work_package
-    |> Ecto.Changeset.change(dispatched_at: DateTime.utc_now(:microsecond))
-    |> repo.update!()
+  defp record_completed_delivery!(repo, package) do
+    assert {:ok, _delivery} =
+             WorkRequestRepository.record_work_package_delivery(repo, package.work_request_id, package.id, %{
+               outcome: "completed_no_pr",
+               idempotency_key: "delivered-#{package.id}",
+               no_pr_evidence: "Direct completion evidence for archive and display behavior."
+             })
   end
 
   defp create_work_package!(repo, overrides) do

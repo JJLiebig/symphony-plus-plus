@@ -58,7 +58,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     {request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-CLEANUP-STARTUP", "fix/cleanup-startup")
 
     repo.update!(Ecto.Changeset.change(package, status: "merged"))
-    repo.update!(Ecto.Changeset.change(request, completed_at: DateTime.utc_now(:microsecond)))
+
+    assert {:ok, _delivery} =
+             WorkRequestRepository.record_work_package_delivery(repo, request.id, package.id, %{
+               outcome: "completed_no_pr",
+               idempotency_key: "cleanup-startup-delivered",
+               no_pr_evidence: "Completed work resumes queued cleanup after archive."
+             })
 
     assert {:ok, _archived} = WorkRequestService.archive(repo, request.id)
     assert [%Entry{}] = repo.all(Entry)

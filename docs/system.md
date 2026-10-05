@@ -28,10 +28,15 @@ to wrap one package. Dependencies between packages or Groups expand into one
 effective package graph for cycle detection, unmet prerequisites, and dispatch
 readiness. Visual card order and grouping do not create dependencies.
 
-WorkRequest completion is derived from terminal WorkPackages, closed questions,
-and recorded delivery evidence. `sliced` remains the stored planning status;
-there is no manual `completed` status transition. This current projection must
-not be confused with the target delivery semantics in the factory contract.
+WorkRequest completion requires actual `pr_merged` or `completed_no_pr` delivery
+for its current required scope and closed questions. Planned skipped packages
+retire obsolete scope; skipping every package does not deliver a WorkRequest.
+Abandoned work remains unresolved unless delivered successors replace it.
+Superseded work requires every successor from both its immutable delivery
+pointer and same-request `superseded_by`/`recut_as` lineage to deliver. Missing
+or cyclic successors remain unresolved. Later retirement annotations never
+erase actual historical delivery. Explicit operator completion remains available.
+`sliced` remains the stored planning status; delivery does not change it.
 
 Solo Sessions do not create a WorkRequest, WorkPackage, worker grant, or dispatch.
 All ledger operations, including Solo, use MCP. The packaged
