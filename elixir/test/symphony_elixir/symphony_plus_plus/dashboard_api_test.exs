@@ -24,12 +24,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.BlockerProjection
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.MetadataProjection
+  alias SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards
   alias SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.GuidanceRequest
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Repository, as: GuidanceRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Server
+  alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.RetentionThrottle
@@ -753,7 +755,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert detail.work_request.completed_at != nil
 
     assert {:ok, _recut} =
-             SymphonyElixir.SymphonyPlusPlus.OperationalLineage.record_recut_as(repo, original.id, successor.id, %{
+             OperationalLineage.record_recut_as(repo, original.id, successor.id, %{
                reason: "The delivered recut cannot hide an unresolved immutable pointer.",
                decision: %{work_request_id: request.id}
              })
@@ -771,7 +773,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                )
 
       payload =
-        SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards.work_request_payload(
+        WorkRequestCards.work_request_payload(
           completed,
           [],
           [original, successor],
