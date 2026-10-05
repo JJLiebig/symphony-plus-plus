@@ -34,18 +34,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
   def evaluate(repo, work_request_id, work_packages)
       when is_atom(repo) and is_binary(work_request_id) and is_list(work_packages) do
     with {:ok, tree} <- ProductTreeRepository.tree_for_work_request(repo, work_request_id) do
-      deliveries = repo.all(from(delivery in WorkPackageDelivery, where: delivery.work_request_id == ^work_request_id))
-
-      with {:ok, context} <- DependencyInputs.context(repo, work_packages, Enum.any?(tree.dependency_edges, & &1.candidate_head_sha)) do
-        {:ok, evaluate(tree, work_packages, deliveries, context)}
-      end
+      evaluate(repo, work_request_id, work_packages, tree)
     end
-  rescue
-    error in Exqlite.Error -> {:error, {:storage_failed, Exception.message(error)}}
   end
 
   @spec evaluate(map(), [map() | struct()], [map() | struct()]) :: graph()
   def evaluate(%{} = tree, work_packages, deliveries), do: evaluate(tree, work_packages, deliveries, %{})
+
+  @spec evaluate(module(), String.t(), [map() | struct()], map()) :: {:ok, graph()} | {:error, term()}
+  def evaluate(repo, work_request_id, work_packages, tree) when is_atom(repo) do
+    deliveries =
+      if work_packages == [],
+        do: [],
+        else: repo.all(from(delivery in WorkPackageDelivery, where: delivery.work_request_id == ^work_request_id))
+
+    with {:ok, context} <- DependencyInputs.context(repo, work_packages, Enum.any?(tree.dependency_edges, & &1.candidate_head_sha)) do
+      {:ok, evaluate(tree, work_packages, deliveries, context)}
+    end
+  rescue
+    error in Exqlite.Error -> {:error, {:storage_failed, Exception.message(error)}}
+  end
 
   @spec evaluate(map(), [map() | struct()], [map() | struct()], map()) :: graph()
   def evaluate(%{nodes: nodes, dependency_edges: dependency_edges}, work_packages, deliveries, context)

@@ -94,6 +94,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
     depends_on!(repo, work_request.id, publish.id, join.id, 5)
     depends_on!(repo, work_request.id, playtest.id, source.id, 6)
 
+    {:ok, _delivery} =
+      WorkRequestRepository.record_work_package_delivery(repo, work_request.id, source.id, %{
+        outcome: "pr_merged",
+        idempotency_key: "fixture-source-delivered",
+        recorded_by: "fixture",
+        pr_url: "https://github.com/#{@repo_name}/pull/100",
+        pr_merged_at: at(51),
+        merge_commit_sha: "source-merge"
+      })
+
     {:ok, _dispatch} = WorkPackageDispatch.dispatch(repo, work_request.id, playtest.id, [])
 
     run!(repo, parse.id, "RUN-FANOUT-PARSE", "fictional-parse-worker", 10)

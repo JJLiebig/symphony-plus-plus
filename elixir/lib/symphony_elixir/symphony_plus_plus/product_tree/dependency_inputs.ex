@@ -92,8 +92,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
         work_package_id: id,
         eligible: ready and reasons == [],
         reason_codes: if(ready or state.delivery_outcome == "pr_merged", do: reasons, else: ["not_ready" | reasons]),
-        next_action: next_action(reasons, ready),
-        qualification: "Caller verifies current native checks and review before merge."
+        next_action: next_action(reasons, ready)
       }
     end)
   end

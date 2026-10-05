@@ -31,7 +31,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   def project(repo, work_request_id, work_package_payloads, opts \\ [])
       when is_atom(repo) and is_binary(work_request_id) and is_list(work_package_payloads) and is_list(opts) do
     with {:ok, tree} <- product_tree_context(repo, work_request_id, opts),
-         {:ok, execution_graph} <- ExecutionGraph.evaluate(repo, work_request_id) do
+         {:ok, execution_graph} <- ExecutionGraph.evaluate(repo, work_request_id, work_package_payloads, tree) do
       project_tree(tree, execution_graph, work_package_payloads, opts)
     else
       {:error, reason} -> unavailable_projection(reason, work_package_payloads)
@@ -98,10 +98,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
       root_work_package_ids: root_work_package_ids,
       nodes: projected_nodes,
       dependency_edges: Enum.map(dependency_edges, &dependency_edge_payload/1),
-      execution_graph: execution_graph,
+      execution_graph: public_execution_graph(execution_graph),
       summary: summary(projected_nodes, length(root_ids), root_work_package_ids, work_package_payloads),
       latest_revision: revision_payload(latest_revision)
     }
+  end
+
+  defp public_execution_graph(graph) do
+    edges =
+      Enum.map(graph.effective_edges, fn edge ->
+        constraints =
+          Enum.map(edge.constraints, fn constraint ->
+            if is_nil(constraint.candidate_head_sha),
+              do: Map.take(constraint, [:dependency_id, :available, :delivered]),
+              else: Map.drop(constraint, [:updated_at])
+          end)
+
+        %{edge | constraints: constraints}
+      end)
+
+    graph |> Map.drop([:merge_eligibility]) |> Map.put(:effective_edges, edges)
   end
 
   defp scope_execution_graph(execution_graph, visible_work_package_ids, opts) do
