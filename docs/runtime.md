@@ -159,6 +159,11 @@ git -C ..\symphony-plus-plus-beta push --force-with-lease origin beta
 
 ## Diagnosis
 
+When `mark_ready` fails a readiness gate, its MCP error message names the
+missing evidence, such as `Investigation findings are missing.` This remains
+visible in hosts that show only the error message. The structured error keeps
+the gate identifiers and details; supply the missing evidence and retry.
+
 When a fresh session cannot initialize:
 
 1. Capture the exact Codex MCP startup error.

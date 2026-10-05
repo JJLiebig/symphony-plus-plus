@@ -202,7 +202,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
         invalid_params_error("mark_ready", reason)
 
       {:error, {:readiness_failed, missing, reasons}} ->
-        {:error, -32_602, "Invalid params", %{"tool" => "mark_ready", "reason" => "readiness_failed", "missing" => missing, "reasons" => reasons}}
+        message = Enum.map_join(reasons, " ", &Map.fetch!(&1, "message"))
+        {:error, -32_602, message, %{"tool" => "mark_ready", "reason" => "readiness_failed", "missing" => missing, "reasons" => reasons}}
 
       {:error, {:readiness_failed, missing}} ->
         {:error, -32_602, "Invalid params", %{"tool" => "mark_ready", "reason" => "readiness_failed", "missing" => missing}}
