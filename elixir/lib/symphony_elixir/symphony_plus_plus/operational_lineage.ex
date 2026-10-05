@@ -142,6 +142,29 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
     end
   end
 
+  @spec delivery_successors(repo(), [WorkPackage.t()]) ::
+          {:ok, %{String.t() => [String.t()]}} | {:error, lineage_error()}
+  def delivery_successors(repo, work_packages) do
+    packages = packages_by_id(work_packages)
+
+    with {:ok, events} <- lineage_progress_events(repo, {:related_to, Map.keys(packages)}),
+         {:ok, related_packages} <- lineage_packages_by_id(repo, events) do
+      successors =
+        events
+        |> Enum.flat_map(&event_to_relationship_list(&1, related_packages))
+        |> Enum.filter(fn relationship ->
+          source = Map.get(packages, relationship.source_work_package_id)
+          target = Map.get(related_packages, relationship.target_work_package_id)
+
+          successor_relationship?(relationship) and not is_nil(source) and
+            (is_nil(target) or source.work_request_id == target.work_request_id)
+        end)
+        |> Enum.group_by(& &1.source_work_package_id, & &1.target_work_package_id)
+
+      {:ok, Map.new(successors, fn {id, ids} -> {id, Enum.uniq(ids)} end)}
+    end
+  end
+
   defp list_relationships(repo, work_package_ids) when is_atom(repo) and is_list(work_package_ids) do
     with {:ok, work_package_ids} <- normalize_work_package_ids(work_package_ids),
          {:ok, events} <- lineage_progress_events(repo, {:related_to, work_package_ids}),

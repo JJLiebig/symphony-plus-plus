@@ -2,6 +2,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   @moduledoc false
 
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Service, as: CommentService
+  alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
@@ -9,6 +10,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
@@ -120,15 +122,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
          work_package_contexts,
          deliveries_by_slice_id
        ) do
+    packages_by_id = Map.new(work_packages, &{&1.id, &1})
+    successors = delivery_successors(work_package_contexts)
+
+    required_packages =
+      Enum.reject(work_packages, fn work_package ->
+        work_package.status == "skipped" and not Map.has_key?(deliveries_by_slice_id, work_package.id) and
+          DeliveryResolution.successor_ids(work_package.id, deliveries_by_slice_id, successors) == []
+      end)
+
     completion_status_allowed?(work_request) and
       Map.get(question_state, :open_count, 0) == 0 and
-      work_packages != [] and
-      Enum.all?(work_packages, fn work_package ->
-        terminal_slice?(
-          work_package,
-          Map.get(work_package_contexts, work_package.id),
-          Map.get(deliveries_by_slice_id, work_package.id)
-        )
+      required_packages != [] and
+      Enum.all?(required_packages, fn work_package ->
+        DeliveryResolution.resolved?(work_package.id, packages_by_id, deliveries_by_slice_id, successors) and
+          terminal_slice?(
+            work_package,
+            Map.get(work_package_contexts, work_package.id),
+            Map.get(deliveries_by_slice_id, work_package.id)
+          )
       end)
   end
 
@@ -158,15 +170,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
       )
       when is_map(question_state) and is_list(work_packages) and is_map(work_package_contexts) and
              is_map(deliveries_by_slice_id) do
-    work_request
-    |> state(question_state, work_packages, work_package_contexts, deliveries_by_slice_id)
-    |> preserve_persisted_visible_state(
-      work_request,
-      question_state,
-      work_packages,
-      work_package_contexts,
-      deliveries_by_slice_id
-    )
+    state(work_request, question_state, work_packages, work_package_contexts, deliveries_by_slice_id)
   end
 
   @spec refresh(Repository.repo(), String.t()) :: {:ok, WorkRequest.t()} | {:error, Repository.error()}
@@ -302,24 +306,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     end
   end
 
-  defp preserve_persisted_visible_state(
-         %{completed?: false} = state,
-         %WorkRequest{completed_at: %DateTime{} = completed_at} = work_request,
-         question_state,
-         work_packages,
-         work_package_contexts,
-         deliveries_by_slice_id
-       ) do
-    if completion_status_allowed?(work_request) and
-         filtered_completion_context?(question_state, work_packages, work_package_contexts, deliveries_by_slice_id) do
-      %{state | completed?: true, completed_at: completed_at, archived_at: work_request.archived_at}
-    else
-      state
-    end
-  end
-
-  defp preserve_persisted_visible_state(state, %WorkRequest{}, _question_state, _work_packages, _work_package_contexts, _deliveries_by_slice_id), do: state
-
   defp force_complete_work_request(repo, %WorkRequest{} = work_request) do
     attrs = %{
       completed_at: work_request.completed_at || DateTime.utc_now(:microsecond),
@@ -357,23 +343,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
 
   defp operator_completed?(%WorkRequest{completed_at: %DateTime{}, completion_source: @operator_completion_source}), do: true
   defp operator_completed?(%WorkRequest{}), do: false
-
-  defp filtered_completion_context?(question_state, work_packages, work_package_contexts, deliveries_by_slice_id) do
-    Map.get(question_state, :open_count, 0) == 0 and work_packages != [] and
-      Enum.all?(work_packages, &terminal_or_filtered_slice?(&1, work_package_contexts, deliveries_by_slice_id))
-  end
-
-  defp terminal_or_filtered_slice?(%WorkPackage{status: status, id: id}, work_package_contexts, deliveries_by_slice_id)
-       when status in @terminal_work_package_statuses do
-    context = Map.get(work_package_contexts, id)
-    delivery = Map.get(deliveries_by_slice_id, id)
-
-    not active_blocker_context?(context) and
-      (terminal_delivery?(delivery) or not active_runtime_context?(context))
-  end
-
-  defp terminal_or_filtered_slice?(%WorkPackage{id: id}, _work_package_contexts, deliveries_by_slice_id),
-    do: terminal_delivery?(Map.get(deliveries_by_slice_id, id))
 
   defp completion_status_allowed?(%WorkRequest{status: status}), do: status not in @completion_blocking_work_request_statuses
 
@@ -937,15 +906,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
 
     activity_contexts = WorkPackageActivity.contexts(repo, work_package_ids)
 
-    contexts =
-      Map.new(work_packages, fn %WorkPackage{} = work_package ->
-        {work_package.id,
-         activity_contexts
-         |> Map.get(work_package.id, WorkPackageActivity.empty_context())
-         |> Map.put(:work_package, work_package)}
-      end)
+    with {:ok, successors} <- OperationalLineage.delivery_successors(repo, work_packages) do
+      contexts =
+        Map.new(work_packages, fn %WorkPackage{} = work_package ->
+          {work_package.id,
+           activity_contexts
+           |> Map.get(work_package.id, WorkPackageActivity.empty_context())
+           |> Map.put(:work_package, work_package)
+           |> Map.put(:delivery_successor_ids, Map.get(successors, work_package.id, []))}
+        end)
 
-    {:ok, contexts}
+      {:ok, contexts}
+    end
   rescue
     error in Exqlite.Error -> normalize_exqlite_error(error)
   end
@@ -965,6 +937,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     {:ok, Map.new(deliveries, &{&1.work_package_id, &1})}
   rescue
     error in Exqlite.Error -> normalize_exqlite_error(error)
+  end
+
+  defp delivery_successors(contexts) do
+    Map.new(contexts, fn {id, context} ->
+      lineage = Map.get(context, :lineage, %{})
+
+      ids =
+        cond do
+          Map.has_key?(context, :delivery_successor_ids) -> context.delivery_successor_ids
+          Map.get(lineage, :unavailable) == true -> ["lineage_unavailable"]
+          true -> Enum.map(Map.get(lineage, :successor_work, []), &map_value(&1, :work_package_id))
+        end
+
+      {id, ids}
+    end)
   end
 
   defp terminal_slice?(work_package, context, delivery)

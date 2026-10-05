@@ -332,7 +332,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryCloseoutTest do
 
     assert superseded_delivery.outcome == "superseded"
     assert repo.get!(WorkPackage, superseded_package.id).status == "closed"
-    assert %WorkRequest{completed_at: %DateTime{}} = repo.get!(WorkRequest, superseded_request.id)
+    assert repo.get!(WorkRequest, superseded_request.id).completed_at == nil
 
     {abandoned_request, abandoned_slice, abandoned_package} = linked_slice!(repo, status: "planning")
 
@@ -350,7 +350,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryCloseoutTest do
 
     assert abandoned_delivery.outcome == "abandoned"
     assert repo.get!(WorkPackage, abandoned_package.id).status == "abandoned"
-    assert %WorkRequest{completed_at: %DateTime{}} = repo.get!(WorkRequest, abandoned_request.id)
+    assert repo.get!(WorkRequest, abandoned_request.id).completed_at == nil
   end
 
   test "abandoned closeout accepts an already-abandoned no-code package after worker authority is cleared", %{repo: repo} do
