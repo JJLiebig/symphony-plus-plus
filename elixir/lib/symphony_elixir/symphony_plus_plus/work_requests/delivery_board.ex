@@ -5,6 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.MetadataProjection
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
+  alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.GuidanceRequest
   alias SymphonyElixir.SymphonyPlusPlus.Lifecycle.Service, as: LifecycleService
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.ReviewObservation
@@ -317,7 +318,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
       |> work_packages_by_id(missing_ids(work_package_ids, preloaded_work_packages))
       |> Map.merge(preloaded_work_packages)
 
-    progress_events = progress_events_by_work_package_id(repo, metadata_fallback_ids)
+    preloaded_progress_events =
+      preloaded_contexts
+      |> Map.take(work_package_ids)
+      |> Enum.flat_map(fn
+        {id, %{progress_events: events}} when is_list(events) -> [{id, events}]
+        _context -> []
+      end)
+      |> Map.new()
+
+    progress_events =
+      repo
+      |> progress_events_by_work_package_id(missing_ids(work_package_ids, preloaded_progress_events))
+      |> Map.merge(preloaded_progress_events)
+
     loaded_progress_events = Map.new(metadata_fallback_ids, &{&1, Map.get(progress_events, &1, [])})
 
     activity_contexts =
@@ -332,6 +346,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
        activity_contexts: activity_contexts,
        metadata_contexts: preloaded_metadata_contexts,
        review_observations: ReviewObservation.cached(Map.values(work_packages)),
+       guidance_requests: guidance_requests_by_work_package_id(repo, work_package_ids),
        hidden_work_package_ids: hidden_work_package_ids
      }}
   rescue
@@ -479,6 +494,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
     operational_work_package = work_package_summary || hidden_work_package_marker(work_package, context)
     operational_state = operational_state(work_package, delivery, operational_work_package)
 
+    activity_signal =
+      Signals.activity(
+        work_package,
+        Map.put(work_package_summary || %{}, :merge_eligibility, merge_eligibility(work_package, context)),
+        operational_state,
+        Map.get(context.progress_events, work_package.id, []),
+        Map.get(context.guidance_requests, work_package.id, [])
+      )
+
+    operational_state = Map.put(operational_state, :activity_signal, activity_signal)
+    work_package_summary = if(work_package_summary, do: Map.put(work_package_summary, :activity_signal, activity_signal))
+
     if Keyword.get(opts, :slice_projection) == :operational_state do
       operational_slice(work_package, delivery, operational_state, context)
     else
@@ -486,6 +513,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
 
       full_slice(work_package, delivery, context, work_package_summary, successor, operational_state)
     end
+  end
+
+  defp guidance_requests_by_work_package_id(repo, work_package_ids) do
+    work_package_ids
+    |> context_lookup_chunks()
+    |> Enum.flat_map(fn ids ->
+      repo.all(
+        from(guidance in GuidanceRequest,
+          where: guidance.work_package_id in ^ids and guidance.status in ["open", "human_info_needed"],
+          order_by: [asc: guidance.inserted_at, asc: guidance.id]
+        )
+      )
+    end)
+    |> Enum.group_by(& &1.work_package_id)
   end
 
   defp operational_slice(%WorkPackage{} = work_package, delivery, operational_state, context) do
@@ -562,6 +603,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
           pr_required: pr_required?(work_package),
           pr: pr_summary(legacy_pr_metadata(metadata), nil),
           dependency_signal: Signals.dependency(work_package, context),
+          worker_signal: Map.get(activity, :worker_signal),
+          review_signal: Signals.review(work_package, metadata, Map.get(context.review_observations, work_package.id)),
           blocker_state: Map.fetch!(activity, :blocker_state),
           runtime_state: Map.fetch!(activity, :runtime_state)
         }

@@ -144,6 +144,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
        %{
          evidence_id: review,
          status: observed_status(payload),
+         provider_status: bounded_string(map_value(payload, "status")),
+         next_action: bounded_string(map_value(payload, "next_action")),
+         round: bounded_string(map_value(payload, "round")),
+         started_at: timestamp(map_value(payload, "started_at")),
+         round_started_at: timestamp(map_value(payload, "round_started_at")),
+         observed_at: DateTime.to_iso8601(DateTime.utc_now(:microsecond)),
          reviewed_head: bounded_string(map_value(payload, "reviewed_head") || map_value(payload, "head")),
          step: bounded_string(map_value(payload, "current") || progress_step(map_value(payload, "progress")))
        }
@@ -284,6 +290,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
 
   defp bounded_string(value) when is_binary(value), do: value |> String.trim() |> String.slice(0, 240)
   defp bounded_string(_value), do: nil
+
+  defp timestamp(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> DateTime.to_iso8601(datetime)
+      _invalid -> nil
+    end
+  end
+
+  defp timestamp(_value), do: nil
 
   defp map_value(%{} = map, key) do
     Map.get(map, key) || Map.get(map, String.to_existing_atom(key))

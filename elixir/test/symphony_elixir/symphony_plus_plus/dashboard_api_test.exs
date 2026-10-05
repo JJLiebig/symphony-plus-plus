@@ -1308,7 +1308,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert %{rows: [["ok"]]} = Repo.query!("PRAGMA quick_check")
       assert {:ok, _fixture_payload} = LocalOperatorDashboard.operator_dashboard_hydrated_payload(Repo)
       assert {:ok, fixture_deferred_payload} = LocalOperatorDashboard.operator_dashboard_deferred_payload(Repo)
-      assert byte_size(Jason.encode!(fixture_deferred_payload)) <= 180_000
+      assert byte_size(Jason.encode!(fixture_deferred_payload)) <= 195_000
       refute Map.has_key?(fixture_deferred_payload, :board)
 
       expected_signal_keys =
@@ -2348,7 +2348,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
           id: "WP-HERDR-ACTIVE",
           work_request_id: work_request.id,
           product_tree_node_id: group.id,
-          status: "implementing"
+          status: "implementing",
+          owner_id: "accountable-owner"
         )
 
       downstream =
@@ -2363,7 +2364,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         create_work_package!(repo,
           id: "WP-HERDR-STALE",
           work_request_id: work_request.id,
-          status: "implementing"
+          status: "implementing",
+          owner_id: "stale-accountable-owner"
         )
 
       terminal =
@@ -2388,6 +2390,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                AgentRunRepository.start_run(repo, %{
                  work_package_id: active.id,
                  status: "running",
+                 actor_id: "current-actor",
                  session_id: "codex-current-session"
                })
 
@@ -2430,6 +2433,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                %{"work_package_id" => active.id, "agent_session_id" => "codex-current-session"}
              ]
 
+      packages = Map.new(payload["work_packages"], &{&1["id"], &1})
+      assert packages[active.id]["activity_signal"]["accountable_owner"]["id"] == "accountable-owner"
+      assert packages[active.id]["activity_signal"]["current_actor"]["id"] == "current-actor"
+      assert packages[stale.id]["activity_signal"]["accountable_owner"]["id"] == "stale-accountable-owner"
+      assert packages[stale.id]["activity_signal"]["current_actor"] == nil
+      assert packages[stale.id]["activity_signal"]["observation_state"] == "stale"
+      assert packages[terminal.id]["activity_signal"]["current_actor"] == nil
+      assert packages[terminal.id]["activity_signal"]["observation_state"] == "unknown"
+
       assert payload["attention_keys"] == ["group:#{group.id}", "work_package:#{active.id}"]
 
       forwarded =
@@ -2440,6 +2452,96 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
 
       assert %{"error" => %{"code" => "unauthorized"}} = json_response(forwarded, 401)
+    end)
+  end
+
+  test "cold Herdr details refresh native review and expose guidance without board warmup", %{repo: repo} do
+    with_local_operator_endpoint(fn ->
+      work_request = create_work_request!(repo, id: "WR-HERDR-COLD-REVIEW", status: "ready_for_slicing")
+      root = Path.join(System.tmp_dir!(), "herdr-cold-review-#{System.unique_integer([:positive])}")
+      File.mkdir_p!(root)
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      reviewing =
+        create_work_package!(repo,
+          id: "WP-HERDR-COLD-REVIEW",
+          work_request_id: work_request.id,
+          status: "implementing",
+          worktree_path: root,
+          review_requirement: %{"type" => "review-suite", "args" => %{"mode" => "fast"}}
+        )
+
+      needs_human = create_work_package!(repo, id: "WP-HERDR-HUMAN", work_request_id: work_request.id, status: "blocked", owner_id: "human-wait-owner")
+      grant = create_claimed_worker_grant(repo, needs_human.id, "guidance-worker")
+
+      assert {:ok, guidance} =
+               GuidanceRequestRepository.create(repo, %{
+                 work_package_id: needs_human.id,
+                 requester_grant_id: grant.id,
+                 requested_by: "guidance-worker",
+                 idempotency_key: "herdr-human-guidance",
+                 summary: "Approve changed UX",
+                 question: "Keep the approved interaction?",
+                 context: "A product decision is needed."
+               })
+
+      assert {:ok, _guidance} =
+               GuidanceRequestRepository.escalate_human_info_needed(repo, guidance.id, %{
+                 human_info_reason: "Product decision required",
+                 recommended_language: "en",
+                 blocker_id: "herdr-human-guidance"
+               })
+
+      script = Path.join(root, "review.py")
+
+      File.write!(
+        script,
+        "print(" <>
+          Jason.encode!(
+            Jason.encode!(%{
+              review: "rvw_cold",
+              status: "running",
+              next_action: "wait",
+              progress: "review 2/3 correctness"
+            })
+          ) <> ")\n"
+      )
+
+      observation = SymphonyElixir.SymphonyPlusPlus.ReviewObservation
+      assert observation.cached([reviewing]) == %{}
+      previous_script = :ets.lookup(observation, :review_suite_script)
+      true = :ets.insert(observation, {:review_suite_script, System.monotonic_time(:millisecond), {:ok, script}})
+
+      try do
+        payload =
+          build_conn()
+          |> Map.put(:host, "localhost")
+          |> Map.put(:remote_ip, {127, 0, 0, 1})
+          |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
+          |> json_response(200)
+
+        packages = Map.new(payload["work_packages"], &{&1["id"], &1})
+        review = packages[reviewing.id]["review_signal"]
+        assert review["evidence_id"] == "rvw_cold"
+        assert review["current"] == 2
+        assert review["step"] == "correctness"
+        assert review["next_action"] == "wait"
+        assert review["observation_state"] == "current"
+        activity = packages[reviewing.id]["activity_signal"]
+        assert activity["stage"] == "reviewing"
+        assert activity["elapsed_seconds"] == nil
+        assert activity["waiting_reason"] == "review_in_progress"
+        assert activity["observed_at"] == review["observed_at"]
+        human_activity = packages[needs_human.id]["activity_signal"]
+        assert human_activity["accountable_owner"]["id"] == "human-wait-owner"
+        assert human_activity["waiting_reason"] == "Product decision required"
+        assert human_activity["next_actor"] == "human"
+        assert human_activity["next_action"] == "answer_guidance"
+      after
+        :ets.delete(observation, {:observation, Path.expand(root)})
+        :ets.delete(observation, :review_suite_script)
+        :ets.insert(observation, previous_script)
+      end
     end)
   end
 

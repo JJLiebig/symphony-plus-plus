@@ -116,15 +116,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.OperationalProjection do
   def work_package_operational_state(%WorkPackage{} = work_package, work_package_context, delivery_work_package, delivery_state_opts) do
     base_state = base_work_package_operational_state(work_package, work_package_context)
 
-    case DeliveryWorkPackageProjection.primary_operational_state(delivery_work_package, delivery_state_opts) do
-      nil -> base_state
-      operational_state -> delivery_operational_state_overlay(base_state, operational_state)
+    state =
+      case DeliveryWorkPackageProjection.primary_operational_state(delivery_work_package, delivery_state_opts) do
+        nil -> base_state
+        operational_state -> delivery_operational_state_overlay(base_state, operational_state)
+      end
+
+    activity = if(Keyword.get(delivery_state_opts, :include_package_fields?, true), do: get_in(delivery_work_package || %{}, [:operational_state, :activity_signal]))
+
+    case activity do
+      nil -> state
+      activity -> Map.put(state, :activity_signal, activity)
     end
   end
 
   @spec operational_activity_fields(map()) :: map()
   def operational_activity_fields(activity) do
-    Map.take(activity, [:has_started, :has_active_worker, :has_prepared_worktree, :last_activity_at, :is_stale])
+    Map.take(activity, [:has_started, :has_active_worker, :has_prepared_worktree, :last_activity_at, :is_stale, :activity_signal])
   end
 
   @spec alert_indicators(repo(), State.t(), map()) :: [map()]

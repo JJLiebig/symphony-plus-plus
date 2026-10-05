@@ -13,7 +13,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
   import Ecto.Query, only: [from: 2]
 
   @work_request_detail_comment_target_chunk_size 500
-  @delivery_signal_keys [:dependency_signal, :pr_signal, :review_signal, :worker_signal]
+  @delivery_signal_keys [:dependency_signal, :pr_signal, :review_signal, :worker_signal, :activity_signal]
 
   @type repo :: module()
   @type dashboard_error :: Dashboard.dashboard_error()
@@ -233,6 +233,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
         comment_work_packages: all_work_packages
       )
       |> Map.drop([:human_description, :constraints, :creator])
+      |> Map.update(:operational_state, %{}, &Map.delete(&1, :activity_signal))
 
     work_package_payloads =
       work_packages
@@ -275,7 +276,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
         {Map.fetch!(item, :id), signals}
       end)
 
-    Enum.map(work_packages, &Map.merge(&1, Map.get(signals_by_id, Map.fetch!(&1, :id), %{})))
+    Enum.map(work_packages, fn work_package ->
+      work_package
+      |> Map.merge(Map.get(signals_by_id, Map.fetch!(work_package, :id), %{}))
+      |> Map.update(:operational_state, %{}, &Map.delete(&1, :activity_signal))
+    end)
   end
 
   defp work_request_board_detail_comment_context(repo, work_requests, work_packages, opts) do
@@ -352,6 +357,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
           delivery_board: delivery_board,
           comment_work_packages: all_work_packages
         )
+        |> Map.update(:operational_state, %{}, &Map.delete(&1, :activity_signal))
 
       work_package_payloads =
         Dashboard.work_package_payloads(
@@ -361,6 +367,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
           comment_context,
           delivery_board: delivery_board
         )
+        |> put_delivery_signals(delivery_board)
 
       {:ok,
        %{

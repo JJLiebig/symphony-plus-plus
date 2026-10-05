@@ -25,15 +25,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
              "next_action" => "continue",
              "progress" => "review 2/4 correctness",
              "status" => "running",
+             "round" => "r2",
+             "round_started_at" => "2026-10-05T01:00:00Z",
              "head" => "abc123"
            })}
       end
     end
 
     opts = test_opts(runner)
+    package_id = package.id
 
     assert %{
-             package.id => %{
+             ^package_id => %{
                evidence_id: "rvw_observed",
                status: "in_progress",
                current: 2,
@@ -41,7 +44,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
                step: "correctness",
                reviewed_head: "abc123"
              }
-           } == ReviewObservation.observe([package], opts)
+           } = observed = ReviewObservation.observe([package], opts)
+
+    assert observed[package.id].next_action == "continue"
+    assert observed[package.id].provider_status == "running"
+    assert observed[package.id].round == "r2"
+    assert observed[package.id].round_started_at == "2026-10-05T01:00:00Z"
+    assert {:ok, _, _} = DateTime.from_iso8601(observed[package.id].observed_at)
+    signal = Signals.review(package, %{}, observed[package.id])
+    activity = Signals.activity(package, %{review_signal: signal}, %{key: "active"}, [], [])
+    assert activity["started_at"] == "2026-10-05T01:00:00Z"
+    assert is_integer(activity["elapsed_seconds"])
+    assert activity["elapsed_seconds"] >= 0
 
     assert ReviewObservation.observe([package], opts) != %{}
     assert length(Agent.get(calls, & &1)) == 2
@@ -129,7 +143,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
              total: 3,
              evidence_id: "rvw_live",
              reviewed_head: "live-head"
-           } == Signals.review(package, %{}, observation)
+           } = Signals.review(package, %{}, observation)
+
+    assert Signals.review(package, %{}, nil).observation_state == "unknown"
+    refute Map.has_key?(Signals.review(package, %{}, nil), :started_at)
   end
 
   test "concurrent refreshes share one provider invocation", %{test: test} do

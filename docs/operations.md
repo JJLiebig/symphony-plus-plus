@@ -34,6 +34,14 @@ uses the same frontier projection as the dashboard.
 - `p`: pin or unpin the current WorkRequest.
 - `q`: close the inspector. It stays closed until the binding changes.
 
+The board and inspector detail API carry the accountable ledger owner separately
+from the current observed claim or run. Activity includes the actual stage,
+native review progress and next action, guidance/dependency waits, latest update,
+and current, paused, stale, or unknown observation state. Review elapsed time is
+available only when the provider supplies a start time; missing timing stays
+unknown. Opening inspector details refreshes native review observations directly.
+Missing panes or actors do not transfer ownership or prove completion.
+
 ## Choose A Flow
 
 | Need | Entry point |
