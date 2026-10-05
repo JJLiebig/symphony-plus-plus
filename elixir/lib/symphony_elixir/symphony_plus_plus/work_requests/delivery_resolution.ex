@@ -7,7 +7,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution do
   @spec resolved?(String.t(), map(), map()) :: boolean()
   @spec resolved?(String.t(), map(), map(), map()) :: boolean()
   def resolved?(work_package_id, work_packages_by_id, deliveries_by_id, successors_by_id \\ %{}) do
-    resolve(work_package_id, work_packages_by_id, deliveries_by_id, successors_by_id, MapSet.new())
+    resolve(work_package_id, work_packages_by_id, deliveries_by_id, successors_by_id, %{})
   end
 
   @spec successor_ids(String.t(), map(), map()) :: [String.t()]
@@ -32,11 +32,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution do
       value(delivery, :outcome) == "superseded" and is_nil(value(delivery, :successor_work_package_id)) ->
         false
 
-      MapSet.member?(visited, id) ->
+      Map.has_key?(visited, id) ->
         false
 
       value(delivery, :outcome) == "superseded" or value(package, :status) in @retired_statuses ->
-        resolve_successors(package, packages, deliveries, successors, MapSet.put(visited, id))
+        resolve_successors(package, packages, deliveries, successors, Map.put(visited, id, true))
 
       true ->
         false
