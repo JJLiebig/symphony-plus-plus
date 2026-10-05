@@ -48,6 +48,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
+    blocked_response =
+      MCPHarness.request(
+        %{"jsonrpc" => "2.0", "id" => "ready-without-findings", "method" => "tools/call", "params" => %{"name" => "mark_ready"}},
+        repo: repo,
+        session: session
+      )
+
+    assert blocked_response["error"] == %{
+             "code" => -32_602,
+             "message" => "Investigation findings are missing.",
+             "data" => %{
+               "tool" => "mark_ready",
+               "reason" => "readiness_failed",
+               "missing" => ["findings_documented"],
+               "reasons" => [
+                 %{"gate" => "findings_documented", "code" => "findings_documented", "message" => "Investigation findings are missing."}
+               ]
+             }
+           }
+
     finding_response =
       MCPHarness.request(
         %{
@@ -112,6 +132,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
       )
 
     assert get_in(ready_response, ["error", "data", "reason"]) == "readiness_failed"
+    assert get_in(ready_response, ["error", "message"]) == "Current branch metadata is missing. Current PR metadata is missing."
 
     assert get_in(ready_response, ["error", "data", "missing"]) == [
              "branch_attached",
