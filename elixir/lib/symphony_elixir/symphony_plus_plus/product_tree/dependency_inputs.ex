@@ -11,16 +11,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution
 
-  @spec context(module(), [struct()], boolean()) :: {:ok, map()} | {:error, term()}
+  @spec context(module(), [map()], boolean()) :: {:ok, map()} | {:error, term()}
   def context(repo, work_packages, candidates?) do
-    retired = Enum.filter(work_packages, &(&1.status in ["skipped", "merged", "closed", "abandoned"]))
+    retired =
+      work_packages
+      |> Enum.filter(&((value(&1, :status) || value(&1, :raw_status)) in ["skipped", "merged", "closed", "abandoned"]))
+      |> Enum.map(&%{id: value(&1, :id), work_request_id: value(&1, :work_request_id)})
 
     result = if retired == [], do: {:ok, %{}}, else: OperationalLineage.delivery_successors(repo, retired)
 
     with {:ok, successors} <- result do
       events =
         if(candidates?, do: work_packages, else: [])
-        |> Enum.map(& &1.id)
+        |> Enum.map(&value(&1, :id))
         |> Enum.chunk_every(400)
         |> Enum.flat_map(fn ids ->
           repo.all(from(event in ProgressEvent, where: event.work_package_id in ^ids, order_by: [asc: event.sequence]))
@@ -55,7 +58,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
 
           selected = selection_matches?(selection, prerequisite, pin)
           selected_at = selected_after_update?(selection, constraint.selection_updated_at)
-          input_current = is_nil(pin) or (selected and selected_at)
+          input_current = (is_nil(constraint.selection_updated_at) and is_nil(pin)) or (selected and selected_at)
 
           Map.merge(constraint, %{
             current_head_sha: head,
@@ -124,7 +127,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
            Enum.all?(selections, &valid_selection?(&1, edges)) do
         :ok
       else
-        {:tool_error, "dependency_inputs must select current available pinned edges and the current dependent head_sha"}
+        {:tool_error, "dependency_inputs must select current available dependency selections and the current dependent head_sha"}
       end
     else
       nil -> {:tool_error, "dependency_inputs requires a WorkRequest dependency"}
@@ -135,7 +138,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
   defp valid_selection?(selection, edges) when is_map(selection) do
     Enum.any?(edges, fn edge ->
       Enum.any?(edge.constraints, fn constraint ->
-        is_binary(constraint.candidate_head_sha) and constraint.available and
+        not is_nil(constraint.selection_updated_at) and constraint.available and
           value(selection, :dependency_id) == constraint.dependency_id and
           selection_matches?(selection, edge.prerequisite_work_package_id, constraint.candidate_head_sha)
       end)

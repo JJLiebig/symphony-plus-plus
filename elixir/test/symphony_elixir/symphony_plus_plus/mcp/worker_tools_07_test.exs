@@ -74,7 +74,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
     assert get_in(stale, ["error", "code"]) == -32_602
     candidate_inputs(repo, worker_ui, head_ui, [candidate_input(dependency, b, head_b)], "requalified-b")
     refute "dependency_inputs_stale" in candidate_eligibility(repo, request, ui).reason_codes
-    assert candidate_call(repo, worker_ui, "mark_ready", %{})["ready"]
 
     Enum.each([b, unrelated], fn backend ->
       candidate_call(repo, architect, "record_work_package_delivery", %{
@@ -91,6 +90,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
         "idempotency_key" => "delivered-#{backend.id}"
       })
     end)
+
+    # Clearing a consumed candidate still requires fresh evidence against delivered input.
+    candidate_pin(repo, architect, request, ui, b, nil, dependency)
+    assert "dependency_inputs_stale" in candidate_eligibility(repo, request, ui).reason_codes
+    candidate_inputs(repo, worker_ui, head_ui, [candidate_input(dependency, b, nil)], "qualified-delivered-b")
+    refute "dependency_inputs_stale" in candidate_eligibility(repo, request, ui).reason_codes
+    candidate_pin(repo, architect, request, ui, b, head_b, dependency)
+    assert "dependency_inputs_stale" in candidate_eligibility(repo, request, ui).reason_codes
+    candidate_inputs(repo, worker_ui, head_ui, [candidate_input(dependency, b, head_b)], "requalified-pin-b")
+    assert candidate_call(repo, worker_ui, "mark_ready", %{})["ready"]
 
     assert candidate_eligibility(repo, request, ui).eligible
 
@@ -146,7 +155,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
           "candidate_head_sha" => head,
           "reason" => "Caller qualified the current native backend checks and review."
         }
-        |> Map.reject(fn {_key, value} -> is_nil(value) end)
+        |> Map.reject(fn {key, value} -> key == "dependency_id" and is_nil(value) end)
       )
 
     assert result["dependency"]["candidate_head_sha"] == head

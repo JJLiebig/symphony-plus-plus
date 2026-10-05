@@ -34,26 +34,29 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       |> Map.values()
       |> Enum.group_by(& &1.work_request_id)
 
-    graphs =
-      Map.new(work_requests, fn %WorkRequest{} = work_request ->
-        work_packages = Map.get(work_packages_by_request, work_request.id, [])
-        deliveries = Map.get(deliveries_by_request, work_request.id, [])
+    Enum.reduce_while(work_requests, {:ok, %{}}, fn %WorkRequest{} = work_request, {:ok, graphs} ->
+      work_packages = Map.get(work_packages_by_request, work_request.id, [])
+      deliveries = Map.get(deliveries_by_request, work_request.id, [])
 
-        product_tree =
-          product_tree_for_request(
-            work_request.id,
-            product_trees_by_request,
-            nodes_by_request,
-            edges_by_request
-          )
+      product_tree =
+        product_tree_for_request(
+          work_request.id,
+          product_trees_by_request,
+          nodes_by_request,
+          edges_by_request
+        )
 
-        {:ok, input_context} = DependencyInputs.context(repo, work_packages, Enum.any?(product_tree.dependency_edges, & &1.candidate_head_sha))
-        graph = ExecutionGraph.evaluate(product_tree, work_packages, deliveries, input_context)
+      candidates? = Enum.any?(product_tree.dependency_edges, &(&1.candidate_head_sha || &1.selection_updated_at))
 
-        {work_request.id, scope_execution_graph(graph, work_packages, opts)}
-      end)
+      case DependencyInputs.context(repo, work_packages, candidates?) do
+        {:ok, input_context} ->
+          graph = ExecutionGraph.evaluate(product_tree, work_packages, deliveries, input_context)
+          {:cont, {:ok, Map.put(graphs, work_request.id, scope_execution_graph(graph, work_packages, opts))}}
 
-    {:ok, graphs}
+        {:error, _reason} = error ->
+          {:halt, error}
+      end
+    end)
   rescue
     error in Exqlite.Error ->
       if missing_product_tree_schema_error?(error), do: {:ok, %{}}, else: normalize_exqlite_error(error)

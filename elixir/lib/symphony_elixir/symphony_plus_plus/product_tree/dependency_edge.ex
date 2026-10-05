@@ -109,7 +109,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
   end
 
   defp stamp_selection_change(changeset) do
-    if Enum.any?([:source_kind, :source_id, :target_kind, :target_id, :kind, :candidate_head_sha], &changed?(changeset, &1)) do
+    candidate_selection? = get_field(changeset, :candidate_head_sha) || changeset.data.candidate_head_sha || changeset.data.selection_updated_at
+    changed? = Enum.any?([:source_kind, :source_id, :target_kind, :target_id, :kind, :candidate_head_sha], &changed?(changeset, &1))
+
+    if candidate_selection? && changed? do
       put_change(changeset, :selection_updated_at, DateTime.utc_now(:microsecond))
     else
       changeset

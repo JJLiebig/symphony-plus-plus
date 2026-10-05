@@ -129,6 +129,12 @@ The wiring worker records consumed inputs in existing `append_progress` provenan
 }
 ```
 
+Clearing a previously consumed pin also invalidates that input evidence. Once the
+prerequisite has delivered, record fresh qualification with `candidate_head_sha: null`
+in the same progress selection to qualify the delivered input. Dependencies
+that have never carried a candidate pin continue to require only delivery.
+
+
 `read_context` exposes `dependency_selections`; `read_plan` exposes each expanded
 constraint. A changed pin or candidate head makes affected input provenance stale.
 After qualifying the new input, append its selection for the current dependent head;

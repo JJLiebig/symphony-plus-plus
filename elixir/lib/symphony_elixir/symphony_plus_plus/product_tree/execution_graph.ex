@@ -48,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
         do: [],
         else: repo.all(from(delivery in WorkPackageDelivery, where: delivery.work_request_id == ^work_request_id))
 
-    with {:ok, context} <- DependencyInputs.context(repo, work_packages, Enum.any?(tree.dependency_edges, & &1.candidate_head_sha)) do
+    with {:ok, context} <- DependencyInputs.context(repo, work_packages, Enum.any?(tree.dependency_edges, &(&1.candidate_head_sha || &1.selection_updated_at))) do
       {:ok, evaluate(tree, work_packages, deliveries, context)}
     end
   rescue
@@ -58,7 +58,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
   @spec evaluate(map(), [map() | struct()], [map() | struct()], map()) :: graph()
   def evaluate(%{nodes: nodes, dependency_edges: dependency_edges}, work_packages, deliveries, context)
       when is_list(nodes) and is_list(dependency_edges) and is_list(work_packages) and is_list(deliveries) do
-    work_packages = Enum.sort_by(work_packages, &value(&1, :id))
+    work_packages =
+      work_packages
+      |> Enum.map(&Map.put(&1, :status, value(&1, :status) || value(&1, :raw_status)))
+      |> Enum.sort_by(&value(&1, :id))
+
     work_package_ids = Enum.map(work_packages, &value(&1, :id))
     work_package_id_set = MapSet.new(work_package_ids)
     hard_dependency_edges = Enum.filter(dependency_edges, &(value(&1, :kind) in @hard_edge_kinds))
