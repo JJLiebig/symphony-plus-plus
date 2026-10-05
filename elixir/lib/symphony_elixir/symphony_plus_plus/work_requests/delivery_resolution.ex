@@ -29,6 +29,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution do
       value(delivery, :outcome) in @delivered_outcomes ->
         true
 
+      value(delivery, :outcome) == "superseded" and is_nil(value(delivery, :successor_work_package_id)) ->
+        false
+
       MapSet.member?(visited, id) ->
         false
 

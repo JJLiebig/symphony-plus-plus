@@ -736,7 +736,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         package
       end
 
-    assert {:ok, _superseded} =
+    assert {:ok, superseded} =
              WorkRequestRepository.record_work_package_delivery(repo, request.id, original.id, %{
                outcome: "superseded",
                idempotency_key: "dashboard-pointer-only",
@@ -751,6 +751,38 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert Enum.find(cards.work_requests, &(&1.id == request.id)).completed_at != nil
     assert {:ok, detail} = Dashboard.work_request_detail(repo, request.id)
     assert detail.work_request.completed_at != nil
+
+    assert {:ok, _recut} =
+             SymphonyElixir.SymphonyPlusPlus.OperationalLineage.record_recut_as(repo, original.id, successor.id, %{
+               reason: "The delivered recut cannot hide an unresolved immutable pointer.",
+               decision: %{work_request_id: request.id}
+             })
+
+    assert {:ok, contexts} = Dashboard.work_package_work_package_contexts(repo, [original, successor])
+    deliveries = Map.new(repo.all(WorkPackageDelivery), &{{&1.work_request_id, &1.work_package_id}, &1})
+    deliveries = Map.put(deliveries, {request.id, original.id}, %{superseded | successor_work_package_id: "missing"})
+
+    for projection <- [:operational_state, :full] do
+      assert {:ok, boards} =
+               DeliveryBoard.project_many(repo, [request], %{request.id => [original, successor]},
+                 deliveries_by_slice_id: deliveries,
+                 work_package_contexts: contexts,
+                 slice_projection: projection
+               )
+
+      payload =
+        SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards.work_request_payload(
+          completed,
+          [],
+          [original, successor],
+          contexts,
+          %{},
+          %{},
+          delivery_board: boards[request.id]
+        )
+
+      assert payload.completed_at == nil
+    end
 
     assert {:ok, _missing_recut} =
              PlanningRepository.append_progress_event(repo, %{
