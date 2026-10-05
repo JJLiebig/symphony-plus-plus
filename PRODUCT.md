@@ -30,8 +30,9 @@ optional human entrypoint; model and host choices are separate from roles.
 
 The operator must see the owner, current activity, waiting reason, and next
 action. Keep worker handoffs compact and reuse valid check/review evidence.
-This is a target contract, not a claim that the current board or runtime already
-implements the entire workflow.
+Beta source now implements candidate sequencing, delivery resolution and visible
+work state. Combined native-host qualification is still required; source delivery
+does not qualify the installed marketplace runtime or other operating systems.
 
 ## Brand Personality
 

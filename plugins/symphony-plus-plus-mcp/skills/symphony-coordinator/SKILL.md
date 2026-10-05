@@ -8,6 +8,9 @@ description: Use when acting as a parent Codex agent coordinating ordinary repo 
 Use for ordinary coordination in a dedicated Symphony++ MCP config. For WorkRequests, WorkPackages,
 ledger-backed claims, scoped grants, delivery boards, or MCP merge gates, use
 `symphony-plus-plus-mcp:symphony-architect`.
+Small clear work stays in this direct worker loop; a chief, WorkRequest or
+feature-planning ceremony is optional. Escalate to an architect when scope or
+unresolved product decisions require it, not because of request type or model.
 
 ## Start
 

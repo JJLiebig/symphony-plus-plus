@@ -1,8 +1,9 @@
 # Symphony++ Documentation
 
 The guides below describe the running product. The separately labeled
-[factory workflow](design/factory-workflow.md) is the approved target contract
-for the beta rework; it does not claim those capabilities are implemented.
+[factory workflow](design/factory-workflow.md) is the approved beta contract.
+Its source capabilities are implemented; combined native-host qualification and
+installed marketplace cutover are separate from that source delivery.
 
 ## Sources Of Truth
 
@@ -31,7 +32,7 @@ documents do not remain in the active documentation tree.
 - Respond to a permission or secret incident:
   [Security incident](runbooks/security-incident.md)
 
-## Beta Target
+## Beta Contract
 
 - [Factory workflow](design/factory-workflow.md): roles, small-work and
   architect/UI loops, delivery semantics, visibility, and remaining gaps.
