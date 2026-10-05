@@ -8,6 +8,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion
 
   @type repo :: module()
   @type relationship :: String.t()
@@ -188,13 +189,33 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
       "oracle_preserved" => oracle_preserved?(relationship, attrs)
     }
 
-    PlanningRepository.append_progress_event(repo, %{
-      work_package_id: source.id,
-      summary: "Recorded #{relationship} lineage to #{target.id}",
-      status: "operational_lineage_recorded",
-      idempotency_key: lineage_idempotency_key(source.id, relationship, target.id, attrs),
-      payload: payload
-    })
+    repo.transaction(fn ->
+      with {:ok, event} <-
+             PlanningRepository.append_progress_event(repo, %{
+               work_package_id: source.id,
+               summary: "Recorded #{relationship} lineage to #{target.id}",
+               status: "operational_lineage_recorded",
+               idempotency_key: lineage_idempotency_key(source.id, relationship, target.id, attrs),
+               payload: payload
+             }),
+           :ok <- refresh_successor_completion(repo, source, relationship, target) do
+        event
+      else
+        {:error, reason} -> repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp refresh_successor_completion(repo, source, relationship, target) do
+    if relationship in @successor_relationships and is_binary(source.work_request_id) and
+         source.work_request_id == target.work_request_id do
+      case Completion.refresh_in_transaction(repo, source.work_request_id) do
+        {:ok, _request} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      :ok
+    end
   end
 
   defp package_lineage(%WorkPackage{} = work_package, relationships) do

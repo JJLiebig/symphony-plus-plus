@@ -1146,6 +1146,56 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert reopened.completed_at == nil
   end
 
+  test "new same-request successor scope reopens archived completion before retention", %{repo: repo} do
+    old = utc_usec(~U[2026-05-01 00:00:00Z])
+    now = utc_usec(~U[2026-06-01 00:00:00Z])
+    assert {:ok, request} = Repository.create(repo, attrs(id: "WR-ARCHIVED-RECUT"))
+
+    [original, pointer, recut] =
+      for id <- ["original", "pointer", "recut"] do
+        assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WRS-ARCHIVED-#{id}"))
+        package
+      end
+
+    set_work_package_status!(repo, recut, "skipped")
+    insert_delivery!(repo, original, %{outcome: "superseded", successor_work_package_id: pointer.id, superseded_reason: "Delivered replacement."})
+    insert_delivery!(repo, pointer)
+    assert {:ok, archived} = Service.archive(repo, request.id)
+    repo.update!(Ecto.Changeset.change(archived, completed_at: old, archived_at: old))
+
+    assert {:ok, _lineage} = OperationalLineage.record_recut_as(repo, original.id, recut.id, %{reason: "Additional required scope.", decision: %{work_request_id: request.id}})
+    assert {:ok, reopened} = Repository.get(repo, request.id)
+    assert reopened.completed_at == nil
+    assert reopened.archived_at == nil
+    assert {:ok, summary} = Service.retention_pass(repo, now: now, delete_after_days: 14)
+    assert summary.deleted_ids == []
+    assert {:ok, ^reopened} = Repository.get(repo, request.id)
+  end
+
+  test "successor writes preserve factual delivery and operator completion", %{repo: repo} do
+    for completion <- ["completed_no_pr", "operator"] do
+      assert {:ok, request} = Repository.create(repo, attrs(id: "WR-LINEAGE-#{completion}"))
+      assert {:ok, source} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WRS-LINEAGE-#{completion}"))
+      assert {:ok, recut} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WRS-LINEAGE-RECUT-#{completion}"))
+      set_work_package_status!(repo, recut, "skipped")
+
+      if completion == "operator" do
+        assert {:ok, _accepted} = Service.force_complete(repo, request.id)
+      else
+        insert_delivery!(repo, source)
+      end
+
+      assert {:ok, archived} = Service.archive(repo, request.id)
+      lineage_attrs = %{reason: "Additional successor annotation.", decision: %{work_request_id: request.id}}
+      assert {:ok, lineage} = OperationalLineage.record_superseded_by(repo, source.id, recut.id, lineage_attrs)
+      assert {:ok, ^lineage} = OperationalLineage.record_superseded_by(repo, source.id, recut.id, lineage_attrs)
+      assert {:ok, current} = Repository.get(repo, request.id)
+      assert current.completed_at == archived.completed_at
+      assert current.archived_at == archived.archived_at
+      assert current.completion_source == archived.completion_source
+    end
+  end
+
   test "abandoned scope stays unresolved while explicit operator completion remains authoritative", %{repo: repo} do
     assert {:ok, request} = Repository.create(repo, attrs(id: "WR-RETIRED-SCOPE", status: "ready_for_slicing"))
     assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WRS-RETIRED-SCOPE"))
