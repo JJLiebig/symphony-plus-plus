@@ -97,7 +97,7 @@ export function PackageDetailBody({
       <PackageDetailHeader pkg={pkg} operational={operational} blockerCopyText={blockerCopyText} />
       <div className="detail-modal-reveal-body grid gap-4">
         <DetailSummaryBar items={packageDetailSummary({ blockerCount, currentCommentStats, pkg, planLabel, summary })} />
-        <WorkActivity activity={pkg.activity_signal ?? operational?.activity_signal} review={pkg.review_signal} />
+        <WorkActivity activity={selection.slice?.activity_signal ?? pkg.activity_signal ?? operational?.activity_signal ?? { accountable_owner: { id: pkg.owner_id } }} review={selection.slice?.review_signal ?? pkg.review_signal} />
         <PackageExecutionScopeSection pkg={pkg} purposeMarkdown={purposeMarkdown} />
         <PackageOperationalTruthSection attentionItems={attentionItems} operational={operational} pkg={pkg} />
         <PackageProgressSection progress={progress} planLabel={planLabel} status={status} />
