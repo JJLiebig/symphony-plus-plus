@@ -366,13 +366,26 @@ export function mergeDashboardPayload(dashboard: DashboardPayload | null, patch:
 
 function hydrateWorkRequestCards(section: DashboardPayload["work_requests"], details: WorkRequestDetail[] | undefined) {
   if (!section || !details) return section;
-  const detailsById = new Map(details.map((detail) => [detail.work_request.id, detail.work_request]));
+  const detailsById = new Map(details.map((detail) => [detail.work_request.id, detail]));
   const cards = section.work_requests;
   if (!cards) return section;
 
-  const nextCards = cards.map((card) => ({ ...card, ...detailsById.get(card.id) }));
+  const nextCards = cards.map((card) => hydrateWorkRequestCard(card, detailsById.get(card.id)));
   const reconciledCards = reconciledArrayById(cards, nextCards, (card) => card.id);
   return reconciledCards === cards ? section : { ...section, work_requests: reconciledCards };
+}
+
+function hydrateWorkRequestCard(card: WorkRequestCard, detail?: WorkRequestDetail) {
+  if (!detail) return card;
+  const merged = { ...card, ...detail.work_request };
+  const sourceId = card.operational_state?.activity_signal?.work_package_id;
+  const activity = detail.work_packages?.find((pkg) => pkg.id === sourceId)?.activity_signal;
+  if (sourceId && !detail.work_request.operational_state?.activity_signal) {
+    merged.operational_state = { ...merged.operational_state };
+    delete merged.operational_state.activity_signal;
+    if (activity) merged.operational_state.activity_signal = activity;
+  }
+  return merged;
 }
 
 function patchWorkRequestCards(cards: WorkRequestCard[], workRequest: WorkRequestMutationPatch, archive: boolean) {

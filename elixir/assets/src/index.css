@@ -2222,6 +2222,18 @@
     font-family: var(--font-geist-mono);
   }
 
+  .work-activity-summary {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.6875rem;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .v3-request-frontier {
     --frontier-badge-height: 1.25rem;
     --frontier-card-inset: 0.5rem;
@@ -2989,6 +3001,11 @@
   }
 
   @media (max-width: 760px) {
+    .focus-board__shelf-row .v3-request-row {
+      width: 100%;
+      flex-basis: 100%;
+    }
+
     .v3-request-header {
       grid-template-columns: auto minmax(0, 1fr);
       grid-template-rows: auto auto auto;

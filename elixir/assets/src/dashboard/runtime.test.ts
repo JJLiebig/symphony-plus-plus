@@ -254,6 +254,21 @@ describe("dashboard runtime mutation helpers", () => {
     });
   });
 
+  it("rehydrates promoted request activity from its exact package source without retaining an old actor", () => {
+    const dashboard = dashboardWithRequest({ id: "wr-1", operational_state: { key: "implementing", activity_signal: { work_package_id: "wp-source", current_actor: { name: "Old actor" } } } });
+    const activity = { work_package_id: "wp-source", stage: "reviewing", observation_state: "unknown" as const };
+    const merged = mergeDashboardPayload(dashboard, { work_request_details: [{
+      work_request: { id: "wr-1", operational_state: { key: "implementing" } },
+      work_packages: [
+        { id: "wp-other", work_request_id: "wr-1", activity_signal: { current_actor: { name: "Other actor" } } },
+        { id: "wp-source", work_request_id: "wr-1", activity_signal: activity },
+      ],
+    }] });
+    expect(merged?.work_requests?.work_requests?.[0].operational_state?.activity_signal).toEqual(activity);
+    const missing = mergeDashboardPayload(dashboard, { work_request_details: [{ work_request: { id: "wr-1" }, work_packages: [] }] });
+    expect(missing?.work_requests?.work_requests?.[0].operational_state?.activity_signal).toBeUndefined();
+  });
+
   it("preserves unchanged detail and card references during a deferred patch", () => {
     const firstDetail = { work_request: { id: "wr-1", title: "One" }, work_packages: [{ id: "slice-1", work_request_id: "wr-1" }] };
     const secondDetail = { work_request: { id: "wr-2", title: "Two" }, work_packages: [{ id: "slice-2", work_request_id: "wr-2" }] };

@@ -1,3 +1,4 @@
+import { activitySummary } from "@/lib/operational-state-activity";
 import type { ActiveBlockingEdge, GuidanceItem, WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
 import { GitBranch } from "lucide-react";
 import { operationalBadgeVariant, operationalLabel, operationalStatusIsRunning, sliceOperationalState } from "@/lib/operational-state";
@@ -61,11 +62,17 @@ export function ProductSliceRow({ detail, slice, pkg, activeBlockingEdges, guida
             <span className="v3-request-meta"><GitBranch className="size-3.5" /><span>{targetContext.repo}</span><span>{targetContext.branch}</span></span>
           </span>
         ) : <span>{title}</span>}
+        <SliceActivitySummary slice={slice} pkg={pkg} />
       </button>
       {slice.pr_signal ? <span className="v3-slice-pr"><PullRequestBadge signal={slice.pr_signal} /></span> : null}
       <SliceAttentionBadge attention={attention} fallback={label} label={title} onSelect={onSelectAttention} active={operationalStatusIsRunning(operational, rawStatus)} variant={operationalBadgeVariant(operational, rawStatus)} />
     </div>
   );
+}
+
+function SliceActivitySummary({ slice, pkg }: { slice: WorkRequestPackage; pkg?: WorkPackageCard }) {
+  const activity = activitySummary(slice.activity_signal ?? sliceOperationalState(slice, pkg)?.activity_signal, slice.review_signal);
+  return activity ? <span className="work-activity-summary" title={activity}>{activity}</span> : null;
 }
 
 function SliceAttentionBadge({ active, attention, fallback, label, onSelect, variant }: {

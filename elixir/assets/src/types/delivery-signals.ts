@@ -29,6 +29,29 @@ export type WorkPackageReviewSignal = {
   step?: string | null;
   evidence_id?: string | null;
   reviewed_head?: string | null;
+  provider_status?: string | null;
+  next_action?: string | null;
+  round?: string | null;
+  started_at?: string | null;
+  round_started_at?: string | null;
+  observed_at?: string | null;
+  observation_state?: "current" | "stale" | "unknown" | null;
+};
+
+export type WorkPackageActivitySignal = {
+  work_package_id?: string | null;
+  accountable_owner?: { id?: string | null; source?: string | null } | null;
+  current_actor?: { id?: string | null; name?: string | null; role?: string | null; session_id?: string | null; source?: string | null } | null;
+  stage?: string | null;
+  started_at?: string | null;
+  elapsed_seconds?: number | null;
+  waiting_reason?: string | null;
+  next_actor?: string | null;
+  next_action?: string | null;
+  last_update_at?: string | null;
+  last_update?: string | null;
+  observation_state?: "current" | "paused" | "stale" | "unknown" | null;
+  observed_at?: string | null;
 };
 
 export type WorkPackageDependencySignal = {
@@ -56,4 +79,5 @@ export type DeliveryBoardWorkPackageSummary = {
   pr_signal?: WorkPackagePrSignal | null;
   review_signal?: WorkPackageReviewSignal | null;
   dependency_signal?: WorkPackageDependencySignal | null;
+  activity_signal?: WorkPackageActivitySignal | null;
 };

@@ -1,3 +1,4 @@
+import { WorkActivity } from "./work-activity";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,7 @@ export function SliceDetailContent({
             { label: "Updated", value: detailDate(slice.updated_at || slice.dispatched_at || slice.inserted_at) },
           ]}
         />
+        <WorkActivity activity={slice.activity_signal ?? operational?.activity_signal ?? pkg?.activity_signal} review={slice.review_signal ?? pkg?.review_signal} />
         <DetailSection title="Package Goal">
           <MarkdownBlock value={slice.goal} empty={pkg?.kind || "No package goal has been recorded yet."} />
         </DetailSection>

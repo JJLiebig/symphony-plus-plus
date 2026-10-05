@@ -90,6 +90,7 @@ function sliceReference(slice?: WorkRequestPackage) {
 
 function workPackageSignals(slice?: WorkRequestPackage) {
   return {
+    activity_signal: slice?.activity_signal,
     worker_signal: slice?.worker_signal,
     pr_signal: slice?.pr_signal,
     review_signal: slice?.review_signal,

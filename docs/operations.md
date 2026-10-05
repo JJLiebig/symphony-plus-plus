@@ -42,6 +42,13 @@ available only when the provider supplies a start time; missing timing stays
 unknown. Opening inspector details refreshes native review observations directly.
 Missing panes or actors do not transfer ownership or prove completion.
 
+Board cards show the current activity in their existing metadata slots. Open
+request or package details for the owner, current actor, review step/round,
+waiting reason, next action and latest update. Request activity names the
+WorkPackage it describes. The inspector shows these facts for the selected
+package, with pane connected, missing or disconnected reported separately from
+runtime freshness. Unknown timing and observations remain explicit.
+
 ## Choose A Flow
 
 | Need | Entry point |

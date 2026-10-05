@@ -1,3 +1,4 @@
+import { WorkActivity, WorkActivityFacts } from "./work-activity";
 import { Archive, CheckCircle2, Copy, Loader2, MessageSquareText, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -169,6 +170,7 @@ export function RequestDetailContent({
             {handoffError ? <p className="text-xs text-destructive">{handoffError}</p> : null}
         </div>
         <DetailSummaryBar items={requestDetailSummary(detail, openQuestions.length, sliceCounts.total, currentCommentStats)} />
+        <RequestWorkActivity detail={detail} />
         <DetailSection title="Product Intent">
           <MarkdownBlock value={request.human_description} empty="No operator-facing description has been recorded yet." />
         </DetailSection>
@@ -232,6 +234,15 @@ export function RequestDetailContent({
       </div>
     </>
   );
+}
+
+function RequestWorkActivity({ detail }: { detail: WorkRequestDetail }) {
+  const activity = detail.work_request.operational_state?.activity_signal;
+  const packages = detail.work_packages ?? [];
+  if (activity) return <WorkActivity activity={activity} review={packages.find((slice) => slice.id === activity.work_package_id)?.review_signal} />;
+  const observed = packages.filter((slice) => slice.activity_signal);
+  if (observed.length <= 1) return <WorkActivity activity={observed[0]?.activity_signal} review={observed[0]?.review_signal} />;
+  return <DetailDisclosure title="Current activity" meta={`${observed.length} WorkPackages`}><div className="grid gap-4">{observed.map((slice) => <div key={slice.id}><h4 className="text-sm font-medium">{slice.title || slice.id}</h4><WorkActivityFacts activity={slice.activity_signal} review={slice.review_signal} /></div>)}</div></DetailDisclosure>;
 }
 
 function RequestDangerActions({
