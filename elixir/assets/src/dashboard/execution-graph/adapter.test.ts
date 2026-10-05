@@ -8,7 +8,7 @@ describe("execution graph adapter", () => {
     const detail: WorkRequestDetail = {
       work_request: { id: "wr-adapter", title: "Adapter fixture" },
       work_packages: [
-        { id: "wp-active", work_request_id: "wr-adapter", product_tree_node_id: "group-a", title: "Active projection", status: "implementing", operational_state: { key: "implementing", label: "Implementing", tone: "info" }, worker_signal: { status: "active", run_label: "fixture-worker" } },
+        { id: "wp-active", work_request_id: "wr-adapter", product_tree_node_id: "group-a", title: "Active projection", status: "implementing", operational_state: { key: "implementing", label: "Implementing", tone: "info" }, worker_signal: { status: "active", run_label: "fixture-worker" }, activity_signal: { work_package_id: "wp-active", accountable_owner: { id: "owner" }, current_actor: { name: "worker", role: "worker" }, stage: "reviewing", waiting_reason: "review_in_progress" } },
         { id: "wp-old", work_request_id: "wr-adapter", product_tree_node_id: "group-a", title: "Old", status: "merged", delivery: { outcome: "superseded" } },
       ],
       product_tree: {
@@ -24,7 +24,7 @@ describe("execution graph adapter", () => {
     const active = workRequestExecutionGraphModel(detail);
     const all = workRequestExecutionGraphModel(detail, { includeHistorical: true });
 
-    expect(active.work_packages).toEqual([expect.objectContaining({ id: "wp-active", group_id: "group-a", title: "Active projection", worker_signal: { status: "active", run_label: "fixture-worker" } })]);
+    expect(active.work_packages).toEqual([expect.objectContaining({ id: "wp-active", group_id: "group-a", title: "Active projection", worker_signal: { status: "active", run_label: "fixture-worker" }, activity_signal: detail.work_packages?.[0].activity_signal })]);
     expect(active.dependency_intents).toEqual([
       { id: "depends", prerequisite: { kind: "group", id: "group-a" }, dependent: { kind: "work_package", id: "wp-active" } },
       { id: "blocks", prerequisite: { kind: "group", id: "group-a" }, dependent: { kind: "work_package", id: "wp-old" } },

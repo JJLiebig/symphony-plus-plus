@@ -1,5 +1,7 @@
 import { executionFrontierProjection } from "@/dashboard/execution-graph/frontier";
 import { workPackageIsFinished, type ExecutionGraphWorkPackageRef } from "@/dashboard/execution-graph/model";
+import { workActivityFacts } from "@/lib/operational-state-activity";
+import type { ExecutionGraphWorkPackageSignals } from "@/dashboard/execution-graph/model";
 
 import { exactWorkerPaneId } from "./binding";
 import type { InspectorState } from "./types";
@@ -38,12 +40,31 @@ export function renderInspector(state: InspectorState, columns = 80, rows = 24) 
     paint(trim(`${state.pinned ? "Pinned · " : ""}${detail.work_request.title || detail.work_request.id}`, width), ansi.bold),
     paint(trim([detail.work_request.repo, detail.work_request.status].filter(Boolean).join(" · "), width), ansi.dim),
   ];
+  if (state.error) header.push(trim(`${state.error} · Showing last observation`, width));
+  const activity = renderSelectedActivity(state, projection.model.work_packages, width, Math.max(0, rows - header.length - 12));
   const body = projection.presentation === "graph" && width >= 24
-    ? renderGraph(state, projection, width, rows)
+    ? renderGraph(state, projection, width, rows - activity.length)
     : renderMetadata(state, projection.model.work_packages, width);
   const pin = state.pinned ? "p unpin" : "p pin";
   const footer = paint(trim(`↑↓ select  enter focus  ${pin}  q close`, width), ansi.dim);
-  return frame([...header, "", ...body, "", footer], width);
+  return frame([...header, "", ...body, ...activity, "", footer], width);
+}
+
+function renderSelectedActivity(state: InspectorState, packages: Array<ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals>, width: number, budget: number) {
+  const selected = packages.find((pkg) => pkg.id === state.selectedId) ?? packages[0];
+  const activity = selected ? renderActivity(state, selected, width, budget) : [];
+  return activity.length ? ["", ...activity] : [];
+}
+
+function renderActivity(state: InspectorState, pkg: ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals, width: number, budget: number) {
+  const activity = pkg.activity_signal ?? pkg.operational_state?.activity_signal;
+  if (!activity && !pkg.review_signal) return [];
+  const pane = !state.snapshot ? "Pane observation unknown"
+    : exactWorkerPaneId(state.snapshot, state.detail?.worker_sessions, pkg.id) ? "Worker pane connected"
+    : state.detail?.worker_sessions?.some((session) => session.work_package_id === pkg.id) ? "Worker pane disconnected" : "Worker pane missing";
+  const facts = workActivityFacts(activity, pkg.review_signal).filter(({ label }) => label !== "WorkPackage");
+  facts.splice(6, 0, { label: "Pane", value: pane });
+  return facts.slice(0, budget).map(({ label, value }) => trim(`${label}: ${value}`, width));
 }
 
 function renderMetadata(state: InspectorState, packages: ExecutionGraphWorkPackageRef[], width: number) {

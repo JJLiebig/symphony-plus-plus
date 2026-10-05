@@ -1,5 +1,5 @@
 import type { ProductTreeProjection } from "./product-tree";
-import type { DeliveryBoardWorkPackageSummary, WorkPackageDependencySignal, WorkPackagePrSignal, WorkPackageReviewSignal, WorkPackageWorkerSignal } from "./delivery-signals";
+import type { DeliveryBoardWorkPackageSummary, WorkPackageActivitySignal, WorkPackageDependencySignal, WorkPackagePrSignal, WorkPackageReviewSignal, WorkPackageWorkerSignal } from "./delivery-signals";
 export type * from "./delivery-signals";
 export type { ActiveBlockingEdge, ActiveBlockingEdgeEndpoint, BlockerActor, WorkPackageBlocker } from "./dashboard-blockers";
 import type { ActiveBlockingEdge, WorkPackageBlocker } from "./dashboard-blockers";
@@ -61,6 +61,7 @@ export type PackageOperationalAttention = {
 };
 
 export type PackageOperationalState = {
+  activity_signal?: WorkPackageActivitySignal | null;
   key?: string | null;
   label?: string | null;
   tone?: string | null;
@@ -147,6 +148,8 @@ export type WorkPackageCard = RepoIdentityFields & {
   parent_id?: string | null;
   phase_id?: string | null;
   owner_id?: string | null;
+  activity_signal?: WorkPackageActivitySignal | null;
+  review_signal?: WorkPackageReviewSignal | null;
   comment_count?: number;
   open_comment_count?: number;
   active_blocker_count?: number;
@@ -311,6 +314,7 @@ export type WorkRequestPackage = {
   pr_signal?: WorkPackagePrSignal | null;
   review_signal?: WorkPackageReviewSignal | null;
   dependency_signal?: WorkPackageDependencySignal | null;
+  activity_signal?: WorkPackageActivitySignal | null;
   delivery?: WorkPackageDelivery | null;
   successor?: WorkPackageSuccessor | null;
   attention_reason_codes?: string[];

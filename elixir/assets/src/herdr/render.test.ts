@@ -1,9 +1,42 @@
+import type { ExecutionGraphWorkPackageRef, ExecutionGraphWorkPackageSignals } from "@/dashboard/execution-graph/model";
 import { describe, expect, it } from "vitest";
 
 import { renderInspector, stripAnsi, terminalCellWidth } from "./render";
 import type { InspectorState } from "./types";
 
 describe("execution inspector rendering", () => {
+  it("shows selected owner/activity separately from missing panes and keeps narrow inspection bounded", () => {
+    const current: ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals = {
+      ...pkg("wp-a", "Review", "reviewing"),
+      activity_signal: { accountable_owner: { id: "Chief" }, current_actor: { name: "Worker", role: "worker" }, stage: "reviewing", started_at: "2026-10-05T01:00:00Z", elapsed_seconds: 10800, waiting_reason: "review_in_progress", next_actor: "worker", next_action: "wait", observation_state: "stale" },
+      review_signal: { status: "in_progress", step: "correctness", round: "2" },
+    };
+    const value = state([current]);
+    value.snapshot = { panes: [] };
+    const output = stripAnsi(renderInspector(value, 100, 26));
+    expect(output).toContain("Owner: Chief");
+    expect(output).toContain("Current actor: Worker / Worker");
+    expect(output).toContain("Correctness · Round 2 · 3h 0m");
+    expect(output).toContain("Waiting: Review In Progress");
+    expect(output).toContain("Next: Worker / Wait");
+    expect(output).toContain("Runtime stale");
+    expect(output).toContain("Worker pane missing");
+    value.detail!.worker_sessions = [{ work_package_id: "wp-a", agent_session_id: "exact-worker" }];
+    expect(stripAnsi(renderInspector(value, 100, 26))).toContain("Worker pane disconnected");
+    value.snapshot.panes = [{ pane_id: "exact", tab_id: "tab-a", workspace_id: "workspace-a", agent_session: { agent: "codex", value: "exact-worker" } }];
+    expect(stripAnsi(renderInspector(value, 100, 26))).toContain("Worker pane connected");
+    current.activity_signal = { ...current.activity_signal, current_actor: undefined, started_at: undefined, elapsed_seconds: undefined, observation_state: "unknown" };
+    const unknown = stripAnsi(renderInspector(value, 100, 26));
+    expect(unknown).toContain("Owner: Chief");
+    expect(unknown).toContain("Current actor: Unknown");
+    expect(unknown).toContain("Time unknown");
+    for (const width of [12, 28, 80]) {
+      const narrow = stripAnsi(renderInspector(value, width, 24));
+      expect(Math.max(...narrow.split("\n").map(terminalCellWidth))).toBeLessThanOrEqual(width);
+      expect(narrow.split("\n").length).toBeLessThanOrEqual(24);
+    }
+  });
+
   it("keeps a trivial WorkRequest compact", () => {
     const output = stripAnsi(renderInspector(state([pkg("wp-a", "Review", "review")]), 44));
     expect(output).toContain("Review");
@@ -68,7 +101,7 @@ describe("execution inspector rendering", () => {
   });
 });
 
-function state(workPackages: ReturnType<typeof pkg>[], effectiveEdges: ReturnType<typeof edge>[] = []): InspectorState {
+function state(workPackages: Array<ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals>, effectiveEdges: ReturnType<typeof edge>[] = []): InspectorState {
   return {
     binding: {
       paneId: "pane-a",

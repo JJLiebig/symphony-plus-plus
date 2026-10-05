@@ -1,3 +1,4 @@
+import { activityActorLabel, activityStageLabel, workActivityFacts } from "@/lib/operational-state-activity";
 import { memo, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
@@ -251,7 +252,7 @@ function WorkPackageCard({
       data-parent-group-id={rect.parent_group_id}
       data-v3-context-path={view.contextPath}
     >
-      <span className="execution-graph__title-stack">
+      <span className="execution-graph__title-stack" title={view.activityFacts}>
         <h3 className="execution-graph__card-title" title={view.title}>{view.title}</h3>
         {view.scope ? <span className="execution-graph__scope" title={view.scope}>{view.scope}</span> : null}
       </span>
@@ -288,17 +289,20 @@ function workPackageCardView(
 ) {
   const ref = model.refs.get(rect.id) ?? { id: rect.id };
   const signal = model.signals.get(rect.id);
-  const state = attentionState(attention, cardState(ref, signal, now));
+  const activity = workPackageActivityView(signal);
+  const fallbackState = cardState(ref, signal, now);
+  const state = attentionState(attention, activity ? { ...fallbackState, label: activity.stage } : fallbackState);
   const title = workPackageTitle(ref);
   const progress = dependencyProgress(model, rect.key);
   const dependencyLabel = accessibleDependencyLabel(model, rect.key, signal, progress.satisfied, progress.required);
   const groupLabel = groupAncestryLabel(model, ref.group_id);
-  const scope = scopeLabel(model.packageScopes.get(ref.id));
+  const scope = [scopeLabel(model.packageScopes.get(ref.id)), activity?.ownership].filter(Boolean).join(" · ");
   const pr = signal?.pr_signal;
   const prLabel = prBadgeLabel(pr);
   const reason = workPackageReason(ref, signal);
   return {
-    accessibleLabel: sentenceLabel([title, groupLabel, scope, state.label, reason, prLabel, dependencyLabel]),
+    activityFacts: activity?.facts,
+    accessibleLabel: sentenceLabel([title, groupLabel, scope, state.label, reason, activity?.facts, prLabel, dependencyLabel]),
     contextPath: workPackageContextPath(model, ref, contextPath),
     dependencyLabel,
     groupLabel,
@@ -307,6 +311,16 @@ function workPackageCardView(
     scope,
     state,
     title,
+  };
+}
+
+function workPackageActivityView(signal?: ExecutionGraphWorkPackageSignals) {
+  const activity = signal?.activity_signal ?? signal?.operational_state?.activity_signal;
+  if (!activity) return null;
+  return {
+    stage: activityStageLabel(activity, signal?.review_signal),
+    ownership: `Owner: ${activity.accountable_owner?.id || "Unknown"} · Actor: ${activityActorLabel(activity.current_actor)}`,
+    facts: workActivityFacts(activity, signal?.review_signal).map(({ label, value }) => `${label}: ${value}`).join(". "),
   };
 }
 
@@ -334,7 +348,7 @@ function GraphStatus({ label, actionLabel, onClick }: { label: string; actionLab
   return onClick ? (
     <button type="button" className="execution-graph__status execution-graph__status--action" aria-label={actionLabel} onClick={onClick}>{label}</button>
   ) : (
-    <span className="execution-graph__status">{label}</span>
+    <span className="execution-graph__status" title={label}>{label}</span>
   );
 }
 

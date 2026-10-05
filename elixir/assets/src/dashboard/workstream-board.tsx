@@ -1,3 +1,4 @@
+import { activitySummary } from "@/lib/operational-state-activity";
 import type { ActiveBlockingEdge, GuidanceItem, WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
 import { AlertTriangle, ChevronRight, Copy, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -270,6 +271,7 @@ function placeExpandedRequestBody(body: ReactNode, content: "graph" | "list" | u
 }
 function RequestIdentity({ detail, branch }: { detail: WorkRequestDetail; branch?: string }) {
   const request = detail.work_request;
+  const activity = activitySummary(request.operational_state?.activity_signal, detail.work_packages?.find((slice) => slice.id === request.operational_state?.activity_signal?.work_package_id)?.review_signal);
   return (
     <span className="v3-request-title-group">
       <span className="v3-request-title">{request.title || request.id}</span>
@@ -278,6 +280,7 @@ function RequestIdentity({ detail, branch }: { detail: WorkRequestDetail; branch
         <span>{request.repo_display || request.repo || "repo"}</span>
         {branch ? <span className="v3-request-branch">{branch}</span> : null}
       </span>
+      {activity ? <span className="work-activity-summary" title={activity}>{activity}</span> : null}
     </span>
   );
 }
@@ -397,7 +400,7 @@ function frontierGroupIdentity(detail: WorkRequestDetail, slice: WorkRequestPack
 function frontierItem(slice: WorkRequestPackage, packageById: Map<string, WorkPackageCard>, overallLabel: string): RequestFrontierItem {
   const pkg = packageById.get(slice.work_package_id || slice.id);
   return {
-    activity: frontierActivity(slice, pkg, overallLabel),
+    activity: activitySummary(slice.activity_signal ?? slice.operational_state?.activity_signal ?? pkg?.operational_state?.activity_signal, slice.review_signal) ?? frontierActivity(slice, pkg, overallLabel),
     id: slice.id,
     pr: slice.pr_signal ?? undefined,
     title: slice.title?.trim() || slice.id,

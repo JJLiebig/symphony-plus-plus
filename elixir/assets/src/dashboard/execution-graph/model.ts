@@ -1,3 +1,4 @@
+import type { PackageOperationalState, WorkPackageActivitySignal, WorkPackageDependencySignal, WorkPackagePrSignal, WorkPackageReviewSignal, WorkPackageWorkerSignal } from "@/types/dashboard";
 import { isFinishedBoardStatus } from "@/lib/operational-state";
 import { layoutGroupChildren, projectGroupDependencies } from "./group-layout";
 import { topologicalEntityOrder } from "./topological-order";
@@ -24,12 +25,7 @@ export type ExecutionGraphWorkPackageRef = {
   base_branch?: string | null;
   status?: string | null;
   raw_status?: string | null;
-  operational_state?: {
-    key?: string | null;
-    label?: string | null;
-    tone?: string | null;
-    reason?: string | null;
-  } | null;
+  operational_state?: PackageOperationalState | null;
 };
 export type ExecutionGraphEffectiveEdge = {
   prerequisite_work_package_id: string;
@@ -60,48 +56,13 @@ export type ExecutionGraphWorkPackageSignals = {
   id: string;
   raw_status?: string | null;
   operational_state?: ExecutionGraphWorkPackageRef["operational_state"];
-  worker_signal?: {
-    status: "active" | "idle" | "paused" | "stale" | "unavailable";
-    active_since?: string | null;
-    last_activity?: string | null;
-    run_label?: string | null;
-  } | null;
-  pr_signal?: {
-    status: "none" | "open" | "merged" | "unavailable";
-    url?: string | null;
-    number?: number | null;
-    repository?: string | null;
-    head_sha?: string | null;
-    current_head_sha?: string | null;
-    head_matches?: boolean | null;
-    checks?: {
-      status: "pending" | "passing" | "failing" | "unavailable";
-      current?: number | null;
-      total?: number | null;
-    } | null;
-  } | null;
-  review_signal?: {
-    type?: string | null;
-    args?: Record<string, unknown> | null;
-    status: "pending" | "in_progress" | "passed" | "failed" | "unavailable";
-    current?: number | null;
-    total?: number | null;
-    step?: string | null;
-    evidence_id?: string | null;
-    reviewed_head?: string | null;
-  } | null;
-  dependency_signal?: {
-    satisfied: number;
-    required: number;
-    active: number;
-    blocked: number;
-    unmet_work_package_ids: string[];
-    inputs: Array<{
-      work_package_id: string;
-      status: DependencyPathState;
-    }>;
-  } | null;
+  worker_signal?: WorkPackageWorkerSignal | null;
+  pr_signal?: WorkPackagePrSignal | null;
+  review_signal?: WorkPackageReviewSignal | null;
+  dependency_signal?: WorkPackageDependencySignal | null;
+  activity_signal?: WorkPackageActivitySignal | null;
 };
+
 export type ExecutionGraphEntityState = {
   label: string;
   tone: "active" | "waiting" | "blocked" | "complete" | "neutral";

@@ -1,3 +1,4 @@
+import { WorkActivity } from "./work-activity";
 import { Archive, CheckCircle2, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,6 +97,7 @@ export function PackageDetailBody({
       <PackageDetailHeader pkg={pkg} operational={operational} blockerCopyText={blockerCopyText} />
       <div className="detail-modal-reveal-body grid gap-4">
         <DetailSummaryBar items={packageDetailSummary({ blockerCount, currentCommentStats, pkg, planLabel, summary })} />
+        <WorkActivity activity={selection.slice?.activity_signal ?? pkg.activity_signal ?? operational?.activity_signal ?? { accountable_owner: { id: pkg.owner_id } }} review={selection.slice?.review_signal ?? pkg.review_signal} />
         <PackageExecutionScopeSection pkg={pkg} purposeMarkdown={purposeMarkdown} />
         <PackageOperationalTruthSection attentionItems={attentionItems} operational={operational} pkg={pkg} />
         <PackageProgressSection progress={progress} planLabel={planLabel} status={status} />
