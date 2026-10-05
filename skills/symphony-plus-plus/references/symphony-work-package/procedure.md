@@ -117,6 +117,8 @@ Before `mark_ready()`:
 - Provider-backed branch, PR, current-head state, blockers, and investigation
   findings are current.
 - Any external/provider review required by `review.md` is settled.
+- Candidate inputs are current and recorded for this dependent head as described
+  [below](#candidate-inputs); stale inputs return to qualification, not bookkeeping.
 - Do not add task-plan or progress calls only to restate facts already proved
   elsewhere.
 - No active blocker remains.
@@ -124,6 +126,43 @@ Before `mark_ready()`:
 
 Return ready or terminal packages to the architect named by `next_owner`; the
 worker does not need or receive architect tools for that handoff.
+
+## Candidate inputs
+
+When `read_context()` returns candidate `dependency_selections`, consume only
+the current available selection. Verify checks/review for the exact backend input
+and your final dependent head; ready state alone is not proof of qualification.
+After wiring/technical review, before `mark_ready()`, record the consumed selection
+with existing `append_progress` input provenance:
+
+```json
+{
+  "summary": "Qualified wiring against the selected backend",
+  "idempotency_key": "wiring-inputs-1",
+  "payload": {
+    "head_sha": "<current dependent PR head>",
+    "dependency_inputs": [{
+      "dependency_id": "<edge id>",
+      "prerequisite_work_package_id": "<backend WorkPackage id>",
+      "candidate_head_sha": "<pinned backend head>"
+    }]
+  }
+}
+```
+
+Include each consumed candidate constraint, including expanded/overlapping edges.
+Use a new idempotency key for a new qualification. Pin/head changes invalidate
+affected selections; after requalification append current inputs for your current
+head. Unchanged selections on that head remain valid. If the architect clears a
+previously consumed pin, wait for prerequisite delivery and record fresh selection
+with `candidate_head_sha: null`. Never-pinned edges need delivery only.
+
+Provider-native review/handoff names backend WP/head and final UI head; this
+progress payload records inputs, not review completion. Do not copy review receipts.
+If an already-ready candidate needs changes or new input qualification, ask the
+architect for successor scope; readiness cannot be reopened. A claim transfer does
+not authorize contract changes. Technical defects stay fixable; material changes
+to approved UX require architect/human guidance and its durable decision reference.
 
 ## Safety
 

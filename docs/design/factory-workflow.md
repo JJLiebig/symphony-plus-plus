@@ -1,7 +1,7 @@
 # Factory Workflow
 
-**Status: approved target contract for the beta rework.** This docs-only pass
-changes no runtime, skills, ledger schema, or live agents. Use
+**Status: approved beta contract; source capabilities implemented, combined
+host qualification pending.** The diagram remains the approved product intent. Use
 [Current system](../system.md) and the [packaged skills](../../plugins/symphony-plus-plus-mcp/skills/)
 for what works today.
 
@@ -25,8 +25,7 @@ diagram. Its “Final Sanity Check” happens **after WR fully delivered**.
 
 A bug fix may need an architect if scope or decisions demand one. A small
 refactor may go directly to a worker. Request type does not impose an agent
-hierarchy. Existing coordinator/worker delivery already supports the small-work
-loop; v2 should preserve and simplify it.
+hierarchy. Existing coordinator/worker delivery supports the small-work loop.
 
 The domain chief is a persistent product/architecture owner and the usual human
 entrypoint. Chiefs understand service responsibilities and coordinate decisions
@@ -155,25 +154,28 @@ The beta starts from main after the delivered prerequisite changes:
 
 The pilot used an operator-owned cockpit and operator-run Review Suite handoff.
 Claude readiness needed operator help because its displayed MCP error omitted
-the actionable reason. Autonomous Claude review discovery, standalone managed
-startup/leases, Herdr integration, and macOS/Linux distribution were not proven.
+the actionable reason. Beta now returns actionable readiness messages. Autonomous
+native review discovery, standalone managed startup/leases, and macOS/Linux
+distribution remain unproven. Beta board/Herdr observation is implemented;
+combined native-host qualification remains pending.
 These are bounded implementation/qualification gaps, not claims of complete
 cross-host support or a reason to repeat the same pilot before useful work.
 
-Implement beta in bounded slices:
+Current beta source provides delivered-scope/successor resolution, exact-head
+candidate dependencies and consumed-input staleness, pre-merge eligibility,
+actionable readiness errors, and board/Herdr owner/activity/wait observations.
+[Current system](../system.md) and [Operations](../operations.md) describe these
+capabilities. The packaged
+[architect procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-architect/references/operations.md#ui-collaboration-and-candidates)
+owns durable approval, explicit claim handoff, candidate selection, successor
+replacement and ordered merge; this contract is not a second agent checklist.
 
-1. Align current tools/procedures with the compact handoff and actionable
-   host-facing errors. Preserve existing small-work delivery and authority.
-2. Represent request decisions, UI approval, candidate dependencies, and
-   reslicing needed for the architect/UI lane. Reuse existing ledger concepts
-   where they express the contract; add fields only for a concrete gap.
-3. Connect useful owner/activity/wait signals to Herdr and the delivery board.
-   Show real state before adding milestone percentages.
-4. Qualify the feature/UI loop and remaining host/runtime boundaries with
-   actual clients, then promote beta after its changed surfaces pass checks.
+Qualify the combined direct and architect/UI paths with actual available native
+hosts in an isolated beta home/ledger. Checkout-backed beta qualification is
+separate from installed marketplace runtime qualification or a stable cutover.
 
 Keep useful ledger, authorization, delivery, and runtime machinery. Remove
 duplicated procedures and obsolete surfaces when their replacements exist.
 A generic fleet manager, provider runner, or wholesale runtime rewrite is not
 a prerequisite for this workflow. Code changes and their concrete acceptance
-belong in separately scoped work, not this docs-only reset.
+belong in bounded WorkPackages rather than an expanded procedure rewrite.

@@ -20,6 +20,11 @@ Head SHA: <sha or not applicable for policy-approved no-PR work>
 
 <Evidence for each criterion>
 
+### Consumed inputs (when candidate dependencies apply)
+
+<Human-approved decision IDs; dependency edge/backend WP and exact consumed head;
+final dependent head; progress selection reference and affected requalification>
+
 ### Tests and static checks
 
 <Commands, results, tested revision, reused evidence, and blocked/unrun requirements>

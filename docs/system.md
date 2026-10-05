@@ -112,26 +112,15 @@ checks or review passed. Without a pin, dispatch waits for actual delivered scop
 including all required successors; skipped or abandoned attempts do not count.
 Overlapping dependency constraints all apply. Set the pin to `null` to remove it.
 
-The wiring worker records consumed inputs in existing `append_progress` provenance:
-
-```json
-{
-  "summary": "Qualified wiring against the selected backend",
-  "idempotency_key": "wiring-inputs-1",
-  "payload": {
-    "head_sha": "<current dependent PR head>",
-    "dependency_inputs": [{
-      "dependency_id": "<edge id>",
-      "prerequisite_work_package_id": "<backend WorkPackage id>",
-      "candidate_head_sha": "<pinned backend head>"
-    }]
-  }
-}
-```
+Consumed backend selections belong to the dependent candidate's existing progress
+history. The [WorkPackage procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/SKILL.md#candidate-inputs)
+owns recording and requalification; the
+[architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/references/operations.md#ui-collaboration-and-candidates)
+owns approval, selection and review-owner handoff.
 
 Clearing a previously consumed pin also invalidates that input evidence. Once the
 prerequisite has delivered, record fresh qualification with `candidate_head_sha: null`
-in the same progress selection to qualify the delivered input. Dependencies
+to qualify the delivered input. Dependencies
 that have never carried a candidate pin continue to require only delivery.
 
 

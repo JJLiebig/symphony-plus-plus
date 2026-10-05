@@ -72,6 +72,9 @@ scope growth or reviewability risk.
 
 Use `upsert_dependency`/`delete_dependency` for ordering. Group endpoints expand
 to the backend's effective WorkPackage graph; do not maintain another graph.
+Without a candidate pin, dispatch waits for actual prerequisite delivery.
+For qualified unmerged inputs and UI approval, use the
+[UI/candidate procedure](references/operations.md#ui-collaboration-and-candidates).
 
 Use `slice_work_request` to create planned packages atomically; there is no
 separate approval/finish step. Use `update_work_package` with
@@ -128,6 +131,12 @@ worker finish review convergence and delivery.
 
 After dispatch, use `read_delivery_board` for lifecycle evidence.
 
+Before an authorized GitHub merge, require the package's `merge_eligibility.eligible`
+and current candidate selections on that board, plus the worker's exact-head
+checks/review and combined acceptance. Merge backend before wired UI. Board
+eligibility checks dependencies; it does not perform a GitHub merge or prove
+native checks/review. Recheck when a relevant head or selection changes.
+
 For merged PR evidence, use `reconcile_work_request` first, then
 `reconcile_work_request(apply: true)` when the proposed repair matches the
 delivery board. That path uses attached/synced PR evidence and avoids repeating
@@ -148,3 +157,15 @@ only to recycle runtime without terminal closeout or to clear recoverable worker
 MCP session bindings explicitly.
 If package evidence is missing or ambiguous, do not record WorkRequest delivery
 closeout; repair evidence first.
+Record external GitHub merges truthfully even when out of order. Reconciliation
+does not erase merge history: route `delivery_order_violation` attention to
+remediation, even if the backend later delivers.
+
+Retirement is not delivery. Create all replacement packages before retiring the
+predecessor and preserve its evidence with `superseded` successor linkage.
+Every current successor must deliver; existing immutable successor pointers and
+same-request `superseded_by`/`recut_as` lineage are cumulative, not alternatives.
+Missing/cyclic successor scope stays unresolved. Planned skipped tombstones may
+retire obsolete scope but cannot satisfy dependencies or deliver an all-skipped WR.
+After required delivery and WR acceptance, optional sanity checks create follow-up
+work; they are not another completion gate.
