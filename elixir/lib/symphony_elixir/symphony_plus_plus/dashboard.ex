@@ -23,6 +23,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
 
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.GuidanceRequest
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Repository, as: GuidanceRequestRepository
+  alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Phase
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Repository, as: PhaseRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Artifact
@@ -1563,6 +1564,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
     claim_leases_by_id = grouped_claim_leases(repo, work_package_ids)
     lineages_by_id = OperationalProjection.package_lineages(repo, work_packages)
 
+    delivery_successors_by_id =
+      case OperationalLineage.delivery_successors(repo, work_packages) do
+        {:ok, successors} -> successors
+        {:error, _reason} -> Map.new(work_package_ids, &{&1, ["lineage_unavailable"]})
+      end
+
     Map.new(work_packages, fn %WorkPackage{} = work_package ->
       progress_events = Map.get(progress_events_by_id, work_package.id, [])
       plan_nodes = Map.get(plan_nodes_by_id, work_package.id, [])
@@ -1614,6 +1621,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
          agent_runs: agent_runs,
          grants: grants,
          lineage: lineage,
+         delivery_successor_ids: Map.get(delivery_successors_by_id, work_package.id, []),
          blocker_state: activity_context.blocker_state,
          runtime_state: activity_context.runtime_state,
          worker_signal: activity_context.worker_signal,

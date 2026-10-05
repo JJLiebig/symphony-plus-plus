@@ -348,23 +348,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
     delivery_board
     |> DeliveryWorkPackageProjection.work_packages_by_id()
     |> Enum.flat_map(fn {slice_id, delivery_work_package} ->
-      case completion_delivery_outcome(delivery_work_package) do
-        outcome when is_binary(outcome) and outcome != "" -> [{slice_id, %{outcome: outcome}}]
-        _outcome -> []
+      delivery = map_value(delivery_work_package, "delivery") || %{}
+
+      case map_value(delivery_work_package, "delivery_outcome") || map_value(delivery, "outcome") do
+        outcome when is_binary(outcome) and outcome != "" ->
+          successor_id = map_value(delivery_work_package, "successor_work_package_id") || map_value(delivery, "successor_work_package_id")
+          [{slice_id, %{outcome: outcome, successor_work_package_id: successor_id}}]
+
+        _outcome ->
+          []
       end
     end)
     |> Map.new()
   end
-
-  defp completion_delivery_outcome(%{} = delivery_work_package) do
-    map_value(delivery_work_package, "delivery_outcome") ||
-      case map_value(delivery_work_package, "delivery") do
-        %{} = delivery -> map_value(delivery, "outcome")
-        _delivery -> nil
-      end
-  end
-
-  defp completion_delivery_outcome(_delivery_work_package), do: nil
 
   defp question_context(repo, work_request_ids) do
     rows =

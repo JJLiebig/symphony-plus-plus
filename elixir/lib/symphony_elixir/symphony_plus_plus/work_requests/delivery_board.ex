@@ -480,7 +480,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
     operational_state = operational_state(work_package, delivery, operational_work_package)
 
     if Keyword.get(opts, :slice_projection) == :operational_state do
-      operational_slice(work_package, delivery, operational_state)
+      operational_slice(work_package, delivery, operational_state, context)
     else
       successor = successor_context(delivery, slices_by_scope, context)
 
@@ -488,12 +488,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
     end
   end
 
-  defp operational_slice(%WorkPackage{} = work_package, delivery, operational_state) do
+  defp operational_slice(%WorkPackage{} = work_package, delivery, operational_state, context) do
     %{
       id: work_package.id,
       work_request_id: work_package.work_request_id,
       raw_status: work_package.status,
       delivery_outcome: delivery && delivery.outcome,
+      successor_work_package_id: visible_work_package_id(delivery && delivery.successor_work_package_id, context),
       operational_state: operational_state,
       attention_reason_codes: Map.fetch!(operational_state, :attention_reason_codes)
     }
