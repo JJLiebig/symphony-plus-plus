@@ -1,61 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { activeBlockerEdgesForRequest, activeBlockerEntityCounts, productTreeCounts, requestProgress, sliceProgressPercent } from "./workstream-progress";
-import type { ActiveBlockingEdge, WorkRequestPackage, WorkRequestDetail, WorkPackageCard } from "@/types/dashboard";
+import { activeBlockerEdgesForRequest, activeBlockerEntityCounts, productTreeCounts, rootProductSliceIds } from "./workstream-progress";
+import type { ActiveBlockingEdge, WorkRequestPackage, WorkRequestDetail } from "@/types/dashboard";
 
 describe("workstream progress", () => {
-  it("counts active direct slices as partial progress", () => {
-    const detail = workRequestDetail([
-      plannedSlice("slice-active", "active"),
-      plannedSlice("slice-planned", "planned"),
-    ]);
-
-    expect(requestProgress(detail, new Map<string, WorkPackageCard>())).toBe(25);
-  });
-
-  it("counts planning slices as partial progress", () => {
-    const detail = workRequestDetail([
-      plannedSlice("slice-planning", "planning"),
-      plannedSlice("slice-planned", "planned"),
-    ]);
-
-    expect(sliceProgressPercent(detail.work_packages![0])).toBe(50);
-    expect(requestProgress(detail, new Map<string, WorkPackageCard>())).toBe(25);
-  });
-
-  it("counts ready-to-finish slices as partial progress", () => {
-    const detail = workRequestDetail([
-      plannedSlice("slice-ready-finish", "ready_to_finish"),
-      plannedSlice("slice-planned", "planned"),
-    ]);
-
-    expect(sliceProgressPercent(detail.work_packages![0])).toBe(50);
-    expect(requestProgress(detail, new Map<string, WorkPackageCard>())).toBe(25);
-  });
-
-  it("keeps ready-for-worker slices at zero progress", () => {
-    const slice = plannedSlice("slice-ready", "ready_for_worker", "pkg-ready");
-    const pkg: WorkPackageCard = { id: "pkg-ready", status: "ready_for_worker", plan: { completed_count: 1, total_count: 2 } };
-
-    expect(sliceProgressPercent(slice, pkg)).toBe(0);
-  });
-
-  it("derives product-tree request progress from descendant slices before stale partial marks", () => {
-    const detail = workRequestDetail([
-      plannedSlice("slice-ready", "ready_for_worker", "pkg-ready"),
-    ]);
-    detail.product_tree = {
-      available: true,
-      mode: "product_tree",
-      nodes: [{ id: "node-ready", completion_mark: "partial", work_package_ids: ["slice-ready"] }],
-      root_node_ids: ["node-ready"],
-      root_work_package_ids: [],
-    };
-    const packages = new Map<string, WorkPackageCard>([
-      ["pkg-ready", { id: "pkg-ready", status: "ready_for_worker", plan: { completed_count: 1, total_count: 2 } }],
-    ]);
-
-    expect(requestProgress(detail, packages)).toBe(0);
+  it("preserves exact scope counts and root packages independently of delivery percentages", () => {
+    const detail = workRequestDetail([plannedSlice("root", "skipped"), plannedSlice("nested", "active")]);
+    detail.product_tree = { nodes: [{ id: "group", work_package_ids: ["nested"] }] };
+    expect(rootProductSliceIds(detail, detail.work_packages!)).toEqual(["root"]);
+    expect(productTreeCounts(detail, 2)).toEqual({ nodeCount: 1, sliceCount: 2, guidanceCount: 0, blockerCount: 2 });
+    detail.product_tree.root_work_package_ids = ["nested"];
+    expect(rootProductSliceIds(detail, detail.work_packages!)).toEqual(["nested"]);
   });
 
   it("uses explicit active blocker evidence before product-tree dependency blocker totals", () => {

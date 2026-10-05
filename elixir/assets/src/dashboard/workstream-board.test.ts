@@ -156,11 +156,8 @@ describe("workstream board removal rendering", () => {
     expect(collapsed).toContain('aria-label="Copy WorkRequest identity"');
     expect(collapsed).toContain('class="v3-request-controls"');
     expect(requestIdentityCopyText(detail)).toBe("Graph request - WR ID: wr-graph");
-    expect(collapsed).toContain('role="progressbar"');
-    expect(collapsed).toContain('aria-valuenow="59"');
-    expect(collapsed).toContain('<span class="v3-progress-value" aria-hidden="true">59%</span>');
-    expect(collapsed.indexOf("v3-request-main")).toBeLessThan(collapsed.indexOf("v3-request-progress"));
-    expect(collapsed.indexOf("v3-row-badge-slot")).toBeLessThan(collapsed.indexOf("v3-request-progress"));
+    expect(collapsed).not.toContain('role="progressbar"');
+    expect(collapsed).not.toContain("v3-progress-value");
     expect(collapsed).not.toContain('class="v3-row-status"');
     expect(collapsed).not.toContain("v3-progress-state");
     expect(collapsed).not.toContain("v3-request-summary");
