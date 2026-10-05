@@ -122,8 +122,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
           ),
         active_since: worker_active_since(evidence, runtime_evidence),
         last_activity: evidence |> Enum.flat_map(&worker_activity_at/1) |> latest_timestamp(),
-        run_label: worker_run_label(evidence),
-        current_actor: current_actor(runtime_evidence, grants)
+        run_label: worker_run_label(evidence)
       }
       |> reject_nil_values()
     end
@@ -137,14 +136,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
       evidence.active_claim_leases != [] ->
         lease = List.last(evidence.active_claim_leases)
         grant = Enum.find(grants, &(&1.id == lease.access_grant_id))
-        role = if(grant, do: grant.grant_role, else: "worker")
+        role = if(grant, do: grant.grant_role)
         %{id: lease.actor_id, name: lease.actor_display_name, role: role, source: "claim"}
 
       evidence.active_agent_runs != [] ->
         run = Enum.max_by(evidence.active_agent_runs, &timestamp_sort_value(&1.last_seen_at))
+        grant = Enum.find(grants, &(&1.id == run.access_grant_id))
+        role = if(grant, do: grant.grant_role)
 
         if Enum.any?([run.actor_id, run.worker_task_handle, run.session_id], &filled_string?/1) do
-          %{id: run.actor_id, name: run.worker_task_handle, role: "worker", session_id: run.session_id, source: "run"}
+          %{id: run.actor_id, name: run.worker_task_handle, role: role, session_id: run.session_id, source: "run"}
         end
 
       true ->
@@ -328,6 +329,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
       active_agent_run_ids: runtime_ids(evidence.active_agent_runs),
       stale_agent_run_ids: runtime_ids(evidence.stale_agent_runs),
       lifecycle_state: runtime_lifecycle_state(active?, evidence.paused?, stale?, recycled?, terminal?),
+      current_actor: current_actor(evidence, grants),
       latest_gate_at: latest_runtime_gate_at(grants, agent_runs, claim_leases, progress_events, work_package, evidence.now),
       reason_codes: reason_codes
     }

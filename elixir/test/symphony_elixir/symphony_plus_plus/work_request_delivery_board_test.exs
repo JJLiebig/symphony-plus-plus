@@ -60,6 +60,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
              )
   end
 
+  test "live architect runs project actors without becoming worker activity" do
+    now = DateTime.utc_now(:microsecond)
+    package = %WorkPackage{id: "WP-ARCHITECT-ACTOR", kind: "delegation", status: "planning", owner_id: "accountable-owner"}
+    grant = %SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant{id: "architect-grant", grant_role: "architect", claimed_at: now}
+    run = %AgentRun{id: "architect-run", status: "running", access_grant_id: grant.id, actor_id: "live-architect", started_at: now, last_seen_at: now}
+    context = WorkPackageActivity.project_context([grant], [run], [], [], package)
+    assert context.worker_signal == nil
+    assert context.runtime_state.active?
+    activity = Signals.activity(package, context, %{key: "active"}, [], [])
+    assert activity["current_actor"]["id"] == "live-architect"
+    assert activity["current_actor"]["role"] == "architect"
+    assert activity["accountable_owner"]["id"] == "accountable-owner"
+    assert activity["observation_state"] == "current"
+  end
+
   test "returns lineage read failures from graph construction" do
     request = %WorkRequest{id: "WR-LOCKED-LINEAGE"}
     package = %WorkPackage{id: "WP-RETIRED", work_request_id: request.id, status: "skipped"}

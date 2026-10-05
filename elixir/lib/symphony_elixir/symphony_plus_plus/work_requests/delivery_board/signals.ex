@@ -198,6 +198,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   def activity(work_package, summary, operational_state, events, guidance) do
     worker = map_value(summary, "worker_signal") || %{}
     review = map_value(summary, "review_signal") || %{}
+    runtime = map_value(summary, "runtime_state") || %{}
     stage = activity_stage(work_package, operational_state, review)
     latest_event = List.last(events)
     started_at = review_started_at(stage, review)
@@ -206,7 +207,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
     %{
       work_package_id: work_package.id,
       accountable_owner: accountable_owner(work_package.owner_id),
-      current_actor: worker[:current_actor],
+      current_actor: runtime[:current_actor],
       stage: stage,
       started_at: started_at,
       elapsed_seconds: elapsed_seconds(started_at),
@@ -215,7 +216,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       next_action: next_action,
       last_update_at: latest_timestamp([work_package.updated_at, map_value(latest_event, "created_at"), worker[:last_activity]]),
       last_update: latest_event |> map_value("summary") |> bounded_string(),
-      observation_state: observation_state(worker),
+      observation_state: observation_state(runtime),
       observed_at: review[:observed_at]
     }
     |> reject_nil_values()
@@ -226,7 +227,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   defp accountable_owner(id), do: %{id: id, source: "work_package"}
 
   defp activity_stage(%{status: status}, _operational_state, %{status: "in_progress"})
-       when status not in ["ready_for_merge", "skipped", "merged", "closed", "abandoned"], do: "reviewing"
+       when status not in ["skipped", "merged", "closed", "abandoned"], do: "reviewing"
 
   defp activity_stage(%{status: status}, _operational_state, _review)
        when status in ["planning", "implementing", "reviewing", "ci_waiting", "ready_for_merge"], do: status
@@ -264,7 +265,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       dependency_reason -> {dependency_reason, "architect", eligibility[:next_action]}
       Map.get(dependency, :unmet_work_package_ids, []) != [] -> {"unmet_dependencies", "prerequisite_owner", "resolve_dependencies"}
       get_in(summary, [:blocker_state, :active?]) -> {"active_blocker", nil, "resolve_blocker"}
-      true -> next_runtime_activity(work_package, review, worker)
+      true -> next_runtime_activity(work_package, review, worker, eligibility)
     end
   end
 
@@ -279,19 +280,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
     end
   end
 
-  defp next_runtime_activity(work_package, review, worker) do
+  defp next_runtime_activity(work_package, review, worker, eligibility) do
     cond do
       worker[:status] == "paused" -> {"worker_paused", "worker", "resume"}
       worker[:status] == "stale" -> {"runtime_stale", nil, "inspect_runtime"}
-      work_package.status == "ready_for_merge" -> {"awaiting_integration", "architect", "integrate"}
       review[:next_action] not in [nil, "none"] -> {if(review[:next_action] == "wait", do: "review_in_progress"), "worker", review[:next_action]}
+      work_package.status == "ready_for_merge" -> {"awaiting_integration", "architect", eligibility[:next_action]}
       work_package.status == "ci_waiting" -> {"validation_pending", "worker", "check_validation"}
       true -> {nil, nil, nil}
     end
   end
 
-  defp observation_state(%{status: "stale"}), do: "stale"
-  defp observation_state(%{status: "paused"}), do: "paused"
+  defp observation_state(%{stale?: true}), do: "stale"
+  defp observation_state(%{paused?: true}), do: "paused"
   defp observation_state(%{current_actor: actor}) when is_map(actor), do: "current"
   defp observation_state(_worker), do: "unknown"
 

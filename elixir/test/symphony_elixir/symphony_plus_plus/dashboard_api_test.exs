@@ -1432,7 +1432,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       architect_anchor =
         Repo.get!(WorkPackage, "WP-RECOVERY-VALIDATE")
-        |> Ecto.Changeset.change(kind: "delegation")
+        |> Ecto.Changeset.change(kind: "delegation", owner_id: "accountable-architect")
         |> Repo.update!()
 
       assert {:ok, _architect_lease} =
@@ -1447,6 +1447,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert architect_context.runtime_state.active?
       assert is_nil(architect_context.worker_signal)
       refute architect_context.card.operational_state.has_active_worker
+      assert {:ok, [architect_detail]} = Dashboard.work_request_board_details(Repo, ["WR-FIXTURE-RECOVERY"])
+      architect_activity = Enum.find(architect_detail.work_packages, &(&1.id == architect_anchor.id)).activity_signal
+      assert architect_activity["accountable_owner"]["id"] == "accountable-architect"
+      assert architect_activity["current_actor"]["id"] == "fixture:architect"
+      assert architect_activity["observation_state"] == "current"
 
       assert {:ok, dense_tree} = ProductTree.tree_for_work_request(Repo, "WR-FIXTURE-DENSE")
       assert length(dense_tree.nodes) == 3
@@ -2466,7 +2471,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         create_work_package!(repo,
           id: "WP-HERDR-COLD-REVIEW",
           work_request_id: work_request.id,
-          status: "implementing",
+          status: "ready_for_merge",
           worktree_path: root,
           review_requirement: %{"type" => "review-suite", "args" => %{"mode" => "fast"}}
         )
@@ -2532,6 +2537,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert activity["elapsed_seconds"] == nil
         assert activity["waiting_reason"] == "review_in_progress"
         assert activity["observed_at"] == review["observed_at"]
+        assert activity["next_action"] == "wait"
+
+        File.write!(script, "print(" <> Jason.encode!(Jason.encode!(%{review: "rvw_cold", status: "done", next_action: "none"})) <> ")\n")
+        :ets.delete(observation, {:observation, Path.expand(root)})
+        assert {:ok, ready_payload} = LocalOperatorDashboard.herdr_work_request_detail_payload(repo, work_request.id)
+        ready_activity = Enum.find(ready_payload.work_packages, &(&1.id == reviewing.id)).activity_signal
+        assert ready_activity["next_action"] == "verify_native_checks_and_review_then_merge"
+        assert ready_activity["next_actor"] == "architect"
         human_activity = packages[needs_human.id]["activity_signal"]
         assert human_activity["accountable_owner"]["id"] == "human-wait-owner"
         assert human_activity["waiting_reason"] == "Product decision required"
