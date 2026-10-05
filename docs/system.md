@@ -100,3 +100,51 @@ runtime, dashboard, and GitHub delivery workflow alongside that behavior.
 the artifact fingerprint and complete tool-name sets for non-Elixir release
 smoke tests. A runtime test keeps those names aligned with `ToolCatalog`; the
 artifact does not duplicate schemas.
+
+### Qualified candidate dependencies
+
+An architect can set `candidate_head_sha` on `upsert_dependency` after qualifying
+that exact backend WorkPackage head through its native checks and review handoff.
+The prerequisite must be one WorkPackage; the dependent may be a Group. A current
+pin plus the backend's `ready_for_merge` state and matching branch/PR head enables
+wiring and technical review before backend merge. Readiness alone does not prove
+checks or review passed. Without a pin, dispatch waits for actual delivered scope,
+including all required successors; skipped or abandoned attempts do not count.
+Overlapping dependency constraints all apply. Set the pin to `null` to remove it.
+
+The wiring worker records consumed inputs in existing `append_progress` provenance:
+
+```json
+{
+  "summary": "Qualified wiring against the selected backend",
+  "idempotency_key": "wiring-inputs-1",
+  "payload": {
+    "head_sha": "<current dependent PR head>",
+    "dependency_inputs": [{
+      "dependency_id": "<edge id>",
+      "prerequisite_work_package_id": "<backend WorkPackage id>",
+      "candidate_head_sha": "<pinned backend head>"
+    }]
+  }
+}
+```
+
+Clearing a previously consumed pin also invalidates that input evidence. Once the
+prerequisite has delivered, record fresh qualification with `candidate_head_sha: null`
+in the same progress selection to qualify the delivered input. Dependencies
+that have never carried a candidate pin continue to require only delivery.
+
+
+`read_context` exposes `dependency_selections`; `read_plan` exposes each expanded
+constraint. A changed pin or candidate head makes affected input provenance stale.
+After qualifying the new input, append its selection for the current dependent head;
+other edges retain their valid selections. Repinning never refreshes old evidence.
+Ready packages remain immutable: create and qualify a successor before retiring the
+old candidate, then select that successor and requalify affected wiring. Provider
+review results stay with their provider; input provenance is not a review receipt.
+
+Before merging, the architect checks the delivery board's `merge_eligibility`,
+current selections, and native checks/review. Backend delivery must precede UI merge,
+and pinned heads must still match after backend delivery. External merges are
+recorded truthfully even when out of order; the board flags `delivery_order_violation`
+for remediation, including after the backend eventually delivers.

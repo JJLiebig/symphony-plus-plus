@@ -21,6 +21,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
     def all(_query), do: raise(%Exqlite.Error{message: "no such table: sympp_product_tree_nodes"})
   end
 
+  defmodule LockedLineageRepo do
+    def all(_query), do: raise(%Exqlite.Error{message: "database is locked"})
+  end
+
   setup_all do
     database_path = database_path()
 
@@ -54,6 +58,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
                %{},
                []
              )
+  end
+
+  test "returns lineage read failures from graph construction" do
+    request = %WorkRequest{id: "WR-LOCKED-LINEAGE"}
+    package = %WorkPackage{id: "WP-RETIRED", work_request_id: request.id, status: "skipped"}
+    trees = %{request.id => {:ok, %{nodes: [], dependency_edges: []}}}
+
+    assert {:error, {:storage_failed, "database is locked"}} =
+             Signals.execution_graphs(LockedLineageRepo, [request], %{request.id => [package]}, %{}, product_trees_by_request: trees)
   end
 
   test "projects ordered slices with delivery outcome, linked WorkPackage summary, reason codes, and successor context", %{repo: repo} do
@@ -668,8 +681,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
       linked_slice!(repo, work_request,
         id: "WP-GRAPH-SATISFIED",
         work_package_id: "WP-GRAPH-SATISFIED",
-        status: "skipped"
+        status: "reviewing"
       )
+
+    assert {:ok, _delivery} =
+             Repository.record_work_package_delivery(
+               repo,
+               work_request.id,
+               satisfied.id,
+               delivery_attrs(%{outcome: "completed_no_pr", idempotency_key: "graph-satisfied", no_pr_evidence: "Required contract delivered."})
+             )
 
     {_active, active} =
       linked_slice!(repo, work_request,

@@ -2,7 +2,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
   use ExUnit.Case, async: false
 
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
-  alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge
   alias SymphonyElixir.SymphonyPlusPlus.Repo
@@ -26,7 +25,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
     :ok
   end
 
-  test "dispatch uses evaluator evidence and terminal skip semantics", %{repo: repo, database_path: database_path} do
+  test "dispatch remains blocked after prerequisite cancellation", %{repo: repo, database_path: database_path} do
     work_request = work_request!(repo)
 
     assert {:ok, %{work_packages: [prerequisite, dependent]}} =
@@ -49,13 +48,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
 
     assert repo.get!(WorkPackage, dependent.id).status == "planned"
     assert {:ok, %{status: "skipped"}} = Repository.skip_work_package(repo, work_request.id, prerequisite.id, "planned")
-    assert :ok = DashboardPubSub.subscribe()
 
-    assert {:ok, %{work_package: %{id: "wp_dependent", status: "ready_for_worker"}}} =
+    assert {:error, {:unmet_work_package_dependencies, "wp_dependent", ["wp_prerequisite"]}} =
              WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id, database: database_path)
-
-    assert_receive :operator_dashboard_changed
-    refute_receive :operator_dashboard_changed, 50
   end
 
   defp work_request!(repo) do
