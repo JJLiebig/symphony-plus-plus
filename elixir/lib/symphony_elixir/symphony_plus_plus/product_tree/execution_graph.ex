@@ -213,7 +213,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph do
     |> Enum.sort_by(&{&1.prerequisite_work_package_id, &1.dependent_work_package_id})
   end
 
-  defp constraint(edge), do: %{dependency_id: value(edge, :id), candidate_head_sha: value(edge, :candidate_head_sha), updated_at: value(edge, :updated_at)}
+  defp constraint(edge), do: %{dependency_id: value(edge, :id), candidate_head_sha: value(edge, :candidate_head_sha), selection_updated_at: value(edge, :selection_updated_at)}
 
   defp endpoint(edge, side), do: {value(edge, String.to_atom("#{side}_kind")), value(edge, String.to_atom("#{side}_id"))}
   defp expand_endpoint({"work_package", id}, _group_members), do: [id]

@@ -107,18 +107,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   defp public_execution_graph(graph) do
     edges =
       Enum.map(graph.effective_edges, fn edge ->
-        constraints =
-          Enum.map(edge.constraints, fn constraint ->
-            if is_nil(constraint.candidate_head_sha),
-              do: Map.take(constraint, [:dependency_id, :available, :delivered]),
-              else: Map.drop(constraint, [:updated_at])
-          end)
-
-        %{edge | constraints: constraints}
+        %{edge | constraints: Enum.map(edge.constraints, &public_constraint/1)}
       end)
 
     graph |> Map.drop([:merge_eligibility]) |> Map.put(:effective_edges, edges)
   end
+
+  defp public_constraint(%{candidate_head_sha: nil} = constraint),
+    do: Map.take(constraint, [:dependency_id, :available, :delivered])
+
+  defp public_constraint(constraint), do: Map.drop(constraint, [:selection_updated_at])
 
   defp scope_execution_graph(execution_graph, visible_work_package_ids, opts) do
     if Keyword.get(opts, :visible_only?, false) do

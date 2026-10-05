@@ -4,6 +4,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
   import Ecto.Query, only: [from: 2]
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.MetadataProjection
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
   alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph
@@ -34,13 +35,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
   def evaluate(edges, packages, deliveries, context) do
     successors = Map.get(context, :successors, %{})
     events = Map.get(context, :events, %{})
-    metadata = Map.new(events, fn {id, events} -> {id, MetadataProjection.metadata(events)} end)
+    metadata = Map.new(events, fn {id, events} -> {id, candidate_metadata(events)} end)
 
     Enum.map(edges, fn edge ->
       prerequisite = edge.prerequisite_work_package_id
       dependent = edge.dependent_work_package_id
       delivered = DeliveryResolution.resolved?(prerequisite, packages, deliveries, successors)
-      head = current_head(Map.get(metadata, prerequisite, %{}))
+      head = metadata |> Map.get(prerequisite, %{}) |> value(:pr) |> value(:head_sha)
       dependent_head = current_head(Map.get(metadata, dependent, %{}))
       consumed = consumed_inputs(Map.get(events, dependent, []), dependent_head)
       delivery = Map.get(deliveries, dependent)
@@ -53,7 +54,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
           selection = Map.get(consumed, constraint.dependency_id)
 
           selected = selection_matches?(selection, prerequisite, pin)
-          input_current = is_nil(pin) or (selected and selected_after_update?(selection, constraint.updated_at))
+          selected_at = selected_after_update?(selection, constraint.selection_updated_at)
+          input_current = is_nil(pin) or (selected and selected_at)
 
           Map.merge(constraint, %{
             current_head_sha: head,
@@ -113,7 +115,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
          work_request_id when is_binary(work_request_id) <- package.work_request_id,
          {:ok, graph} <- ExecutionGraph.evaluate(repo, work_request_id),
          {:ok, context} <- context(repo, [package], true) do
-      metadata = MetadataProjection.metadata(Map.get(context.events, id, []))
+      metadata = candidate_metadata(Map.get(context.events, id, []))
       head = current_head(metadata)
       selections = value(payload, :dependency_inputs)
       edges = Enum.filter(graph.effective_edges, &(&1.dependent_work_package_id == id))
@@ -177,6 +179,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
       value(package, :status) == "ready_for_merge" or value(delivery, :outcome) == "pr_merged" -> "current"
       true -> "not_ready"
     end
+  end
+
+  defp candidate_metadata(events) do
+    pr =
+      with {:ok, attached} <- PullRequestProgress.current_pr_state(events),
+           {:ok, current} <-
+             events
+             |> Enum.filter(&PullRequestProgress.same_pr?(value(&1, :payload), attached.ref))
+             |> PullRequestProgress.current_pr_state(["attach_pr", "sync_pr"]) do
+        current.payload
+      else
+        _missing -> nil
+      end
+
+    %{branch: %{head_sha: MetadataProjection.latest_current_head_sha(events)}, pr: pr}
   end
 
   defp current_head(metadata) do

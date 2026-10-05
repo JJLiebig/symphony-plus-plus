@@ -94,6 +94,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
 
     assert candidate_eligibility(repo, request, ui).eligible
 
+    candidate_call(repo, architect, "upsert_dependency", %{
+      "work_request_id" => request.id,
+      "dependency_id" => dependency,
+      "dependent" => %{"kind" => "work_package", "id" => ui.id},
+      "prerequisite" => %{"kind" => "work_package", "id" => b.id},
+      "candidate_head_sha" => head_b,
+      "reason" => "Clarified reason; the selected input is unchanged."
+    })
+
+    assert candidate_eligibility(repo, request, ui).eligible
+
     # A delivered prerequisite still cannot satisfy an obsolete pin.
     candidate_pin(repo, architect, request, ui, b, head_a, dependency)
     refute candidate_eligibility(repo, request, ui).eligible

@@ -1,6 +1,7 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
   use ExUnit.Case, async: true
 
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.{DependencyEdge, ExecutionGraph, Node}
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.{WorkPackage, WorkPackageDelivery}
 
@@ -246,6 +247,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
     assert {:error, _} = ExecutionGraph.require_ready(stale, "ui")
     assert [%{constraints: [%{candidate_state: "stale_head"}]}] = stale.effective_edges
 
+    # A later provider observation wins over the display projection's older matching head.
+    events =
+      candidate_events(head) ++
+        [
+          %ProgressEvent{
+            sequence: 3,
+            payload: %{"type" => "pr", "source_tool" => "sync_pr", "head_sha" => other_head, "url" => "https://github.com/example/repo/pull/1"}
+          }
+        ]
+
+    observed_change =
+      ExecutionGraph.evaluate(%{nodes: [group("uis")], dependency_edges: [pin]}, packages, [], %{events: %{"backend" => events}})
+
+    assert {:error, _} = ExecutionGraph.require_ready(observed_change, "ui")
+    assert [%{constraints: [%{current_head_sha: ^other_head, candidate_state: "stale_head"}]}] = observed_change.effective_edges
+
     group_pin =
       DependencyEdge.create_changeset(%{
         id: "bad",
@@ -264,8 +281,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
   end
 
   defp candidate_events(head) do
-    alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
-
     [
       %ProgressEvent{sequence: 1, payload: %{"type" => "branch", "source_tool" => "attach_branch", "head_sha" => head}},
       %ProgressEvent{sequence: 2, payload: %{"type" => "pr", "source_tool" => "attach_pr", "head_sha" => head, "url" => "https://github.com/example/repo/pull/1"}}

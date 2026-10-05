@@ -25,6 +25,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
           kind: String.t() | nil,
           reason: String.t() | nil,
           candidate_head_sha: String.t() | nil,
+          selection_updated_at: DateTime.t() | nil,
           decision_ref: map() | nil,
           created_by: String.t() | nil,
           created_at: DateTime.t() | nil,
@@ -41,6 +42,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
     field(:kind, :string)
     field(:reason, :string)
     field(:candidate_head_sha, :string)
+    field(:selection_updated_at, :utc_datetime_usec)
     field(:decision_ref, :map)
     field(:created_by, :string)
     field(:created_at, :utc_datetime_usec)
@@ -102,7 +104,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
     |> validate_candidate_prerequisite()
     |> validate_hard_edge_context()
     |> validate_not_self_edge()
+    |> stamp_selection_change()
     |> foreign_key_constraint(:work_request_id)
+  end
+
+  defp stamp_selection_change(changeset) do
+    if Enum.any?([:source_kind, :source_id, :target_kind, :target_id, :kind, :candidate_head_sha], &changed?(changeset, &1)) do
+      put_change(changeset, :selection_updated_at, DateTime.utc_now(:microsecond))
+    else
+      changeset
+    end
   end
 
   defp validate_candidate_prerequisite(changeset) do
