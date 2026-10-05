@@ -174,12 +174,127 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       total: evidence |> signal_value(["total", "total_count"]) |> integer_value(),
       step: evidence |> signal_value(["step", "stage"]) |> bounded_string(),
       evidence_id: evidence |> signal_value(["evidence_id", "reference", "id"]) |> bounded_string(),
-      reviewed_head: evidence |> signal_value(["head_sha", "reviewed_head"]) |> bounded_string()
+      reviewed_head: evidence |> signal_value(["head_sha", "reviewed_head"]) |> bounded_string(),
+      provider_status: observation |> map_value("provider_status") |> bounded_string(),
+      next_action: observation |> map_value("next_action") |> bounded_string(),
+      round: observation |> map_value("round") |> bounded_string(),
+      started_at: map_value(observation, "started_at"),
+      round_started_at: map_value(observation, "round_started_at"),
+      observed_at: map_value(observation, "observed_at"),
+      observation_state: review_observation_state(observation)
     }
     |> reject_nil_values()
   end
 
   def review(%WorkPackage{}, _metadata, _observation), do: %{status: "unavailable"}
+
+  defp review_observation_state(nil), do: "unknown"
+
+  defp review_observation_state(observation) do
+    if map_value(observation, "provider_status") in ["stale", "invalidated", "head_changed_after_review"], do: "stale", else: "current"
+  end
+
+  @spec activity(WorkPackage.t(), map(), map(), [map()], [map()]) :: map()
+  def activity(work_package, summary, operational_state, events, guidance) do
+    worker = map_value(summary, "worker_signal") || %{}
+    review = map_value(summary, "review_signal") || %{}
+    runtime = map_value(summary, "runtime_state") || %{}
+    stage = activity_stage(work_package, operational_state, review)
+    latest_event = List.last(events)
+    started_at = review_started_at(stage, review)
+    {waiting_reason, next_actor, next_action} = next_activity(work_package, summary, guidance, review, worker)
+
+    %{
+      work_package_id: work_package.id,
+      accountable_owner: accountable_owner(work_package.owner_id),
+      current_actor: runtime[:current_actor],
+      stage: stage,
+      started_at: started_at,
+      elapsed_seconds: elapsed_seconds(started_at),
+      waiting_reason: waiting_reason,
+      next_actor: next_actor,
+      next_action: next_action,
+      last_update_at: latest_timestamp([work_package.updated_at, map_value(latest_event, "created_at"), worker[:last_activity]]),
+      last_update: latest_event |> map_value("summary") |> bounded_string(),
+      observation_state: observation_state(runtime),
+      observed_at: review[:observed_at]
+    }
+    |> reject_nil_values()
+    |> Sanitizer.redacted_json()
+  end
+
+  defp accountable_owner(nil), do: nil
+  defp accountable_owner(id), do: %{id: id, source: "work_package"}
+
+  defp activity_stage(%{status: status}, _operational_state, %{status: "in_progress"})
+       when status not in ["skipped", "merged", "closed", "abandoned"], do: "reviewing"
+
+  defp activity_stage(%{status: status}, _operational_state, _review)
+       when status in ["planning", "implementing", "reviewing", "ci_waiting", "ready_for_merge"], do: status
+
+  defp activity_stage(_work_package, operational_state, _review), do: operational_state.key
+
+  defp review_started_at("reviewing", review), do: review[:round_started_at] || review[:started_at]
+  defp review_started_at(_stage, _review), do: nil
+
+  defp elapsed_seconds(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> max(DateTime.diff(DateTime.utc_now(), datetime, :second), 0)
+      _invalid -> nil
+    end
+  end
+
+  defp elapsed_seconds(_value), do: nil
+
+  defp latest_timestamp(values) do
+    values
+    |> Enum.reject(&is_nil/1)
+    |> Enum.max_by(&Sanitizer.timestamp_sort_value/1, fn -> nil end)
+    |> Sanitizer.timestamp()
+  end
+
+  defp next_activity(work_package, summary, guidance, review, worker) do
+    guidance_wait = guidance_wait(guidance)
+    dependency = map_value(summary, "dependency_signal") || %{}
+    eligibility = Map.get(summary, :merge_eligibility, %{})
+    dependency_reason = Enum.find(Map.get(eligibility, :reason_codes, []), &(&1 != "not_ready"))
+
+    cond do
+      work_package.status in ["skipped", "merged", "closed", "abandoned"] -> {nil, nil, nil}
+      guidance_wait -> guidance_wait
+      dependency_reason -> {dependency_reason, "architect", eligibility[:next_action]}
+      Map.get(dependency, :unmet_work_package_ids, []) != [] -> {"unmet_dependencies", "prerequisite_owner", "resolve_dependencies"}
+      get_in(summary, [:blocker_state, :active?]) -> {"active_blocker", nil, "resolve_blocker"}
+      true -> next_runtime_activity(work_package, review, worker, eligibility)
+    end
+  end
+
+  defp guidance_wait(guidance) do
+    human = Enum.find(guidance, &(&1.status == "human_info_needed"))
+    open = Enum.find(guidance, &(&1.status == "open"))
+
+    cond do
+      human -> {human.human_info_reason || human.summary, "human", "answer_guidance"}
+      open -> {open.summary, "architect", "answer_guidance"}
+      true -> nil
+    end
+  end
+
+  defp next_runtime_activity(work_package, review, worker, eligibility) do
+    cond do
+      worker[:status] == "paused" -> {"worker_paused", "worker", "resume"}
+      worker[:status] == "stale" -> {"runtime_stale", nil, "inspect_runtime"}
+      review[:next_action] not in [nil, "none"] -> {if(review[:next_action] == "wait", do: "review_in_progress"), "worker", review[:next_action]}
+      work_package.status == "ready_for_merge" -> {"awaiting_integration", "architect", eligibility[:next_action]}
+      work_package.status == "ci_waiting" -> {"validation_pending", "worker", "check_validation"}
+      true -> {nil, nil, nil}
+    end
+  end
+
+  defp observation_state(%{stale?: true}), do: "stale"
+  defp observation_state(%{paused?: true}), do: "paused"
+  defp observation_state(%{current_actor: actor}) when is_map(actor), do: "current"
+  defp observation_state(_worker), do: "unknown"
 
   @spec dependency_context(map()) :: map()
   def dependency_context(execution_graphs) when is_map(execution_graphs) do

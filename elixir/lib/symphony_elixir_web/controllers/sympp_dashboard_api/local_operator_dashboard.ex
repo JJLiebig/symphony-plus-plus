@@ -389,7 +389,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   @spec herdr_work_request_detail_payload(module(), String.t()) :: {:ok, map()} | {:error, term()}
   def herdr_work_request_detail_payload(repo, work_request_id) when is_binary(work_request_id) do
     with {:ok, payload} <- operator_work_request_detail_payload(repo, work_request_id),
-         {:ok, [board_detail]} <- Dashboard.work_request_board_details(repo, [work_request_id]),
+         {:ok, [board_detail]} <- operator_work_request_board_details(repo, [%{id: work_request_id}], nil),
          {:ok, work_packages} <- WorkRequestRepository.list_work_packages(repo, work_request_id),
          {:ok, contexts} <- Dashboard.work_package_work_package_contexts(repo, work_packages) do
       graph = get_in(board_detail, [:product_tree, :execution_graph])

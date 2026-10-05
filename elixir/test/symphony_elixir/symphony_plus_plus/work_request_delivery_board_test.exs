@@ -60,6 +60,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
              )
   end
 
+  test "live architect runs project actors without becoming worker activity" do
+    now = DateTime.utc_now(:microsecond)
+    package = %WorkPackage{id: "WP-ARCHITECT-ACTOR", kind: "delegation", status: "planning", owner_id: "accountable-owner"}
+    grant = %SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant{id: "architect-grant", grant_role: "architect", claimed_at: now}
+    run = %AgentRun{id: "architect-run", status: "running", access_grant_id: grant.id, actor_id: "live-architect", started_at: now, last_seen_at: now}
+    context = WorkPackageActivity.project_context([grant], [run], [], [], package)
+    assert context.worker_signal == nil
+    assert context.runtime_state.active?
+    activity = Signals.activity(package, context, %{key: "active"}, [], [])
+    assert activity["current_actor"]["id"] == "live-architect"
+    assert activity["current_actor"]["role"] == "architect"
+    assert activity["accountable_owner"]["id"] == "accountable-owner"
+    assert activity["observation_state"] == "current"
+  end
+
   test "returns lineage read failures from graph construction" do
     request = %WorkRequest{id: "WR-LOCKED-LINEAGE"}
     package = %WorkPackage{id: "WP-RETIRED", work_request_id: request.id, status: "skipped"}
@@ -696,7 +711,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
       linked_slice!(repo, work_request,
         id: "WP-GRAPH-ACTIVE",
         work_package_id: "WP-GRAPH-ACTIVE",
-        status: "implementing"
+        status: "implementing",
+        owner_id: "accountable-architect"
       )
 
     {_blocked, blocked} =
@@ -730,6 +746,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
                status: "running",
                attempt: 1,
                worker_task_handle: "fictional-worker-a",
+               actor_id: "current-worker",
                started_at: active_since,
                last_seen_at: last_activity
              })
@@ -799,6 +816,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
     assert %{status: "active", run_label: "fictional-worker-a"} = packages[active.id].worker_signal
     assert packages[active.id].worker_signal.active_since == active_since
     assert packages[active.id].worker_signal.last_activity == run.updated_at
+    assert packages[active.id].activity_signal["accountable_owner"]["id"] == "accountable-architect"
+    assert packages[active.id].activity_signal["current_actor"]["id"] == "current-worker"
+    assert packages[active.id].activity_signal["observation_state"] == "current"
+    assert packages[active.id].activity_signal["stage"] == "implementing"
+    assert packages[active.id].activity_signal["elapsed_seconds"] == nil
+    assert packages[join.id].activity_signal["waiting_reason"] == "dependency_not_delivered"
+    assert packages[join.id].activity_signal["next_actor"] == "architect"
+
+    run |> Ecto.Changeset.change(last_seen_at: DateTime.add(last_activity, -600, :second)) |> repo.update!()
+    assert {:ok, stale_board} = DeliveryBoard.project(repo, work_request.id)
+    stale_activity = Enum.find(stale_board.work_packages, &(&1.id == active.id)).work_package.activity_signal
+    assert stale_activity["accountable_owner"]["id"] == "accountable-architect"
+    assert stale_activity["current_actor"] == nil
+    assert stale_activity["observation_state"] == "stale"
 
     assert %{status: "open", number: 42, current_head_sha: "0123456", head_matches: true} =
              packages[join.id].pr_signal
