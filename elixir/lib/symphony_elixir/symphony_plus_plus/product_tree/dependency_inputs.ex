@@ -54,7 +54,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
         Enum.map(edge.constraints, fn constraint ->
           pin = constraint.candidate_head_sha
           state = candidate_state(pin, Map.get(packages, prerequisite), Map.get(metadata, prerequisite, %{}), Map.get(deliveries, prerequisite))
-          selection = Map.get(consumed, constraint.dependency_id)
+          selection = Map.get(consumed, {constraint.dependency_id, prerequisite})
 
           selected = selection_matches?(selection, prerequisite, pin)
           selected_at = selected_after_update?(selection, constraint.selection_updated_at)
@@ -158,7 +158,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
     if is_binary(head) and value(payload, :head_sha) == head and is_list(selections) do
       selections
       |> Enum.filter(&is_map/1)
-      |> Enum.map(&{value(&1, :dependency_id), Map.put(&1, :consumed_at, value(event, :created_at))})
+      |> Enum.map(&{{value(&1, :dependency_id), value(&1, :prerequisite_work_package_id)}, Map.put(&1, :consumed_at, value(event, :created_at))})
     else
       []
     end

@@ -280,6 +280,36 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
     assert Keyword.has_key?(group_pin.errors, :candidate_head_sha)
   end
 
+  test "cleared candidate expanded to a Group retains qualification for each prerequisite" do
+    head = String.duplicate("c", 40)
+    changed_at = DateTime.utc_now()
+    pin = %{dependency("expanded", "work_package", "ui", "product_node", "backends") | selection_updated_at: changed_at}
+    packages = [work_package("a", "backends"), work_package("b", "backends"), work_package("ui", nil, "ready_for_merge")]
+
+    selections =
+      for {id, sequence} <- [{"a", 3}, {"b", 4}] do
+        %ProgressEvent{
+          sequence: sequence,
+          created_at: DateTime.add(changed_at, sequence, :second),
+          payload: %{
+            "head_sha" => head,
+            "dependency_inputs" => [%{"dependency_id" => pin.id, "prerequisite_work_package_id" => id, "candidate_head_sha" => nil}]
+          }
+        }
+      end
+
+    graph =
+      ExecutionGraph.evaluate(
+        %{nodes: [group("backends")], dependency_edges: [pin]},
+        packages,
+        [delivery("a", "completed_no_pr"), delivery("b", "completed_no_pr")],
+        %{events: %{"ui" => candidate_events(head) ++ selections}}
+      )
+
+    assert Enum.all?(graph.effective_edges, fn edge -> Enum.all?(edge.constraints, & &1.input_current) end)
+    assert Enum.find(graph.merge_eligibility, &(&1.work_package_id == "ui")).eligible
+  end
+
   defp candidate_events(head) do
     [
       %ProgressEvent{sequence: 1, payload: %{"type" => "branch", "source_tool" => "attach_branch", "head_sha" => head}},
