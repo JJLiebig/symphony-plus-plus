@@ -60,6 +60,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPCase do
   @worker_tool_names [
     "get_current_assignment",
     "read_context",
+    "read_work_package_document",
     "read_task_plan",
     "update_task_plan",
     "append_finding",

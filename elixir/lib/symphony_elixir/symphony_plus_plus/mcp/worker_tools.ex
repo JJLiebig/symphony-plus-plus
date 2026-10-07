@@ -31,6 +31,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
     PullRequestMetadata,
     ReviewReadiness,
     Session,
+    Surface,
     TaskPlanTools,
     ToolResult,
     WorkRequestPayloads,
@@ -47,6 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
 
   @tools [
     "read_context",
+    "read_work_package_document",
     "read_task_plan",
     "update_task_plan",
     "append_finding",
@@ -67,6 +69,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
   @spec call(String.t(), Config.t(), Session.t() | nil, map()) :: result()
   def call("read_context", %Config{} = config, session, _arguments) do
     read_current_virtual_file(config, session, "context.md")
+  end
+
+  def call("read_work_package_document", %Config{repo: repo}, session, arguments) do
+    with {:ok, session} <- scoped_session(repo, session, arguments),
+         {:ok, document} <- required_argument(arguments, "document"),
+         :ok <- validate_document_cursor(document, Map.get(arguments, "before_sequence")),
+         work_package_id = Session.work_package_id(session),
+         {:ok, state, _session} <- Surface.read_work_package_document_state(repo, session, work_package_id, document, Map.get(arguments, "before_sequence")),
+         {:ok, payload} <- WorkerContext.virtual_file_payload(state, document, uri: "sympp://work-packages/#{work_package_id}/#{document}") do
+      {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.read_tool_result(payload) end)}
+    else
+      {:error, _code, _message, _data} = error -> error
+      {:tool_error, reason} -> invalid_params_error("read_work_package_document", reason)
+      {:error, reason} -> worker_error(reason, "read_work_package_document")
+    end
   end
 
   def call("read_task_plan", %Config{} = config, %Session{assignment: %{grant_role: "architect"}} = session, arguments) do
@@ -210,6 +227,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
 
       {:error, reason} ->
         worker_error(reason, "mark_ready")
+    end
+  end
+
+  defp validate_document_cursor(document, cursor) do
+    cond do
+      document not in PlanningRenderer.virtual_files() -> {:error, :unknown_virtual_file}
+      is_nil(cursor) -> :ok
+      document not in ["findings.md", "progress.md", "handoff.md"] -> {:error, :unsupported_document_cursor}
+      not is_integer(cursor) or cursor < 1 -> {:error, :invalid_before_sequence}
+      true -> :ok
     end
   end
 

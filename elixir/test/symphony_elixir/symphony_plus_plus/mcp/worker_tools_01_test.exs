@@ -3,7 +3,7 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  alias SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.{ProgressEvents, WorktreeScope}
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
 
   test "worker tools update only the scoped planning state and deny sibling mutations", %{repo: repo} do
@@ -978,5 +978,155 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
       )
 
     assert get_in(update_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "status"]) == "done"
+  end
+
+  test "native document defaults match resources and recover safe observation identity", %{repo: repo} do
+    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DOCUMENTS", kind: "mcp"))
+    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
+    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
+    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
+    input = %{"dependency_id" => "dep-1", "prerequisite_work_package_id" => "wp-input", "candidate_head_sha" => "input-head"}
+
+    assert {:ok, observation} =
+             PlanningRepository.append_audit_progress_event(repo, assignment, %{
+               "summary" => "Consumed candidate",
+               "body" => "Evidence is in the existing PR. Bearer synthetic-secret-token",
+               "idempotency_key" => "consumed-once",
+               "payload" => %{"head_sha" => "consumer-head", "dependency_inputs" => [Map.put(input, "private_payload", "must-not-leak")], "arbitrary" => "must-not-leak"}
+             })
+
+    id = observation.id
+    mcp_tool(repo, session, "append_finding", %{"title" => "Prior evidence", "body" => "Recover the finding body", "idempotency_key" => "finding-once"})
+
+    for {mode, profile} <- [{:stdio, :full}, {:stdio, :worker}, {:http, :worker}],
+        document <- ~w(context.md task_plan.md findings.md progress.md acceptance.md review.md handoff.md) do
+      config = Config.default(repo: repo, mode: mode, surface_profile: profile)
+      arguments = %{"document" => document, "future_field" => true}
+      response = mcp_tool(repo, session, "read_work_package_document", arguments, config: config)
+
+      resource =
+        MCPHarness.request(%{"jsonrpc" => "2.0", "id" => document, "method" => "resources/read", "params" => %{"uri" => "sympp://work-packages/#{package.id}/#{document}"}},
+          config: config,
+          session: session
+        )
+
+      assert get_in(response, ["result", "content", Access.at(0), "text"]) == get_in(resource, ["result", "contents", Access.at(0), "text"])
+      assert get_in(response, ["result", "structuredContent", "file"]) == document
+    end
+
+    # A fresh session recovers the original observation without replaying its mutation.
+    reconnected = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
+    response = mcp_tool(repo, reconnected, "read_work_package_document", %{"document" => "progress.md"})
+    assert [%{"id" => ^id, "sequence" => 1, "idempotency_key" => "consumed-once"} = event] = get_in(response, ["result", "structuredContent", "progress_events"])
+    assert event["payload"]["observation"] == %{"head_sha" => "consumer-head", "dependency_inputs" => [input]}
+    assert event["body"] =~ "Evidence is in the existing PR."
+    refute Jason.encode!(response) =~ "synthetic-secret-token"
+    refute Jason.encode!(response) =~ "must-not-leak"
+
+    for payload <- [
+          %{"type" => "branch", "source_tool" => "attach_branch", "branch" => "agent/example", "head_sha" => "branch-head"},
+          %{
+            "type" => "pr",
+            "source_tool" => "sync_pr",
+            "url" => "https://example.test/evidence?token=synthetic-private-value",
+            "head_sha" => "pr-head",
+            "check_summary" => %{"status" => "success", "private_payload" => "must-not-leak"}
+          }
+        ] do
+      key = "attach_pr:#{package.id}:#{ProgressEvents.metadata_idempotency_key(payload)}"
+      attrs = %{summary: "Prior typed evidence", payload: payload, idempotency_key: key}
+      assert {:ok, _} = PlanningRepository.append_audit_progress_event(repo, assignment, attrs)
+    end
+
+    typed = mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"})
+    [_, branch, pr] = get_in(typed, ["result", "structuredContent", "progress_events"])
+    assert branch["payload"]["observation"] == %{"type" => "branch", "source_tool" => "attach_branch", "branch" => "agent/example", "head_sha" => "branch-head"}
+    assert pr["payload"]["observation"]["head_sha"] == "pr-head"
+    assert pr["payload"]["observation"]["check_summary"] == %{"status" => "success"}
+    refute Jason.encode!(typed) =~ "synthetic-private-value"
+    refute Jason.encode!(typed) =~ "must-not-leak"
+    assert branch["idempotency_key"] =~ ~r/^sha256:[a-f0-9]{64}$/
+    assert pr["idempotency_key"] =~ ~r/^sha256:[a-f0-9]{64}$/
+    assert {:ok, stored} = PlanningRepository.list_progress_events(repo, package.id)
+    generated_key = List.last(stored).idempotency_key
+    expected_identity = "sha256:" <> Base.encode16(:crypto.hash(:sha256, generated_key), case: :lower)
+    assert pr["idempotency_key"] == expected_identity
+    refute Jason.encode!(typed) =~ generated_key
+    handoff = mcp_tool(repo, reconnected, "read_work_package_document", %{"document" => "handoff.md"})
+    assert List.last(get_in(handoff, ["result", "structuredContent", "latest_progress"]))["idempotency_key"] == expected_identity
+    refute Jason.encode!(handoff) =~ generated_key
+
+    operator_key = "operator_sync_pr:#{package.id}:operator:" <> Base.url_encode64(:erlang.term_to_binary(%{"private_payload" => "hidden"}))
+    assert {:ok, _} = PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Encoded", body: "Safe body", idempotency_key: operator_key})
+    finding_history = mcp_tool(repo, session, "read_work_package_document", %{"document" => "findings.md"})
+    assert List.last(get_in(finding_history, ["result", "structuredContent", "findings"]))["idempotency_key"] =~ ~r/^sha256:[a-f0-9]{64}$/
+    refute Jason.encode!(finding_history) =~ operator_key
+
+    finding = mcp_tool(repo, session, "read_work_package_document", %{"document" => "findings.md"}) |> get_in(["result", "structuredContent", "findings", Access.at(0)])
+    assert finding["sequence"] == 1
+    assert finding["idempotency_key"] == "finding-once"
+    assert finding["body"] == "Recover the finding body"
+  end
+
+  test "native history cursors recover every older row while appends leave the boundary unchanged", %{repo: repo} do
+    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-PAGED-DOCS", kind: "mcp"))
+    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
+    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
+    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
+
+    for n <- 1..205 do
+      assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Progress #{n}", idempotency_key: "event-#{n}"})
+      assert {:ok, _} = PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Finding #{n}", body: "Evidence #{n}", idempotency_key: "finding-#{n}"})
+      assert {:ok, _} = PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Artifact #{n}", path: "evidence/#{n}"})
+    end
+
+    for {document, collection} <- [{"progress.md", "progress_events"}, {"findings.md", "findings"}, {"handoff.md", "artifacts"}] do
+      first = mcp_tool(repo, session, "read_work_package_document", %{"document" => document}) |> get_in(["result", "structuredContent"])
+      assert Enum.map(first[collection], & &1["sequence"]) == Enum.to_list(106..205)
+      assert first["omitted"][collection] == 105
+      assert first["next_before_sequence"] == 106
+
+      assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Concurrent append #{document}"})
+      if document == "findings.md", do: PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Concurrent append", body: document})
+      if document == "handoff.md", do: PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Concurrent append", path: document})
+
+      second = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => first["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+      assert Enum.map(second[collection], & &1["sequence"]) == Enum.to_list(6..105)
+      assert second["omitted"][collection] == 5
+      last = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => second["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+      assert Enum.map(last[collection], & &1["sequence"]) == Enum.to_list(1..5)
+      assert last["omitted"][collection] == 0
+      assert last["next_before_sequence"] == nil
+      assert length(Enum.uniq_by(last[collection] ++ second[collection] ++ first[collection], & &1["id"])) == 205
+
+      if document == "handoff.md" do
+        assert List.last(last["latest_progress"])["summary"] == "Concurrent append handoff.md"
+        assert last["acceptance"] == package.acceptance_criteria
+      end
+    end
+  end
+
+  test "native document reads reject unsupported cursors and unauthorized scopes", %{repo: repo} do
+    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DOC-AUTH", kind: "mcp"))
+    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
+    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
+    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
+
+    for {arguments, reason} <- [
+          {%{"document" => "../progress.md"}, "unknown_virtual_file"},
+          {%{"document" => "review.md", "before_sequence" => 1}, "unsupported_document_cursor"},
+          {%{"document" => "progress.md", "before_sequence" => 0}, "invalid_before_sequence"},
+          {%{"document" => "progress.md", "before_sequence" => "1"}, "invalid_before_sequence"}
+        ] do
+      assert get_in(mcp_tool(repo, session, "read_work_package_document", arguments), ["error", "data", "reason"]) == reason
+    end
+
+    sibling = mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md", "work_package_id" => "sibling"})
+    assert get_in(sibling, ["error", "code"]) == -32_003
+    assert get_in(mcp_tool(repo, nil, "read_work_package_document", %{"document" => "progress.md"}), ["error", "code"]) == -32_001
+    repo.update_all(AccessGrant, set: [expires_at: DateTime.add(DateTime.utc_now(:microsecond), -1, :second)])
+    assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"}), ["error", "data", "reason"]) == "expired"
+    assert {:ok, _} = AccessGrantService.revoke(repo, minted.grant.id)
+    assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"}), ["error", "data", "reason"]) == "revoked"
   end
 end

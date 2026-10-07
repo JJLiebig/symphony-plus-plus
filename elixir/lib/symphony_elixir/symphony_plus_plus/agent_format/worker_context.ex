@@ -99,6 +99,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
       |> base_payload("findings.md", opts)
       |> Map.put("findings", Enum.map(state.findings, &finding_payload/1))
       |> Map.put("omitted", %{"findings" => state.findings_omitted_count || 0})
+      |> put_continuation(state.findings, state.findings_omitted_count)
 
     {:ok, payload}
   end
@@ -109,6 +110,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
       |> base_payload("progress.md", opts)
       |> Map.put("progress_events", Enum.map(state.progress_events, &progress_event_payload/1))
       |> Map.put("omitted", %{"progress_events" => state.progress_events_omitted_count || 0})
+      |> put_continuation(state.progress_events, state.progress_events_omitted_count)
 
     {:ok, payload}
   end
@@ -149,6 +151,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
         "progress_events" => state.progress_events_omitted_count || 0,
         "artifacts" => state.artifacts_omitted_count || 0
       })
+      |> put_continuation(state.artifacts, state.artifacts_omitted_count)
 
     {:ok, payload}
   end
@@ -199,6 +202,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
   defp finding_payload(%Finding{} = finding) do
     %{
       "id" => finding.id,
+      "sequence" => finding.sequence,
+      "idempotency_key" => idempotency_identity(finding.idempotency_key),
       "title" => Redactor.redact_text(finding.title),
       "severity" => finding.severity,
       "body" => Redactor.redact_text(finding.body),
@@ -209,6 +214,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
   defp finding_summary_payload(%Finding{} = finding) do
     %{
       "id" => finding.id,
+      "sequence" => finding.sequence,
+      "idempotency_key" => idempotency_identity(finding.idempotency_key),
       "title" => Redactor.redact_text(finding.title),
       "severity" => finding.severity,
       "created_at" => timestamp(finding.created_at)
@@ -218,19 +225,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
   defp progress_event_payload(%ProgressEvent{} = event) do
     %{
       "id" => event.id,
+      "sequence" => event.sequence,
+      "idempotency_key" => idempotency_identity(event.idempotency_key),
       "summary" => Redactor.redact_text(event.summary),
       "status" => Redactor.redact_text(event.status),
       "body" => Redactor.redact_text(event.body),
       "actor_id" => Redactor.redact_text(event.actor_id),
       "actor_type" => Redactor.redact_text(event.actor_type),
       "created_at" => timestamp(event.created_at),
-      "payload" => payload_overview(event.payload || %{})
+      "payload" => progress_payload(event.payload || %{})
     }
   end
 
   defp progress_summary_payload(%ProgressEvent{} = event) do
     %{
       "id" => event.id,
+      "sequence" => event.sequence,
+      "idempotency_key" => idempotency_identity(event.idempotency_key),
       "summary" => Redactor.redact_text(event.summary),
       "status" => Redactor.redact_text(event.status),
       "created_at" => timestamp(event.created_at)
@@ -240,12 +251,70 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
   defp artifact_payload(%Artifact{} = artifact) do
     %{
       "id" => artifact.id,
+      "sequence" => artifact.sequence,
       "path" => Redactor.redact_text(artifact.path),
       "title" => Redactor.redact_text(artifact.title),
       "kind" => artifact.kind,
       "uri" => Redactor.redact_text(artifact.uri),
       "metadata" => payload_overview(artifact.metadata || %{})
     }
+  end
+
+  # Generated keys contain encoded payloads; fingerprint them without changing replay identity.
+  defp idempotency_identity(key) when is_binary(key) do
+    if String.contains?(key, ["mcp:", "operator:"]) do
+      "sha256:" <> Base.encode16(:crypto.hash(:sha256, key), case: :lower)
+    else
+      Redactor.redact_text(key)
+    end
+  end
+
+  defp idempotency_identity(nil), do: nil
+
+  defp put_continuation(payload, [first | _rest], omitted) when is_integer(omitted) and omitted > 0,
+    do: Map.put(payload, "next_before_sequence", first.sequence)
+
+  defp put_continuation(payload, _rows, _omitted), do: Map.put(payload, "next_before_sequence", nil)
+
+  # Only these existing observation fields are recoverable; arbitrary payloads stay summarized.
+  defp progress_payload(%{} = payload) do
+    fields =
+      case payload["type"] do
+        "branch" -> ~w(type source_tool branch head_sha)
+        "pr" -> ~w(type source_tool url repository number branch base_branch base_sha head_sha observed_at merged_at merge_commit_sha provider_reference)
+        _other -> ~w(head_sha)
+      end
+
+    observation = scalar_fields(payload, fields)
+
+    observation =
+      case payload["dependency_inputs"] do
+        inputs when is_list(inputs) ->
+          Map.put(observation, "dependency_inputs", inputs |> Enum.filter(&is_map/1) |> Enum.map(&scalar_fields(&1, ~w(dependency_id prerequisite_work_package_id candidate_head_sha))))
+
+        _other ->
+          observation
+      end
+
+    observation = if payload["type"] == "pr", do: pr_observation_states(payload, observation), else: observation
+    payload_overview(payload) |> Map.put("observation", agent_safe(observation))
+  end
+
+  defp progress_payload(payload), do: payload_overview(payload)
+
+  defp pr_observation_states(payload, observation) do
+    Enum.reduce(~w(check_summary review_state merge_state), observation, fn field, result ->
+      case payload[field] do
+        %{} = value -> Map.put(result, field, scalar_fields(value, ~w(status state conclusion decision merged draft mergeable mergeable_state)))
+        _other -> result
+      end
+    end)
+  end
+
+  defp scalar_fields(payload, fields) do
+    payload
+    |> Map.take(fields)
+    |> Map.filter(fn {_key, value} -> is_binary(value) or is_number(value) or is_boolean(value) or is_nil(value) end)
   end
 
   defp tool_agent_payload(%{"progress_event" => %{} = event} = payload) do

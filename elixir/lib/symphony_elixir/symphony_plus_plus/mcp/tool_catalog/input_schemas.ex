@@ -3,7 +3,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
 
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Comment
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{SoloTools, ToolCatalog}
-  alias SymphonyElixir.SymphonyPlusPlus.Planning.PlanNode
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.{PlanNode, Renderer}
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.{WorkPackage, WorkPackageDelivery}
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.{DecisionLogEntry, WorkRequest}
 
@@ -119,6 +119,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
 
   def worker_tool_input_schema("mark_ready") do
     schema(%{}, [])
+  end
+
+  def worker_tool_input_schema("read_work_package_document") do
+    schema(
+      %{
+        "document" => string_enum_schema(Renderer.virtual_files()),
+        "before_sequence" => integer_schema() |> Map.put("minimum", 1)
+      },
+      ["document"]
+    )
+    |> Map.put("additionalProperties", true)
   end
 
   def worker_tool_input_schema("update_task_plan") do
