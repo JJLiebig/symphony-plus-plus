@@ -127,7 +127,9 @@ context.
   Do not persist a duplicate goal or add a Review Suite-specific API.
 - On a tool-only host, discover the declared provider through its installed native
   entrypoint. For Review Suite, `codex plugin list --json` identifies the enabled
-  `review-suite@review-suite` plugin's `source.path`; use its `scripts/review.py`
+  `review-suite@review-suite` plugin's exact installed `version`; use
+  `CODEX_HOME/plugins/cache/review-suite/review-suite/<version>/scripts/review.py`
+  (unset or blank `CODEX_HOME` means `~/.codex`)
   with `--cd <worktree>`, the declared mode, base, and review brief. Follow the
   provider's returned actions and report its review id, result, and reviewed head.
   Use identical `--base` spelling for creation and status; declare frozen SHA bases in `review.args.base`.

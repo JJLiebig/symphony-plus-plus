@@ -25,18 +25,28 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
       now_ms: now_ms,
       ttl_ms: ttl_ms,
       runner: runner,
-      find_executable: find_executable
+      find_executable: find_executable,
+      codex_home: Keyword.get(opts, :codex_home, codex_home())
     })
   end
 
   defp observe_eligible([], _config), do: %{}
 
   defp observe_eligible(eligible, config) do
-    %{table: table, now_ms: now_ms, ttl_ms: ttl_ms, runner: runner, find_executable: find_executable} = config
+    %{
+      table: table,
+      now_ms: now_ms,
+      ttl_ms: ttl_ms,
+      runner: runner,
+      find_executable: find_executable,
+      codex_home: codex_home
+    } = config
+
+    discover_script = fn -> discover(runner, find_executable, codex_home) end
 
     if :ets.insert_new(table, {:refreshing, self()}) do
       try do
-        case cached(table, :review_suite_script, now_ms, ttl_ms, fn -> discover(runner, find_executable) end) do
+        case cached(table, :review_suite_script, now_ms, ttl_ms, discover_script) do
           {:ok, script} ->
             eligible
             |> Enum.group_by(&observation_key/1)
@@ -132,14 +142,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
       map_value(requirement, "type") == "review-suite"
   end
 
-  defp discover(runner, find_executable) do
+  defp codex_home do
+    case System.get_env("CODEX_HOME") do
+      home when is_binary(home) -> if String.trim(home) == "", do: Path.join(System.user_home!(), ".codex"), else: home
+      nil -> Path.join(System.user_home!(), ".codex")
+    end
+  end
+
+  defp discover(runner, find_executable, codex_home) do
     with codex when is_binary(codex) <- find_executable.("codex"),
          {:ok, output} <- runner.(codex, ["plugin", "list", "--json"], @timeout_ms, @max_output_bytes),
          {:ok, %{"installed" => installed}} when is_list(installed) <- Jason.decode(output),
          [plugin] <-
            Enum.filter(installed, &(map_value(&1, "pluginId") == "review-suite@review-suite" and map_value(&1, "enabled") == true)),
-         path when is_binary(path) <- plugin |> map_value("source") |> map_value("path"),
-         script = Path.join([path, "scripts", "review.py"]),
+         version when is_binary(version) <- map_value(plugin, "version"),
+         true <- String.trim(version) != "",
+         script = Path.join([codex_home, "plugins", "cache", "review-suite", "review-suite", version, "scripts", "review.py"]),
          true <- File.regular?(script) do
       {:ok, script}
     else
