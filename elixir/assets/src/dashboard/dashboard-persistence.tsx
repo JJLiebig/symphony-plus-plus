@@ -1,21 +1,10 @@
-import { uniqueNonEmpty } from "@/lib/collections";
-import { useSyncExternalStore } from "react";
 import { DASHBOARD_DEBUG_ANIMATIONS_KEY, DASHBOARD_THEME_KEY, DASHBOARD_UI_STATE_KEY, DashboardTheme, DashboardUiState, LOCAL_DATE_FORMATTER, TOP_PANEL_ORDER, TopPanelDirection, TopPanelKey, WorkspaceTab, isRecord } from "./runtime";
-
-const focusBoardSettingListeners = new Set<() => void>();
 
 type RepoActivitySummary = {
   requested: number;
   active: number;
   implementing: number;
   finished: number;
-  guidanceCount: number;
-  blockerCount: number;
-};
-
-type RepoStateKeySummary = RepoActivitySummary & {
-  repoKey: string;
-  baseBranches: string[];
 };
 
 type RepoWorkItemsSummary = Pick<RepoActivitySummary, "requested" | "active" | "implementing" | "finished"> & {
@@ -82,57 +71,9 @@ export function readStoredHideEmptyWorkstreams() {
   return typeof storedValue === "boolean" ? storedValue : true;
 }
 
-export function readStoredShowWorkstreamContextBar() {
-  const storedValue = readDashboardUiState().showWorkstreamContextBar;
-  return typeof storedValue === "boolean" ? storedValue : true;
-}
-
-export function readStoredShowWelcomeToast() {
-  const storedValue = readDashboardUiState().showWelcomeToast;
-  return typeof storedValue === "boolean" ? storedValue : true;
-}
-
-export function readStoredUseFocusBoard() {
-  return readDashboardUiState().useFocusBoard === true;
-}
-
-export function useStoredUseFocusBoard() {
-  return useSyncExternalStore(subscribeToFocusBoardSetting, readStoredUseFocusBoard, () => false);
-}
-
-export function writeStoredUseFocusBoard(useFocusBoard: boolean) {
-  updateDashboardUiState((state) => ({ ...state, useFocusBoard }));
-  focusBoardSettingListeners.forEach((listener) => listener());
-}
-
-function subscribeToFocusBoardSetting(listener: () => void) {
-  focusBoardSettingListeners.add(listener);
-  return () => focusBoardSettingListeners.delete(listener);
-}
-
-export function readStoredRepoWorkstreamOpen(stateKey: string, fallback: boolean) {
-  const repoWorkstreams = readDashboardUiState().repoWorkstreams;
-  const storedOpen = repoWorkstreams?.[stateKey];
-  return typeof storedOpen === "boolean" ? storedOpen : fallback;
-}
-
-export function writeStoredRepoWorkstreamOpen(stateKey: string, open: boolean) {
-  updateDashboardUiState((state) => ({
-    ...state,
-    repoWorkstreams: {
-      ...(state.repoWorkstreams || {}),
-      [stateKey]: open,
-    },
-  }));
-}
-
-export function readStoredFinishedRequestChildren() {
-  const stored = readDashboardUiState().finishedRequestChildren;
-  return isRecord(stored) ? Object.fromEntries(Object.entries(stored).filter(([, open]) => typeof open === "boolean")) as Record<string, boolean> : {};
-}
-
-export function writeStoredFinishedRequestChildren(finishedRequestChildren: Record<string, boolean>) {
-  updateDashboardUiState((state) => ({ ...state, finishedRequestChildren }));
+export function readStoredWorkScope() {
+  const scope = readDashboardUiState().workScope;
+  return typeof scope === "string" && scope ? scope : null;
 }
 
 export function writeDashboardUiStateValue<Key extends keyof DashboardUiState>(key: Key, value: DashboardUiState[Key]) {
@@ -208,21 +149,6 @@ export function shouldShowUpdateSimulationControls() {
   } catch {
     return false;
   }
-}
-
-export function defaultRepoWorkstreamOpen(repo: RepoActivitySummary) {
-  if (!repoWorkstreamHasActivity(repo)) return false;
-  return typeof window === "undefined" ? true : window.innerWidth >= 900;
-}
-
-export function repoWorkstreamStateKey(repo: RepoStateKeySummary) {
-  const branchKey = uniqueNonEmpty(repo.baseBranches).sort().join("|") || "main";
-  const activityKey = repoWorkstreamHasActivity(repo) ? "active" : "empty";
-  return `${repo.repoKey}::${branchKey}::${activityKey}`;
-}
-
-function repoWorkstreamHasActivity(repo: RepoActivitySummary) {
-  return repo.requested + repo.active + repo.implementing + repo.finished + repo.guidanceCount + repo.blockerCount > 0;
 }
 
 export function repoWorkstreamHasWorkItems(repo: RepoWorkItemsSummary) {

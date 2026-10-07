@@ -32,7 +32,7 @@ function isCurrentBootstrap(
 export function DashboardApp() { return <><DashboardDebugTools /><DashboardShell {...useDashboardController()} /></>; }
 function useDashboardController() {
   const [appState, dispatchApp] = useReducer(appStateReducer, null, createInitialAppState);
-  const { dashboard, error, hideEmptyWorkstreams, loading, refreshing, showWelcomeToast, showWorkstreamContextBar, theme, workspaceTab } = appState;
+  const { dashboard, error, hideEmptyWorkstreams, loading, refreshing, theme, workspaceTab } = appState;
   const [dialogState, dispatchDialog] = useReducer(appDialogReducer, initialAppDialogState);
   const [refreshInvalidation] = useState(createDashboardRefreshInvalidation);
   const [connectionIssue, setConnectionIssue] = useState<DashboardConnectionIssue | null>(null);
@@ -66,8 +66,6 @@ function useDashboardController() {
     if (query.trim()) setWorkspaceTab("workstreams");
   }, [setWorkspaceTab]);
   const setHideEmptyWorkstreams = useCallback((nextHideEmptyWorkstreams: boolean) => dispatchApp({ type: "patch", state: { hideEmptyWorkstreams: nextHideEmptyWorkstreams } }), []);
-  const setShowWorkstreamContextBar = useCallback((nextShowWorkstreamContextBar: boolean) => dispatchApp({ type: "patch", state: { showWorkstreamContextBar: nextShowWorkstreamContextBar } }), []);
-  const setShowWelcomeToast = useCallback((nextShowWelcomeToast: boolean) => dispatchApp({ type: "patch", state: { showWelcomeToast: nextShowWelcomeToast } }), []);
   const setSelectedAttention = useCallback((selectedAttention: AttentionTarget | null) => dispatchDialog({ type: "attention", selectedAttention }), []);
   const openGuidanceAttention = useCallback((item: GuidanceItem) => setSelectedAttention(attentionTargetForGuidance(item)), [setSelectedAttention]);
   const setSelectedCardDetail = useCallback((selectedCardDetail: CardDetailSelection | null) => dispatchDialog({ type: "cardDetail", selectedCardDetail }), []);
@@ -417,14 +415,6 @@ function useDashboardController() {
   }, [hideEmptyWorkstreams]);
 
   useEffect(() => {
-    writeDashboardUiStateValue("showWorkstreamContextBar", showWorkstreamContextBar);
-  }, [showWorkstreamContextBar]);
-
-  useEffect(() => {
-    writeDashboardUiStateValue("showWelcomeToast", showWelcomeToast);
-  }, [showWelcomeToast]);
-
-  useEffect(() => {
     applyDashboardTheme(theme);
   }, [theme]);
 
@@ -473,12 +463,13 @@ function useDashboardController() {
     ready: animationBaselineReady,
     soloSessions,
   });
+  const staleSince = dashboard && (connectionIssue || error) ? dashboard.generated_at ?? null : undefined;
+  const startRequest = useCallback(() => setNewRequestOpen(true), [setNewRequestOpen]);
   const workspacePanes = useMemo<Record<WorkspaceTab, React.ReactNode>>(
     () => ({
       workstreams: (
         <WorkstreamsPane
           repos={searchedWorkstreams.repos}
-          hiddenRepoCount={hiddenWorkstreamCount}
           searchActive={searchedWorkstreams.active}
           requestDetailsByRepo={searchedWorkstreams.requestDetailsByRepo} focusBoardReady={animationBaselineReady}
           now={dashboard?.generated_at}
@@ -488,7 +479,8 @@ function useDashboardController() {
           onSelectAttention={setSelectedAttention}
           onSelectGuidance={openGuidanceAttention}
           onSelectCard={setSelectedCardDetail}
-          showWorkstreamContextBar={showWorkstreamContextBar}
+          onStartRequest={startRequest}
+          staleSince={staleSince}
           updateAnimations={updateAnimations}
         />
       ),
@@ -499,13 +491,13 @@ function useDashboardController() {
       dashboard?.generated_at,
       attentionJumpTarget, animationBaselineReady,
       guidanceItems,
-      hiddenWorkstreamCount,
       searchedWorkstreams,
       setSelectedCardDetail,
       setSelectedAttention,
       openGuidanceAttention,
-      showWorkstreamContextBar,
       soloSessions,
+      staleSince,
+      startRequest,
       soloLoading,
       updateAnimations,
     ],
@@ -524,7 +516,7 @@ function useDashboardController() {
     dashboard,
     dashboardSearchQuery,
     dialogState,
-    displayPreferences: { hideEmptyWorkstreams, showWorkstreamContextBar },
+    displayPreferences: { hideEmptyWorkstreams },
     error,
     guidanceItems,
     hiddenWorkstreamCount,
@@ -545,8 +537,6 @@ function useDashboardController() {
     onSelectAttention: setSelectedAttention,
     onSelectCard: setSelectedCardDetail,
     onSetNewRequestOpen: setNewRequestOpen,
-    onShowWorkstreamContextBarChange: setShowWorkstreamContextBar,
-    onShowWelcomeToastChange: setShowWelcomeToast,
     onSubmitComment: submitComment,
     onSubmitGuidanceAnswer: submitGuidanceAnswer,
     onUpdateArchiveAfterDays: updateArchiveAfterDays,
@@ -558,7 +548,6 @@ function useDashboardController() {
     repos,
     showUpdateSimulationControls,
     openDashboardOnBoot,
-    showWelcomeToast,
     soloSessionDeleteAfterDays,
     theme,
     toggleTheme,

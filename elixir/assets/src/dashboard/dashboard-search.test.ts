@@ -14,7 +14,7 @@ describe("dashboard search", () => {
     expect(matchesDashboardSearch("replay", ["ready plan analysis yearly"])).toBe(false);
   });
 
-  it("keeps repo matches scoped to the repo shell and trims to matching request/package content otherwise", () => {
+  it("shows a matching repository's work and trims to matching request/package content otherwise", () => {
     const pkg: WorkPackageCard = { id: "wp_backend", title: "Backend API", repo: "vod-api" };
     const detail: WorkRequestDetail = {
       work_request: { id: "wr_creator_roster", title: "Creator roster read model", repo: "vod-api" },
@@ -38,10 +38,28 @@ describe("dashboard search", () => {
     const requestMatch = filterWorkstreamsBySearch([repo], new Map([[repo.repoKey, [detail]]]), "creator roster");
     const miss = filterWorkstreamsBySearch([repo], new Map([[repo.repoKey, [detail]]]), "billing");
 
-    expect(repoMatch.repos[0]).toMatchObject({ repo: repo.repo, packages: [], requests: [] });
-    expect(repoMatch.requestDetailsByRepo.get(repo.repoKey)).toEqual([]);
+    expect(repoMatch.repos[0]).toMatchObject({ repo: repo.repo, packages: [pkg], requests: [detail.work_request] });
+    expect(repoMatch.requestDetailsByRepo.get(repo.repoKey)).toEqual([detail]);
     expect(requestMatch.repos[0].packages).toEqual([pkg]);
     expect(requestMatch.requestDetailsByRepo.get(repo.repoKey)).toEqual([detail]);
     expect(miss.repos).toEqual([]);
+  });
+
+  it("finds requests by the owner, actor, wait, next step and eligibility shown on the Work board", () => {
+    const detail: WorkRequestDetail = {
+      work_request: { id: "wr_board", title: "Board request", repo: "vod-api" },
+      work_packages: [{
+        id: "wp_ui", work_request_id: "wr_board", title: "UI wiring", status: "ready_for_merge",
+        activity_signal: { accountable_owner: { id: "chief-ui" }, current_actor: { name: "Opus", role: "worker" }, stage: "ready_for_merge", waiting_reason: "dependency_not_delivered", next_actor: "architect", next_action: "deliver_prerequisites" },
+        merge_eligibility: { eligible: false, reason_codes: ["dependency_not_delivered"], next_action: "deliver_prerequisites" },
+      }],
+    };
+    const repo: RepoSummary = { repoKey: "vod-api", repo: "vod-api", baseBranches: ["main"], requested: 0, active: 1, implementing: 0, finished: 0, guidanceCount: 0, blockerCount: 0, packages: [], requests: [detail.work_request] };
+    const details = new Map([[repo.repoKey, [detail]]]);
+
+    for (const query of ["chief-ui", "opus", "prerequisite delivery", "architect", "qualified"]) {
+      expect(filterWorkstreamsBySearch([repo], details, query).requestDetailsByRepo.get(repo.repoKey)).toEqual([detail]);
+    }
+    expect(filterWorkstreamsBySearch([repo], details, "ready to merge").repos).toEqual([]);
   });
 });

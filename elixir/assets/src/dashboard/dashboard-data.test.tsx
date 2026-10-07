@@ -1,11 +1,8 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { activeBlockerItems, allPackages, FINISHED_HIGHLIGHT_LIMIT, recentFinishedHighlights, repoSummaries } from "./dashboard-data";
 import { dashboardContentEqual } from "./dashboard-content-equality";
-import { RepoSummaryStrip } from "./repo-workstream";
 import type { ActiveBlockingEdge, DashboardPayload, WorkPackageCard, WorkRequestCard, WorkRequestDetail } from "@/types/dashboard";
-import type { RepoSummary } from "./dashboard-data";
 
 describe("dashboard data helpers", () => {
   it("compares dashboard content structurally while ignoring only the top-level timestamp", () => {
@@ -327,26 +324,6 @@ describe("dashboard data helpers", () => {
   it("does not render unowned runtime signals as WorkPackage cards", () => {
     expect(allPackages({ work_packages: [{ id: "pkg-unowned", status: "implementing" }] })).toEqual([]);
   });
-
-  it("hides zero plan and attention plates from repo summaries", () => {
-    const repo = repoSummary({ guidanceCount: 0, blockerCount: 0 });
-    const html = renderToStaticMarkup(<RepoSummaryStrip repo={repo} categoryCounts={{ requests: 1, planNodes: 0, slices: 2 }} />);
-
-    expect(html).toContain("Requests");
-    expect(html).toContain("WorkPackages");
-    expect(html).not.toContain("Plan Nodes");
-    expect(html).not.toContain("Guidance Needed");
-    expect(html).not.toContain("Active Blockers");
-  });
-
-  it("shows non-zero plan and attention plates in repo summaries", () => {
-    const repo = repoSummary({ guidanceCount: 1, blockerCount: 2 });
-    const html = renderToStaticMarkup(<RepoSummaryStrip repo={repo} categoryCounts={{ requests: 1, planNodes: 3, slices: 2 }} />);
-
-    expect(html).toContain("Plan Nodes");
-    expect(html).toContain("Guidance Needed");
-    expect(html).toContain("Active Blockers");
-  });
 });
 
 function finishedPackage(id: string, updatedAt: string): WorkPackageCard {
@@ -369,22 +346,5 @@ function finishedRequest(id: string, updatedAt: string): WorkRequestCard {
     repo_display: "symphony-plus-plus",
     status: "completed",
     updated_at: updatedAt,
-  };
-}
-
-function repoSummary(overrides: Partial<RepoSummary>): RepoSummary {
-  return {
-    active: 0,
-    baseBranches: ["main"],
-    blockerCount: 0,
-    finished: 0,
-    guidanceCount: 0,
-    implementing: 0,
-    packages: [],
-    repo: "symphony-plus-plus",
-    repoKey: "symphony-plus-plus",
-    requested: 0,
-    requests: [],
-    ...overrides,
   };
 }

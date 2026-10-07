@@ -4,14 +4,14 @@ export function formatStatus(status?: string | null) {
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
-  merge_ready: "Ready For Merge",
+  merge_ready: "Qualified",
   ready_to_finish: "Ready To Finish",
   in_progress: "Active",
   needs_attention: "Needs Attention",
   started_paused: "Started / Paused",
   completed: "Completed",
   merging: "Merging",
-  ready_for_merge: "Merge Ready",
+  ready_for_merge: "Qualified",
   ci_waiting: "CI Waiting",
 };
 

@@ -301,15 +301,15 @@ export function NewRequestDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Dispatch Shape">
+                <Field label="Delivery">
                   <Select value={form.desired_dispatch_shape} onValueChange={(value) => updateForm({ type: "patch", patch: { desired_dispatch_shape: value } })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {["architect_led_feature_branch", "single_package", "direct_main_fix", "investigation_first"].map((value) => (
+                      {DISPATCH_SHAPES.map(([value, label]) => (
                         <SelectItem key={value} value={value}>
-                          {formatStatus(value)}
+                          {label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -413,6 +413,14 @@ function AnimatedDetailBody({ motionKey, children }: { motionKey: string; childr
     </div>
   );
 }
+
+// Existing intake shapes with operator-facing names: direct for small clear work, architect-led for larger features.
+const DISPATCH_SHAPES = [
+  ["single_package", "Direct delivery"],
+  ["architect_led_feature_branch", "Architect-led"],
+  ["direct_main_fix", "Direct main fix"],
+  ["investigation_first", "Investigation first"],
+] as const;
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

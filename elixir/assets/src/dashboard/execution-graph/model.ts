@@ -1,4 +1,4 @@
-import type { PackageOperationalState, WorkPackageActivitySignal, WorkPackageDependencySignal, WorkPackagePrSignal, WorkPackageReviewSignal, WorkPackageWorkerSignal } from "@/types/dashboard";
+import type { PackageOperationalState, WorkPackageActivitySignal, WorkPackageDependencySignal, WorkPackageMergeEligibility, WorkPackagePrSignal, WorkPackageReviewSignal, WorkPackageWorkerSignal } from "@/types/dashboard";
 import { isFinishedBoardStatus } from "@/lib/operational-state";
 import { layoutGroupChildren, projectGroupDependencies } from "./group-layout";
 import { topologicalEntityOrder } from "./topological-order";
@@ -61,6 +61,7 @@ export type ExecutionGraphWorkPackageSignals = {
   review_signal?: WorkPackageReviewSignal | null;
   dependency_signal?: WorkPackageDependencySignal | null;
   activity_signal?: WorkPackageActivitySignal | null;
+  merge_eligibility?: WorkPackageMergeEligibility | null;
 };
 
 export type ExecutionGraphEntityState = {

@@ -5,7 +5,6 @@ import path from "node:path";
 import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type ViteDevServer } from "vite";
-import { DASHBOARD_UI_STATE_KEY } from "./runtime";
 
 let browser: Browser;
 let server: ViteDevServer;
@@ -64,7 +63,6 @@ describe("focus board interactions", () => {
 
   it("toggles the docked workbench and keeps it stable while selection swaps", async () => {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
-    await enableFocusBoard(page);
     page.setDefaultTimeout(3_000);
     let releaseDeferred!: () => void;
     const deferredReady = new Promise<void>((resolve) => {
@@ -99,41 +97,37 @@ describe("focus board interactions", () => {
     expect(await board.getAttribute("aria-busy")).toBe("true");
     expect(await board.getByText("Loading latest activity…", { exact: true }).isVisible()).toBe(true);
     expect(await board.getByText(/open across repositories/).count()).toBe(0);
-    expect(await board.getByRole("region", { name: /Moving now/ }).count()).toBe(0);
-    expect(await page.locator('.workstream-repo-card [data-request-id="wr-interaction"]').count()).toBe(1);
+    expect(await page.locator(".workstream-repo-card").count()).toBe(0);
 
     releaseDeferred();
     await board.locator('[data-request-id="wr-interaction"]').waitFor({ state: "attached" });
     await board.getByText("3 open across repositories", { exact: true }).waitFor();
     expect(await board.getByText("Loading latest activity…", { exact: true }).count()).toBe(0);
+    for (const id of ["wr-interaction", "wr-earlier-lane", "wr-following-group"]) expect(await board.locator(`.focus-board__groups [data-request-id="${id}"]`).count()).toBe(1);
+    expect(await page.getByText(/Experimental|Use Focus Board/).count()).toBe(0);
     const workbench = board.locator(".focus-board__workbench");
     const selected = board.locator('[data-request-id="wr-following-group"]');
     const next = board.locator('[data-request-id="wr-interaction"]');
     await workbench.getByText("Following group request", { exact: true }).waitFor();
-    await page.keyboard.press("Escape");
-    await page.locator(".dialog-overlay").waitFor({ state: "hidden" });
     expect(await selected.locator(".v3-request-main").getAttribute("aria-pressed")).toBe("true");
-    expect(await workbench.getAttribute("data-mode")).toBe("frontier");
-    expect(await board.locator(".focus-board__shelf-row").evaluateAll((rows) => rows.every((row) => row.scrollWidth === row.clientWidth))).toBe(true);
-    expect(await board.locator(".focus-board__shelf-row .v3-request-row").evaluateAll((cards) => cards.every((card) => card.scrollHeight === card.clientHeight))).toBe(true);
+    expect(await workbench.getAttribute("data-mode")).toBe("tree");
+    expect(await board.locator(".focus-board__groups").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await board.locator(".focus-board__workbench-reveal").evaluate((element) => getComputedStyle(element).viewTransitionName)).toBe("focus-workbench");
+
+    const fullMap = workbench.getByRole("button", { name: "Full map" });
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".focus-board__mode-switch button:last-child")?.disabled);
+    await fullMap.click();
+    expect(await workbench.getAttribute("data-mode")).toBe("full");
     const graphViewport = workbench.locator(".execution-graph__viewport");
     await graphViewport.waitFor();
     expect(await graphViewport.evaluate((element) => getComputedStyle(element).scrollbarWidth)).toBe("none");
-    expect(await board.locator(".focus-board__workbench-reveal").evaluate((element) => getComputedStyle(element).viewTransitionName)).toBe("focus-workbench");
     const before = await workbench.evaluate((element) => ({ height: element.getBoundingClientRect().height, top: element.getBoundingClientRect().top, scrollY }));
-
-    const fullMap = workbench.getByRole("button", { name: "Full map" });
-    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('.focus-board__mode-switch button:last-child')?.disabled);
-    await fullMap.click();
-    expect(await workbench.getAttribute("data-mode")).toBe("full");
     await next.locator(".v3-request-main").click();
 
     expect(await board.getAttribute("data-focus-request-id")).toBe("wr-interaction");
     expect(await next.locator(".v3-request-main").getAttribute("aria-pressed")).toBe("true");
     expect(await workbench.getByText("Interaction request", { exact: true }).isVisible()).toBe(true);
-    await page.waitForFunction(() => document.querySelector(".focus-board__workbench")?.getAttribute("data-mode") === "frontier");
-    expect(await workbench.getAttribute("data-mode")).toBe("frontier");
-    expect(await board.getAttribute("data-focus-phase")).toBeNull();
+    expect(await workbench.getAttribute("data-mode")).toBe("full");
     const after = await workbench.evaluate((element) => ({ height: element.getBoundingClientRect().height, top: element.getBoundingClientRect().top, scrollY }));
     expect(after.top).toBe(before.top);
     expect(after.scrollY).toBe(before.scrollY);
@@ -143,19 +137,24 @@ describe("focus board interactions", () => {
     expect(await board.getAttribute("data-focus-request-id")).toBeNull();
     expect(await next.locator(".v3-request-main").getAttribute("aria-pressed")).toBe("false");
     await page.waitForFunction(() => document.querySelector(".focus-board__workbench-reveal")?.getAttribute("data-open") === "false");
-    expect(await board.locator(".focus-board__workbench-reveal").getAttribute("data-open")).toBe("false");
 
     await next.locator(".v3-request-main").click();
     expect(await board.getAttribute("data-focus-request-id")).toBe("wr-interaction");
     await page.waitForFunction(() => document.querySelector(".focus-board__workbench-reveal")?.getAttribute("data-open") === "true");
-    expect(await board.locator(".focus-board__workbench-reveal").getAttribute("data-open")).toBe("true");
+    await workbench.getByRole("button", { name: "Close Interaction request" }).click();
+    await page.waitForFunction(() => document.querySelector(".focus-board__workbench-reveal")?.getAttribute("data-open") === "false");
+    expect(await page.evaluate(() => document.activeElement?.closest("[data-request-id]")?.getAttribute("data-request-id"))).toBe("wr-interaction");
+    expect(await page.evaluate(() => document.activeElement?.classList.contains("v3-request-main"))).toBe(true);
+
+    await page.setViewportSize({ width: 390, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(await board.locator(".focus-board__groups .v3-request-row").evaluateAll((cards) => cards.every((card) => card.getBoundingClientRect().right <= window.innerWidth && card.scrollWidth <= card.clientWidth))).toBe(true);
 
     await page.close();
   }, 20_000);
 
   it("closes the blocker overview and modal when jumping to its WorkPackage", async () => {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
-    await enableFocusBoard(page);
     page.setDefaultTimeout(5_000);
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.route("**/api/v1/sympp/operator/config*", (route) =>
@@ -209,56 +208,7 @@ describe("focus board interactions", () => {
 
     await page.close();
   }, 20_000);
-
-  it("opens the stable repository hierarchy when jumping to nested attention", async () => {
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
-    await disableFocusBoard(page);
-    page.setDefaultTimeout(5_000);
-    await page.route("**/api/v1/sympp/operator/config*", (route) =>
-      route.fulfill({ json: { apiBase: "/api/v1/sympp/operator", basePath: "/sympp/board" } }),
-    );
-    await page.route("**/api/v1/sympp/operator/dashboard/events", (route) => route.abort());
-    await page.route("**/api/v1/sympp/operator/dashboard", (route) => route.fulfill({ json: attentionDashboard }));
-    await page.route("**/api/v1/sympp/operator/work-packages/wp-jump", (route) => route.fulfill({
-      json: { work_package: attentionPackage, blockers: [attentionBlocker] },
-    }));
-    await page.route("**/api/v1/sympp/operator/work-requests/wr-jump*", (route) => route.fulfill({
-      json: attentionDashboard.work_request_details[0],
-    }));
-
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
-    await page.waitForTimeout(500);
-    await page.keyboard.press("Escape");
-    await page.locator(".dialog-overlay").waitFor({ state: "hidden" });
-    await page.getByRole("button", { name: "Active Blockers: 1" }).click();
-    const panel = page.locator(".top-panel-inline");
-    await panel.getByRole("button", { name: /Open Blocked/ }).click();
-    const modal = page.locator(".attention-dialog");
-    await modal.getByTitle("Jump to Jump package").click();
-
-    const request = page.locator('.workstream-repo-card [data-request-id="wr-jump"]');
-    const group = request.locator('[data-group-id="group-jump"]');
-    const target = group.locator('[data-work-package-id="slice-jump"]');
-    await target.waitFor({ state: "visible" });
-    await page.waitForFunction(() => document.querySelector('[data-work-package-id="slice-jump"]')?.getAttribute("data-attention-jump") === "true");
-    expect(await request.getAttribute("data-expanded")).toBe("true");
-    expect(await group.locator(":scope > .v3-product-node-header .v3-product-node-chevron-button").getAttribute("aria-expanded")).toBe("true");
-    expect(await page.locator(".focus-board").count()).toBe(0);
-    await page.setViewportSize({ width: 700, height: 800 });
-    expect(await target.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
-    expect(await target.locator(":scope > .v3-row-badge-slot").evaluate((element) => getComputedStyle(element).gridColumnStart)).toBe("2");
-
-    await page.close();
-  }, 20_000);
 });
-
-async function enableFocusBoard(page: Awaited<ReturnType<Browser["newPage"]>>) {
-  await page.addInitScript((key) => localStorage.setItem(key, JSON.stringify({ useFocusBoard: true })), DASHBOARD_UI_STATE_KEY);
-}
-
-async function disableFocusBoard(page: Awaited<ReturnType<Browser["newPage"]>>) {
-  await page.addInitScript((key) => localStorage.setItem(key, JSON.stringify({ useFocusBoard: false })), DASHBOARD_UI_STATE_KEY);
-}
 
 function browserExecutablePath() {
   const bundled = chromium.executablePath();

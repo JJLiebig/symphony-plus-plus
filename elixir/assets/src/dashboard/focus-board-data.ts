@@ -1,19 +1,14 @@
-import type { WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
+import type { GuidanceItem, WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
 
+import { clarificationGuidanceItem } from "./dashboard-data";
+import { stripMarkdown } from "./dashboard-text";
 import type { RequestFrontierMode } from "./workstream-board";
 import { requestBoardState, workRequestIsTerminal, type BoardRowStateKind } from "./workstream-row-state";
 import type { ActionableAttentionCounts } from "./workstream-attention";
 
 export type FocusBoardLane = RequestFrontierMode;
 export type FocusBoardItem = { detail: WorkRequestDetail; finishedAt?: string; id: string; lane: FocusBoardLane };
-
-export function scrollFocusLane(lane: Pick<HTMLElement, "clientWidth" | "scrollLeft" | "scrollWidth">, deltaX: number, deltaY: number) {
-  const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
-  const maximum = Math.max(0, lane.scrollWidth - lane.clientWidth);
-  if (!delta || (delta < 0 && lane.scrollLeft <= 0) || (delta > 0 && lane.scrollLeft >= maximum - 1)) return false;
-  lane.scrollLeft = Math.max(0, Math.min(maximum, lane.scrollLeft + delta));
-  return true;
-}
+export type HumanDecision = { text: string; guidance?: GuidanceItem };
 
 const CLARIFICATION_STATES = new Set(["clarifying", "ready_for_clarification"]);
 const PRE_RUN_STATES = new Set([...CLARIFICATION_STATES, "ready_for_slicing"]);
@@ -39,6 +34,30 @@ export function buildFocusBoardItems(
     }
   }
   return items;
+}
+
+// Only explicit human input counts: open request questions, human-info guidance, or a package whose canonical next actor is human.
+export function requestHumanDecision(detail: WorkRequestDetail, guidanceItems: GuidanceItem[] = []): HumanDecision | null {
+  return questionDecision(detail, guidanceItems) ?? guidanceDecision(detail, guidanceItems) ?? activityDecision(detail);
+}
+
+function questionDecision(detail: WorkRequestDetail, guidanceItems: GuidanceItem[]): HumanDecision | null {
+  const question = detail.clarification_questions?.find((item) => item.status === "open");
+  if (!question) return null;
+  const guidance = guidanceItems.find((item) => item.source === "clarification" && item.question.id === question.id) ?? clarificationGuidanceItem(detail, question);
+  return { text: question.decision_prompt?.tl_dr || stripMarkdown(question.question) || "Open question", guidance };
+}
+
+function guidanceDecision(detail: WorkRequestDetail, guidanceItems: GuidanceItem[]): HumanDecision | null {
+  const packageIds = new Set((detail.work_packages ?? []).flatMap((slice) => [slice.id, slice.work_package_id]));
+  const guidance = guidanceItems.find((item) => item.source === "guidance" && item.guidance.status === "human_info_needed" && packageIds.has(item.packageId));
+  if (guidance?.source !== "guidance") return null;
+  return { text: guidance.guidance.human_info_reason || guidance.title, guidance };
+}
+
+function activityDecision(detail: WorkRequestDetail): HumanDecision | null {
+  const activity = (detail.work_packages ?? []).find((slice) => slice.activity_signal?.next_actor === "human")?.activity_signal;
+  return activity ? { text: activity.waiting_reason || "Human input requested" } : null;
 }
 
 export function requestHasExecutionBoard(detail: WorkRequestDetail) {

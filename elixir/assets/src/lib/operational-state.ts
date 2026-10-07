@@ -1,6 +1,7 @@
 import type { SignalTone, StateCardTone } from "@/components/dashboard/state-card-style";
 import { statusLabel } from "@/lib/status-labels";
-import type { PackageOperationalAttention, WorkRequestPackage, WorkPackageCard, WorkRequestCard } from "@/types/dashboard";
+import { isQualifiedState, qualifiedBadgeLabel } from "@/lib/delivery-eligibility";
+import type { PackageOperationalAttention, WorkPackageMergeEligibility, WorkRequestPackage, WorkPackageCard, WorkRequestCard } from "@/types/dashboard";
 
 export type BadgeTone = "default" | "secondary" | "outline" | "success" | "warning" | "danger" | "guidance" | "info" | "ready";
 export type BoardLane = "slices" | "implementing" | "finished";
@@ -196,7 +197,8 @@ export function sliceOperationalState(slice: WorkRequestPackage, pkg?: WorkPacka
   return slice.operational_state || pkg?.operational_state || null;
 }
 
-export function operationalLabel(operational?: WorkPackageCard["operational_state"], fallbackStatus?: string | null) {
+export function operationalLabel(operational?: WorkPackageCard["operational_state"], fallbackStatus?: string | null, eligibility?: WorkPackageMergeEligibility | null) {
+  if (isQualifiedState(operational?.key || fallbackStatus)) return qualifiedBadgeLabel(eligibility);
   return operational?.label || statusLabel(fallbackStatus);
 }
 

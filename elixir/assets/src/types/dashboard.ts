@@ -1,5 +1,5 @@
 import type { ProductTreeProjection } from "./product-tree";
-import type { DeliveryBoardWorkPackageSummary, WorkPackageActivitySignal, WorkPackageDependencySignal, WorkPackagePrSignal, WorkPackageReviewSignal, WorkPackageWorkerSignal } from "./delivery-signals";
+import type { DeliveryBoardWorkPackageSummary, WorkPackageActivitySignal, WorkPackageDependencySignal, WorkPackageMergeEligibility, WorkPackagePrSignal, WorkPackageReviewSignal, WorkPackageWorkerSignal } from "./delivery-signals";
 export type * from "./delivery-signals";
 export type { ActiveBlockingEdge, ActiveBlockingEdgeEndpoint, BlockerActor, WorkPackageBlocker } from "./dashboard-blockers";
 import type { ActiveBlockingEdge, WorkPackageBlocker } from "./dashboard-blockers";
@@ -315,6 +315,7 @@ export type WorkRequestPackage = {
   review_signal?: WorkPackageReviewSignal | null;
   dependency_signal?: WorkPackageDependencySignal | null;
   activity_signal?: WorkPackageActivitySignal | null;
+  merge_eligibility?: WorkPackageMergeEligibility | null;
   delivery?: WorkPackageDelivery | null;
   successor?: WorkPackageSuccessor | null;
   attention_reason_codes?: string[];
@@ -367,6 +368,7 @@ export type WorkRequestDeliveryBoard = {
     work_package?: DeliveryBoardWorkPackageSummary | null;
     successor?: WorkPackageSuccessor | null;
     operational_state?: PackageOperationalState | null;
+    merge_eligibility?: WorkPackageMergeEligibility | null;
     attention_reason_codes?: string[];
   }>;
 };

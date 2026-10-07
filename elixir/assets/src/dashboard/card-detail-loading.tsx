@@ -4,6 +4,7 @@ import { DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/di
 import { Loader2 } from "lucide-react";
 import type * as React from "react";
 import { formatStatus } from "@/lib/status-labels";
+import { requestMergeEligibility } from "@/lib/delivery-eligibility";
 import { operationalBadgeVariant, operationalLabel, sliceOperationalState } from "@/lib/operational-state";
 import type { CardDetailSelection, CardDetailStage } from "./runtime";
 import { repoDisplayName } from "./dashboard-persistence";
@@ -55,7 +56,7 @@ function RequestDetailLoadingContent({ detail, stage }: { detail: WorkRequestDet
     <DetailLoadingHeader
       title={request.title || request.id}
       eyebrow={`${repoDisplayName(request)} / ${request.base_branch || "main"} / ${request.work_type || "feature"}`}
-      badge={<Badge variant={operationalBadgeVariant(operational, request.status)}>{operationalLabel(operational, request.status)}</Badge>}
+      badge={<Badge variant={operationalBadgeVariant(operational, request.status)}>{operationalLabel(operational, request.status, requestMergeEligibility(detail))}</Badge>}
       stage={stage}
     />
   );
@@ -79,7 +80,7 @@ function SliceDetailLoadingContent({
     <DetailLoadingHeader
       title={slice.title || slice.id}
       eyebrow={`${repoDisplayName(request)} / ${request.base_branch || "main"} / work package`}
-      badge={<Badge variant={operationalBadgeVariant(operational, slice.status)}>{operationalLabel(operational, slice.status)}</Badge>}
+      badge={<Badge variant={operationalBadgeVariant(operational, slice.status)}>{operationalLabel(operational, slice.status, slice.merge_eligibility)}</Badge>}
       stage={stage}
     />
   );
@@ -93,7 +94,7 @@ function PackageDetailLoadingContent({ selection, stage }: { selection: Extract<
     <DetailLoadingHeader
       title={pkg.title || pkg.id}
       eyebrow={`${repoDisplayName(pkg)} / ${pkg.base_branch || "main"} / ${pkg.kind || "work package"}`}
-      badge={<Badge variant={operationalBadgeVariant(operational, pkg.status)}>{operationalLabel(operational, pkg.status)}</Badge>}
+      badge={<Badge variant={operationalBadgeVariant(operational, pkg.status)}>{operationalLabel(operational, pkg.status, selection.slice?.merge_eligibility)}</Badge>}
       stage={stage}
     />
   );

@@ -1,5 +1,6 @@
 import type { WorkRequestPackage, WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
 import type { ProductTreeCompletionMark, ProductTreeNode } from "@/types/product-tree";
+import { requestMergeEligibility } from "@/lib/delivery-eligibility";
 import { isFinishedBoardStatus, operationalLabel, sliceOperationalState } from "@/lib/operational-state";
 import type { BadgeTone } from "@/lib/operational-state";
 import type { StateCardTone } from "@/components/dashboard/state-card-style";
@@ -71,7 +72,7 @@ export function requestBoardState(
   return aggregateBoardRowState({
     blockerCount: counts.blockerCount,
     completionDone: workRequestIsTerminal(detail),
-    fallbackLabel: operationalLabel(request.operational_state, request.status),
+    fallbackLabel: operationalLabel(request.operational_state, request.status, requestMergeEligibility(detail)),
     fallbackStatus: rawStatus,
     guidanceCount: counts.guidanceCount,
     slices: detail.work_packages ?? [],
@@ -81,7 +82,7 @@ export function requestBoardState(
 
 export function requestStatusLabels(detail: WorkRequestDetail, packageById: Map<string, WorkPackageCard>) {
   const request = detail.work_request;
-  const labels = [operationalLabel(request.operational_state, request.status)];
+  const labels = [operationalLabel(request.operational_state, request.status, requestMergeEligibility(detail))];
 
   for (const node of detail.product_tree?.nodes ?? []) {
     labels.push(productNodeStatusLabel(node));
@@ -89,7 +90,7 @@ export function requestStatusLabels(detail: WorkRequestDetail, packageById: Map<
 
   for (const slice of detail.work_packages ?? []) {
     const pkg = packageById.get(slice.work_package_id || "");
-    labels.push(operationalLabel(sliceOperationalState(slice, pkg), slice.work_package_status || slice.status));
+    labels.push(operationalLabel(sliceOperationalState(slice, pkg), slice.work_package_status || slice.status, slice.merge_eligibility));
   }
 
   return labels;

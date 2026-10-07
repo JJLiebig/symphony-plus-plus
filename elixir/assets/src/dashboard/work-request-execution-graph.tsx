@@ -1,3 +1,4 @@
+import { isQualifiedState, qualifiedBadgeLabel } from "@/lib/delivery-eligibility";
 import { activityActorLabel, activityStageLabel, workActivityFacts } from "@/lib/operational-state-activity";
 import { memo, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
@@ -318,9 +319,9 @@ function workPackageActivityView(signal?: ExecutionGraphWorkPackageSignals) {
   const activity = signal?.activity_signal ?? signal?.operational_state?.activity_signal;
   if (!activity) return null;
   return {
-    stage: activityStageLabel(activity, signal?.review_signal),
-    ownership: `Owner: ${activity.accountable_owner?.id || "Unknown"} · Actor: ${activityActorLabel(activity.current_actor)}`,
-    facts: workActivityFacts(activity, signal?.review_signal).map(({ label, value }) => `${label}: ${value}`).join(". "),
+    stage: activityStageLabel(activity, signal?.review_signal, signal?.merge_eligibility),
+    ownership: `Owner: ${activity.accountable_owner?.id || "Unknown"} · Working now: ${activityActorLabel(activity.current_actor)}`,
+    facts: workActivityFacts(activity, signal?.review_signal, signal?.merge_eligibility).map(({ label, value }) => `${label}: ${value}`).join(". "),
   };
 }
 
@@ -410,7 +411,7 @@ function cardState(ref: ExecutionGraphWorkPackageRef, signal?: ExecutionGraphWor
     ?? operationalBlockerCardState(operational)
     ?? activeCardState(signal, now)
     ?? dependencyCardState(signal)
-    ?? fallbackCardState(status, operational);
+    ?? fallbackCardState(status, operational, signal?.merge_eligibility);
 }
 
 type CardState = {
@@ -452,7 +453,8 @@ function dependencyCardState(signal?: ExecutionGraphWorkPackageSignals): CardSta
   return { label: `Waiting ${dependency.satisfied}/${dependency.required}`, tone: "waiting" };
 }
 
-function fallbackCardState(status: string, operational?: ExecutionGraphWorkPackageRef["operational_state"]): CardState {
+function fallbackCardState(status: string, operational?: ExecutionGraphWorkPackageRef["operational_state"], eligibility?: ExecutionGraphWorkPackageSignals["merge_eligibility"]): CardState {
+  if (isQualifiedState(operational?.key || status)) return { label: qualifiedBadgeLabel(eligibility), tone: "ready" };
   const source = firstText([operational?.key, operational?.label, status]) ?? status;
   return { label: firstText([operational?.label]) ?? humanize(source), tone: cardTone(source.toLowerCase()) };
 }
