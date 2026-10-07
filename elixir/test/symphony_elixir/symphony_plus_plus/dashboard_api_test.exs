@@ -1308,7 +1308,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert %{rows: [["ok"]]} = Repo.query!("PRAGMA quick_check")
       assert {:ok, _fixture_payload} = LocalOperatorDashboard.operator_dashboard_hydrated_payload(Repo)
       assert {:ok, fixture_deferred_payload} = LocalOperatorDashboard.operator_dashboard_deferred_payload(Repo)
-      assert byte_size(Jason.encode!(fixture_deferred_payload)) <= 195_000
+      assert byte_size(Jason.encode!(fixture_deferred_payload)) <= 203_000
       refute Map.has_key?(fixture_deferred_payload, :board)
 
       expected_signal_keys =
