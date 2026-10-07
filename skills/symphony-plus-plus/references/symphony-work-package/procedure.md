@@ -37,14 +37,28 @@ cross-slice target, successor relation, audit closeout, or concurrency guard.
    decisions, and architect-owned completion step; it excludes siblings and
    the WorkRequest-wide plan. Reuse complete current assignment, acceptance,
    validation, and review fields actually returned to you. Fetch missing or
-   truncated fields from their canonical package resources, including
-   `sympp://work-packages/{id}/acceptance.md` and `review.md`. A summary or
+   truncated fields with `read_work_package_document({"document":"acceptance.md"})`
+   or `review.md`; canonical package resources remain available to resource-capable
+   hosts. A summary or
    inaccessible `structuredContent` is not proof of the complete contract.
 7. Read handoff, findings, and progress before continuing, including on a first
    local claim: it may inherit prior work. Context alone does not prove history
    is empty. Preserve prior decisions and investigate relevant omitted history
    before relying on an incomplete projection. Read the task plan only when it
-   adds useful execution context.
+   adds useful execution context. Use `read_work_package_document` with `document`
+   set to `handoff.md`, `findings.md`, or `progress.md`; it always reads the current
+   assignment. The other selectors are `context.md`, `task_plan.md`, `acceptance.md`,
+   and `review.md`. `read_context` still supplies the enriched assignment/dependency
+   contract, and `read_task_plan` supplies the version needed for updates.
+   Histories return at most 100 rows in chronological order. To recover older rows,
+   pass the returned `next_before_sequence` as `before_sequence` with the same
+   document until it is null. Omitted counts refer to older rows, and concurrent
+   appends do not move that boundary. Only findings, progress, and handoff artifacts
+   accept a cursor; a paged handoff keeps its current contract and latest progress.
+   Reconcile uncertain mutations using returned row id, sequence, redacted
+   idempotency key, body, and safe typed `payload.observation` fields. Read older
+   pages before retrying an uncertain append; do not substitute private-store or
+   operator history lookups.
 8. Do not create local `task_plan.md`, `findings.md`, or `progress.md` files as
    the source of truth.
 
@@ -104,6 +118,13 @@ context.
   supplies them, and the parent title and goal only to explain intent. Pass the
   brief through Review Suite's ordinary `--review-brief` or structured input.
   Do not persist a duplicate goal or add a Review Suite-specific API.
+- On a tool-only host, discover the declared provider through its installed native
+  entrypoint. For Review Suite, `codex plugin list --json` identifies the enabled
+  `review-suite@review-suite` plugin's `source.path`; use its `scripts/review.py`
+  with `--cd <worktree>`, the declared mode, base, and review brief. Follow the
+  provider's returned actions and report its review id, result, and reviewed head.
+  If the declared provider is missing, return that gate to the architect; do not
+  install another provider or invent a completion receipt.
 - Classify the provider's structured review result before handoff.
   A worker may commit `CONTINUE` only while the frozen WorkPackage contract is
   unchanged. Return findings, contract ambiguity, `REPLAN`, or `RESLICE` to

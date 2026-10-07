@@ -249,6 +249,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolArguments do
     end)
   end
 
+  defp validate_worker_arguments("read_work_package_document", arguments), do: {:ok, arguments}
+
   defp validate_worker_arguments(name, arguments) do
     allowed = MapSet.new(allowed_worker_argument_keys(name))
     unexpected = arguments |> Map.keys() |> Enum.reject(&MapSet.member?(allowed, &1))

@@ -424,7 +424,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
 
   @spec get_render_state(repo(), String.t()) :: {:ok, State.t()} | {:error, error()}
   def get_render_state(repo, work_package_id) when is_atom(repo) and is_binary(work_package_id) do
-    do_get_state(repo, work_package_id, :bounded, state_read_retry_attempts())
+    get_render_state(repo, work_package_id, nil, nil)
+  end
+
+  @spec get_render_state(repo(), String.t(), String.t() | nil, pos_integer() | nil) ::
+          {:ok, State.t()} | {:error, error()}
+  def get_render_state(repo, work_package_id, document, before_sequence) do
+    do_get_state(repo, work_package_id, {:bounded, document, before_sequence}, state_read_retry_attempts())
   end
 
   @spec get_task_plan_render_state(repo(), String.t()) :: {:ok, State.t()} | {:error, error()}
@@ -510,12 +516,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
     end
   end
 
-  defp load_state(repo, work_package_id, :bounded) do
-    with {:ok, work_package} <- WorkPackageRepository.get(repo, work_package_id),
-         {plan_nodes, plan_nodes_omitted_count} <- list_plan_nodes_for_render(repo, work_package_id),
-         {findings, findings_omitted_count} <- list_findings_for_render(repo, work_package_id),
-         {progress_events, progress_events_omitted_count} <- list_progress_events_for_render(repo, work_package_id),
-         {artifacts, artifacts_omitted_count} <- list_artifacts_for_render(repo, work_package_id) do
+  defp load_state(repo, work_package_id, :bounded), do: load_state(repo, work_package_id, {:bounded, nil, nil})
+
+  defp load_state(repo, id, {:bounded, document, before_sequence}) do
+    finding_cursor = if document == "findings.md", do: before_sequence
+    progress_cursor = if document == "progress.md", do: before_sequence
+    artifact_cursor = if document == "handoff.md", do: before_sequence
+
+    with {:ok, work_package} <- WorkPackageRepository.get(repo, id),
+         {plan_nodes, plan_nodes_omitted_count} <- list_plan_nodes_for_render(repo, id),
+         {findings, findings_omitted} <- list_history_for_render(repo, Finding, id, finding_cursor),
+         {progress_events, progress_omitted} <- list_history_for_render(repo, ProgressEvent, id, progress_cursor),
+         {artifacts, artifacts_omitted} <- list_history_for_render(repo, Artifact, id, artifact_cursor) do
       {:ok,
        %State{
          work_package: work_package,
@@ -524,9 +536,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
          progress_events: progress_events,
          artifacts: artifacts,
          plan_nodes_omitted_count: plan_nodes_omitted_count,
-         findings_omitted_count: findings_omitted_count,
-         progress_events_omitted_count: progress_events_omitted_count,
-         artifacts_omitted_count: artifacts_omitted_count
+         findings_omitted_count: findings_omitted,
+         progress_events_omitted_count: progress_omitted,
+         artifacts_omitted_count: artifacts_omitted
        }}
     end
   end
@@ -571,46 +583,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
     {:ok, rows}
   end
 
-  defp list_findings_for_render(repo, work_package_id) do
+  defp list_history_for_render(repo, schema, work_package_id, before_sequence) do
+    query = from(row in schema, where: row.work_package_id == ^work_package_id)
+    query = if is_nil(before_sequence), do: query, else: from(row in query, where: row.sequence < ^before_sequence)
+
     rows =
-      repo.all(
-        from(finding in Finding,
-          where: finding.work_package_id == ^work_package_id,
-          order_by: [desc: finding.sequence, desc: finding.id],
-          limit: @state_item_limit
-        )
-      )
+      repo.all(from(row in query, order_by: [desc: row.sequence, desc: row.id], limit: @state_item_limit))
       |> Enum.reverse()
 
-    {rows, omitted_count(repo, Finding, work_package_id, rows)}
-  end
-
-  defp list_progress_events_for_render(repo, work_package_id) do
-    rows =
-      repo.all(
-        from(progress_event in ProgressEvent,
-          where: progress_event.work_package_id == ^work_package_id,
-          order_by: [desc: progress_event.sequence, desc: progress_event.id],
-          limit: @state_item_limit
-        )
-      )
-      |> Enum.reverse()
-
-    {rows, omitted_count(repo, ProgressEvent, work_package_id, rows)}
-  end
-
-  defp list_artifacts_for_render(repo, work_package_id) do
-    rows =
-      repo.all(
-        from(artifact in Artifact,
-          where: artifact.work_package_id == ^work_package_id,
-          order_by: [desc: artifact.sequence, desc: artifact.id],
-          limit: @state_item_limit
-        )
-      )
-      |> Enum.reverse()
-
-    {rows, omitted_count(repo, Artifact, work_package_id, rows)}
+    {rows, max(repo.aggregate(query, :count, :id) - length(rows), 0)}
   end
 
   defp safe_all(repo, query_fun) do
