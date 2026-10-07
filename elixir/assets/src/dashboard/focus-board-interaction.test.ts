@@ -208,6 +208,37 @@ describe("focus board interactions", () => {
 
     await page.close();
   }, 20_000);
+
+  it("resolves an attention jump in the Work tree when the request has no usable graph", async () => {
+    const page = await browser.newPage({ viewport: { width: 700, height: 800 } });
+    page.setDefaultTimeout(5_000);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const treeOnly = { ...attentionDashboard, work_request_details: [{ ...attentionDashboard.work_request_details[0], product_tree: { ...attentionDashboard.work_request_details[0].product_tree, execution_graph: { available: false } } }] };
+    await page.route("**/api/v1/sympp/operator/config*", (route) =>
+      route.fulfill({ json: { apiBase: "/api/v1/sympp/operator", basePath: "/sympp/board" } }),
+    );
+    await page.route("**/api/v1/sympp/operator/dashboard/events", (route) => route.abort());
+    await page.route("**/api/v1/sympp/operator/dashboard", (route) => route.fulfill({ json: treeOnly }));
+    await page.route("**/api/v1/sympp/operator/work-packages/wp-jump", (route) => route.fulfill({
+      json: { work_package: attentionPackage, blockers: [attentionBlocker] },
+    }));
+    await page.route("**/api/v1/sympp/operator/work-requests/wr-jump*", (route) => route.fulfill({ json: treeOnly.work_request_details[0] }));
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    await page.getByRole("button", { name: "Active Blockers: 1" }).click();
+    await page.locator(".top-panel-inline").getByRole("button", { name: /Open Blocked/ }).click();
+    await page.locator(".attention-dialog").getByTitle("Jump to Jump package").click();
+
+    await page.waitForFunction(() => document.querySelector('.focus-board__workbench [data-work-package-id="slice-jump"]')?.getAttribute("data-attention-jump") === "true");
+    expect(await page.locator(".focus-board").getAttribute("data-focus-request-id")).toBe("wr-jump");
+    expect(await page.locator(".focus-board__workbench").getAttribute("data-mode")).toBe("tree");
+    const group = page.locator('.focus-board__workbench [data-group-id="group-jump"]');
+    expect(await group.locator(":scope > .v3-product-node-header .v3-product-node-chevron-button").getAttribute("aria-expanded")).toBe("true");
+    const target = page.locator('.focus-board__workbench [data-work-package-id="slice-jump"]');
+    expect(await target.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
+
+    await page.close();
+  }, 20_000);
 });
 
 function browserExecutablePath() {

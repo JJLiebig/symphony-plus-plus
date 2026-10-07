@@ -396,34 +396,24 @@ function useAttentionJump(
   updateView: (id: string, mode: WorkbenchMode) => void,
 ) {
   useEffect(() => {
-    if (!jumpTarget || handledToken.current >= jumpTarget.token || !items.some((item) => item.id === jumpTarget.requestId)) return;
-    updateView(jumpTarget.requestId, "full");
+    const item = jumpTarget && handledToken.current < jumpTarget.token ? items.find((candidate) => candidate.id === jumpTarget.requestId) : undefined;
+    if (item) updateView(item.id, requestHasExecutionBoard(item.detail) ? "full" : "tree");
   }, [handledToken, items, jumpTarget, updateView]);
   useEffect(() => {
-    if (!jumpTarget || handledToken.current >= jumpTarget.token || selectedItem?.id !== jumpTarget.requestId || mode !== "full") return;
+    if (!jumpTarget || handledToken.current >= jumpTarget.token || selectedItem?.id !== jumpTarget.requestId) return;
+    // Requests without a usable graph render the Work tree, so the jump resolves there.
+    const graph = requestHasExecutionBoard(selectedItem.detail);
+    if (graph && mode !== "full") return;
     const root = boardRef.current;
     if (!root) return;
     const reveal = () => {
-      let target: HTMLElement | null = root.querySelector(".focus-board__workbench");
-      const viewport = visibleGraphViewport(root);
-      if ((jumpTarget.groupIds.length || jumpTarget.workPackageId) && !viewport) return;
-      for (const groupId of jumpTarget.groupIds) {
-        const group = elementWithData(viewport!, "groupId", groupId);
-        if (!group) return;
-        const toggle = group.querySelector<HTMLButtonElement>(":scope > .execution-graph__group-header");
-        if (toggle?.getAttribute("aria-expanded") === "false") { toggle.click(); return; }
-        target = group;
-      }
-      if (jumpTarget.workPackageId) {
-        const workPackage = elementWithData(viewport!, "workPackageId", jumpTarget.workPackageId);
-        if (!workPackage) return;
-        target = workPackage;
-      }
+      const scope = graph ? visibleGraphViewport(root) : root.querySelector<HTMLElement>(".focus-board__workbench-body");
+      const target = scope ? attentionJumpElement(scope, jumpTarget, graph ? JUMP_GRAPH_TOGGLE : JUMP_TREE_TOGGLE) : null;
       if (!target) return;
       handledToken.current = jumpTarget.token;
       target.dataset.attentionJump = "true";
       target.scrollIntoView({ block: "center", inline: "center", behavior: dashboardPrefersReducedMotion() ? "auto" : "smooth" });
-      window.setTimeout(() => delete target!.dataset.attentionJump, 1_800);
+      window.setTimeout(() => delete target.dataset.attentionJump, 1_800);
       observer.disconnect();
     };
     const observer = new MutationObserver(reveal);
@@ -431,6 +421,23 @@ function useAttentionJump(
     const frame = requestAnimationFrame(reveal);
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
   }, [boardRef, handledToken, jumpTarget, mode, selectedItem]);
+}
+
+const JUMP_GRAPH_TOGGLE = ":scope > .execution-graph__group-header";
+const JUMP_TREE_TOGGLE = ":scope > .v3-product-node-header .v3-product-node-chevron-button";
+
+// Expands collapsed groups one at a time; returns null until the target is rendered.
+function attentionJumpElement(scope: HTMLElement, jumpTarget: AttentionJumpTarget, toggleSelector: string) {
+  let target: HTMLElement | undefined = scope.closest<HTMLElement>(".focus-board__workbench") ?? scope;
+  for (const groupId of jumpTarget.groupIds) {
+    const group = elementWithData(scope, "groupId", groupId);
+    if (!group) return null;
+    const toggle = group.querySelector<HTMLButtonElement>(toggleSelector);
+    if (toggle?.getAttribute("aria-expanded") === "false") { toggle.click(); return null; }
+    target = group;
+  }
+  if (jumpTarget.workPackageId) target = elementWithData(scope, "workPackageId", jumpTarget.workPackageId);
+  return target ?? null;
 }
 
 function animateFocusBoardUpdate(kind: FocusBoardTransition, prepare: () => void, update: () => void) {

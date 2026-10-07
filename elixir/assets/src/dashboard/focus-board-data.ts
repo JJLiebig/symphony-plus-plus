@@ -3,7 +3,7 @@ import type { GuidanceItem, WorkPackageCard, WorkRequestDetail } from "@/types/d
 import { clarificationGuidanceItem } from "./dashboard-data";
 import { stripMarkdown } from "./dashboard-text";
 import type { RequestFrontierMode } from "./workstream-board";
-import { requestBoardState, workRequestIsTerminal, type BoardRowStateKind } from "./workstream-row-state";
+import { requestBoardState, workPackageIsTerminal, workRequestIsTerminal, type BoardRowStateKind } from "./workstream-row-state";
 import type { ActionableAttentionCounts } from "./workstream-attention";
 
 export type FocusBoardLane = RequestFrontierMode;
@@ -49,15 +49,20 @@ function questionDecision(detail: WorkRequestDetail, guidanceItems: GuidanceItem
 }
 
 function guidanceDecision(detail: WorkRequestDetail, guidanceItems: GuidanceItem[]): HumanDecision | null {
-  const packageIds = new Set((detail.work_packages ?? []).flatMap((slice) => [slice.id, slice.work_package_id]));
+  const packageIds = new Set(currentPackages(detail).flatMap((slice) => [slice.id, slice.work_package_id]));
   const guidance = guidanceItems.find((item) => item.source === "guidance" && item.guidance.status === "human_info_needed" && packageIds.has(item.packageId));
   if (guidance?.source !== "guidance") return null;
   return { text: guidance.guidance.human_info_reason || guidance.title, guidance };
 }
 
 function activityDecision(detail: WorkRequestDetail): HumanDecision | null {
-  const activity = (detail.work_packages ?? []).find((slice) => slice.activity_signal?.next_actor === "human")?.activity_signal;
+  const activity = currentPackages(detail).find((slice) => slice.activity_signal?.next_actor === "human")?.activity_signal;
   return activity ? { text: activity.waiting_reason || "Human input requested" } : null;
+}
+
+// Retired or delivered packages keep their guidance rows, but they no longer ask anyone for input.
+function currentPackages(detail: WorkRequestDetail) {
+  return (detail.work_packages ?? []).filter((slice) => !workPackageIsTerminal(slice));
 }
 
 export function requestHasExecutionBoard(detail: WorkRequestDetail) {

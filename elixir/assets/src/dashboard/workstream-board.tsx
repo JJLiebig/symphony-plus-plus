@@ -139,7 +139,7 @@ function RequestFrontier({ summary, onSelectWorkPackage, onToggleAll, showAll }:
                 <span className="v3-request-frontier-title" title={item.title}><span className="v3-request-frontier-title-copy">{item.title}</span></span>
                 <span className="v3-request-frontier-meta">
                   <PullRequestBadge signal={item.pr} layout="frontier" />
-                  {item.activity && !item.signal ? <span className="v3-request-frontier-activity" data-frontier-measure="state" title={item.activity}>{item.activity}</span> : null}
+                  {item.activity ? <span className="v3-request-frontier-activity" data-frontier-measure="state" title={item.activity}>{item.activity}</span> : null}
                 </span>
                 {item.signal ? <span className="v3-request-frontier-fields"><WorkActivityFields activity={item.signal} review={item.slice.review_signal} eligibility={item.slice.merge_eligibility} /></span> : null}
               </li>
@@ -198,15 +198,21 @@ function frontierGroupIdentity(detail: WorkRequestDetail, slice: WorkRequestPack
 
 function frontierItem(slice: WorkRequestPackage, packageById: Map<string, WorkPackageCard>, overallLabel: string): RequestFrontierItem {
   const pkg = packageById.get(slice.work_package_id || slice.id);
-  const signal = sliceIsFinished(slice, pkg) ? undefined : slice.activity_signal ?? slice.operational_state?.activity_signal ?? pkg?.operational_state?.activity_signal ?? undefined;
+  const signal = frontierActivitySignal(slice, pkg);
   return {
-    activity: frontierActivity(slice, pkg, overallLabel),
+    // Labeled activity fields replace the summary, but a failed gate still names itself.
+    activity: signal ? frontierFailureActivity(slice.review_signal, slice.pr_signal?.checks) : frontierActivity(slice, pkg, overallLabel),
     id: slice.id,
     pr: slice.pr_signal ?? undefined,
     signal,
     slice,
     title: slice.title?.trim() || slice.id,
   };
+}
+
+function frontierActivitySignal(slice: WorkRequestPackage, pkg?: WorkPackageCard) {
+  if (sliceIsFinished(slice, pkg)) return undefined;
+  return slice.activity_signal ?? slice.operational_state?.activity_signal ?? pkg?.operational_state?.activity_signal ?? undefined;
 }
 
 function workPackageOwnerNode(detail: WorkRequestDetail, slice: WorkRequestPackage) {

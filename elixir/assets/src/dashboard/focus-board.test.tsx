@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
+import type { GuidanceItem, WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
 
 import { FocusBoard, FocusBoardFirstRun } from "./focus-board";
 import { buildFocusBoardItems, requestHumanDecision } from "./focus-board-data";
@@ -88,6 +88,20 @@ describe("focus board", () => {
     expect(requestHumanDecision(question)).toMatchObject({ text: "Open question", guidance: { source: "clarification" } });
     expect(requestHumanDecision(human)).toEqual({ text: "Pick retry policy" });
     expect(requestHumanDecision(architect)).toBeNull();
+    const retired = request("wr-retired", "Retired guidance", [slice("old", "superseded", { activity: { next_actor: "human", waiting_reason: "Obsolete choice" }, recordedAt: "2026-07-21T09:00:00Z" })]);
+    const guidance = { source: "guidance", packageId: "old", title: "Obsolete choice", guidance: { status: "human_info_needed" } } as unknown as GuidanceItem;
+    expect(requestHumanDecision(retired, [guidance])).toBeNull();
+  });
+
+  it("keeps a failed gate visible beside labeled package activity", () => {
+    const failing = request("wr-failing", "Failing checks", [slice("ui", "implementing", {
+      activity: { stage: "implementing", current_actor: { name: "Worker", role: "worker" } },
+      pr: { number: 7, checks: { status: "failing", current: 2, total: 5 } },
+    })]);
+    const html = renderBoard([failing]);
+
+    expect(html).toContain("CI 2/5 failed");
+    expect(html).toContain('<span class="work-activity-field__label">Working now</span><span class="work-activity-field__value">Worker / Worker</span>');
   });
 
   it("shows the package targeted by an active blocker edge under Needs attention", () => {
@@ -261,6 +275,7 @@ function slice(
     dependency?: WorkRequestPackage["dependency_signal"];
     group?: string;
     packageId?: string;
+    pr?: WorkRequestPackage["pr_signal"];
     recordedAt?: string;
     review?: WorkRequestPackage["review_signal"];
     worker?: WorkRequestPackage["worker_signal"];
@@ -274,6 +289,7 @@ function slice(
     title: id,
     status,
     activity_signal: options.activity,
+    pr_signal: options.pr,
     dependency_signal: options.dependency,
     review_signal: options.review,
     worker_signal: options.worker,
