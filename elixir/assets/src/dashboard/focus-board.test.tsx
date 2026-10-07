@@ -96,7 +96,7 @@ describe("focus board", () => {
   it("keeps a failed gate visible beside labeled package activity", () => {
     const failing = request("wr-failing", "Failing checks", [slice("ui", "implementing", {
       activity: { stage: "implementing", current_actor: { name: "Worker", role: "worker" } },
-      pr: { number: 7, checks: { status: "failing", current: 2, total: 5 } },
+      pr: { status: "open", number: 7, checks: { status: "failing", current: 2, total: 5 } },
     })]);
     const html = renderBoard([failing]);
 
