@@ -1,6 +1,6 @@
 import type { WorkRequestPackage, WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
 import type { ProductTreeCompletionMark, ProductTreeNode } from "@/types/product-tree";
-import { requestMergeEligibility } from "@/lib/delivery-eligibility";
+import { isQualifiedState, requestMergeEligibility } from "@/lib/delivery-eligibility";
 import { isFinishedBoardStatus, operationalLabel, sliceOperationalState } from "@/lib/operational-state";
 import type { BadgeTone } from "@/lib/operational-state";
 import type { StateCardTone } from "@/components/dashboard/state-card-style";
@@ -197,6 +197,8 @@ function sliceBoardStateKind(slice: WorkRequestPackage, pkg?: WorkPackageCard): 
     [sliceHasActiveWork(slice, pkg, status), "active"],
     [statusIn(DEFERRED_STATUSES, status), "deferred"],
     [isFinishedBoardStatus(status), "done"],
+    // Qualified work is idle until canonical eligibility hands it to the architect.
+    [isQualifiedState(status), slice.merge_eligibility?.eligible === true ? "ready" : "waiting"],
     [statusIn(WAITING_STATUSES, status), "waiting"],
     [statusIn(READY_STATUSES, status), "ready"],
     [statusIn(PLANNED_STATUSES, status), "planned"],
@@ -224,7 +226,7 @@ function boardRowState(kind: BoardRowStateKind, label?: string | null): BoardRow
 function boardRowStateFromStatus(status?: string | null, label?: string | null): BoardRowState {
   return firstMatchingBoardRowState([
     [statusIn(ACTIVE_WORK_STATUSES, status), "active"],
-    [statusIn(WAITING_STATUSES, status), "waiting", label],
+    [statusIn(WAITING_STATUSES, status) || isQualifiedState(status), "waiting", label],
     [statusIn(READY_STATUSES, status), "ready", label],
     [statusIn(PLANNED_STATUSES, status), "planned", label],
     [statusIn(DEFERRED_STATUSES, status), "deferred", label],
@@ -256,11 +258,9 @@ const ACTIVE_WORK_STATUSES = new Set([
   "dispatched",
   "implementing",
   "in_progress",
-  "merge_ready",
   "merging",
   "planning",
   "needs_closeout",
-  "ready_for_merge",
   "reviewing",
 ]);
 

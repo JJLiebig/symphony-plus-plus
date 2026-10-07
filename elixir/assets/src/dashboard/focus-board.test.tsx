@@ -189,6 +189,45 @@ describe("focus board", () => {
     for (const id of ["waiting-ui", "stale-ui", "missing-ui"]) expect(row(id)).not.toContain("Ready to merge");
   });
 
+  it("groups released qualified work by canonical eligibility unless other work is actually running", () => {
+    const qualified = (id: string, merge_eligibility?: WorkRequestPackage["merge_eligibility"], hasActiveWorker = false): WorkRequestPackage => ({
+      ...slice(id, "ready_for_merge", { worker: { status: "idle" } }),
+      work_package_status: "ready_for_merge",
+      operational_state: { key: "merge_ready", label: "Ready For Merge", has_active_worker: hasActiveWorker },
+      merge_eligibility,
+    });
+    const eligible = () => qualified("eligible", { work_package_id: "eligible", eligible: true, reason_codes: [], next_action: "verify_native_checks_and_review_then_merge" });
+    const notEligible = qualified("not-eligible", { work_package_id: "not-eligible", eligible: false, reason_codes: ["dependency_not_delivered"], next_action: "deliver_prerequisites" });
+    const details = [
+      request("wr-eligible", "Eligible only", [eligible()]),
+      request("wr-not-eligible", "Not eligible", [notEligible]),
+      request("wr-missing", "Missing eligibility", [qualified("missing")]),
+      request("wr-partly-eligible", "Partly eligible", [eligible(), notEligible]),
+      request("wr-mixed", "Mixed active", [eligible(), slice("implementing", "implementing")]),
+      request("wr-still-running", "Qualified still running", [qualified("running", { work_package_id: "running", eligible: true, reason_codes: [] }, true)]),
+      request("wr-attention", "Eligible but blocked", [eligible()]),
+    ];
+    const items = buildFocusBoardItems(details, Date.now(), new Map(), new Map([["wr-attention", { blockerCount: 1, guidanceCount: 0 }]]));
+
+    expect(items.map(({ id, lane }) => [id, lane])).toEqual([
+      ["wr-eligible", "next"],
+      ["wr-not-eligible", "waiting"],
+      ["wr-missing", "waiting"],
+      ["wr-partly-eligible", "waiting"],
+      ["wr-mixed", "active"],
+      ["wr-still-running", "active"],
+      ["wr-attention", "attention"],
+    ]);
+    const html = renderBoard(details.slice(0, 3));
+    expect(groupHtml(html, "next")).toContain("Eligible only");
+    expect(groupHtml(html, "next")).toContain("Ready to merge");
+    expect(html).toContain('In progress<span class="focus-board__count">0</span>');
+    expect(html).toContain('Waiting<span class="focus-board__count">2</span>');
+    const waiting = html.slice(html.indexOf('data-lane="waiting"'), html.indexOf("focus-board__workbench-reveal"));
+    for (const title of ["Not eligible", "Missing eligibility"]) expect(waiting).toContain(title);
+    expect(waiting).not.toContain("Ready to merge");
+  });
+
   it("starts first-run work inline instead of a welcome interruption", () => {
     const html = renderToStaticMarkup(createElement(FocusBoardFirstRun, { onStartRequest: () => undefined }));
 
