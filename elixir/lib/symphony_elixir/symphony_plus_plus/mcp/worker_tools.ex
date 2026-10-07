@@ -78,7 +78,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
          work_package_id = Session.work_package_id(session),
          {:ok, state, _session} <- Surface.read_work_package_document_state(repo, session, work_package_id, document, Map.get(arguments, "before_sequence")),
          {:ok, payload} <- WorkerContext.virtual_file_payload(state, document, uri: "sympp://work-packages/#{work_package_id}/#{document}") do
-      {:ok, ToolResult.read_tool_result(payload)}
+      {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.read_tool_result(payload) end)}
     else
       {:error, _code, _message, _data} = error -> error
       {:tool_error, reason} -> invalid_params_error("read_work_package_document", reason)

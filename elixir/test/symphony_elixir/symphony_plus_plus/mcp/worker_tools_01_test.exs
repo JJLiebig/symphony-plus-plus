@@ -998,12 +998,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     id = observation.id
     mcp_tool(repo, session, "append_finding", %{"title" => "Prior evidence", "body" => "Recover the finding body", "idempotency_key" => "finding-once"})
 
-    for document <- ~w(context.md task_plan.md findings.md progress.md acceptance.md review.md handoff.md) do
-      response = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "future_field" => true})
+    for {mode, profile} <- [{:stdio, :full}, {:stdio, :worker}, {:http, :worker}],
+        document <- ~w(context.md task_plan.md findings.md progress.md acceptance.md review.md handoff.md) do
+      config = Config.default(repo: repo, mode: mode, surface_profile: profile)
+      arguments = %{"document" => document, "future_field" => true}
+      response = mcp_tool(repo, session, "read_work_package_document", arguments, config: config)
 
       resource =
         MCPHarness.request(%{"jsonrpc" => "2.0", "id" => document, "method" => "resources/read", "params" => %{"uri" => "sympp://work-packages/#{package.id}/#{document}"}},
-          repo: repo,
+          config: config,
           session: session
         )
 
