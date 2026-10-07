@@ -585,7 +585,7 @@ async function runCase(clientCount, shell, mode = "normal") {
         assert.equal(processAlive(backendPid), false, "Startup timeout orphaned its backend child.");
         assert.equal(processAlive(Number(starting.backend.pid)), false);
         assert.ok(await portAvailable(backendPort));
-        return { mode: "prepared_timeout", processes_after: 0, listeners: 0 };
+        return { mode: "prepared_timeout", prepared, processes_after: 0, listeners: 0 };
       }
     }
 

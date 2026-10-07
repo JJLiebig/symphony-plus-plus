@@ -5,7 +5,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
 $pluginRoot = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp"
 $launcher = Join-Path $pluginRoot "scripts/start-sympp-mcp.ps1"
-$tempRoot = Join-Path $PSScriptRoot (".persistent-artifact-" + [guid]::NewGuid().ToString("N"))
+$fixtureParent = if ($ArtifactManifest) { [IO.Path]::GetTempPath() } else { $PSScriptRoot }
+$tempRoot = Join-Path $fixtureParent (".persistent-artifact-" + [guid]::NewGuid().ToString("N"))
 $runtimeFile = Join-Path $tempRoot "state/runtime.json"
 $backendProcessId = $null
 $backendStartTicks = $null
@@ -56,7 +57,7 @@ function Send-BridgeRequest($Process, $Request) {
   $Process.StandardInput.WriteLine(($Request | ConvertTo-Json -Depth 12 -Compress))
   $Process.StandardInput.Flush()
   $line = $Process.StandardOutput.ReadLineAsync()
-  if (-not $line.Wait(120000) -or $null -eq $line.Result) { throw "Bridge closed or timed out waiting for MCP response." }
+  if (-not $line.Wait(120000) -or $null -eq $line.Result) { throw "Bridge closed or timed out waiting for MCP response id=$($Request.id) tool=$($Request.params.name)." }
   $response = $line.Result | ConvertFrom-Json
   if ($response.error -or $response.result.isError) { throw "MCP request failed: $($line.Result)" }
   return $response
@@ -108,6 +109,10 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
       artifact_root = [string]$activeState.artifact.root
       marker_session_id = $MarkerSessionId
     }
+  } catch {
+    $failure = $_.Exception.Message
+    if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) }
+    throw "$failure Launcher: $($stderr.GetAwaiter().GetResult())"
   } finally {
     if (-not $process.HasExited) { $process.Kill($true) }
     $process.Dispose()
@@ -134,7 +139,7 @@ function Wait-ManagedRuntimeStopped([int]$ProcessIdValue, [int]$Port) {
 
 try {
   foreach ($path in @(
-      $tempRoot, (Split-Path -Parent $runtimeFile), (Join-Path $tempRoot "logs"), (Join-Path $tempRoot "database"),
+      $tempRoot, (Split-Path -Parent $runtimeFile), (Join-Path $tempRoot "logs"), (Join-Path $tempRoot "trace"), (Join-Path $tempRoot "database"),
       (Join-Path $tempRoot "tmp"), (Join-Path $tempRoot "xdg/config"),
       (Join-Path $tempRoot "xdg/cache"), (Join-Path $tempRoot "xdg/data")
     )) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
@@ -166,8 +171,8 @@ try {
     $environment = @{
       CODEX_HOME = $codexHome; SYMPP_HOME = Join-Path $tempRoot "runtime-home"; SYMPP_RUNTIME_FILE = $runtimeFile
       SYMPP_DATABASE = $database; SYMPP_LOG_DIR = Join-Path $tempRoot "logs"; SYMPP_LAUNCHER_TRACE_DIR = Join-Path $tempRoot "trace"
-      SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = "0"; SYMPP_OPEN_DASHBOARD = "0"
-      SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"; SYMPP_STARTUP_LOCK_TIMEOUT_SEC = "180"
+      SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = [string]$backendPort; SYMPP_OPEN_DASHBOARD = "0"
+      SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"
       HOME = Join-Path $tempRoot "profile"; USERPROFILE = Join-Path $tempRoot "profile"
       TEMP = Join-Path $tempRoot "tmp"; TMP = Join-Path $tempRoot "tmp"
     }
@@ -180,14 +185,14 @@ try {
       if ($readiness.ledger.identity.kind -ne "sqlite" -or [IO.Path]::GetFullPath($actualPath) -ine [IO.Path]::GetFullPath($database)) { throw "Packaged runtime opened a different database." }
       if ($activeState.runtime_mode -ne "artifact" -or $readiness.source.revision -ne $manifest.source_revision) { throw "Packaged runtime source identity mismatch." }
     }
-    $first = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -CreateMarker -OnAttached {
+    $first = Invoke-McpBridge $cmd @("/d", "/c", "call $command") $environment -CreateMarker -OnAttached {
       param($activeState, $sessionId)
       & $assertLedger $activeState $sessionId
-      $second = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $sessionId -OnAttached $assertLedger
+      $second = Invoke-McpBridge $cmd @("/d", "/c", "call $command") $environment -MarkerSessionId $sessionId -OnAttached $assertLedger
       if ($second.backend_pid -ne $activeState.backend.pid) { throw "Warm client did not share the packaged backend." }
     }
     Wait-ManagedRuntimeStopped $first.backend_pid $first.backend_port
-    $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
+    $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call $command") $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
     Wait-ManagedRuntimeStopped $secondWave.backend_pid $secondWave.backend_port
     $trace = Get-ChildItem -LiteralPath $environment.SYMPP_LAUNCHER_TRACE_DIR -File | Get-Content -Raw
     if (-not ($trace -match "prepared_runtime_start")) { throw "Second wave did not exercise prepared release restart." }
@@ -283,6 +288,7 @@ server.listen(port,"127.0.0.1");
   $state.frontend.port = $backendPort
   $state.frontend.managed = $false
   $state.frontend.pid = $null
+  $state | Add-Member -NotePropertyName publication -NotePropertyValue ([pscustomobject]@{ status = "ready"; controls = [pscustomobject]@{ database = $sourceEnvironment.SYMPP_DATABASE } }) -Force
   $state | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $runtimeFile
 
   $installedEnvironment = @{
@@ -341,12 +347,20 @@ server.listen(port,"127.0.0.1");
     source_last_detach_stopped = $true; isolated_runtime_ledger_ports = $true
   } | ConvertTo-Json -Compress
 } finally {
+  if ($ArtifactManifest -and (Test-Path -LiteralPath $runtimeFile)) {
+    $ownedState = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
+    $ownedBackend = Get-Process -Id ([int]$ownedState.backend.pid) -ErrorAction SilentlyContinue
+    if ($ownedBackend -and [string]$ownedState.publication.backend.process_start_time_utc_ticks -eq [string]$ownedBackend.StartTime.ToUniversalTime().Ticks) {
+      $backendProcessId = $ownedBackend.Id
+      $backendStartTicks = $ownedBackend.StartTime.ToUniversalTime().Ticks
+    }
+  }
   if ($frontendProcessId) { Stop-Process -Id $frontendProcessId -Force -ErrorAction SilentlyContinue }
   if ($backendProcessId -and $backendStartTicks) {
     $backendProcess = Get-Process -Id $backendProcessId -ErrorAction SilentlyContinue
     if ($backendProcess -and $backendProcess.StartTime.ToUniversalTime().Ticks -eq $backendStartTicks) { Stop-Process -Id $backendProcessId -Force }
   }
-  $ownedRoot = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd("\") + "\"
-  if (-not ([System.IO.Path]::GetFullPath($tempRoot).StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase))) { throw "Cleanup abort: temp root escaped the launcher test directory." }
+  $ownedRoot = [System.IO.Path]::GetFullPath($fixtureParent).TrimEnd("\") + "\"
+  if (-not ([System.IO.Path]::GetFullPath($tempRoot).StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase))) { throw "Cleanup abort: temp root escaped its fixture directory." }
   Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
