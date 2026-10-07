@@ -1,3 +1,6 @@
+[CmdletBinding()]
+param([string]$ArtifactManifest)
+
 $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
 $pluginRoot = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp"
@@ -49,7 +52,17 @@ function Invoke-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashta
   }
 }
 
-function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment) {
+function Send-BridgeRequest($Process, $Request) {
+  $Process.StandardInput.WriteLine(($Request | ConvertTo-Json -Depth 12 -Compress))
+  $Process.StandardInput.Flush()
+  $line = $Process.StandardOutput.ReadLineAsync()
+  if (-not $line.Wait(120000) -or $null -eq $line.Result) { throw "Bridge closed or timed out waiting for MCP response." }
+  $response = $line.Result | ConvertFrom-Json
+  if ($response.error -or $response.result.isError) { throw "MCP request failed: $($line.Result)" }
+  return $response
+}
+
+function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment, [switch]$CreateMarker, [string]$MarkerSessionId, [scriptblock]$OnAttached, [switch]$RecoverBackend) {
   $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
     $stderr = $process.StandardError.ReadToEndAsync()
@@ -58,19 +71,28 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
       @{ jsonrpc = "2.0"; id = 2; method = "tools/list"; params = @{} }
     )
     $responses = foreach ($request in $requests) {
-      $process.StandardInput.WriteLine(($request | ConvertTo-Json -Depth 8 -Compress))
-      $process.StandardInput.Flush()
-      $line = $process.StandardOutput.ReadLineAsync()
-      if (-not $line.Wait(60000)) { throw "Timed out waiting for MCP response from $FilePath" }
-      if ($null -eq $line.Result) {
-        [void]$process.WaitForExit(5000)
-        throw "$FilePath closed before its MCP response: $($stderr.GetAwaiter().GetResult())"
-      }
-      $line.Result | ConvertFrom-Json
+      Send-BridgeRequest $process $request
+    }
+    if ($CreateMarker) {
+      $attached = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 3; method = "tools/call"; params = @{ name = "solo_attach"; arguments = @{ repo = "fixture/packaged-ledger"; base_branch = "beta"; workspace_path = $tempRoot; caller_id = "artifact-smoke"; title = "Disposable persistence marker" } } }
+      $MarkerSessionId = [string]$attached.result.structuredContent.solo_session.id
+      if (-not $MarkerSessionId) { throw "Missing marker session identity." }
+      [void](Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 4; method = "tools/call"; params = @{ name = "solo_append_progress"; arguments = @{ session_id = $MarkerSessionId; summary = "packaged database persistence marker"; idempotency_key = "artifact-persistence-marker" } } })
+    }
+    if ($RecoverBackend) {
+      $ownedState = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
+      Stop-Process -Id ([int]$ownedState.backend.pid) -Force -ErrorAction Stop
+    }
+    if ($MarkerSessionId) {
+      $marker = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 5; method = "tools/call"; params = @{ name = "solo_show"; arguments = @{ session_id = $MarkerSessionId } } }
+      if (@($marker.result.structuredContent.entries | Where-Object { $_.summary -eq "packaged database persistence marker" }).Count -ne 1) { throw "MCP persistence marker was missing or duplicated." }
     }
     $activeState = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
     $activeBackend = Get-Process -Id ([int]$activeState.backend.pid) -ErrorAction Stop
     $activeBackendStartTicks = $activeBackend.StartTime.ToUniversalTime().Ticks
+    $script:backendProcessId = $activeBackend.Id
+    $script:backendStartTicks = $activeBackendStartTicks
+    if ($OnAttached) { & $OnAttached $activeState $MarkerSessionId }
     $process.StandardInput.Close()
     if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw "Bridge did not exit after stdin closed: $FilePath" }
     $errorText = $stderr.GetAwaiter().GetResult()
@@ -84,6 +106,7 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
       backend_start_ticks = $activeBackendStartTicks
       runtime_mode = [string]$activeState.runtime_mode
       artifact_root = [string]$activeState.artifact.root
+      marker_session_id = $MarkerSessionId
     }
   } finally {
     if (-not $process.HasExited) { $process.Kill($true) }
@@ -118,6 +141,62 @@ try {
 
   $backendPort = New-IsolatedPort @()
   $dashboardPort = New-IsolatedPort @($backendPort)
+  if ($ArtifactManifest) {
+    $manifest = Get-Content -LiteralPath $ArtifactManifest -Raw | ConvertFrom-Json
+    $archive = Join-Path (Split-Path -Parent $ArtifactManifest) $manifest.artifact.file
+    $codexHome = Join-Path $tempRoot "codex"
+    $installedRoot = Join-Path $codexHome "plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.1.10"
+    $sourceRoot = Join-Path $codexHome ".tmp/marketplaces/symphony-plus-plus"
+    foreach ($destination in @($installedRoot, (Join-Path $sourceRoot "plugins/symphony-plus-plus-mcp"))) {
+      New-Item -ItemType Directory -Path $destination -Force | Out-Null
+      Copy-Item -LiteralPath (Join-Path $pluginRoot "scripts") -Destination $destination -Recurse
+    }
+    New-Item -ItemType Directory -Path (Join-Path $sourceRoot "elixir/priv/symphony_plus_plus"), (Join-Path $installedRoot "assets"), (Join-Path $tempRoot "profile") -Force | Out-Null
+    "[]" | Set-Content -LiteralPath (Join-Path $sourceRoot "elixir/mix.exs") -NoNewline
+    @{ revision = $manifest.source_revision } | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $sourceRoot ".codex-marketplace-install.json")
+    $contract = [string]$manifest.launcher_contract.mcp_contract_fingerprint
+    @{ mcp_contract_fingerprint = $contract } | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $sourceRoot "elixir/priv/symphony_plus_plus/mcp_contract.json")
+    @{
+      schema_version = 1; source_revision = $manifest.source_revision; launcher_contract = $manifest.launcher_contract
+      artifacts = @(@{ platform = $manifest.platform; source_revision = $manifest.source_revision; mcp_contract_fingerprint = $contract
+          path = $archive; sha256 = $manifest.artifact.sha256; entrypoint = "start-runtime.ps1"
+          dashboard = @{ asset_root = $manifest.dashboard.relative_path; fingerprint = $manifest.dashboard.fingerprint } })
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
+    $database = Join-Path $tempRoot "database/explicit ledger.sqlite3"
+    $environment = @{
+      CODEX_HOME = $codexHome; SYMPP_HOME = Join-Path $tempRoot "runtime-home"; SYMPP_RUNTIME_FILE = $runtimeFile
+      SYMPP_DATABASE = $database; SYMPP_LOG_DIR = Join-Path $tempRoot "logs"; SYMPP_LAUNCHER_TRACE_DIR = Join-Path $tempRoot "trace"
+      SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = "0"; SYMPP_OPEN_DASHBOARD = "0"
+      SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"; SYMPP_STARTUP_LOCK_TIMEOUT_SEC = "180"
+      HOME = Join-Path $tempRoot "profile"; USERPROFILE = Join-Path $tempRoot "profile"
+      TEMP = Join-Path $tempRoot "tmp"; TMP = Join-Path $tempRoot "tmp"
+    }
+    $command = Join-Path $installedRoot "scripts/start-sympp-mcp.cmd"
+    $cmd = (Get-Command cmd.exe -ErrorAction Stop).Source
+    $assertLedger = {
+      param($activeState, $sessionId)
+      $readiness = Invoke-RestMethod ($activeState.backend.url + "/mcp/readiness")
+      $actualPath = ([string]$readiness.ledger.identity.display_path).Replace('$HOME', $environment.USERPROFILE).Replace('/', '\')
+      if ($readiness.ledger.identity.kind -ne "sqlite" -or [IO.Path]::GetFullPath($actualPath) -ine [IO.Path]::GetFullPath($database)) { throw "Packaged runtime opened a different database." }
+      if ($activeState.runtime_mode -ne "artifact" -or $readiness.source.revision -ne $manifest.source_revision) { throw "Packaged runtime source identity mismatch." }
+    }
+    $first = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -CreateMarker -OnAttached {
+      param($activeState, $sessionId)
+      & $assertLedger $activeState $sessionId
+      $second = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $sessionId -OnAttached $assertLedger
+      if ($second.backend_pid -ne $activeState.backend.pid) { throw "Warm client did not share the packaged backend." }
+    }
+    Wait-ManagedRuntimeStopped $first.backend_pid $first.backend_port
+    $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
+    Wait-ManagedRuntimeStopped $secondWave.backend_pid $secondWave.backend_port
+    $trace = Get-ChildItem -LiteralPath $environment.SYMPP_LAUNCHER_TRACE_DIR -File | Get-Content -Raw
+    if (-not ($trace -match "prepared_runtime_start")) { throw "Second wave did not exercise prepared release restart." }
+    if (-not ($trace -match "backend_recovery_leader")) { throw "Second wave did not exercise backend recovery." }
+    if (-not (Test-Path -LiteralPath $database -PathType Leaf)) { throw "Explicit packaged database was not created." }
+    if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
+    [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = $true; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true } | ConvertTo-Json -Compress
+    return
+  }
   $sourceEnvironment = @{
     SYMPP_REPO_ROOT = $repoRoot; SYMPP_HOME = Join-Path $tempRoot "runtime-home"
     SYMPP_RUNTIME_FILE = $runtimeFile; SYMPP_LOG_DIR = Join-Path $tempRoot "logs"
@@ -165,7 +244,7 @@ const body=r=>new Promise(q=>{const c=[];r.on("data",x=>c.push(x));r.on("end",()
 const send=(r,s,v,h={})=>{const b=typeof v==="string"?v:JSON.stringify(v);r.writeHead(s,{"Content-Type":"application/json","Content-Length":Buffer.byteLength(b),...h});r.end(b);};
 const server=http.createServer(async(req,res)=>{
   if(req.url==="/shutdown"){send(res,200,{status:"stopping"});return server.close(()=>process.exit(0));}
-  if(req.url==="/mcp/readiness")return send(res,200,{status:"ok",ledger:{reachable:true},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});
+  if(req.url==="/mcp/readiness")return send(res,200,{status:"ok",ledger:{reachable:true,identity:{kind:"sqlite",display_path:process.env.SYMPP_DATABASE}},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});
   if(req.url==="/sympp/board")return send(res,200,"<title>Symphony++ Dashboard</title>",{"Content-Type":"text/html"});
   if(req.url==="/mcp/client-lease"){await body(req);return send(res,200,{stale_after_ms:600000});}
   if(req.url==="/mcp"){const p=JSON.parse(await body(req)),result=p.method==="initialize"?{protocolVersion:"2025-03-26",capabilities:{},serverInfo:{name:"artifact-fixture",version:"1"}}:p.method==="tools/list"?{tools:[{name:"fixture",description:"fixture",inputSchema:{type:"object"}}]}:null;return result?send(res,200,{jsonrpc:"2.0",id:p.id,result},{"Mcp-Session-Id":session}):send(res,404,{error:"missing"});}
@@ -208,6 +287,7 @@ server.listen(port,"127.0.0.1");
 
   $installedEnvironment = @{
     SYMPP_HOME = $sourceEnvironment.SYMPP_HOME; SYMPP_RUNTIME_FILE = $runtimeFile
+    SYMPP_DATABASE = $sourceEnvironment.SYMPP_DATABASE
     SYMPP_LOG_DIR = $sourceEnvironment.SYMPP_LOG_DIR; SYMPP_LAUNCHER_TRACE_DIR = Join-Path $tempRoot "trace"
     SYMPP_STARTUP_LOCK_TIMEOUT_SEC = "30"; SYMPP_MCP_HTTP_TIMEOUT_SEC = "60"
   }

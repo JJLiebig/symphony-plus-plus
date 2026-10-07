@@ -317,7 +317,7 @@ function New-HealthRequest {
   }
 }
 
-function New-SymppBackendHealth([bool]$Healthy, [string]$SourceRevision, [string]$Detail, [bool]$TcpOpen, [bool]$McpReady = $false, [bool]$LedgerReachable = $false, [string]$Status = $null, [string]$ContractFingerprint = $null) {
+function New-SymppBackendHealth([bool]$Healthy, [string]$SourceRevision, [string]$Detail, [bool]$TcpOpen, [bool]$McpReady = $false, [bool]$LedgerReachable = $false, [string]$Status = $null, [string]$ContractFingerprint = $null, $LedgerIdentity = $null) {
   return [pscustomobject]@{
     healthy = $Healthy
     source_revision = $SourceRevision
@@ -326,6 +326,7 @@ function New-SymppBackendHealth([bool]$Healthy, [string]$SourceRevision, [string
     tcp_open = $TcpOpen
     mcp_ready = $McpReady
     ledger_reachable = $LedgerReachable
+    ledger_identity = $LedgerIdentity
     status = $Status
   }
 }
@@ -747,7 +748,7 @@ function Get-SymppBackendHealth([string]$BackendUrl, [bool]$RequireDashboardRead
     $dashboardReady = $null -ne $payload.dashboard -and $payload.dashboard.PSObject.Properties["ready"] -and $payload.dashboard.ready -eq $true
     $healthy = [System.StringComparer]::OrdinalIgnoreCase.Equals($status, "ok") -and $ledgerReachable -and (-not $RequireDashboardReady -or $dashboardReady)
     $detail = if ($healthy) { $null } else { "health_degraded" }
-    return New-SymppBackendHealth $healthy (Get-HealthSourceRevision $payload) $detail $true $true $ledgerReachable $status (Get-HealthContractFingerprint $payload)
+    return New-SymppBackendHealth $healthy (Get-HealthSourceRevision $payload) $detail $true $true $ledgerReachable $status (Get-HealthContractFingerprint $payload) $payload.ledger.identity
   } catch {
     if ($null -ne $_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
       return Get-LegacySymppBackendHealth $BackendUrl $tcpOpen
@@ -791,7 +792,7 @@ function Get-LegacySymppBackendHealth([string]$BackendUrl, [bool]$TcpOpen) {
     $ledgerReachable = $null -ne $structuredContent -and $null -ne $structuredContent.ledger -and $structuredContent.ledger.PSObject.Properties["reachable"] -and $structuredContent.ledger.reachable -eq $true
     $healthy = [System.StringComparer]::OrdinalIgnoreCase.Equals($status, "ok") -and $ledgerReachable
     $detail = if ($healthy) { $null } else { "health_degraded" }
-    return New-SymppBackendHealth $healthy (Get-HealthSourceRevision $payload) $detail $true $true $ledgerReachable $status (Get-HealthContractFingerprint $payload)
+    return New-SymppBackendHealth $healthy (Get-HealthSourceRevision $payload) $detail $true $true $ledgerReachable $status (Get-HealthContractFingerprint $payload) $structuredContent.ledger.identity
   } catch {
     return New-SymppBackendHealth $false $null "health_parse_failed" $TcpOpen
   }
@@ -849,11 +850,31 @@ function Test-SourceRevisionEquals([string]$ActualSourceRevision, [string]$Expec
     [System.StringComparer]::OrdinalIgnoreCase.Equals($ActualSourceRevision, $ExpectedSourceRevision)
 }
 
+function Resolve-SymppDatabasePath([string]$Database) {
+  if ([string]::IsNullOrWhiteSpace($Database)) { return $null }
+  return [System.IO.Path]::GetFullPath($Database)
+}
+
+function Test-SymppDatabasePathsMatch([string]$Actual, [string]$Expected, [bool]$DisplayPath = $false) {
+  try {
+    if ($DisplayPath -and ($Actual -eq '$HOME' -or $Actual.StartsWith('$HOME/'))) {
+      $userProfile = if (Test-SymppWindowsPlatform) { $env:USERPROFILE } else { $env:HOME }
+      $Actual = $userProfile + $Actual.Substring(5)
+    }
+    $comparison = if (Test-SymppWindowsPlatform) { [System.StringComparer]::OrdinalIgnoreCase } else { [System.StringComparer]::Ordinal }
+    return $comparison.Equals((Resolve-SymppDatabasePath $Actual), (Resolve-SymppDatabasePath $Expected))
+  } catch { return $false }
+}
+
 function Test-BackendLaunchCompatible($Health, [string]$ExpectedContractFingerprint) {
-  return Test-BackendContractMatches $Health $ExpectedContractFingerprint
+  if (-not (Test-BackendContractMatches $Health $ExpectedContractFingerprint)) { return $false }
+  if ([string]::IsNullOrWhiteSpace($env:SYMPP_DATABASE)) { return $true }
+  return $Health.ledger_identity.kind -eq "sqlite" -and
+    (Test-SymppDatabasePathsMatch ([string]$Health.ledger_identity.display_path) $env:SYMPP_DATABASE $true)
 }
 
 function Format-BackendLaunchCompatibilityMismatch($Health, [string]$ExpectedSourceRevision, [string]$ExpectedContractFingerprint) {
+  if (Test-BackendContractMatches $Health $ExpectedContractFingerprint) { return "SQLite ledger does not match SYMPP_DATABASE." }
   return "MCP contract fingerprint $(Format-McpContractFingerprintForDiagnostic $Health.contract_fingerprint) does not match expected $(Format-McpContractFingerprintForDiagnostic $ExpectedContractFingerprint). Source revision was $(Format-SourceRevisionForDiagnostic $Health.source_revision), expected $(Format-SourceRevisionForDiagnostic $ExpectedSourceRevision)."
 }
 
@@ -1011,6 +1032,7 @@ function New-SymppPublicationControls([int]$BackendPort, [int]$DashboardPort, [b
     dashboard_port_explicit = $DashboardPortExplicit
     backend_url = if ([string]::IsNullOrWhiteSpace($BackendUrl)) { $null } else { $BackendUrl.TrimEnd("/") }
     dashboard_origin = if ([string]::IsNullOrWhiteSpace($DashboardOrigin)) { $null } else { $DashboardOrigin.TrimEnd("/") }
+    database = Resolve-SymppDatabasePath $env:SYMPP_DATABASE
   }
 }
 
@@ -1019,7 +1041,7 @@ function Test-SymppPublicationControlsMatch($Recorded, $Expected) {
   foreach ($name in @("backend_port", "dashboard_port", "backend_port_explicit", "dashboard_port_explicit", "backend_url", "dashboard_origin")) {
     if ([string]$Recorded.$name -ne [string]$Expected.$name) { return $false }
   }
-  return $true
+  return Test-SymppDatabasePathsMatch ([string]$Recorded.database) ([string]$Expected.database)
 }
 
 function Set-SymppRuntimePublication($State, [string]$Status, $InstalledIdentity, $Controls, $BackendPlan, [string]$RuntimeRoot, [string]$BackendStartIdentity = $null) {
@@ -1933,6 +1955,7 @@ function Resolve-LocalWarmAttachIdentity {
     return $null
   }
   if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($recordedPluginRoot, $currentPluginRoot)) { return $null }
+  if (-not (Test-SymppDatabasePathsMatch ([string]$RuntimeState.publication.controls.database) $env:SYMPP_DATABASE)) { return $null }
 
   $currentContract = Resolve-LocalMcpContractFingerprint $PluginRoot
   $expectedContract = Normalize-McpContractFingerprint ([string]$RuntimeState.backend.expected_contract_fingerprint)
@@ -2148,7 +2171,8 @@ function Invoke-WarmAttachFromRuntimeState {
     return $false
   }
 
-  $recordedHealth = New-SymppBackendHealth $true $identity.source_revision "recorded" $true $true $true "ok" $identity.contract_fingerprint
+  $recordedLedger = [pscustomobject]@{ kind = "sqlite"; display_path = [string]$runtimeState.publication.controls.database }
+  $recordedHealth = New-SymppBackendHealth $true $identity.source_revision "recorded" $true $true $true "ok" $identity.contract_fingerprint $recordedLedger
   $provisionalPlan = Resolve-FastAttachRuntimePlan $runtimeState $identity.source_revision $identity.contract_fingerprint 0 0 $false $false $null $null $recordedHealth $true $true
   if ($null -eq $provisionalPlan) {
     return $false
@@ -2305,7 +2329,7 @@ function Resolve-SymppLauncherRuntimeInputs([string]$PluginRoot, [string]$Bridge
   }
 
   if ($artifactValidationLaunchable) {
-    $artifactLaunchBlockReason = if ($BridgeMode -eq "direct_stdio") { "direct_stdio_unsupported" } elseif (-not [string]::IsNullOrWhiteSpace($env:SYMPP_DATABASE)) { "database_unsupported" } else { $null }
+    $artifactLaunchBlockReason = if ($BridgeMode -eq "direct_stdio") { "direct_stdio_unsupported" } else { $null }
     if ($artifactLaunchBlockReason) {
       Write-Diagnostic "artifact_skipped: verified artifact runtime is not launchable in this configuration. detail=$artifactLaunchBlockReason"
       $artifactValidationLaunchable = $false
@@ -2326,7 +2350,7 @@ function Resolve-SymppLauncherRuntimeInputs([string]$PluginRoot, [string]$Bridge
 }
 
 function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) {
-  if (-not (Test-SymppWindowsPlatform) -or $env:SYMPP_REPO_ROOT -or $env:SYMPP_DATABASE -or
+  if (-not (Test-SymppWindowsPlatform) -or $env:SYMPP_REPO_ROOT -or
       (Get-EnvMode "SYMPP_MCP_BRIDGE_MODE" "http" @("http", "direct_stdio")) -ne "http" -or
       -not (Test-SymppInstalledMarketplacePluginRoot $PluginRoot)) { return $false }
   foreach ($name in @("SYMPP_AUTOSTART_SERVERS", "SYMPP_AUTOSTART_BACKEND", "SYMPP_AUTOSTART_FRONTEND")) {

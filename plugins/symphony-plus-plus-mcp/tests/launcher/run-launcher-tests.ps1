@@ -67,7 +67,7 @@ foreach ($name in @(
     "Normalize-McpContractFingerprint", "Get-McpContractFingerprintFromContractFile",
     "Get-McpContractFingerprintFromMarketplaceSource", "Resolve-LocalMcpContractFingerprint",
     "New-RuntimeKey", "Get-RuntimeStateKey", "Get-PortFromOrigin", "Test-EndpointMatches", "Test-BackendShouldShutdownOnIdle",
-    "Test-PortSelectionAllowsReuse", "Test-BackendContractMatches", "Test-BackendLaunchCompatible",
+    "Test-PortSelectionAllowsReuse", "Test-BackendContractMatches", "Resolve-SymppDatabasePath", "Test-SymppDatabasePathsMatch", "Test-BackendLaunchCompatible",
     "Test-RuntimeStateExternalLoopback", "Test-RuntimeEntryEndpointMatches", "Test-SymppReleaseWrapperCommandLine", "Test-SymppBackendCommandLine", "Get-ProcessCommandIdentity", "New-SymppPublicationControls", "Test-SymppPublicationControlsMatch",
     "Test-SymppPublishedRuntimeReadyLocally", "Resolve-SymppPendingBackendProcess", "Test-SymppStartingBackendOwned", "New-ReusedBackendPlan", "New-ReusedDashboardPlan",
     "Resolve-LocalWarmAttachIdentity", "Resolve-FastAttachRuntimePlan", "Resolve-DashboardPlan", "Set-SymppSourceRevisionEnvironment"
@@ -151,6 +151,24 @@ $state = [pscustomobject]@{
 }
 $identity = Resolve-LocalWarmAttachIdentity $state $pluginRoot 19998 19999 $false $false $null $null
 Assert-True ($null -ne $identity) "Current-contract artifact-static runtime should be eligible for PowerShell fallback warm attach"
+$previousDatabase = $env:SYMPP_DATABASE
+try {
+  $env:SYMPP_DATABASE = Join-Path $env:USERPROFILE "fixture ledger/first.sqlite3"
+  $databaseControls = New-SymppPublicationControls 19998 19999 $false $false $null $null
+  $databaseState = $state | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $databaseState | Add-Member -NotePropertyName publication -NotePropertyValue ([pscustomobject]@{ controls = $databaseControls })
+  Assert-True ($null -ne (Resolve-LocalWarmAttachIdentity $databaseState $pluginRoot 19998 19999 $false $false $null $null)) "Same explicit database must retain recorded attachment"
+  $databaseHealth = New-SymppBackendHealth $true $null $null $true $true $true "ok" $fingerprint ([pscustomobject]@{ kind = "sqlite"; display_path = '$HOME/fixture ledger/first.sqlite3' })
+  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Live safe home-relative identity must match the requested database"
+  $databaseControls.database = $databaseControls.database.ToUpperInvariant().Replace('\', '/')
+  Assert-True (Test-SymppPublicationControlsMatch $databaseControls (New-SymppPublicationControls 19998 19999 $false $false $null $null)) "Windows case and separator changes must match publication controls"
+  $env:SYMPP_DATABASE = Join-Path $env:USERPROFILE "fixture ledger/different.sqlite3"
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "A healthy same-contract backend with another database must be incompatible"
+  Assert-True ($null -eq (Resolve-LocalWarmAttachIdentity $databaseState $pluginRoot 19998 19999 $false $false $null $null)) "Different explicit database must reject recorded attachment"
+  Assert-True (-not (Test-SymppPublicationControlsMatch $databaseControls (New-SymppPublicationControls 19998 19999 $false $false $null $null))) "Database mismatch must reject publication and prepared restart"
+  $env:SYMPP_DATABASE = " "
+  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Blank override preserves default live compatibility"
+} finally { $env:SYMPP_DATABASE = $previousDatabase }
 $publishedControls = New-SymppPublicationControls 19998 19999 $false $false $null $null
 $publishedState = $state | ConvertTo-Json -Depth 8 | ConvertFrom-Json
 $publishedState.backend.managed = $false
@@ -300,7 +318,9 @@ Assert-True ($nodeExitCode -eq 0) "Node state identity tests must pass"
 $nodeExitCode = $LASTEXITCODE
 Assert-True ($nodeExitCode -eq 0) "Node bridge response forwarding test must pass"
 $artifactCommandTemp = Join-Path $PSScriptRoot (".artifact-command-" + [guid]::NewGuid().ToString("N"))
+$previousDatabase = $env:SYMPP_DATABASE
 try {
+  $env:SYMPP_DATABASE = "fixture ledger/explicit.sqlite3"
   $artifactRoot = Join-Path $artifactCommandTemp "artifact & command%TEMP%"
   $releaseEntrypoint = Join-Path $artifactRoot "runtime/bin/symphony_elixir.bat"
   New-Item -ItemType Directory -Path (Split-Path -Parent $releaseEntrypoint) -Force | Out-Null
@@ -318,10 +338,13 @@ try {
   Assert-True ($artifactCommand.working_directory -eq $artifactRoot) "Direct artifact startup must preserve the artifact working directory"
   Assert-True ($artifactCommand.environment.SYMPP_RUNTIME_ARTIFACT_ACKNOWLEDGED -eq "1" -and $artifactCommand.environment.PHX_SERVER -eq "true") "Direct artifact startup must preserve release safety and server environment"
   Assert-True ((Test-Path -LiteralPath $artifactCommand.environment.RELEASE_TMP -PathType Container)) "Direct artifact startup must provide an isolated release temp directory"
+  Assert-True ($artifactCommand.environment.SYMPP_DATABASE -eq [IO.Path]::GetFullPath($env:SYMPP_DATABASE)) "Release startup resolves database before changing artifact working directory"
   $artifactRuntime.runtime_args = @("-Port", "{port}")
   $customCommand = Get-ArtifactBackendCommand $artifactRuntime $artifactPlan $null $null (Join-Path $artifactCommandTemp "custom-logs")
   Assert-True ($customCommand.file -eq $artifactRuntime.entrypoint -and (@($customCommand.args) -join "|") -eq "-Port|20000") "Artifacts with custom manifest arguments must retain the declared wrapper contract"
+  Assert-True ($customCommand.environment.SYMPP_DATABASE -eq $artifactCommand.environment.SYMPP_DATABASE) "Generic artifact wrappers receive the same database selection"
 } finally {
+  $env:SYMPP_DATABASE = $previousDatabase
   Remove-Item -LiteralPath $artifactCommandTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
 $process = Get-Process -Id $PID
