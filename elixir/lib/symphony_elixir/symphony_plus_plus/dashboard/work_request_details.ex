@@ -270,6 +270,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
           |> Map.get(:work_package)
           |> Kernel.||(%{})
           |> Map.take(@delivery_signal_keys)
+          |> Map.put(:merge_eligibility, Map.fetch!(item, :merge_eligibility))
           |> Map.reject(fn {_key, value} -> is_nil(value) end)
           |> Map.new(fn {key, value} -> {key, Dashboard.redacted_json(value)} end)
 

@@ -8,12 +8,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Service, as: CommentService
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.Repository, as: ProductTreeRepository
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
   alias SymphonyElixir.WorkPackageFactory
@@ -42,6 +47,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
   end
 
   setup %{repo: repo} do
+    repo.delete_all(ProgressEvent)
+    repo.delete_all(DependencyEdge)
     repo.delete_all(WorkPackageDelivery)
     repo.delete_all(WorkPackage)
     repo.delete_all(DecisionLogEntry)
@@ -108,6 +115,127 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
       assert work_request_ids == [first.id, second.id]
       assert detail_ids == work_request_ids
     end)
+  end
+
+  test "full and compact packages forward canonical integration eligibility within board budgets", %{repo: repo} do
+    request = create_work_request!(repo, status: "sliced")
+    backend = eligibility_package!(repo, request, "BACKEND", "ready_for_merge")
+    ui = eligibility_package!(repo, request, "UI", "ready_for_merge")
+    stale = eligibility_package!(repo, request, "STALE", "ready_for_merge")
+    missing_backend = eligibility_package!(repo, request, "MISSING-BACKEND", "reviewing")
+    missing = eligibility_package!(repo, request, "MISSING", "reviewing")
+    backend_head = String.duplicate("a", 40)
+    ui_head = String.duplicate("b", 40)
+    stale_head = String.duplicate("c", 40)
+
+    record_head!(repo, backend, backend_head)
+    record_head!(repo, ui, ui_head)
+    record_head!(repo, stale, stale_head)
+    ui_edge = pinned_dependency!(repo, ui, backend, backend_head)
+    stale_edge = pinned_dependency!(repo, stale, backend, backend_head)
+    pinned_dependency!(repo, missing, missing_backend, backend_head)
+    consume_input!(repo, ui, ui_edge, ui_head, backend_head)
+    consume_input!(repo, stale, stale_edge, stale_head, backend_head)
+    record_head!(repo, stale, String.duplicate("d", 40))
+
+    assert {:ok, canonical} = DeliveryBoard.project(repo, request.id)
+    {{:ok, [full]}, full_queries} = capture_queries(fn -> Dashboard.work_request_details(repo, [request.id]) end)
+    {{:ok, [compact]}, compact_queries} = capture_queries(fn -> Dashboard.work_request_board_details(repo, [request.id]) end)
+    compact_bytes = byte_size(Jason.encode!(compact))
+    full_bytes = byte_size(Jason.encode!(full))
+
+    IO.puts("ELIGIBILITY_BOARD_BUDGET " <> Jason.encode!(%{queries: length(compact_queries), bytes: compact_bytes, full_queries: length(full_queries), full_bytes: full_bytes}))
+    assert length(compact_queries) <= 24
+    assert compact_bytes <= 15_000
+    assert compact_bytes < full_bytes
+
+    for item <- canonical.work_packages do
+      expected = Dashboard.redacted_json(item.merge_eligibility)
+      assert Enum.find(full.work_packages, &(&1.id == item.id)).merge_eligibility == expected
+      assert Enum.find(compact.work_packages, &(&1.id == item.id)).merge_eligibility == expected
+      assert Enum.find(full.delivery_board["work_packages"], &(&1["id"] == item.id))["merge_eligibility"] == expected
+    end
+
+    by_id = Map.new(compact.work_packages, &{&1.id, &1.merge_eligibility})
+    assert by_id[backend.id]["eligible"]
+    assert by_id[backend.id]["reason_codes"] == []
+    refute by_id[ui.id]["eligible"]
+    assert by_id[ui.id]["reason_codes"] == ["dependency_not_delivered"]
+    assert "dependency_inputs_stale" in by_id[stale.id]["reason_codes"]
+    refute by_id[stale.id]["eligible"]
+    assert "not_ready" in by_id[missing.id]["reason_codes"]
+    assert "candidate_pin_stale" in by_id[missing.id]["reason_codes"]
+    assert "dependency_inputs_stale" in by_id[missing.id]["reason_codes"]
+    refute by_id[missing.id]["eligible"]
+
+    with_local_operator_endpoint(fn ->
+      [api_detail] = local_operator_dashboard_payload()["work_request_details"]
+      assert Enum.sort(Enum.map(api_detail["work_packages"], & &1["id"])) == Enum.sort(Map.keys(by_id))
+
+      for package <- api_detail["work_packages"] do
+        assert package["merge_eligibility"] == by_id[package["id"]]
+      end
+    end)
+  end
+
+  defp eligibility_package!(repo, request, suffix, status) do
+    assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "#{request.id}-#{suffix}", status: status))
+    package
+  end
+
+  defp record_head!(repo, package, head) do
+    for {type, source} <- [{"branch", "attach_branch"}, {"pr", "attach_pr"}] do
+      assert {:ok, _event} =
+               PlanningRepository.append_progress_event(repo, %{
+                 work_package_id: package.id,
+                 summary: "Fixture current #{type}",
+                 payload: %{"type" => type, "source_tool" => source, "head_sha" => head, "url" => "https://github.com/nextide/symphony-plus-plus/pull/#{package.sequence}"}
+               })
+    end
+  end
+
+  defp pinned_dependency!(repo, dependent, prerequisite, head) do
+    assert {:ok, edge} =
+             ProductTreeRepository.create_dependency_edge(repo, %{
+               work_request_id: dependent.work_request_id,
+               source_kind: "work_package",
+               source_id: dependent.id,
+               target_kind: "work_package",
+               target_id: prerequisite.id,
+               kind: "depends_on",
+               reason: "Consume qualified backend",
+               candidate_head_sha: head
+             })
+
+    edge
+  end
+
+  defp consume_input!(repo, package, edge, head, input_head) do
+    assert {:ok, _event} =
+             PlanningRepository.append_progress_event(repo, %{
+               work_package_id: package.id,
+               summary: "Qualified wiring fixture",
+               payload: %{"head_sha" => head, "dependency_inputs" => [%{"dependency_id" => edge.id, "prerequisite_work_package_id" => edge.target_id, "candidate_head_sha" => input_head}]}
+             })
+  end
+
+  defp capture_queries(fun) do
+    handler_id = {__MODULE__, self(), make_ref()}
+    :ok = :telemetry.attach(handler_id, Repo.config()[:telemetry_prefix] ++ [:query], fn _event, _measurements, metadata, test_pid -> send(test_pid, {handler_id, metadata.query}) end, self())
+
+    try do
+      {fun.(), drain_queries(handler_id, [])}
+    after
+      :telemetry.detach(handler_id)
+    end
+  end
+
+  defp drain_queries(handler_id, queries) do
+    receive do
+      {^handler_id, query} -> drain_queries(handler_id, [query | queries])
+    after
+      0 -> queries
+    end
   end
 
   defp create_work_request!(repo, overrides) do
