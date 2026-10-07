@@ -61,7 +61,9 @@ cross-slice target, successor relation, audit closeout, or concurrency guard.
    appends do not move that boundary. Only findings, progress, and handoff artifacts
    accept a cursor; a paged handoff keeps its current contract and latest progress.
    Reconcile uncertain mutations using returned row id, sequence, redacted
-   idempotency key, body, and safe typed `payload.observation` fields. Read older
+   idempotency key, body, and safe typed `payload.observation` fields. Generated
+   payload-bearing keys appear as stable `sha256:` fingerprints; stored replay
+   identity is unchanged. Read older
    pages before retrying an uncertain append; do not substitute private-store or
    operator history lookups.
 8. Do not create local `task_plan.md`, `findings.md`, or `progress.md` files as

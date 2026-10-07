@@ -203,7 +203,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
     %{
       "id" => finding.id,
       "sequence" => finding.sequence,
-      "idempotency_key" => Redactor.redact_text(finding.idempotency_key),
+      "idempotency_key" => idempotency_identity(finding.idempotency_key),
       "title" => Redactor.redact_text(finding.title),
       "severity" => finding.severity,
       "body" => Redactor.redact_text(finding.body),
@@ -215,7 +215,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
     %{
       "id" => finding.id,
       "sequence" => finding.sequence,
-      "idempotency_key" => Redactor.redact_text(finding.idempotency_key),
+      "idempotency_key" => idempotency_identity(finding.idempotency_key),
       "title" => Redactor.redact_text(finding.title),
       "severity" => finding.severity,
       "created_at" => timestamp(finding.created_at)
@@ -226,7 +226,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
     %{
       "id" => event.id,
       "sequence" => event.sequence,
-      "idempotency_key" => Redactor.redact_text(event.idempotency_key),
+      "idempotency_key" => idempotency_identity(event.idempotency_key),
       "summary" => Redactor.redact_text(event.summary),
       "status" => Redactor.redact_text(event.status),
       "body" => Redactor.redact_text(event.body),
@@ -241,7 +241,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
     %{
       "id" => event.id,
       "sequence" => event.sequence,
-      "idempotency_key" => Redactor.redact_text(event.idempotency_key),
+      "idempotency_key" => idempotency_identity(event.idempotency_key),
       "summary" => Redactor.redact_text(event.summary),
       "status" => Redactor.redact_text(event.status),
       "created_at" => timestamp(event.created_at)
@@ -259,6 +259,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
       "metadata" => payload_overview(artifact.metadata || %{})
     }
   end
+
+  # Generated keys contain encoded payloads; fingerprint them without changing replay identity.
+  defp idempotency_identity(key) when is_binary(key) do
+    if String.contains?(key, ["mcp:", "operator:"]) do
+      "sha256:" <> Base.encode16(:crypto.hash(:sha256, key), case: :lower)
+    else
+      Redactor.redact_text(key)
+    end
+  end
+
+  defp idempotency_identity(nil), do: nil
 
   defp put_continuation(payload, [first | _rest], omitted) when is_integer(omitted) and omitted > 0,
     do: Map.put(payload, "next_before_sequence", first.sequence)

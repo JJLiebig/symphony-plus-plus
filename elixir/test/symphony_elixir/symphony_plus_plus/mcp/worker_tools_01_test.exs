@@ -3,7 +3,7 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  alias SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.{ProgressEvents, WorktreeScope}
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
 
   test "worker tools update only the scoped planning state and deny sibling mutations", %{repo: repo} do
@@ -1033,7 +1033,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
             "check_summary" => %{"status" => "success", "private_payload" => "must-not-leak"}
           }
         ] do
-      attrs = %{summary: "Prior typed evidence", payload: payload}
+      key = "attach_pr:#{package.id}:#{ProgressEvents.metadata_idempotency_key(payload)}"
+      attrs = %{summary: "Prior typed evidence", payload: payload, idempotency_key: key}
       assert {:ok, _} = PlanningRepository.append_audit_progress_event(repo, assignment, attrs)
     end
 
@@ -1044,6 +1045,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert pr["payload"]["observation"]["check_summary"] == %{"status" => "success"}
     refute Jason.encode!(typed) =~ "synthetic-private-value"
     refute Jason.encode!(typed) =~ "must-not-leak"
+    assert branch["idempotency_key"] =~ ~r/^sha256:[a-f0-9]{64}$/
+    assert pr["idempotency_key"] =~ ~r/^sha256:[a-f0-9]{64}$/
+    assert {:ok, stored} = PlanningRepository.list_progress_events(repo, package.id)
+    generated_key = List.last(stored).idempotency_key
+    expected_identity = "sha256:" <> Base.encode16(:crypto.hash(:sha256, generated_key), case: :lower)
+    assert pr["idempotency_key"] == expected_identity
+    refute Jason.encode!(typed) =~ generated_key
+    handoff = mcp_tool(repo, reconnected, "read_work_package_document", %{"document" => "handoff.md"})
+    assert List.last(get_in(handoff, ["result", "structuredContent", "latest_progress"]))["idempotency_key"] == expected_identity
+    refute Jason.encode!(handoff) =~ generated_key
+
+    operator_key = "operator_sync_pr:#{package.id}:operator:" <> Base.url_encode64(:erlang.term_to_binary(%{"private_payload" => "hidden"}))
+    assert {:ok, _} = PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Encoded", body: "Safe body", idempotency_key: operator_key})
+    finding_history = mcp_tool(repo, session, "read_work_package_document", %{"document" => "findings.md"})
+    assert List.last(get_in(finding_history, ["result", "structuredContent", "findings"]))["idempotency_key"] =~ ~r/^sha256:[a-f0-9]{64}$/
+    refute Jason.encode!(finding_history) =~ operator_key
 
     finding = mcp_tool(repo, session, "read_work_package_document", %{"document" => "findings.md"}) |> get_in(["result", "structuredContent", "findings", Access.at(0)])
     assert finding["sequence"] == 1
