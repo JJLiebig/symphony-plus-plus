@@ -39,7 +39,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
         case cached(table, :review_suite_script, now_ms, ttl_ms, fn -> discover(runner, find_executable) end) do
           {:ok, script} ->
             eligible
-            |> Enum.group_by(&Path.expand(&1.worktree_path))
+            |> Enum.group_by(&observation_key/1)
             |> Task.async_stream(&observe_worktree(&1, script, config),
               max_concurrency: 4,
               ordered: false,
@@ -55,7 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
         :ets.delete(table, :refreshing)
       end
     else
-      cached(eligible, table: table, now_ms: now_ms, ttl_ms: ttl_ms)
+      cached(eligible, cache_table: table, now_ms: now_ms, ttl_ms: ttl_ms)
     end
   end
 
@@ -72,12 +72,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
   defp table_exists?(table) when is_atom(table), do: :ets.whereis(table) != :undefined
   defp table_exists?(_table), do: true
 
-  defp observe_worktree({worktree, packages}, script, config) do
+  defp observe_worktree({{:observation, worktree, base} = key, packages}, script, config) do
     %{table: table, now_ms: now_ms, ttl_ms: ttl_ms, runner: runner, find_executable: find_executable} = config
 
     observation =
-      cached(table, {:observation, worktree}, now_ms, ttl_ms, fn ->
-        status(script, worktree, runner, find_executable)
+      cached(table, key, now_ms, ttl_ms, fn ->
+        status(script, worktree, base, runner, find_executable)
       end)
 
     {packages, observation}
@@ -99,13 +99,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
     work_packages
     |> Enum.filter(&eligible?/1)
     |> Enum.reduce(%{}, fn work_package, observations ->
-      key = {:observation, Path.expand(work_package.worktree_path)}
+      key = observation_key(work_package)
 
       case cached_value(table, key, now_ms, ttl_ms) do
         {:ok, {:ok, observation}} -> Map.put(observations, work_package.id, observation)
         _missing -> observations
       end
     end)
+  end
+
+  defp observation_key(work_package) do
+    declared_base = work_package.review_requirement |> map_value("args") |> map_value("base")
+
+    base =
+      cond do
+        is_binary(declared_base) and String.trim(declared_base) != "" -> declared_base
+        is_binary(work_package.base_branch) and String.trim(work_package.base_branch) != "" -> "origin/" <> work_package.base_branch
+        true -> nil
+      end
+
+    {:observation, Path.expand(work_package.worktree_path), base}
   end
 
   defp eligible?(%WorkPackage{
@@ -134,10 +147,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
     end
   end
 
-  defp status(script, worktree, runner, find_executable) do
+  defp status(script, worktree, base, runner, find_executable) do
+    args = [script, "--status", "--json", "--cd", worktree] ++ if(base, do: ["--base", base], else: [])
+
     with python when is_binary(python) <- find_executable.("python3") || find_executable.("python"),
          {:ok, output} <-
-           runner.(python, [script, "--status", "--json", "--cd", worktree], @timeout_ms, @max_output_bytes),
+           runner.(python, args, @timeout_ms, @max_output_bytes),
          {:ok, payload} when is_map(payload) <- Jason.decode(output),
          review when is_binary(review) and review != "" <- map_value(payload, "review") do
       {:ok,

@@ -2473,7 +2473,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
           work_request_id: work_request.id,
           status: "ready_for_merge",
           worktree_path: root,
-          review_requirement: %{"type" => "review-suite", "args" => %{"mode" => "fast"}}
+          review_requirement: %{"type" => "review-suite", "args" => %{"mode" => "fast", "base" => "origin/beta"}}
         )
 
       needs_human = create_work_package!(repo, id: "WP-HERDR-HUMAN", work_request_id: work_request.id, status: "blocked", owner_id: "human-wait-owner")
@@ -2501,7 +2501,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       File.write!(
         script,
-        "print(" <>
+        "import sys\nassert sys.argv[-2:] == ['--base', 'origin/beta']\nprint(" <>
           Jason.encode!(
             Jason.encode!(%{
               review: "rvw_cold",
@@ -2539,8 +2539,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert activity["observed_at"] == review["observed_at"]
         assert activity["next_action"] == "wait"
 
-        File.write!(script, "print(" <> Jason.encode!(Jason.encode!(%{review: "rvw_cold", status: "done", next_action: "none"})) <> ")\n")
-        :ets.delete(observation, {:observation, Path.expand(root)})
+        File.write!(
+          script,
+          "import sys\nassert sys.argv[-2:] == ['--base', 'origin/beta']\nprint(" <> Jason.encode!(Jason.encode!(%{review: "rvw_cold", status: "done", next_action: "none"})) <> ")\n"
+        )
+
+        :ets.delete(observation, {:observation, Path.expand(root), "origin/beta"})
         assert {:ok, ready_payload} = LocalOperatorDashboard.herdr_work_request_detail_payload(repo, work_request.id)
         ready_activity = Enum.find(ready_payload.work_packages, &(&1.id == reviewing.id)).activity_signal
         assert ready_activity["next_action"] == "verify_native_checks_and_review_then_merge"
@@ -2551,7 +2555,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert human_activity["next_actor"] == "human"
         assert human_activity["next_action"] == "answer_guidance"
       after
-        :ets.delete(observation, {:observation, Path.expand(root)})
+        :ets.delete(observation, {:observation, Path.expand(root), "origin/beta"})
         :ets.delete(observation, :review_suite_script)
         :ets.insert(observation, previous_script)
       end

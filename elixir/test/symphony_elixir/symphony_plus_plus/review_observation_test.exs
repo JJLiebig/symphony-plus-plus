@@ -16,7 +16,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
         ["plugin", "list", "--json"] ->
           {:ok, plugin_json(plugin)}
 
-        [_script, "--status", "--json", "--cd", ^worktree] ->
+        [_script, "--status", "--json", "--cd", ^worktree, "--base", "origin/beta"] ->
           {:ok,
            Jason.encode!(%{
              "review" => "rvw_observed",
@@ -69,11 +69,65 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
       _, ["plugin", "list", "--json"], _, _ ->
         {:ok, plugin_json(plugin)}
 
-      _, [_script, "--status", "--json", "--cd", _worktree], _, _ ->
+      _, [_script, "--status", "--json", "--cd", _worktree, "--base", "origin/beta"], _, _ ->
         {:ok, Jason.encode!(%{"review" => "rvw_stale", "done" => true, "status" => "stale"})}
     end
 
     assert %{^package_id => %{status: "failed"}} = ReviewObservation.observe([package], test_opts(runner))
+  end
+
+  test "literal declared bases isolate grouping and cached outcomes in one worktree", %{test: test} do
+    %{worktree: worktree, plugin: plugin, package: package} = fixture(test)
+    frozen_base = String.duplicate("a", 40)
+    frozen = %{package | id: "frozen", review_requirement: %{type: "review-suite", args: %{base: frozen_base}}}
+    {:ok, calls} = Agent.start_link(fn -> [] end)
+
+    runner = fn
+      _, ["plugin", "list", "--json"], _, _ ->
+        {:ok, plugin_json(plugin)}
+
+      _, [_script, "--status", "--json", "--cd", ^worktree, "--base", base], _, _ ->
+        Agent.update(calls, &[base | &1])
+        status = if base == frozen_base, do: "done", else: "stale"
+        {:ok, Jason.encode!(%{review: "rvw_" <> base, status: status})}
+    end
+
+    opts = test_opts(runner)
+    observed = ReviewObservation.observe([package, frozen], opts)
+    assert observed[package.id].status == "failed"
+    assert observed[frozen.id].status == "passed"
+    assert Enum.sort(Agent.get(calls, & &1)) == Enum.sort(["origin/beta", frozen_base])
+    assert ReviewObservation.cached([package, frozen], opts) == observed
+    assert ReviewObservation.observe([package, frozen], opts) == observed
+    assert length(Agent.get(calls, & &1)) == 2
+
+    unobserved = %{frozen | id: "other", review_requirement: %{type: "review-suite", args: %{base: "beta"}}}
+    true = :ets.insert(opts[:cache_table], {:refreshing, self()})
+    assert ReviewObservation.observe([package, frozen, unobserved], opts) == observed
+    assert ReviewObservation.cached([unobserved], opts) == %{}
+  end
+
+  test "blank or invalid declared bases fall back while absent branch preserves provider default", %{test: test} do
+    %{worktree: worktree, plugin: plugin, package: package} = fixture(test)
+
+    for {declared, branch, base_args} <- [
+          {"", "beta", ["--base", "origin/beta"]},
+          {" \t", "beta", ["--base", "origin/beta"]},
+          {123, "beta", ["--base", "origin/beta"]},
+          {nil, nil, []},
+          {nil, " ", []},
+          {" origin/beta ", "main", ["--base", " origin/beta "]}
+        ] do
+      scoped = %{package | base_branch: branch, review_requirement: %{"type" => "review-suite", "args" => %{"base" => declared}}}
+      expected_args = ["--status", "--json", "--cd", worktree] ++ base_args
+
+      runner = fn
+        _, ["plugin", "list", "--json"], _, _ -> {:ok, plugin_json(plugin)}
+        _, [_script | ^expected_args], _, _ -> {:ok, Jason.encode!(%{review: "rvw_scoped", status: "done"})}
+      end
+
+      assert %{status: "passed"} = ReviewObservation.observe([scoped], test_opts(runner))[package.id]
+    end
   end
 
   test "only live review-suite packages with existing worktrees are observed", %{test: test} do
@@ -114,14 +168,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
       assert ReviewObservation.observe([package], test_opts(runner)) == %{}
     end
 
-    runner = fn _, args, _, _ ->
-      case args do
-        ["plugin", "list", "--json"] -> {:ok, plugin_json(plugin)}
-        [_script, "--status", "--json", "--cd", _worktree] -> :error
+    for status_result <- [:error, {:ok, Jason.encode!(%{status: "no_review_anchor"})}, {:ok, "not-json"}] do
+      runner = fn _, args, _, _ ->
+        case args do
+          ["plugin", "list", "--json"] -> {:ok, plugin_json(plugin)}
+          [_script, "--status", "--json", "--cd", _worktree, "--base", "origin/beta"] -> status_result
+        end
       end
-    end
 
-    assert ReviewObservation.observe([package], test_opts(runner)) == %{}
+      assert ReviewObservation.observe([package], test_opts(runner)) == %{}
+    end
   end
 
   test "delivery signal uses live provider progress", %{test: test} do
@@ -161,7 +217,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
           Process.sleep(50)
           {:ok, plugin_json(plugin)}
 
-        [_script, "--status", "--json", "--cd", ^worktree] ->
+        [_script, "--status", "--json", "--cd", ^worktree, "--base", "origin/beta"] ->
           {:ok, Jason.encode!(%{"review" => "rvw_shared", "status" => "reviewing"})}
       end
     end
@@ -206,6 +262,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
       package: %WorkPackage{
         id: "wp-observed",
         status: "reviewing",
+        base_branch: "beta",
         worktree_path: worktree,
         review_requirement: %{"type" => "review-suite", "args" => %{"mode" => "fast"}}
       }

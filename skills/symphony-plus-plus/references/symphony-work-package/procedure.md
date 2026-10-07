@@ -125,6 +125,7 @@ context.
   `review-suite@review-suite` plugin's `source.path`; use its `scripts/review.py`
   with `--cd <worktree>`, the declared mode, base, and review brief. Follow the
   provider's returned actions and report its review id, result, and reviewed head.
+  Use identical `--base` spelling for creation and status; declare frozen SHA bases in `review.args.base`.
   If the declared provider is missing, return that gate to the architect; do not
   install another provider or invent a completion receipt.
 - Classify the provider's structured review result before handoff.
