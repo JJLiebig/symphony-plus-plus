@@ -6,7 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals
 
   test "discovers the enabled plugin, projects status, and caches both commands", %{test: test} do
-    %{worktree: worktree, plugin: plugin, package: package} = fixture(test)
+    %{codex_home: codex_home, worktree: worktree, plugin: plugin, package: package} = fixture(test)
     {:ok, calls} = Agent.start_link(fn -> [] end)
 
     runner = fn executable, args, timeout, max_bytes ->
@@ -16,7 +16,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
         ["plugin", "list", "--json"] ->
           {:ok, plugin_json(plugin)}
 
-        [_script, "--status", "--json", "--cd", ^worktree] ->
+        [_script, "--status", "--json", "--cd", ^worktree, "--base", "origin/beta"] ->
           {:ok,
            Jason.encode!(%{
              "review" => "rvw_observed",
@@ -32,7 +32,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
       end
     end
 
-    opts = test_opts(runner)
+    opts = test_opts(runner, codex_home)
     package_id = package.id
 
     assert %{
@@ -62,22 +62,76 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
   end
 
   test "explicit provider failure outranks a done flag", %{test: test} do
-    %{plugin: plugin, package: package} = fixture(test)
+    %{codex_home: codex_home, plugin: plugin, package: package} = fixture(test)
     package_id = package.id
 
     runner = fn
       _, ["plugin", "list", "--json"], _, _ ->
         {:ok, plugin_json(plugin)}
 
-      _, [_script, "--status", "--json", "--cd", _worktree], _, _ ->
+      _, [_script, "--status", "--json", "--cd", _worktree, "--base", "origin/beta"], _, _ ->
         {:ok, Jason.encode!(%{"review" => "rvw_stale", "done" => true, "status" => "stale"})}
     end
 
-    assert %{^package_id => %{status: "failed"}} = ReviewObservation.observe([package], test_opts(runner))
+    assert %{^package_id => %{status: "failed"}} = ReviewObservation.observe([package], test_opts(runner, codex_home))
+  end
+
+  test "literal declared bases isolate grouping and cached outcomes in one worktree", %{test: test} do
+    %{codex_home: codex_home, worktree: worktree, plugin: plugin, package: package} = fixture(test)
+    frozen_base = String.duplicate("a", 40)
+    frozen = %{package | id: "frozen", review_requirement: %{type: "review-suite", args: %{base: frozen_base}}}
+    {:ok, calls} = Agent.start_link(fn -> [] end)
+
+    runner = fn
+      _, ["plugin", "list", "--json"], _, _ ->
+        {:ok, plugin_json(plugin)}
+
+      _, [_script, "--status", "--json", "--cd", ^worktree, "--base", base], _, _ ->
+        Agent.update(calls, &[base | &1])
+        status = if base == frozen_base, do: "done", else: "stale"
+        {:ok, Jason.encode!(%{review: "rvw_" <> base, status: status})}
+    end
+
+    opts = test_opts(runner, codex_home)
+    observed = ReviewObservation.observe([package, frozen], opts)
+    assert observed[package.id].status == "failed"
+    assert observed[frozen.id].status == "passed"
+    assert Enum.sort(Agent.get(calls, & &1)) == Enum.sort(["origin/beta", frozen_base])
+    assert ReviewObservation.cached([package, frozen], opts) == observed
+    assert ReviewObservation.observe([package, frozen], opts) == observed
+    assert length(Agent.get(calls, & &1)) == 2
+
+    unobserved = %{frozen | id: "other", review_requirement: %{type: "review-suite", args: %{base: "beta"}}}
+    true = :ets.insert(opts[:cache_table], {:refreshing, self()})
+    assert ReviewObservation.observe([package, frozen, unobserved], opts) == observed
+    assert ReviewObservation.cached([unobserved], opts) == %{}
+  end
+
+  test "blank or invalid declared bases fall back while absent branch preserves provider default", %{test: test} do
+    %{codex_home: codex_home, worktree: worktree, plugin: plugin, package: package} = fixture(test)
+
+    for {declared, branch, base_args} <- [
+          {"", "beta", ["--base", "origin/beta"]},
+          {" \t", "beta", ["--base", "origin/beta"]},
+          {123, "beta", ["--base", "origin/beta"]},
+          {nil, nil, []},
+          {nil, " ", []},
+          {" origin/beta ", "main", ["--base", " origin/beta "]}
+        ] do
+      scoped = %{package | base_branch: branch, review_requirement: %{"type" => "review-suite", "args" => %{"base" => declared}}}
+      expected_args = ["--status", "--json", "--cd", worktree] ++ base_args
+
+      runner = fn
+        _, ["plugin", "list", "--json"], _, _ -> {:ok, plugin_json(plugin)}
+        _, [_script | ^expected_args], _, _ -> {:ok, Jason.encode!(%{review: "rvw_scoped", status: "done"})}
+      end
+
+      assert %{status: "passed"} = ReviewObservation.observe([scoped], test_opts(runner, codex_home))[package.id]
+    end
   end
 
   test "only live review-suite packages with existing worktrees are observed", %{test: test} do
-    %{package: package} = fixture(test)
+    %{codex_home: codex_home, package: package} = fixture(test)
     {:ok, calls} = Agent.start_link(fn -> 0 end)
 
     runner = fn _, _, _, _ ->
@@ -85,7 +139,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
       :error
     end
 
-    opts = test_opts(runner)
+    opts = test_opts(runner, codex_home)
 
     human = %{package | id: "human", review_requirement: %{"type" => "human"}}
     terminal = %{package | id: "terminal", status: "merged"}
@@ -97,11 +151,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
   end
 
   test "missing, ambiguous, invalid, and failed providers degrade to no observation", %{test: test} do
-    %{plugin: plugin, package: package} = fixture(test)
+    %{codex_home: codex_home, plugin: plugin, package: package} = fixture(test)
 
     for plugin_payload <- [
           %{"installed" => []},
           %{"installed" => [installed_plugin(plugin), installed_plugin(plugin)]},
+          %{"installed" => [Map.put(installed_plugin(plugin), "version", "")]},
+          %{"installed" => [Map.put(installed_plugin(plugin), "version", " \t")]},
+          %{"installed" => [Map.delete(installed_plugin(plugin), "version")]},
+          %{"installed" => [Map.put(installed_plugin(plugin), "version", "not-installed")]},
+          %{"installed" => [Map.put(installed_plugin(plugin), "enabled", false)]},
           "not-json"
         ] do
       runner = fn _, args, _, _ ->
@@ -111,17 +170,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
         end
       end
 
-      assert ReviewObservation.observe([package], test_opts(runner)) == %{}
+      assert ReviewObservation.observe([package], test_opts(runner, codex_home)) == %{}
     end
 
-    runner = fn _, args, _, _ ->
-      case args do
-        ["plugin", "list", "--json"] -> {:ok, plugin_json(plugin)}
-        [_script, "--status", "--json", "--cd", _worktree] -> :error
+    for status_result <- [:error, {:ok, Jason.encode!(%{status: "no_review_anchor"})}, {:ok, "not-json"}] do
+      runner = fn _, args, _, _ ->
+        case args do
+          ["plugin", "list", "--json"] -> {:ok, plugin_json(plugin)}
+          [_script, "--status", "--json", "--cd", _worktree, "--base", "origin/beta"] -> status_result
+        end
       end
-    end
 
-    assert ReviewObservation.observe([package], test_opts(runner)) == %{}
+      assert ReviewObservation.observe([package], test_opts(runner, codex_home)) == %{}
+    end
   end
 
   test "delivery signal uses live provider progress", %{test: test} do
@@ -150,7 +211,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
   end
 
   test "concurrent refreshes share one provider invocation", %{test: test} do
-    %{worktree: worktree, plugin: plugin, package: package} = fixture(test)
+    %{codex_home: codex_home, worktree: worktree, plugin: plugin, package: package} = fixture(test)
     {:ok, calls} = Agent.start_link(fn -> 0 end)
 
     runner = fn _, args, _, _ ->
@@ -161,13 +222,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
           Process.sleep(50)
           {:ok, plugin_json(plugin)}
 
-        [_script, "--status", "--json", "--cd", ^worktree] ->
+        [_script, "--status", "--json", "--cd", ^worktree, "--base", "origin/beta"] ->
           {:ok, Jason.encode!(%{"review" => "rvw_shared", "status" => "reviewing"})}
       end
     end
 
     table = :ets.new(:review_observation_test, [:set, :public])
-    opts = Keyword.put(test_opts(runner), :cache_table, table)
+    opts = Keyword.put(test_opts(runner, codex_home), :cache_table, table)
     tasks = for _ <- 1..2, do: Task.async(fn -> ReviewObservation.observe([package], opts) end)
     results = Enum.map(tasks, &Task.await/1)
 
@@ -193,7 +254,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
   defp fixture(test) do
     root = Path.join(System.tmp_dir!(), "sympp-review-observation-#{test}")
     worktree = Path.join(root, "worktree")
-    plugin = Path.join(root, "plugin")
+    plugin = Path.join([root, "plugins", "cache", "review-suite", "review-suite", "1.2.3"])
     File.mkdir_p!(worktree)
     File.mkdir_p!(Path.join(plugin, "scripts"))
     File.write!(Path.join([plugin, "scripts", "review.py"]), "# fixture\n")
@@ -201,21 +262,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
     on_exit(fn -> File.rm_rf!(root) end)
 
     %{
+      codex_home: root,
       worktree: Path.expand(worktree),
       plugin: plugin,
       package: %WorkPackage{
         id: "wp-observed",
         status: "reviewing",
+        base_branch: "beta",
         worktree_path: worktree,
         review_requirement: %{"type" => "review-suite", "args" => %{"mode" => "fast"}}
       }
     }
   end
 
-  defp test_opts(runner) do
+  defp test_opts(runner, codex_home) do
     [
       cache_table: :ets.new(:review_observation_test, [:set, :public]),
       runner: runner,
+      codex_home: codex_home,
       find_executable: fn name -> name end,
       now_ms: 10_000
     ]
@@ -223,11 +287,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
 
   defp plugin_json(plugin), do: Jason.encode!(%{"installed" => [installed_plugin(plugin)]})
 
-  defp installed_plugin(plugin) do
+  defp installed_plugin(_plugin) do
     %{
       "pluginId" => "review-suite@review-suite",
       "enabled" => true,
-      "source" => %{"path" => plugin}
+      "version" => "1.2.3",
+      "source" => %{"source" => "git-subdir", "path" => "plugins/review-suite", "url" => "https://example.invalid/review-suite.git"}
     }
   end
 end
