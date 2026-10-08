@@ -2364,8 +2364,19 @@ function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) 
   try {
     $state = Read-RuntimeState $RuntimeFile
     $prepared = $state.artifact.prepared_release
+    $backendStopped = [string]$state.backend.status -eq "stopped" -and -not $state.backend.pid
+    if ([string]$state.backend.status -eq "started") {
+      $recordedBackendPid = 0
+      if (-not [int]::TryParse([string]$state.backend.pid, [ref]$recordedBackendPid) -or $recordedBackendPid -le 0) { return $false }
+      try {
+        [System.Diagnostics.Process]::GetProcessById($recordedBackendPid).Dispose()
+        return $false
+      } catch [System.ArgumentException] {
+        $backendStopped = $true
+      } catch { return $false }
+    }
     if ($null -eq $prepared -or [string]$prepared.kind -ne "windows_release_bat" -or
-        [string]$state.backend.status -ne "stopped" -or $state.backend.pid -or $state.backend.managed -ne $true -or
+        -not $backendStopped -or $state.backend.managed -ne $true -or
         [string]$state.publication.status -ne "ready" -or [string]$state.frontend.status -ne "artifact_static" -or
         @(Get-SupersededRuntimeStates $state).Count -gt 0 -or
         [string]$prepared.configured_workflow -cne [string]$env:SYMPP_WORKFLOW_FILE) { return $false }
@@ -2387,6 +2398,7 @@ function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) 
     $elixirDir = Join-Path $identity.source_root "elixir"
     if ([string]$prepared.workflow -ine [string](Resolve-ArtifactWorkflowPath $artifact $elixirDir)) { return $false }
     $plan = $state.backend
+    $plan.pid = $null
     $plan.status = "starting"
     $plan.reused = $false
     $root = [string]$artifact.root

@@ -1321,7 +1321,9 @@ function cancelPreparation() {
 async function prepareColdRuntime() {
   const configured = process.env.SYMPP_POWERSHELL;
   const state = readJson(resolveRuntimeFile());
-  if (process.platform === "win32" && process.argv.length === 2 && state?.backend?.status === "stopped" && state?.artifact?.prepared_release) {
+  const preparedBackendStopped = state?.backend?.status === "stopped" ||
+    (state?.backend?.status === "started" && validPid(state.backend.pid) && !processAlive(state.backend.pid));
+  if (process.platform === "win32" && process.argv.length === 2 && preparedBackendStopped && state?.artifact?.prepared_release) {
     const code = await runPreparation(configured || "powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "start-sympp-mcp.ps1"), "-TryPreparedRuntime"]).catch((error) => {
       if (!configured && error.code === "ENOENT") return 42;
       throw error;

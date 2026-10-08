@@ -541,18 +541,22 @@ async function runCase(clientCount, shell, mode = "normal") {
       const seed = startClient(seedBarrier, path.join(installedRoot, "scripts", "start-sympp-mcp.cmd"), environment, clients, [], { count: 0, target: 1, startedAt: Date.now(), resolve() {} });
       seed.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "prepare", version: "1" } } })}\n`);
       await waitFor(() => seed.ready, "Preparation client did not initialize.");
+      const started = readJson(runtimeFile);
       seed.child.stdin.end();
       assert.equal((await seed.result).code, 0, seed.stderr);
       const stopped = await waitFor(() => { const value = readJson(runtimeFile); return value?.backend?.status === "stopped" && value; }, "Preparation backend did not stop.");
       assert.equal(stopped.artifact.prepared_release?.kind, "windows_release_bat");
       assert.ok(await portAvailable(backendPort));
-      if (mode === "normal") {
+      if (mode === "normal" || mode === "absent_backend") {
         const original = fs.readFileSync(runtimeFile, "utf8");
         for (const change of [
           { env: { SYMPP_AUTOSTART_BACKEND: "0" } },
           { env: { SYMPP_WORKFLOW_FILE: path.join(root, "changed-workflow.md") } },
           { env: { SYMPP_WORKFLOW_FILE: "missing-relative-workflow.md" }, previousWorkflow: true },
           { generation: "d".repeat(64) },
+          { backendPid: process.pid },
+          { backendPid: null },
+          { backendPid: "unknown" },
         ]) {
           const candidate = JSON.parse(original);
           if (change.previousWorkflow) {
@@ -562,7 +566,8 @@ async function runCase(clientCount, shell, mode = "normal") {
             candidate.artifact.prepared_release.workflow = previousPath;
           }
           if (change.generation) candidate.publication.generation_key = change.generation;
-          if (change.generation || change.previousWorkflow) writeJson(runtimeFile, candidate);
+          if ("backendPid" in change) { candidate.backend.status = "started"; candidate.backend.pid = change.backendPid; }
+          if (change.generation || change.previousWorkflow || "backendPid" in change) writeJson(runtimeFile, candidate);
           const before = fs.readFileSync(runtimeFile, "utf8");
           const rejected = spawnSync(shell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(installedRoot, "scripts", "start-sympp-mcp.ps1"), "-TryPreparedRuntime"], { env: { ...environment, ...change.env }, windowsHide: true, encoding: "utf8" });
           assert.equal(rejected.status, 42, rejected.stderr);
@@ -570,6 +575,11 @@ async function runCase(clientCount, shell, mode = "normal") {
           assert.ok(await portAvailable(backendPort));
           fs.writeFileSync(runtimeFile, original);
         }
+      }
+      if (mode === "absent_backend") {
+        assert.equal(started.backend.status, "started");
+        assert.ok(started.backend.pid > 0 && !processAlive(started.backend.pid));
+        writeJson(runtimeFile, started); // Self-idle exit cannot publish the launcher's stopped state.
       }
       clients.splice(clients.indexOf(seed), 1);
       fs.rmSync(backendState);
@@ -1008,7 +1018,7 @@ async function main() {
   const powershellFallback = await runCase(10, windowsPowerShell, "powershell_fallback");
   for (const mode of ["manifest_death", "artifact_death", "backend_death", "backend_prebind_death"]) results.push(await runCase(30, pwsh, mode));
   const recovery = [];
-  for (const mode of ["prepared_normal", "prepared_root_dashboard", "prepared_backend_death", "prepared_backend_prebind_death", "prepared_timeout", "prepared_pwsh_only"]) results.push(await runCase(5, windowsPowerShell, mode));
+  for (const mode of ["prepared_normal", "prepared_absent_backend", "prepared_root_dashboard", "prepared_backend_death", "prepared_backend_prebind_death", "prepared_timeout", "prepared_pwsh_only"]) results.push(await runCase(5, windowsPowerShell, mode));
   for (const mode of ["owner_loss", "backend_loss", "backend_only_read_recovery", "ambiguous_tool", "powershell_fallback_ambiguous_tool", "shutdown_during_recovery", "generation_changed_recovery", "cleanup_source_changed_recovery", "powershell_fallback_recovery", "powershell_fallback_backend_only_read_recovery", "powershell_fallback_initialize_retry"]) recovery.push(await runCase(["shutdown_during_recovery", "generation_changed_recovery", "cleanup_source_changed_recovery"].includes(mode) ? 3 : mode === "powershell_fallback_recovery" ? 4 : mode.endsWith("backend_only_read_recovery") || mode.endsWith("ambiguous_tool") || mode === "powershell_fallback_initialize_retry" ? 1 : 10, mode.startsWith("powershell_fallback") ? windowsPowerShell : pwsh, mode));
   process.stdout.write(`${JSON.stringify({ matrix: results.slice(0, 2), powershell_fallback: powershellFallback, leader_death: results.slice(2), recovery, powershell_5_1: true, pwsh: true, cleanup: true })}\n`);
 }
