@@ -14,6 +14,7 @@ Choose separate beta paths in PowerShell:
 
 ```powershell
 $env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
+New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
 $env:SYMPP_HOME = Join-Path $env:USERPROFILE '.agents/splusplus-beta'
 $env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'symphony_plus_plus.sqlite3'
 codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
