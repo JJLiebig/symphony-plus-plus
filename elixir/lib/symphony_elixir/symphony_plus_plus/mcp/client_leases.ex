@@ -87,6 +87,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases do
 
     state = %{
       leases: %{},
+      bridge_lease_dir: Keyword.get(opts, :bridge_lease_dir, System.get_env("SYMPP_MCP_BRIDGE_LEASE_DIR")),
+      bridge_probe: Keyword.get(opts, :bridge_probe, System.get_env("SYMPP_MCP_BRIDGE_PROBE")),
       dashboard_opener: Keyword.get(opts, :dashboard_opener),
       ttl_ms: option(opts, :ttl_ms, :mcp_client_lease_ttl_ms, @default_ttl_ms),
       sweep_ms: option(opts, :sweep_ms, :mcp_client_lease_sweep_ms, @default_sweep_ms),
@@ -140,7 +142,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases do
 
   @impl true
   def handle_info(:sweep, state) do
-    state = prune_and_notify_idle(state, now_ms())
+    state = prune_and_notify_idle(state, now_ms(), true)
 
     schedule_sweep(state)
     {:noreply, maybe_schedule_shutdown(state)}
@@ -252,7 +254,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases do
     state =
       state
       |> Map.put(:lease_seen?, true)
-      |> Map.update!(:leases, &Map.put(&1, client_id, %{last_seen_ms: now}))
+      |> Map.update!(:leases, fn leases ->
+        bridge = get_in(leases, [client_id, :bridge]) || local_bridge(state.bridge_lease_dir, client_id)
+        Map.put(leases, client_id, %{last_seen_ms: now, bridge: bridge})
+      end)
 
     if first_client?, do: notify_dashboard_opener(state, :client_attached)
     state
@@ -268,14 +273,75 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases do
     state
   end
 
-  defp prune_and_notify_idle(state, now) do
+  defp prune_and_notify_idle(state, now, probe_bridges? \\ false) do
     had_clients? = map_size(state.leases) > 0
     state = prune(state, now)
+    state = if probe_bridges?, do: prune_dead_bridges(state), else: state
 
     if had_clients? and map_size(state.leases) == 0,
       do: notify_dashboard_opener(state, :clients_idle)
 
     state
+  end
+
+  defp local_bridge(directory, client_id) when is_binary(directory) do
+    with {:win32, _} <- :os.type(),
+         {:ok, files} <- File.ls(directory) do
+      Enum.find_value(files, &local_bridge_file(Path.join(directory, &1), client_id))
+    else
+      _ -> nil
+    end
+  end
+
+  defp local_bridge(_directory, _client_id), do: nil
+
+  defp local_bridge_file(file, client_id) do
+    with {:ok, content} <- File.read(file),
+         {:ok, %{"client_id" => ^client_id, "pid" => pid, "process_liveness_pipe" => pipe, "process_liveness_token" => token}} <-
+           Jason.decode(content),
+         true <- is_integer(pid) and pid > 0 and is_binary(pipe) and is_binary(token),
+         true <- String.starts_with?(pipe, "\\\\.\\pipe\\sympp-mcp-#{pid}-"),
+         true <- Regex.match?(~r/^[a-f0-9]{64}$/, token) do
+      %{pid: pid, pipe: pipe, token: token}
+    else
+      _ -> nil
+    end
+  end
+
+  defp prune_dead_bridges(state) do
+    bridges = for {id, %{bridge: bridge}} <- state.leases, bridge != nil, do: Map.put(bridge, :id, id)
+
+    if bridges == [] or not is_binary(state.bridge_probe) do
+      state
+    else
+      case probe_bridges(state.bridge_probe, bridges) do
+        {:ok, dead_ids} when is_list(dead_ids) -> %{state | leases: Map.drop(state.leases, dead_ids)}
+        _ -> state
+      end
+    end
+  end
+
+  defp probe_bridges(script, bridges) do
+    with true <- File.regular?(script),
+         node when is_binary(node) <- System.find_executable("node") do
+      port = Port.open({:spawn_executable, node}, [:binary, :exit_status, :hide, args: [script, "--probe-client-leases"]])
+      Port.command(port, Jason.encode!(bridges) <> "\n")
+      collect_probe(port, "", now_ms() + 2_000)
+    end
+  rescue
+    _ -> :unknown
+  end
+
+  defp collect_probe(port, output, deadline) do
+    receive do
+      {^port, {:data, data}} -> collect_probe(port, output <> data, deadline)
+      {^port, {:exit_status, 0}} -> Jason.decode(output)
+      {^port, {:exit_status, _}} -> :unknown
+    after
+      max(deadline - now_ms(), 0) ->
+        Port.close(port)
+        :unknown
+    end
   end
 
   defp notify_dashboard_opener(%{dashboard_opener: nil}, _event), do: :ok
