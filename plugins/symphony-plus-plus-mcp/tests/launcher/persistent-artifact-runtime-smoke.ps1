@@ -175,6 +175,7 @@ try {
       SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = [string]$backendPort; SYMPP_OPEN_DASHBOARD = "0"
       SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"
       HOME = Join-Path $tempRoot "profile"; USERPROFILE = Join-Path $tempRoot "profile"
+      HOMEDRIVE = [IO.Path]::GetPathRoot($tempRoot).TrimEnd('\'); HOMEPATH = (Join-Path $tempRoot "profile").Substring(2)
       TEMP = Join-Path $tempRoot "tmp"; TMP = Join-Path $tempRoot "tmp"
     }
     $command = Join-Path $installedRoot "scripts/start-sympp-mcp.cmd"
@@ -183,7 +184,7 @@ try {
       param($activeState, $sessionId)
       $readiness = Invoke-RestMethod ($activeState.backend.url + "/mcp/readiness")
       $actualPath = ([string]$readiness.ledger.identity.display_path).Replace('$HOME', $environment.USERPROFILE).Replace('/', '\')
-      if ($readiness.ledger.identity.kind -ne "sqlite" -or [IO.Path]::GetFullPath($actualPath) -ine [IO.Path]::GetFullPath($database)) { throw "Packaged runtime opened a different database." }
+      if ($readiness.ledger.identity.kind -ne "sqlite" -or [IO.Path]::GetFullPath($actualPath) -ine [IO.Path]::GetFullPath($database)) { throw "Packaged runtime ledger identity '$($readiness.ledger.identity.display_path)' did not match '$database'." }
       if ($activeState.runtime_mode -ne "artifact" -or $readiness.source.revision -ne $manifest.source_revision) { throw "Packaged runtime source identity mismatch." }
     }
     $first = Invoke-McpBridge $cmd @("/d", "/c", "call $command") $environment -CreateMarker -OnAttached {
@@ -351,7 +352,7 @@ server.listen(port,"127.0.0.1");
 } finally {
   if ($ArtifactManifest -and (Test-Path -LiteralPath $runtimeFile)) {
     $ownedState = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
-    $ownedBackend = Get-Process -Id ([int]$ownedState.backend.pid) -ErrorAction SilentlyContinue
+    $ownedBackend = if ([int]$ownedState.backend.pid -gt 0) { Get-Process -Id ([int]$ownedState.backend.pid) -ErrorAction SilentlyContinue } else { $null }
     if ($ownedBackend -and [string]$ownedState.publication.backend.process_start_time_utc_ticks -eq [string]$ownedBackend.StartTime.ToUniversalTime().Ticks) {
       $backendProcessId = $ownedBackend.Id
       $backendStartTicks = $ownedBackend.StartTime.ToUniversalTime().Ticks
