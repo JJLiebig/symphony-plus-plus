@@ -1,205 +1,98 @@
-# Installed Runtime And MCP Startup
+# Install And Run Symphony++
 
-## Active Endpoints
+The beta package is `0.2.0-beta.1`. These native connections are for Windows
+Codex and Claude Code. [Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
+identify the exact tested build and hosts. Linux/macOS runtime archives do not
+establish native plugin or host support.
 
-The installed launcher prefers loopback backend port `19998`, then higher
-available ports. `SYMPP_BACKEND_PORT` requests a preferred port; the launcher
-can fall back if it is unavailable. The packaged dashboard and HTTP MCP share
-the selected backend endpoint. A separate `19999` listener is a source/Vite
-development detail.
+## Install In A Separate Beta Home
 
-On Windows, read the actual endpoints from the runtime file:
+Use PowerShell with Git, Node.js, PowerShell 7 and Codex available. Choose
+separate beta paths so your stable installation and ledger remain independent:
 
 ```powershell
-$symppRuntime = Get-Content "$env:USERPROFILE\.agents\splusplus\runtime\codex-plugin.json" -Raw | ConvertFrom-Json
+$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
+$env:SYMPP_HOME = Join-Path $env:USERPROFILE '.agents/splusplus-beta'
+$env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'symphony_plus_plus.sqlite3'
+codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
+codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
+codex
+```
+
+Retain these variables in each beta terminal. `CODEX_HOME` selects the plugin
+installation and Codex configuration; `SYMPP_HOME` selects launcher state;
+`SYMPP_DATABASE` selects the ledger. Setting only `SYMPP_HOME` does not
+select a separate ledger. Use the same three paths for both hosts to share work.
+
+A fresh Codex session loads MCP tools and starts or attaches to the packaged
+runtime. A separate Codex home has its own authentication; use Codex's normal
+sign-in flow when required. Do not copy credentials.
+
+For Claude Code, install the [portable procedures](portable-skills.md), then
+register the same installed bridge from the intended project:
+
+```powershell
+$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0-beta.1/scripts/start-sympp-mcp.cmd'
+claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
+claude
+```
+
+Follow host approval prompts. Verify `symphony_plus_plus` tools in the actual
+session before ledger work. Skills alone do not connect MCP. The authoritative
+[connection procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/references/mcp_wiring.md)
+covers host setup, claims and developer connections.
+
+## Open The Board
+
+The packaged backend serves the dashboard; no separate frontend is needed.
+Read the actual URL after the first connection:
+
+```powershell
+$symppRuntime = Get-Content (Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json') -Raw | ConvertFrom-Json
 $symppRuntime.frontend.url
 $symppRuntime.backend.mcp_url
 ```
 
-## Normal Installed Flow
+The launcher prefers loopback port `19998` and tries higher available ports
+when needed. `SYMPP_BACKEND_PORT` requests a preferred port. Use the recorded
+URL. See [Operations](operations.md) for the Work board and starting a request.
 
-The supported user path is:
+## Attach, Close And Recover
+
+The first client starts the runtime; clients with matching settings attach.
+Closing one host leaves the other usable. The backend stops after the last
+client detaches. The next session can restart the verified artifact without
+downloading the channel manifest again. Changed package generation or launch
+settings require full preparation.
+
+For a connection failure, keep healthy sessions running. Check the recorded
+endpoint and host error, then reconnect the affected host. A health probe does
+not restore a worker claim: reclaim the same assignment in the actual session
+and read its prior evidence before retrying an uncertain write. The
+[WorkPackage procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/SKILL.md)
+owns that recovery.
+
+For an upgrade, close clients using this beta runtime, retain the beta
+environment variables, and run:
 
 ```powershell
 codex plugin marketplace upgrade symphony-plus-plus
 ```
 
-Open a fresh Codex session after upgrading. The installed plugin resolves its
-source from the owning marketplace clone, selects a compatible packaged
-runtime artifact, starts or reuses the local backend, and attaches the MCP
-client bridge.
+Open fresh sessions. If the package version changes, update Claude's bridge
+registration to the installed version before reopening Claude. Never refresh
+an installed cache from a developer checkout or set `SYMPP_REPO_ROOT` for
+normal installed use. The bridge resolves its owning marketplace source clone
+and shipped beta artifact pointer.
 
-For an existing managed artifact runtime on Windows, run this between S++ tool
-calls to stop the server, upgrade the marketplace, and start the server again:
+If startup cannot resolve a home, choose explicit absolute home and database
+paths. For persistent failures, compare the installed version and release notes
+and capture the exact host error before repair. Do not overwrite runtime state
+or stop another healthy host to repair one failed attachment.
 
-```powershell
-pwsh -File .\scripts\upgrade-spp.ps1
-```
+## Developer Diagnostics
 
-Add `-WhatIf` to preview. Existing bridges reconnect for same-version backend
-refreshes. For plugin-version upgrades, close S++ Codex sessions before running
-the command from a separate PowerShell terminal, then open fresh sessions. If
-unsure whether the upgrade changes the plugin version, use that shutdown flow.
-The script does not close or reload Codex sessions. It blocks automatic server
-recovery during the upgrade and attempts startup even if the upgrade fails.
-It uses the installed plugin, not the developer checkout.
-
-After a clean last-client shutdown on Windows, the next session can restart the
-verified release directly. It reuses the artifact selected for the installed
-plugin generation and skips the channel manifest request. A marketplace
-generation change or changed launch settings returns to full preparation.
-The stable channel is checked during full preparation, not on every prepared
-restart. The first start after an upgrade still performs full preparation.
-
-The first client owns startup; other clients attach to that backend. The backend
-stops when the last client closes. No persistent service or Herdr launch step is
-required.
-
-On Windows, an elevated client starts the backend as the logged-in desktop
-user without administrator privileges. Elevated and normal clients share the
-same backend, including a healthy backend started by an older elevated client.
-The desktop shell must be available for an elevated client to start a new backend.
-
-The source checkout at `C:\Code\symphony-plus-plus` is a developer workspace.
-Its uncommitted files and source-root hints must not determine an installed
-session's runtime. Installed diagnostics must resolve the owning marketplace
-source clone before considering a developer checkout.
-
-## Runtime Identity
-
-Artifact selection binds together:
-
-- Plugin package and version.
-- Marketplace source revision.
-- Platform and architecture.
-- Runtime artifact manifest.
-- MCP contract fingerprint.
-
-The fingerprint lets the launcher reject an artifact whose MCP surface does
-not match the installed plugin before initialization.
-
-## Developer Validation
-
-Use `SYMPP_REPO_ROOT` only when deliberately testing a source checkout. It is
-never the caller repository and never the normal installed-agent runtime path.
-
-Developer builds write generated Mix output outside the installed plugin cache
-so a new source build cannot collide with native libraries loaded by an older
-backend.
-
-## Isolated Beta Development
-
-From the stable `main` checkout, explicitly create or update the fixed adjacent
-`symphony-plus-plus-beta` worktree:
-
-```powershell
-pwsh -NoProfile -File .\scripts\sympp-beta.ps1 -Action Setup
-```
-
-Then start the isolated source runtime and open Codex with the normal
-authenticated Codex home:
-
-```powershell
-pwsh -NoProfile -File .\scripts\sympp-beta.ps1 -Action Codex
-```
-
-Resume an existing thread directly through the beta launcher. Do not open a
-fresh beta TUI and then use `/resume`; that can retain the thread's prior MCP
-attachment.
-
-```powershell
-pwsh -NoProfile -File .\scripts\sympp-beta.ps1 -Action Codex -ResumeSessionId <thread-id>
-```
-
-The source beta lane uses backend `20000`, Vite `20001`, and separate
-`SYMPP_HOME`, `SYMPP_RUNTIME_FILE`, `SYMPP_LOG_DIR`, `MIX_BUILD_ROOT`, and SQLite
-database paths. It keeps `CODEX_HOME` unchanged, so existing authentication and
-the normal installed bridge remain available. The installed bridge's selected
-loopback ports, stable runtime state, and default installed plugin cache are not
-control targets.
-
-Use the same command with `-Action Start`, `Restart`, `Status`, or `Stop` for
-beta-only runtime control. Vite owns frontend hot reload. `Restart` restarts
-only the source cockpit; the existing bridge reinitializes its MCP session when
-the backend returns. Open a fresh beta Codex thread when an MCP tool schema
-changes because tool discovery happens at thread startup.
-
-Runtime-control actions use the existing beta checkout as-is. They do not fetch
-or update Git. Run `-Action Setup` when you want to synchronize with
-`origin/beta`; it preserves untracked files and refuses tracked local changes or
-local commits that are not on `origin/beta`.
-
-Run `-Action Validate` for the declared launcher and environment check without
-starting or stopping either runtime. `-Action Package` refreshes and validates
-skill, plugin manifest, launcher, or marketplace changes through a separate beta
-`CODEX_HOME`. The guarded repository refresh path makes repeated runs current
-and refuses the default Codex plugin cache.
-
-The default beta database is a sandbox ledger under the beta home. Pass
-`-Database <copied-ledger>` for destructive lifecycle validation against a
-copy. `-LiveLedger` alone selects the normal live ledger; the script rejects
-that path without the switch and rejects alternate paths with the switch. Do
-not run destructive lifecycle validation in live mode. Existing database paths
-are compared by file identity, so aliases of the live ledger are also rejected.
-
-Branch flow:
-
-- Feature PRs target `beta`.
-- Urgent fixes land on `main`, then merge `origin/main` forward into `beta`.
-- Promotion is a squash PR from `beta` to `main`.
-- After promotion, require a clean beta worktree, then recreate beta from main:
-
-```powershell
-git -C ..\symphony-plus-plus-beta fetch origin
-git -C ..\symphony-plus-plus-beta diff --quiet
-git -C ..\symphony-plus-plus-beta diff --cached --quiet
-git -C ..\symphony-plus-plus-beta reset --hard origin/main
-git -C ..\symphony-plus-plus-beta push --force-with-lease origin beta
-```
-
-## Diagnosis
-
-When `mark_ready` fails a readiness gate, its MCP error message names the
-missing evidence, such as `Investigation findings are missing.` This remains
-visible in hosts that show only the error message. The structured error keeps
-the gate identifiers and details; supply the missing evidence and retry.
-
-When a fresh session cannot initialize:
-
-1. Capture the exact Codex MCP startup error.
-2. Check the current bridge/backend health without restarting working agents.
-3. Run lifecycle diagnostics against the owning marketplace source clone.
-4. Compare plugin version, source revision, artifact manifest, and contract
-   fingerprint.
-5. Use marketplace upgrade and a fresh session for installed repair.
-
-Do not:
-
-- Refresh the installed cache from a developer checkout.
-- Rewrite runtime state while existing agents are healthy.
-- Kill the shared backend merely because one client failed attachment.
-- Treat a dirty developer checkout as evidence that the marketplace cache is
-  stale.
-
-## Performance Contract
-
-The release gate enforces:
-
-- One backend singleton.
-- Exact shipped-command initialization.
-- Bounded warm attachment latency.
-- No warm Git, payload, contract, or manifest resolution.
-- Client lease cleanup.
-- Recovery after runtime failure, payload mutation, abandoned locks, and
-  lifecycle races.
-- Bounded tool discovery and representative result payloads.
-
-Run:
-
-```powershell
-pwsh -NoProfile -File .\scripts\benchmarks\sympp-mcp\run-performance-gate.ps1
-```
-
-Use `-SelfTest` to exercise every threshold branch without starting a backend.
-The gate's executable script owns numeric thresholds; this guide intentionally
-does not duplicate them.
+Source validation, manual HTTP connections, beta runtime controls and
+performance checks are [developer operations](development.md), separate from
+installed qualification. An elevated Windows client starts a new backend
+through the logged-in desktop user; the desktop shell must be available.

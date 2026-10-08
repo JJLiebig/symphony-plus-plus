@@ -1,9 +1,9 @@
 # Symphony++ Documentation
 
-The guides below describe the running product. The separately labeled
-[factory workflow](design/factory-workflow.md) is the approved beta contract.
-Its source capabilities are implemented; combined native-host qualification and
-installed marketplace cutover are separate from that source delivery.
+The guides describe the current beta product. The [factory workflow](design/factory-workflow.md)
+preserves its approved contract and editable diagram.
+[Release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
+record exact tested builds and hosts.
 
 ## Sources Of Truth
 
@@ -26,7 +26,7 @@ documents do not remain in the active documentation tree.
 - Operate Symphony++: [Operations](operations.md)
 - Review trust boundaries: [Security](security.md)
 - Develop and validate changes: [Development](development.md)
-- Diagnose installed runtime behavior: [Runtime](runtime.md)
+- Install, connect, upgrade or recover: [Runtime](runtime.md)
 - Install portable Codex/Claude procedures: [Portable skills](portable-skills.md)
 - Repair delivery state: [Delivery recovery](runbooks/delivery-recovery.md)
 - Respond to a permission or secret incident:
@@ -35,7 +35,7 @@ documents do not remain in the active documentation tree.
 ## Beta Contract
 
 - [Factory workflow](design/factory-workflow.md): roles, small-work and
-  architect/UI loops, delivery semantics, visibility, and remaining gaps.
+  architect/UI loops, delivery semantics and visibility.
 - [Editable diagram](design/factory-workflow.excalidraw) and
   [SVG](design/factory-workflow.svg): the approved human workflow sketch.
 

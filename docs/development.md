@@ -65,6 +65,31 @@ Dashboard measurements and the realistic focus-board journey live under
 
 See [Runtime](runtime.md) for installed artifact ownership and repair.
 
+## Isolated Source Beta
+
+Source runtime validation is separate from installed beta use. From the stable
+checkout, the existing helper creates or updates its adjacent beta worktree:
+
+```powershell
+pwsh -NoProfile -File .\scripts\sympp-beta.ps1 -Action Setup
+pwsh -NoProfile -File .\scripts\sympp-beta.ps1 -Action Codex
+```
+
+Use `Start`, `Restart`, `Status`, `Stop` or `Validate` for that source
+runtime. Control actions do not update Git. `Setup` synchronizes beta and
+refuses conflicting tracked changes/local commits. Resume an existing thread
+with `-Action Codex -ResumeSessionId <thread-id>`.
+
+The helper isolates ports, home, build output and sandbox database. It keeps
+the normal Codex home for source sessions. `Package` uses a separate developer
+Codex home; it is not marketplace-installed qualification. Do not use
+`-LiveLedger` for destructive validation. Inspect script help before selecting
+a copied ledger or changing the lane.
+
+Only explicit developer validation uses `SYMPP_REPO_ROOT`. Installed sessions
+must resolve from their own marketplace/cache. Never refresh the normal cache
+from a developer checkout.
+
 ## Documentation Changes
 
 Current guides describe implemented behavior. Approved beta target contracts

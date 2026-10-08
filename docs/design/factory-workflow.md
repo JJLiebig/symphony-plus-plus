@@ -1,9 +1,10 @@
 # Factory Workflow
 
-**Status: approved beta contract; source capabilities implemented, combined
-host qualification pending.** The diagram remains the approved product intent. Use
-[Current system](../system.md) and the [packaged skills](../../plugins/symphony-plus-plus-mcp/skills/)
-for what works today.
+**Approved beta contract.** The diagram preserves product intent.
+Use [Current system](../system.md), [Operations](../operations.md) and the
+[packaged skills](../../plugins/symphony-plus-plus-mcp/skills/) for current
+behavior. [Release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
+record exact tested builds and hosts.
 
 The aim is a lean, agent-agnostic delivery system whose human operator can see
 who owns work, what is happening, what is waiting, and who acts next.
@@ -141,41 +142,12 @@ GitHub and review providers own their outcomes. Link these sources and expose
 the next action without making duplicate systems of record. Missing observation
 must not authorize a worker takeover or imply delivery.
 
-## Starting Point And Implementation Order
+## Current Procedures
 
-The beta starts from main after the delivered prerequisite changes:
-
-| Baseline | Available evidence |
-|---|---|
-| Less procedural duplication | [PR #692](https://github.com/JJLiebig/symphony-plus-plus/pull/692). |
-| MCP-only ledger access | [PR #693](https://github.com/JJLiebig/symphony-plus-plus/pull/693); operational shell tools still install, start, inspect, and repair. |
-| Portable procedures | [PR #694](https://github.com/JJLiebig/symphony-plus-plus/pull/694); `npx skills` installs procedures, with MCP configured separately. |
-| Mixed-host pilot | WR `wr_ixqbhpua2ajgbepu`, completed without PR: actual Windows Codex and Claude clients used one isolated ledger with distinct claims, scope denial, reconnect, and readiness. |
-
-The pilot used an operator-owned cockpit and operator-run Review Suite handoff.
-Claude readiness needed operator help because its displayed MCP error omitted
-the actionable reason. Beta now returns actionable readiness messages. Autonomous
-native review discovery, standalone managed startup/leases, and macOS/Linux
-distribution remain unproven. Beta board/Herdr observation is implemented;
-combined native-host qualification remains pending.
-These are bounded implementation/qualification gaps, not claims of complete
-cross-host support or a reason to repeat the same pilot before useful work.
-
-Current beta source provides delivered-scope/successor resolution, exact-head
-candidate dependencies and consumed-input staleness, pre-merge eligibility,
-actionable readiness errors, and board/Herdr owner/activity/wait observations.
-[Current system](../system.md) and [Operations](../operations.md) describe these
-capabilities. The packaged
+The packaged
 [architect procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-architect/references/operations.md#ui-collaboration-and-candidates)
-owns durable approval, explicit claim handoff, candidate selection, successor
-replacement and ordered merge; this contract is not a second agent checklist.
-
-Qualify the combined direct and architect/UI paths with actual available native
-hosts in an isolated beta home/ledger. Checkout-backed beta qualification is
-separate from installed marketplace runtime qualification or a stable cutover.
-
-Keep useful ledger, authorization, delivery, and runtime machinery. Remove
-duplicated procedures and obsolete surfaces when their replacements exist.
-A generic fleet manager, provider runner, or wholesale runtime rewrite is not
-a prerequisite for this workflow. Code changes and their concrete acceptance
-belong in bounded WorkPackages rather than an expanded procedure rewrite.
+owns durable approval, claim handoff, candidate selection, successor replacement
+and ordered merge. This contract is not a second agent checklist.
+Installed setup and recovery live in [Runtime](../runtime.md); the operator
+view lives in [Operations](../operations.md). Completed implementation and
+qualification history belongs in Git and release evidence.

@@ -12,19 +12,27 @@ accounts or terminal sessions.
 
 ## Install
 
-Portable procedures for Codex or Claude Code:
+Windows beta installation and connection for Codex or Claude Code:
+
+Follow [Install and run](docs/runtime.md) to select separate beta homes and a
+ledger, install `0.2.0-beta.1`, connect either host and open the board.
+[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
+identify the exact tested build and hosts.
+
+Portable procedures without runtime installation:
 
 ```sh
-npx skills add JJLiebig/symphony-plus-plus
+npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta
 ```
 
 This installs procedures only. See [Portable skills](docs/portable-skills.md)
 for host selection, updates, removal, and separate MCP setup.
 
-For Codex marketplace installation, add the marketplace once:
+For skill-only Codex use, choose a separate beta home and add the marketplace:
 
 ```powershell
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
+$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
+codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
 ```
 
 Choose the skill-only plugin for ordinary workers/coordinators:
@@ -33,17 +41,10 @@ Choose the skill-only plugin for ordinary workers/coordinators:
 codex plugin add symphony-plus-plus@symphony-plus-plus
 ```
 
-Or choose the MCP companion for persistent Solo or WorkRequest/WorkPackage
-sessions:
-
-```powershell
-codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
-```
-
 Update packages and open a fresh Codex session:
 
 ```powershell
-codex plugin marketplace upgrade
+codex plugin marketplace upgrade symphony-plus-plus
 ```
 
 Do not install both plugins in the same Codex home unless you intentionally
@@ -58,9 +59,8 @@ endpoint lookup, lifecycle, beta isolation, and repair.
 - [Default plugin](plugins/symphony-plus-plus/README.md) and
   [MCP companion](plugins/symphony-plus-plus-mcp/README.md): package boundaries.
 - [Product](PRODUCT.md) and [Design](DESIGN.md): purpose and interface principles.
-- [Factory workflow](docs/design/factory-workflow.md): approved **beta target**
-  with the editable human diagram; proposed capabilities are labeled separately
-  from current behavior.
+- [Factory workflow](docs/design/factory-workflow.md): approved beta contract
+  and editable human diagram.
 - [Upstream specification](SPEC.md): upstream Symphony behavior.
 
 ## License
