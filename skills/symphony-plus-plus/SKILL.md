@@ -29,7 +29,6 @@ do not interrupt live agent sessions or alter their configuration.
 
 Invoke this skill as `$symphony-plus-plus` in Codex or `/symphony-plus-plus` in
 Claude Code. Procedure names in linked instructions refer to local files,
-not additional skills to install. Codex-specific launcher/profile guidance in
-the wiring reference applies only to Codex marketplace sessions. Use your
+not additional skills to install. The wiring reference covers the shared Windows bridge for both hosts. Use your
 host's delegation tools when available; otherwise report a required worker
 dispatch as unavailable instead of taking over an architect's implementation.

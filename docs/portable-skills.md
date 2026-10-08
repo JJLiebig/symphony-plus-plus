@@ -8,28 +8,28 @@ install, configure, or start the Symphony++ backend.
 From the intended project directory:
 
 ```sh
-npx skills add JJLiebig/symphony-plus-plus
+npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta
 ```
 
 The repository exposes one portable skill, `symphony-plus-plus`. For an
 explicit, non-interactive host selection:
 
 ```sh
-npx skills add JJLiebig/symphony-plus-plus --agent codex --skill symphony-plus-plus --yes
-npx skills add JJLiebig/symphony-plus-plus --agent claude-code --skill symphony-plus-plus --yes
+npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex --skill symphony-plus-plus --yes
+npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent claude-code --skill symphony-plus-plus --yes
 ```
 
 These are project installs. Codex uses `.agents/skills/symphony-plus-plus`;
 Claude Code uses `.claude/skills/symphony-plus-plus`, normally linked to the
 shared project `.agents/skills` directory. Add `--copy` when a standalone copy
-is preferred. Global installation is also available upstream with `--global`,
-but was not qualified here. Avoid installing the portable bundle and equivalent
-marketplace procedures in the same host unless both entrypoints are intended.
+is preferred. The examples use project scope. Avoid installing the portable
+bundle and equivalent marketplace procedures in the same host unless both
+entrypoints are intended.
 
 Inspect discovery and installed host selections:
 
 ```sh
-npx skills add JJLiebig/symphony-plus-plus --list
+npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --list
 npx skills list --agent codex
 npx skills list --agent claude-code
 ```
@@ -47,9 +47,7 @@ one host while keeping the shared payload, add `--agent codex` or
 
 To refresh the installed payload even when its source revision is unchanged,
 repeat its targeted `add` command. Keep the same installation mode
-(`--copy`, if used) when refreshing. For reproducible qualification, replace
-`skills` with `skills@1.7.0` in these commands; that was the newest stable
-release at least seven days old on 2026-10-04.
+(`--copy`, if used) when refreshing. Use the same beta source when refreshing.
 
 ## Procedures And MCP
 
@@ -61,7 +59,7 @@ not requested. Ledger operations require `symphony_plus_plus` MCP tools in the
 actual agent session, with the intended ledger and assignment.
 
 Follow the packaged [connection guide](../skills/symphony-plus-plus/connection.md)
-to configure a dedicated session against a separately running cockpit. Shell
+for Windows Codex/Claude connection through the installed MCP companion. Shell
 startup and diagnostic tools remain supported. Business CLI commands, direct
 SQLite access, and private state files are not agent ledger fallbacks.
 Skill discovery does not prove MCP availability.
@@ -70,17 +68,14 @@ The existing [Codex marketplace installation](../README.md#install) retains its
 skill-only and MCP companion packages. Use marketplace upgrade and a fresh
 session for that route; portable installation does not modify the plugin cache.
 
-## Qualification And Maintenance
+## Distribution And Maintenance
 
-Skills CLI 1.7.0 project discovery, installation, refresh, and removal were
-qualified on Windows for the `codex` and `claude-code` selections in isolated
-directories. The copied payload is 11 Markdown files: one dispatcher, one
-connection guide, five procedures and four references. It includes no Elixir
-runtime, source tree, tests, assets, plugin cache, or secrets. All required local
-links resolve within the installed bundle. Global installs and other operating
-systems were not exercised. Actual shared-ledger Codex/Claude execution is a
-separate pilot; this packaging qualification does not establish runtime or
-Herdr integration support.
+The bundle contains 11 Markdown files: one dispatcher, one connection guide,
+five procedures and four references. It includes no runtime, source tree,
+plugin cache or credentials. Local links resolve within the bundle.
+[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
+record the tested host/platform scope; procedure installation alone does not
+prove a runtime connection.
 
 Marketplace MCP procedures remain authoritative. After editing them, regenerate
 the portable references and check the distribution:

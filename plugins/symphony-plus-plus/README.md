@@ -1,73 +1,35 @@
 # Symphony++ Codex Plugin
 
-This is the default, skill-only Symphony++ plugin. It provides the Solo Session,
-worker, and coordinator skills for ordinary repository work. Its manifest is
-skill-only and the package does not contain a root `.mcp.json`, so enabling it
-does not start Symphony++ MCP in generic sessions or review lanes.
-
-Ordinary workers and coordinators can operate without a Symphony++ backend
-when no persistent planning state is requested. All Symphony++ ledger operations,
-including Solo Sessions, require configured MCP tools; this package provides no
-business CLI or private-file fallback. Use the MCP companion in a dedicated
-session when persistence is needed.
-
-WorkRequest and WorkPackage orchestration belongs to the sibling
-`symphony-plus-plus-mcp` plugin. That package contains the authoritative
-MCP-backed worker, WorkPackage, and architect skills.
+This `0.2.0-beta.1` package is skill-only. It supplies worker, coordinator and
+Solo Session procedures without starting Symphony++ MCP. Ordinary work needs
+no backend when persistence is not requested. Ledger operations, including
+Solo Sessions, require configured MCP tools.
 
 ## Install
 
-Install or update Symphony++ through the Codex marketplace:
+Use a separate beta Codex home:
 
 ```powershell
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
-codex plugin marketplace upgrade symphony-plus-plus
+$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
+codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
 codex plugin add symphony-plus-plus@symphony-plus-plus
 ```
 
-Open a fresh Codex session after upgrading.
-
-For a dedicated MCP-enabled Codex home, install the companion instead:
+Update in the same home and open a fresh Codex session:
 
 ```powershell
-codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
+codex plugin marketplace upgrade symphony-plus-plus
 ```
 
-Do not enable both packages in the same Codex home. Keep the MCP companion out
-of generic worker and review configurations.
-
-## Runtime
-
-Installed sessions resolve from the owning Codex marketplace source clone and
-select a compatible packaged runtime artifact. The MCP companion starts or
-reuses the local backend, serves the packaged dashboard, and attaches its
-client bridge. Runtime identity binds the plugin version, marketplace source
-revision, platform, artifact manifest, and MCP contract fingerprint.
-
-Do not point an installed plugin at a developer checkout or use
-`SYMPP_REPO_ROOT` for normal installed operation. Repair installed state with a
-marketplace upgrade and a fresh session, not a repo-local cache refresh.
-
-See the authoritative operator docs:
-
-- [Operations](../../docs/operations.md) for supported workflows.
-- [Installed runtime and MCP startup](../../docs/runtime.md) for runtime
-  ownership, diagnosis, and repair.
-- [Current system](../../docs/system.md) for the model and product boundary.
-- [Development](../../docs/development.md) for source-checkout validation.
+For persistence or assigned execution, choose the sibling
+`symphony-plus-plus-mcp` package instead. Its
+[installation guide](https://github.com/JJLiebig/symphony-plus-plus/blob/beta/docs/runtime.md)
+covers beta homes and ledger, shared Codex/Claude runtime, dashboard and recovery.
+Do not install both packages unless both skill prefixes are intended.
 
 ## Development
 
-The committed marketplace entry at `.agents/plugins/marketplace.json` always
-resolves plugins from Git `main`. The local refresh helper uses its own
-non-discoverable manifest for isolated development Codex homes and refuses the
-default `~/.codex` cache unless explicitly overridden.
-
-Use the lifecycle doctor for non-destructive diagnostics:
-
-```powershell
-.\plugins\symphony-plus-plus\scripts\diagnose-mcp-lifecycle.ps1 -MarketplaceName symphony-plus-plus -Doctor
-```
-
-Do not refresh or validate the user's installed Symphony++ cache from a
-developer checkout.
+The marketplace routes both packages to Git `beta`. Repository refresh helpers
+are for isolated developer homes, not installed runtime repair. See
+[Development](https://github.com/JJLiebig/symphony-plus-plus/blob/beta/docs/development.md)
+for source validation.

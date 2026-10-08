@@ -10,7 +10,7 @@
         "source": "url",
         "url": "https://github.com/JJLiebig/symphony-plus-plus.git",
         "path": "plugins/symphony-plus-plus",
-        "ref": "main"
+        "ref": "beta"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -24,7 +24,7 @@
         "source": "url",
         "url": "https://github.com/JJLiebig/symphony-plus-plus.git",
         "path": "plugins/symphony-plus-plus-mcp",
-        "ref": "main"
+        "ref": "beta"
       },
       "policy": {
         "installation": "AVAILABLE",

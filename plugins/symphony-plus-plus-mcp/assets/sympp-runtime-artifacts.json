@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "channel": "stable",
+  "channel": "beta",
   "manifest": {
-    "url": "https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-runtime-stable/sympp-runtime-artifacts-stable.json"
+    "url": "https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-20261007/sympp-runtime-artifacts-beta.json"
   }
 }
