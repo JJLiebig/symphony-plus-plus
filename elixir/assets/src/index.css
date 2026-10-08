@@ -2612,11 +2612,7 @@
   }
 
   .v3-request-frontier-title-copy {
-    display: -webkit-box;
-    max-height: 2.4em;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    display: block;
   }
 
   .v3-request-frontier-meta > .execution-graph__pr-badge {
@@ -2684,17 +2680,13 @@
     }
 
     .v3-request-frontier-title {
-      display: block;
-      max-height: calc(var(--frontier-row-height) * 2);
       grid-column: 2 / 5;
-      padding-block: 0;
-      line-height: var(--frontier-row-height);
     }
 
     .v3-request-frontier-title::before {
       float: right;
       width: calc(var(--frontier-compact-meta-track) + var(--frontier-group-gap));
-      height: var(--frontier-row-height);
+      height: calc(var(--frontier-row-height) - 0.675rem);
       content: "";
     }
 
