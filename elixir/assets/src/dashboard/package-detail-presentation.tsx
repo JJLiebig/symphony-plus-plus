@@ -6,7 +6,7 @@ import { DetailCopyButton } from "@/components/dashboard/detail-copy-button";
 import { DetailDisclosure, DetailFacts, DetailHeader, DetailList, DetailSection, DetailSummaryBar } from "@/components/dashboard/detail-layout";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MarkdownBlock } from "@/components/dashboard/markdown-block";
-import type { ContextComment, PackageOperationalAttention, WorkPackageCard, WorkPackageDetailPayload } from "@/types/dashboard";
+import type { ContextComment, PackageOperationalAttention, WorkPackageCard, WorkPackageDetailPayload, WorkPackageMergeEligibility } from "@/types/dashboard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { operationalBadgeVariant, operationalLabel } from "@/lib/operational-state";
@@ -94,10 +94,10 @@ export function PackageDetailBody({
 }) {
   return (
     <>
-      <PackageDetailHeader pkg={pkg} operational={operational} blockerCopyText={blockerCopyText} />
+      <PackageDetailHeader pkg={pkg} operational={operational} blockerCopyText={blockerCopyText} eligibility={selection.slice?.merge_eligibility} />
       <div className="detail-modal-reveal-body grid gap-4">
         <DetailSummaryBar items={packageDetailSummary({ blockerCount, currentCommentStats, pkg, planLabel, summary })} />
-        <WorkActivity activity={selection.slice?.activity_signal ?? pkg.activity_signal ?? operational?.activity_signal ?? { accountable_owner: { id: pkg.owner_id } }} review={selection.slice?.review_signal ?? pkg.review_signal} />
+        <WorkActivity activity={selection.slice?.activity_signal ?? pkg.activity_signal ?? operational?.activity_signal ?? { accountable_owner: { id: pkg.owner_id } }} review={selection.slice?.review_signal ?? pkg.review_signal} eligibility={selection.slice?.merge_eligibility} />
         <PackageExecutionScopeSection pkg={pkg} purposeMarkdown={purposeMarkdown} />
         <PackageOperationalTruthSection attentionItems={attentionItems} operational={operational} pkg={pkg} />
         <PackageProgressSection progress={progress} planLabel={planLabel} status={status} />
@@ -113,10 +113,12 @@ export function PackageDetailBody({
 
 function PackageDetailHeader({
   blockerCopyText,
+  eligibility,
   operational,
   pkg,
 }: {
   blockerCopyText: string;
+  eligibility?: WorkPackageMergeEligibility | null;
   operational: WorkPackageCard["operational_state"] | null;
   pkg: PackageDetailPackage;
 }) {
@@ -126,7 +128,7 @@ function PackageDetailHeader({
       eyebrow={`${repoDisplayName(pkg)} / ${pkg.base_branch || "main"} / ${pkg.kind || "work package"}`}
       identifier={pkg.id}
       identifierLabel="WorkPackage ID"
-      badge={<Badge variant={operationalBadgeVariant(operational, pkg.status)}>{operationalLabel(operational, pkg.status)}</Badge>}
+      badge={<Badge variant={operationalBadgeVariant(operational, pkg.status)}>{operationalLabel(operational, pkg.status, eligibility)}</Badge>}
       action={blockerCopyText ? <DetailCopyButton label="Copy blocker details" text={blockerCopyText} /> : null}
     />
   );

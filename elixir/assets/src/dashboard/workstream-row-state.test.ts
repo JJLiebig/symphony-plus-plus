@@ -131,6 +131,23 @@ describe("workstream row state", () => {
     expect(state.tone).toBe("ready");
   });
 
+  it("reads idle qualified work as ready only with canonical eligibility", () => {
+    const qualified = (eligible?: boolean, hasActiveWorker = false): WorkRequestDetail => ({
+      work_request: { id: "wr-qualified", status: "sliced", operational_state: { key: "sliced", label: "Sliced" } },
+      work_packages: [{
+        ...plannedSlice("slice-qualified", "pkg-qualified", "merge_ready", "Ready For Merge"),
+        operational_state: { key: "merge_ready", label: "Ready For Merge", has_active_worker: hasActiveWorker },
+        merge_eligibility: typeof eligible === "boolean" ? { eligible, reason_codes: eligible ? [] : ["dependency_not_delivered"] } : undefined,
+      }],
+    });
+    const state = (detail: WorkRequestDetail) => requestBoardState(detail, new Map(), { blockerCount: 0, guidanceCount: 0 });
+
+    expect(state(qualified(true))).toMatchObject({ kind: "ready", label: "Ready", tone: "ready" });
+    expect(state(qualified(false))).toMatchObject({ kind: "waiting", label: "Waiting" });
+    expect(state(qualified())).toMatchObject({ kind: "waiting", label: "Waiting" });
+    expect(state(qualified(true, true))).toMatchObject({ kind: "active", label: "Active" });
+  });
+
   it("keeps completed package plans separate from request delivery", () => {
     const detail: WorkRequestDetail = {
       work_request: {

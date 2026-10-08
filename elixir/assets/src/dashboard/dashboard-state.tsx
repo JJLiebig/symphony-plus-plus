@@ -1,8 +1,8 @@
-import type { ArchitectHandoff, ArchitectHandoffCopyResult, DashboardPayload, WorkRequestDetail } from "@/types/dashboard";
+import type { ArchitectHandoff, ArchitectHandoffCopyResult, DashboardPayload } from "@/types/dashboard";
 import type { UpdateMotion } from "@/components/dashboard/motion";
 import { useCallback, useRef, useState } from "react";
 import { CardDetailSelection, DashboardTheme, PackageDetailUiAction, PackageDetailUiState, RequestDetailUiAction, RequestDetailUiState, ScopedHandoffCopy, UpdateMotionsAction, WorkspaceTab } from "./runtime";
-import { readStoredHideEmptyWorkstreams, readStoredShowWelcomeToast, readStoredShowWorkstreamContextBar, readStoredTheme, readStoredWorkspaceTab } from "./dashboard-persistence";
+import { readStoredHideEmptyWorkstreams, readStoredTheme, readStoredWorkspaceTab } from "./dashboard-persistence";
 import type { AttentionTarget } from "./workstream-attention";
 
 export function useScopedHandoffCopy(identity: string) {
@@ -58,14 +58,6 @@ export type FinishedHighlight = {
 
 export type FinishedHighlightKind = "Request" | "WorkPackage";
 
-export type WorkstreamCategoryCounts = {
-  requests: number;
-  planNodes: number;
-  slices: number;
-};
-
-export const EMPTY_WORK_REQUEST_DETAILS: WorkRequestDetail[] = [];
-
 export type AppState = {
   dashboard: DashboardPayload | null;
   loading: boolean;
@@ -73,8 +65,6 @@ export type AppState = {
   error: string | null;
   workspaceTab: WorkspaceTab;
   hideEmptyWorkstreams: boolean;
-  showWorkstreamContextBar: boolean;
-  showWelcomeToast: boolean;
   theme: DashboardTheme;
 };
 
@@ -91,8 +81,6 @@ export function createInitialAppState(): AppState {
     error: null,
     workspaceTab: readStoredWorkspaceTab(),
     hideEmptyWorkstreams: readStoredHideEmptyWorkstreams(),
-    showWorkstreamContextBar: readStoredShowWorkstreamContextBar(),
-    showWelcomeToast: readStoredShowWelcomeToast(),
     theme: readStoredTheme(),
   };
 }

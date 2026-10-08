@@ -12,7 +12,7 @@ import { sortedCopy } from "@/lib/collections";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DashboardTheme, REPO_SUMMARY_PLATE_TONES, RepoSummaryPlateTone, WorkRequestMutation } from "./runtime";
 import { detailDate } from "./detail-utils";
-import { repoDisplayName, useStoredUseFocusBoard, writeStoredUseFocusBoard } from "./dashboard-persistence";
+import { repoDisplayName } from "./dashboard-persistence";
 import { sortableTime } from "./workstream-data";
 import type { DashboardRefreshInvalidation } from "./dashboard-refresh-invalidation";
 
@@ -201,43 +201,30 @@ export function DashboardSettingsDialog({
   hideEmptyWorkstreams,
   hiddenWorkstreamCount,
   openDashboardOnBoot,
-  showWorkstreamContextBar,
-  showWelcomeToast,
   soloSessionDeleteAfterDays,
   onArchiveAfterDaysChange,
   onCaptureFailedMcpCallsChange,
   onHideEmptyWorkstreamsChange,
   onOpenDashboardOnBootChange,
   onSoloSessionDeleteAfterDaysChange,
-  onShowWorkstreamContextBarChange,
-  onShowWelcomeToastChange,
 }: {
   archiveAfterDays: number;
   captureFailedMcpCalls: boolean;
   hideEmptyWorkstreams: boolean;
   hiddenWorkstreamCount: number;
   openDashboardOnBoot: boolean;
-  showWorkstreamContextBar: boolean;
-  showWelcomeToast: boolean;
   soloSessionDeleteAfterDays: number;
   onArchiveAfterDaysChange: (value: number) => Promise<void>;
   onCaptureFailedMcpCallsChange: (value: boolean) => Promise<void>;
   onHideEmptyWorkstreamsChange: (value: boolean) => void;
   onOpenDashboardOnBootChange: (value: boolean) => Promise<void>;
   onSoloSessionDeleteAfterDaysChange: (value: number) => Promise<void>;
-  onShowWorkstreamContextBarChange: (value: boolean) => void;
-  onShowWelcomeToastChange: (value: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const useFocusBoard = useStoredUseFocusBoard();
   const initialFocusRef = useRef<HTMLDivElement | null>(null);
   const visibilityLabel = hideEmptyWorkstreams
     ? workstreamHiddenSummary(hiddenWorkstreamCount)
     : "Showing repos even when they have no requests, plan nodes, or WorkPackages.";
-  const contextBarLabel = showWorkstreamContextBar
-    ? "Shows the sticky repo, WR, and plan-node path while scrolling."
-    : "Board rows scroll without the sticky context path.";
-  const welcomeLabel = showWelcomeToast ? "Shows the welcome modal on dashboard load." : "Welcome modal is hidden.";
   const openOnBootLabel = openDashboardOnBoot
     ? "Opens once when Codex connects and no dashboard is already open."
     : "Codex connects without opening a browser.";
@@ -306,35 +293,11 @@ export function DashboardSettingsDialog({
             />
 
             <SettingsSwitch
-              ariaLabel="Show welcome toast"
-              checked={showWelcomeToast}
-              description={welcomeLabel}
-              label="Welcome toast"
-              onChange={onShowWelcomeToastChange}
-            />
-
-            <SettingsSwitch
               ariaLabel="Hide empty repositories"
               checked={hideEmptyWorkstreams}
               description={visibilityLabel}
               label="Hide empty repositories"
               onChange={onHideEmptyWorkstreamsChange}
-            />
-
-            <SettingsSwitch
-              ariaLabel="Show board context bar"
-              checked={showWorkstreamContextBar}
-              description={contextBarLabel}
-              label="Board context bar"
-              onChange={onShowWorkstreamContextBarChange}
-            />
-
-            <SettingsSwitch
-              ariaLabel="Use Focus Board"
-              checked={useFocusBoard}
-              description={useFocusBoard ? "Shows the experimental Focus Board above the repository list." : "The stable repository list remains the main dashboard surface."}
-              label="Use Focus Board"
-              onChange={writeStoredUseFocusBoard}
             />
           </div>
         </DialogContent>

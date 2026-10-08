@@ -16,7 +16,7 @@ describe("work activity details", () => {
     expect(markup).toContain("Chief");
     expect(markup).toContain("Implementer / Worker");
     expect(markup).toContain("Reviewing · Correctness · Round 2 · 2h 0m");
-    expect(markup).toContain("Review In Progress");
+    expect(markup).toContain("Review in progress");
     expect(markup).toContain("Running");
   });
 
@@ -25,6 +25,10 @@ describe("work activity details", () => {
     expect(known).toContain("Reviewing · Correctness · Round 3 · 2h 0m");
     expect(known).toContain("Fix Findings");
     expect(known).toContain("Stale");
+    const round = renderToStaticMarkup(<WorkActivity activity={{ stage: "reviewing", started_at: "2026-10-05T03:00:00Z", elapsed_seconds: 3600 }} review={{ status: "in_progress", round: "2", started_at: "2026-10-05T01:00:00Z", round_started_at: "2026-10-05T03:00:00Z" }} />);
+    expect(round).toContain("Round 2 · 1h 0m this round");
+    const total = renderToStaticMarkup(<WorkActivity activity={{ stage: "reviewing", started_at: "2026-10-05T01:00:00Z", elapsed_seconds: 10800 }} review={{ status: "in_progress", started_at: "2026-10-05T01:00:00Z" }} />);
+    expect(total).toContain("3h 0m in review");
     const unknown = renderToStaticMarkup(<WorkActivity activity={{ accountable_owner: { id: "Chief" }, stage: "reviewing", elapsed_seconds: 7200 }} review={{ status: "unavailable" }} />);
     expect(unknown).toContain("Chief");
     expect(unknown).toContain("Time unknown");
@@ -45,13 +49,13 @@ describe("work activity cards", () => {
     const known = renderCard(workPackage);
     expect(known).toContain("Reviewing · Correctness · 1/2 · Round 2 · 3h 31m");
     expect(known).toContain("Owner: Chief");
-    expect(known).toContain("Actor: Implementer / Worker");
-    expect(known).toContain("Waiting: Review In Progress");
-    expect(known).toContain("Next: Worker / Wait");
+    expect(known).toContain("Working now: Implementer / Worker");
+    expect(known).toContain("Waiting on: Review in progress");
+    expect(known).toContain("Next: Worker: wait for review");
     expect(known).toContain("Runtime stale");
     const unknown = renderCard({ ...workPackage, activity_signal: { ...workPackage.activity_signal, current_actor: undefined, started_at: undefined, elapsed_seconds: undefined } });
     expect(unknown).toContain("Owner: Chief");
-    expect(unknown).toContain("Actor: Unknown");
+    expect(unknown).toContain("Working now: Unknown");
     expect(unknown).toContain("Time unknown");
     expect(unknown).not.toContain("3h 31m");
   });

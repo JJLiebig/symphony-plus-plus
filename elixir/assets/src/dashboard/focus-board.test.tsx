@@ -1,24 +1,18 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
+import type { GuidanceItem, WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
 
-import { FocusBoard } from "./focus-board";
-import { buildFocusBoardItems, scrollFocusLane } from "./focus-board-data";
+import { FocusBoard, FocusBoardFirstRun } from "./focus-board";
+import { buildFocusBoardItems, requestHumanDecision } from "./focus-board-data";
+import { WorkstreamsPane } from "./workspace-tabs";
+
+// Actual compact /dashboard/deferred response from the isolated F03 ledger; see fixture _source.
+const actualCompactBoard = JSON.parse(readFileSync(new URL("./fixtures/actual-compact-board.json", import.meta.url), "utf8")) as { generated_at: string; work_request_details: WorkRequestDetail[] };
 
 describe("focus board", () => {
-  it("hands wheel scrolling back to the page at either lane boundary", () => {
-    const lane = { clientWidth: 300, scrollLeft: 0, scrollWidth: 900 };
-
-    expect(scrollFocusLane(lane, 0, -100)).toBe(false);
-    expect(scrollFocusLane(lane, 0, 100)).toBe(true);
-    expect(lane.scrollLeft).toBe(100);
-    lane.scrollLeft = 600;
-    expect(scrollFocusLane(lane, 0, 100)).toBe(false);
-    expect(scrollFocusLane(lane, 0, -100)).toBe(true);
-  });
-
   it("assigns each request to one operational category and keeps only recently finished work", () => {
     const items = buildFocusBoardItems([
       request("wr-human", "Needs a decision", [slice("human", "ready_for_clarification")], { openQuestions: 1, status: "clarifying" }),
@@ -87,10 +81,33 @@ describe("focus board", () => {
     expect(buildFocusBoardItems([dependencyBlocked], Date.now(), blockedPackages)[0]?.lane).toBe("waiting");
   });
 
-  it("shows the package targeted by an active blocker edge in the attention frontier", () => {
+  it("distinguishes explicit human input from architect or prerequisite work", () => {
+    const question = request("wr-question", "Needs a decision", [], { openQuestions: 1 });
+    const human = request("wr-human", "Guidance", [slice("human", "reviewing", { activity: { next_actor: "human", waiting_reason: "Pick retry policy", next_action: "answer_guidance" } })]);
+    const architect = request("wr-architect", "Architect work", [slice("ui", "ready_for_merge", { activity: { next_actor: "architect", waiting_reason: "dependency_not_delivered", next_action: "deliver_prerequisites" } })]);
+
+    expect(requestHumanDecision(question)).toMatchObject({ text: "Open question", guidance: { source: "clarification" } });
+    expect(requestHumanDecision(human)).toEqual({ text: "Pick retry policy" });
+    expect(requestHumanDecision(architect)).toBeNull();
+    const retired = request("wr-retired", "Retired guidance", [slice("old", "superseded", { activity: { next_actor: "human", waiting_reason: "Obsolete choice" }, recordedAt: "2026-07-21T09:00:00Z" })]);
+    const guidance = { source: "guidance", packageId: "old", title: "Obsolete choice", guidance: { status: "human_info_needed" } } as unknown as GuidanceItem;
+    expect(requestHumanDecision(retired, [guidance])).toBeNull();
+  });
+
+  it("keeps a failed gate visible beside labeled package activity", () => {
+    const failing = request("wr-failing", "Failing checks", [slice("ui", "implementing", {
+      activity: { stage: "implementing", current_actor: { name: "Worker", role: "worker" } },
+      pr: { status: "open", number: 7, checks: { status: "failing", current: 2, total: 5 } },
+    })]);
+    const html = renderBoard([failing]);
+
+    expect(html).toContain("CI 2/5 failed");
+    expect(html).toContain('<span class="work-activity-field__label">Working now</span><span class="work-activity-field__value">Worker / Worker</span>');
+  });
+
+  it("shows the package targeted by an active blocker edge under Needs attention", () => {
     const detail = request("wr-edge", "Blocked by edge", [slice("slice-edge", "planned", { packageId: "wp-edge" })]);
-    const html = renderToStaticMarkup(createElement(FocusBoard, {
-      details: [detail],
+    const html = renderBoard([detail], {
       packages: [{ id: "wp-edge", status: "planned" }],
       activeBlockingEdges: [{
         id: "edge-1",
@@ -100,89 +117,176 @@ describe("focus board", () => {
         work_request_id: "wr-edge",
         work_package_id: "wp-edge",
       }],
-      onSelectAttention: () => undefined,
-      onSelectGuidance: () => undefined,
-      onSelectCard: () => undefined,
-      primaryBranchByRepo: new Map(),
-      updateAnimations: { motionFor: () => undefined },
-    }));
+    });
 
-    expect(html).toContain('aria-label="Needs you, 1"');
-    expect(html).toContain('aria-label="Open attention details for Blocked by edge"');
-    expect(html).toContain('title="slice-edge"');
+    expect(groupHtml(html, "attention")).toContain('aria-label="Open attention details for Blocked by edge"');
+    expect(groupHtml(html, "attention")).toContain('title="slice-edge"');
   });
 
-  it("keeps the cross-repository shelf above a persistent workbench", () => {
-    const html = renderToStaticMarkup(createElement(FocusBoard, {
-      details: [
-        request("wr-human", "Needs a decision", [slice("human", "ready_for_clarification")], { openQuestions: 1, status: "clarifying" }),
-        request("wr-active", "Shipping", [slice("active", "implementing")]),
-        request("wr-next", "Ready work", [slice("ready", "approved")], { repo: "fixture/secondary" }),
-        request("wr-next-primary", "Second ready work", [slice("second-ready", "approved")]),
-        request("wr-waiting", "Dependency wait", [slice("waiting", "blocked", {
-          dependency: { satisfied: 1, required: 2, active: 0, blocked: 1, unmet_work_package_ids: ["upstream"], inputs: [] },
-        })]),
-        request("wr-recent", "Just shipped", [slice("merged", "merged")], { completedAt: "2026-07-21T09:30:00Z" }),
-      ],
-      now: "2026-07-21T10:00:00Z",
-      packages: [],
-      activeBlockingEdges: [{
-        id: "edge-review",
-        blocker_id: "blocker-review",
-        from: { kind: "work_package", id: "review-owner" },
-        to: { kind: "work_package", id: "failed-review" },
-        work_request_id: "wr-active",
-      }],
-      onSelectAttention: () => undefined,
-      onSelectGuidance: () => undefined,
-      onSelectCard: () => undefined,
-      primaryBranchByRepo: new Map(),
-      updateAnimations: { motionFor: () => undefined },
-    }));
-    expect(html).toContain('aria-label="Needs you, 2"');
-    expect(html).toContain('aria-label="Moving now, 2"');
-    expect(html).toContain("fixture/secondary");
-    expect(html).toContain('class="focus-board__workbench"');
-    expect(html).toContain('data-mode="frontier"');
-    expect(html).toContain('aria-label="Dependency board view"');
-    expect(html).not.toContain("Dependency wait");
-    expect(html).not.toContain("Just shipped");
+  it("renders the actual compact response once per open request with labeled per-package activity and collapsed delivery history", () => {
+    const html = renderBoard(actualCompactBoard.work_request_details, { now: actualCompactBoard.generated_at });
+    const openTitles = ["F03 actual native Opus delivery", "QUALIFICATION — human decision and independent work", "QUALIFICATION — partial replacement work"];
+
+    expect(html).toContain("<h2 id=\"focus-board-title\">Work</h2><span>3 open across repositories</span>");
+    for (const title of openTitles) expect(occurrences(html, `<span class="v3-request-title">${title}</span>`)).toBe(1);
+    expect(["Needs attention", "In progress", "Ready for handoff", "Waiting"].every((label) => html.includes(label))).toBe(true);
+    expect(groupHtml(html, "attention")).toContain("QUALIFICATION — human decision and independent work");
+    expect(groupHtml(html, "attention")).toContain("<strong>Human decision</strong><span>Choose the retry behavior for this qualification case.</span>");
+    expect(groupHtml(html, "attention")).toContain("Answer decision");
+    expect(groupHtml(html, "next")).toContain("QUALIFICATION — partial replacement work");
+    const paused = groupHtml(html, "waiting");
+    expect(paused).toContain("F03 actual native Opus delivery");
+    expect(paused).toContain('<span class="work-activity-field__label">Owner</span><span class="work-activity-field__value">Unknown</span>');
+    expect(paused).toContain('<span class="work-activity-field__label">Working now</span><span class="work-activity-field__value">Unknown · runtime stale</span>');
+    expect(paused).toContain('<span class="work-activity-field__label">Stage</span><span class="work-activity-field__value">Active · Time unknown</span>');
+    expect(paused).toContain('<span class="work-activity-field__label">Waiting on</span><span class="work-activity-field__value">Fresh runtime observation</span>');
+    expect(paused).toContain('<span class="work-activity-field__label">Next</span><span class="work-activity-field__value">Inspect runtime</span>');
+    expect(html).not.toContain("Ready For Worker · Time unknown");
+    expect(html).toContain('aria-expanded="false" aria-controls=');
+    expect(html).toContain("Recently delivered<span class=\"focus-board__count\">1</span>");
+    expect(html).toContain('data-open="false" aria-hidden="true" inert=""><div class="focus-board__cards workstream-board-shell"><div class="v3-workstream-board"><section class="v3-request-row stagger-item" data-expanded="false" data-focus-selected="false" data-request-id="wr_2fyzkl6jrtdamisv"');
+    expect(html).toContain("Replaced work");
+    expect(html).not.toContain("Experimental");
+    expect(html).not.toContain("Horizon");
   });
 
-  it("renders the shared WorkRequest row with attention-scoped frontier work", () => {
-    const html = renderToStaticMarkup(createElement(FocusBoard, {
-      details: [request("wr-active", "Shipping", [
-        slice("active-package", "implementing", { group: "Delivery", worker: { status: "active" } }),
-        slice("failed-review", "reviewing", { group: "Quality", review: { status: "failed" } }),
-      ])],
-      packages: [],
-      activeBlockingEdges: [{
-        id: "edge-review",
-        blocker_id: "blocker-review",
-        from: { kind: "work_package", id: "review-owner" },
-        to: { kind: "work_package", id: "failed-review" },
-        work_request_id: "wr-active",
-      }],
-      onSelectAttention: () => undefined,
-      onSelectGuidance: () => undefined,
-      onSelectCard: () => undefined,
-      primaryBranchByRepo: new Map(),
-      updateAnimations: { motionFor: () => undefined },
+  it("never reads qualified compact packages as mergeable unless canonical eligibility says so", () => {
+    const actual = actualCompactBoard.work_request_details.find((detail) => detail.work_request.id === "wr_2sjv3grxotyokrat")!;
+    const actualSlice = actual.work_packages![0]!;
+    const qualified = (id: string, merge_eligibility: WorkRequestPackage["merge_eligibility"]): WorkRequestPackage => ({
+      ...actualSlice,
+      id,
+      work_package_id: id,
+      title: `${id} package`,
+      status: "ready_for_merge",
+      work_package_status: "ready_for_merge",
+      operational_state: { ...actualSlice.operational_state, key: "merge_ready", label: "Ready For Merge", raw_status: "ready_for_merge" },
+      // Mirrors the backend activity projection: an eligibility reason outranks awaiting integration.
+      activity_signal: { ...actualSlice.activity_signal, work_package_id: id, stage: "ready_for_merge", observation_state: "unknown", waiting_reason: merge_eligibility?.reason_codes?.find((code) => code !== "not_ready") ?? "awaiting_integration", next_actor: "architect", next_action: merge_eligibility?.next_action ?? undefined },
+      merge_eligibility,
+    });
+    // Synthetic variants of the actual compact package shape using F02's canonical eligibility outcomes.
+    const work_packages = [
+      qualified("waiting-ui", { work_package_id: "waiting-ui", eligible: false, reason_codes: ["dependency_not_delivered"], next_action: "deliver_prerequisites" }),
+      qualified("stale-ui", { work_package_id: "stale-ui", eligible: false, reason_codes: ["candidate_pin_stale", "dependency_inputs_stale"], next_action: "select_current_candidate_and_requalify_affected_work" }),
+      qualified("missing-ui", undefined),
+      qualified("eligible-backend", { work_package_id: "eligible-backend", eligible: true, reason_codes: [], next_action: "verify_native_checks_and_review_then_merge" }),
+    ];
+    const ids = work_packages.map((item) => item.id);
+    const detail: WorkRequestDetail = { ...actual, work_packages, product_tree: { ...actual.product_tree, root_work_package_ids: ids, execution_graph: { ...actual.product_tree?.execution_graph, work_package_ids: ids } } };
+    const html = renderBoard([detail], { now: actualCompactBoard.generated_at });
+    const groups = html.slice(0, html.indexOf("focus-board__workbench-reveal"));
+    const tree = html.slice(html.indexOf('class="v3-product-plan"'));
+    const row = (id: string) => tree.slice(tree.indexOf(`data-work-package-id="${id}"`)).split("data-work-package-id=")[1];
+
+    expect(groups).toContain("Show all current work (4)");
+    for (const item of groups.split("<li").slice(1).filter((markup) => markup.includes("Ready to merge"))) expect(item).toContain("eligible-backend package");
+    expect(row("waiting-ui")).toContain("Qualified · waiting for prerequisite delivery");
+    expect(row("waiting-ui")).toContain("Prerequisite delivery");
+    expect(row("waiting-ui")).toContain("Architect: wait for prerequisite delivery");
+    expect(row("stale-ui")).toContain("Qualified · candidate input changed");
+    expect(row("missing-ui")).toContain("Qualified · eligibility unknown");
+    expect(row("eligible-backend")).toContain("Ready to merge");
+    for (const id of ["waiting-ui", "stale-ui", "missing-ui"]) expect(row(id)).not.toContain("Ready to merge");
+  });
+
+  it("groups released qualified work by canonical eligibility unless other work is actually running", () => {
+    const qualified = (id: string, merge_eligibility?: WorkRequestPackage["merge_eligibility"], hasActiveWorker = false): WorkRequestPackage => ({
+      ...slice(id, "ready_for_merge", { worker: { status: "idle" } }),
+      work_package_status: "ready_for_merge",
+      operational_state: { key: "merge_ready", label: "Ready For Merge", has_active_worker: hasActiveWorker },
+      merge_eligibility,
+    });
+    const eligible = () => qualified("eligible", { work_package_id: "eligible", eligible: true, reason_codes: [], next_action: "verify_native_checks_and_review_then_merge" });
+    const notEligible = qualified("not-eligible", { work_package_id: "not-eligible", eligible: false, reason_codes: ["dependency_not_delivered"], next_action: "deliver_prerequisites" });
+    const details = [
+      request("wr-eligible", "Eligible only", [eligible()]),
+      request("wr-not-eligible", "Not eligible", [notEligible]),
+      request("wr-missing", "Missing eligibility", [qualified("missing")]),
+      request("wr-partly-eligible", "Partly eligible", [eligible(), notEligible]),
+      request("wr-mixed", "Mixed active", [eligible(), slice("implementing", "implementing")]),
+      request("wr-still-running", "Qualified still running", [qualified("running", { work_package_id: "running", eligible: true, reason_codes: [] }, true)]),
+      request("wr-attention", "Eligible but blocked", [eligible()]),
+    ];
+    const items = buildFocusBoardItems(details, Date.now(), new Map(), new Map([["wr-attention", { blockerCount: 1, guidanceCount: 0 }]]));
+
+    expect(items.map(({ id, lane }) => [id, lane])).toEqual([
+      ["wr-eligible", "next"],
+      ["wr-not-eligible", "waiting"],
+      ["wr-missing", "waiting"],
+      ["wr-partly-eligible", "waiting"],
+      ["wr-mixed", "active"],
+      ["wr-still-running", "active"],
+      ["wr-attention", "attention"],
+    ]);
+    const html = renderBoard(details.slice(0, 3));
+    expect(groupHtml(html, "next")).toContain("Eligible only");
+    expect(groupHtml(html, "next")).toContain("Ready to merge");
+    expect(html).toContain('In progress<span class="focus-board__count">0</span>');
+    expect(html).toContain('Waiting<span class="focus-board__count">2</span>');
+    const waiting = html.slice(html.indexOf('data-lane="waiting"'), html.indexOf("focus-board__workbench-reveal"));
+    for (const title of ["Not eligible", "Missing eligibility"]) expect(waiting).toContain(title);
+    expect(waiting).not.toContain("Ready to merge");
+  });
+
+  it("starts first-run work inline instead of a welcome interruption", () => {
+    const html = renderToStaticMarkup(createElement(FocusBoardFirstRun, { onStartRequest: () => undefined }));
+
+    expect(html).toContain("Start with a request");
+    expect(html).toContain("Direct delivery");
+    expect(html).toContain("Architect-led");
+    expect(html).toContain("Start a request");
+  });
+
+  it("keeps the last facts visible with an explicit stale notice and a repository scope choice", () => {
+    const details = [request("wr-a", "Alpha", [slice("a", "implementing")]), request("wr-b", "Beta", [slice("b", "implementing")], { repo: "fixture/secondary" })];
+    const html = renderBoard(details, { staleSince: "2026-07-21T09:58:00Z", repositories: [{ key: "fixture/repo", label: "fixture/repo" }, { key: "fixture/secondary", label: "fixture/secondary" }] });
+
+    expect(html).toContain('role="status">Connection interrupted. Showing the last facts received at');
+    expect(html).toContain("Alpha");
+    expect(html).toContain("Beta");
+    expect(html).toContain('<option value="" selected="">All repositories</option>');
+    expect(html).toContain('<option value="fixture/secondary">fixture/secondary</option>');
+  });
+
+  it("shows received facts instead of loading forever when the first deferred load fails", () => {
+    const detail = request("wr-a", "Alpha", [slice("a", "implementing")]);
+    const repo = { repoKey: "fixture/repo", repo: "fixture/repo", baseBranches: ["main"], requested: 0, active: 1, implementing: 1, finished: 0, guidanceCount: 0, blockerCount: 0, packages: [], requests: [detail.work_request] };
+    const pane = (staleSince?: string | null) => renderToStaticMarkup(createElement(WorkstreamsPane, {
+      repos: [repo], searchActive: false, requestDetailsByRepo: new Map([[repo.repoKey, [detail]]]), focusBoardReady: false,
+      activeBlockingEdges: [], guidanceItems: [], onSelectAttention: () => undefined, onSelectGuidance: () => undefined,
+      onSelectCard: () => undefined, onStartRequest: () => undefined, staleSince, updateAnimations: { motionFor: () => undefined },
     }));
 
-    expect(html).toContain("Focus Board");
-    expect(html).toContain('class="focus-board ');
-    expect(html).toContain("v3-request-row");
-    expect(html).toContain("Close Shipping");
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).not.toContain("Drag to pan");
-    expect(html).toContain("Quality");
-    expect(html).toContain("failed-review");
-    expect(html).toContain("Review failed");
-    expect(html).not.toContain("active-package");
-    expect(html).not.toContain("focus-board__row");
+    expect(pane()).toContain('aria-busy="true"');
+    expect(pane()).not.toContain("Alpha");
+    expect(pane(null)).toContain("Connection interrupted. Showing the last facts received;");
+    expect(pane(null)).toContain("Alpha");
   });
 });
+
+function renderBoard(details: WorkRequestDetail[], props: Partial<Parameters<typeof FocusBoard>[0]> = {}) {
+  return renderToStaticMarkup(createElement(FocusBoard, {
+    details,
+    packages: [],
+    activeBlockingEdges: [],
+    onSelectAttention: () => undefined,
+    onSelectGuidance: () => undefined,
+    onSelectCard: () => undefined,
+    primaryBranchByRepo: new Map(),
+    updateAnimations: { motionFor: () => undefined },
+    ...props,
+  }));
+}
+
+function groupHtml(html: string, lane: string) {
+  const start = html.indexOf(`data-lane="${lane}"`);
+  return html.slice(start, html.indexOf("</section></div></div></section>", start) + 1 || undefined);
+}
+
+function occurrences(html: string, value: string) {
+  return html.split(value).length - 1;
+}
 
 function request(
   id: string,
@@ -196,6 +300,7 @@ function request(
       id,
       title,
       repo: options.repo ?? "fixture/repo",
+      repo_key: options.repo ?? "fixture/repo",
       status: options.status ?? "sliced",
       completed_at: options.completedAt,
       open_question_count: options.openQuestions,
@@ -221,9 +326,11 @@ function slice(
   id: string,
   status: string,
   options: {
+    activity?: WorkRequestPackage["activity_signal"];
     dependency?: WorkRequestPackage["dependency_signal"];
     group?: string;
     packageId?: string;
+    pr?: WorkRequestPackage["pr_signal"];
     recordedAt?: string;
     review?: WorkRequestPackage["review_signal"];
     worker?: WorkRequestPackage["worker_signal"];
@@ -236,6 +343,8 @@ function slice(
     work_package_id: options.packageId,
     title: id,
     status,
+    activity_signal: options.activity,
+    pr_signal: options.pr,
     dependency_signal: options.dependency,
     review_signal: options.review,
     worker_signal: options.worker,

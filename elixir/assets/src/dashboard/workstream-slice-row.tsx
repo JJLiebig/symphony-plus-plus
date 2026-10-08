@@ -1,4 +1,3 @@
-import { activitySummary } from "@/lib/operational-state-activity";
 import type { ActiveBlockingEdge, GuidanceItem, WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
 import { GitBranch } from "lucide-react";
 import { operationalBadgeVariant, operationalLabel, operationalStatusIsRunning, sliceOperationalState } from "@/lib/operational-state";
@@ -9,8 +8,10 @@ import { contextPathValue, type ContextPathPart } from "./workstream-context-pat
 import { repoDisplayName, repoIdentityKey } from "./dashboard-persistence";
 import { workPackageDirectAttention, type AttentionSelect, type DirectAttention } from "./workstream-attention";
 import { RowBadgeSlot } from "./workstream-row-ui";
+import { workPackageIsTerminal } from "./workstream-row-state";
 import { sliceUpdateKey } from "./update-animations";
 import { PullRequestBadge } from "./execution-graph/pull-request-badge";
+import { WorkActivityFields } from "./work-activity";
 
 export function DirectSliceGroup({ detail, sliceIds, slicesById, packageById, activeBlockingEdges, guidanceItems, onSelectAttention, onSelectCard, requestPath, updateAnimations }: {
   detail: WorkRequestDetail;
@@ -48,7 +49,7 @@ export function ProductSliceRow({ detail, slice, pkg, activeBlockingEdges, guida
 }) {
   const operational = sliceOperationalState(slice, pkg);
   const rawStatus = slice.work_package_status || slice.status || pkg?.status;
-  const label = operationalLabel(operational, rawStatus) || "Unknown";
+  const label = operationalLabel(operational, rawStatus, slice.merge_eligibility) || "Unknown";
   const title = slice.title || pkg?.title || slice.id;
   const attention = workPackageDirectAttention(detail, slice, pkg, activeBlockingEdges, guidanceItems);
   const targetContext = sliceTargetContext(detail, slice, pkg);
@@ -71,8 +72,8 @@ export function ProductSliceRow({ detail, slice, pkg, activeBlockingEdges, guida
 }
 
 function SliceActivitySummary({ slice, pkg }: { slice: WorkRequestPackage; pkg?: WorkPackageCard }) {
-  const activity = activitySummary(slice.activity_signal ?? sliceOperationalState(slice, pkg)?.activity_signal, slice.review_signal);
-  return activity ? <span className="work-activity-summary" title={activity}>{activity}</span> : null;
+  const activity = slice.activity_signal ?? sliceOperationalState(slice, pkg)?.activity_signal;
+  return activity && !workPackageIsTerminal(slice, pkg) ? <WorkActivityFields activity={activity} review={slice.review_signal} eligibility={slice.merge_eligibility} /> : null;
 }
 
 function SliceAttentionBadge({ active, attention, fallback, label, onSelect, variant }: {

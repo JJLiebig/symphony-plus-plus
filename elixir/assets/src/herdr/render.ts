@@ -1,5 +1,6 @@
 import { executionFrontierProjection } from "@/dashboard/execution-graph/frontier";
 import { workPackageIsFinished, type ExecutionGraphWorkPackageRef } from "@/dashboard/execution-graph/model";
+import { isQualifiedState, qualifiedBadgeLabel } from "@/lib/delivery-eligibility";
 import { workActivityFacts } from "@/lib/operational-state-activity";
 import type { ExecutionGraphWorkPackageSignals } from "@/dashboard/execution-graph/model";
 
@@ -62,7 +63,7 @@ function renderActivity(state: InspectorState, pkg: ExecutionGraphWorkPackageRef
   const pane = !state.snapshot ? "Pane observation unknown"
     : exactWorkerPaneId(state.snapshot, state.detail?.worker_sessions, pkg.id) ? "Worker pane connected"
     : state.detail?.worker_sessions?.some((session) => session.work_package_id === pkg.id) ? "Worker pane disconnected" : "Worker pane missing";
-  const facts = workActivityFacts(activity, pkg.review_signal).filter(({ label }) => label !== "WorkPackage");
+  const facts = workActivityFacts(activity, pkg.review_signal, pkg.merge_eligibility).filter(({ label }) => label !== "WorkPackage");
   facts.splice(6, 0, { label: "Pane", value: pane });
   return facts.slice(0, budget).map(({ label, value }) => trim(`${label}: ${value}`, width));
 }
@@ -222,12 +223,18 @@ function packageMetrics(pkg: ExecutionGraphWorkPackageRef) {
   ].filter((value): value is string => Boolean(value));
 }
 
-function stateLabel(pkg: ExecutionGraphWorkPackageRef) {
+function stateLabel(pkg: ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals) {
   if (workPackageIsFinished(pkg, pkg)) return paint("Complete", ansi.green);
   const status = [pkg.operational_state?.key, pkg.operational_state?.label, pkg.raw_status, pkg.status].filter(Boolean).join(" ").toLowerCase();
   if (/block|fail|error/.test(status)) return paint("Blocked", ansi.red);
   if (/active|implement|review|progress/.test(status)) return paint("Active", ansi.cyan);
-  return paint(pkg.operational_state?.label || pkg.status || "Waiting", ansi.yellow);
+  return paint(pendingStateLabel(pkg), ansi.yellow);
+}
+
+// Qualification alone is not integration eligibility.
+function pendingStateLabel(pkg: ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals) {
+  if (isQualifiedState(pkg.operational_state?.key || pkg.raw_status || pkg.status)) return qualifiedBadgeLabel(pkg.merge_eligibility);
+  return pkg.operational_state?.label || pkg.status || "Waiting";
 }
 
 function frame(lines: string[], width: number) {

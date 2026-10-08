@@ -1,5 +1,6 @@
 import type { WorkRequestPackage, WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
 import type { ProductTreeCompletionMark, ProductTreeNode } from "@/types/product-tree";
+import { isQualifiedState, requestMergeEligibility } from "@/lib/delivery-eligibility";
 import { isFinishedBoardStatus, operationalLabel, sliceOperationalState } from "@/lib/operational-state";
 import type { BadgeTone } from "@/lib/operational-state";
 import type { StateCardTone } from "@/components/dashboard/state-card-style";
@@ -71,7 +72,7 @@ export function requestBoardState(
   return aggregateBoardRowState({
     blockerCount: counts.blockerCount,
     completionDone: workRequestIsTerminal(detail),
-    fallbackLabel: operationalLabel(request.operational_state, request.status),
+    fallbackLabel: operationalLabel(request.operational_state, request.status, requestMergeEligibility(detail)),
     fallbackStatus: rawStatus,
     guidanceCount: counts.guidanceCount,
     slices: detail.work_packages ?? [],
@@ -81,7 +82,7 @@ export function requestBoardState(
 
 export function requestStatusLabels(detail: WorkRequestDetail, packageById: Map<string, WorkPackageCard>) {
   const request = detail.work_request;
-  const labels = [operationalLabel(request.operational_state, request.status)];
+  const labels = [operationalLabel(request.operational_state, request.status, requestMergeEligibility(detail))];
 
   for (const node of detail.product_tree?.nodes ?? []) {
     labels.push(productNodeStatusLabel(node));
@@ -89,7 +90,7 @@ export function requestStatusLabels(detail: WorkRequestDetail, packageById: Map<
 
   for (const slice of detail.work_packages ?? []) {
     const pkg = packageById.get(slice.work_package_id || "");
-    labels.push(operationalLabel(sliceOperationalState(slice, pkg), slice.work_package_status || slice.status));
+    labels.push(operationalLabel(sliceOperationalState(slice, pkg), slice.work_package_status || slice.status, slice.merge_eligibility));
   }
 
   return labels;
@@ -196,6 +197,8 @@ function sliceBoardStateKind(slice: WorkRequestPackage, pkg?: WorkPackageCard): 
     [sliceHasActiveWork(slice, pkg, status), "active"],
     [statusIn(DEFERRED_STATUSES, status), "deferred"],
     [isFinishedBoardStatus(status), "done"],
+    // Qualified work is idle until canonical eligibility hands it to the architect.
+    [isQualifiedState(status), slice.merge_eligibility?.eligible === true ? "ready" : "waiting"],
     [statusIn(WAITING_STATUSES, status), "waiting"],
     [statusIn(READY_STATUSES, status), "ready"],
     [statusIn(PLANNED_STATUSES, status), "planned"],
@@ -223,7 +226,7 @@ function boardRowState(kind: BoardRowStateKind, label?: string | null): BoardRow
 function boardRowStateFromStatus(status?: string | null, label?: string | null): BoardRowState {
   return firstMatchingBoardRowState([
     [statusIn(ACTIVE_WORK_STATUSES, status), "active"],
-    [statusIn(WAITING_STATUSES, status), "waiting", label],
+    [statusIn(WAITING_STATUSES, status) || isQualifiedState(status), "waiting", label],
     [statusIn(READY_STATUSES, status), "ready", label],
     [statusIn(PLANNED_STATUSES, status), "planned", label],
     [statusIn(DEFERRED_STATUSES, status), "deferred", label],
@@ -255,11 +258,9 @@ const ACTIVE_WORK_STATUSES = new Set([
   "dispatched",
   "implementing",
   "in_progress",
-  "merge_ready",
   "merging",
   "planning",
   "needs_closeout",
-  "ready_for_merge",
   "reviewing",
 ]);
 

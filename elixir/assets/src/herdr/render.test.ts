@@ -15,10 +15,10 @@ describe("execution inspector rendering", () => {
     value.snapshot = { panes: [] };
     const output = stripAnsi(renderInspector(value, 100, 26));
     expect(output).toContain("Owner: Chief");
-    expect(output).toContain("Current actor: Worker / Worker");
+    expect(output).toContain("Working now: Worker / Worker · runtime stale");
     expect(output).toContain("Correctness · Round 2 · 3h 0m");
-    expect(output).toContain("Waiting: Review In Progress");
-    expect(output).toContain("Next: Worker / Wait");
+    expect(output).toContain("Waiting on: Review in progress");
+    expect(output).toContain("Next: Worker: wait for review");
     expect(output).toContain("Runtime stale");
     expect(output).toContain("Worker pane missing");
     value.detail!.worker_sessions = [{ work_package_id: "wp-a", agent_session_id: "exact-worker" }];
@@ -28,13 +28,22 @@ describe("execution inspector rendering", () => {
     current.activity_signal = { ...current.activity_signal, current_actor: undefined, started_at: undefined, elapsed_seconds: undefined, observation_state: "unknown" };
     const unknown = stripAnsi(renderInspector(value, 100, 26));
     expect(unknown).toContain("Owner: Chief");
-    expect(unknown).toContain("Current actor: Unknown");
+    expect(unknown).toContain("Working now: Unknown");
     expect(unknown).toContain("Time unknown");
     for (const width of [12, 28, 80]) {
       const narrow = stripAnsi(renderInspector(value, width, 24));
       expect(Math.max(...narrow.split("\n").map(terminalCellWidth))).toBeLessThanOrEqual(width);
       expect(narrow.split("\n").length).toBeLessThanOrEqual(24);
     }
+  });
+
+  it("reads qualified work as mergeable only from canonical eligibility", () => {
+    const qualified = { ...pkg("wp-a", "Qualified UI", "ready_for_merge"), operational_state: { key: "merge_ready", label: "Ready For Merge" } };
+    const waiting = stripAnsi(renderInspector(state([{ ...qualified, merge_eligibility: { eligible: false, reason_codes: ["dependency_not_delivered"] } }]), 80, 20));
+    expect(waiting).toContain("Qualified");
+    expect(waiting).not.toMatch(/ready (for|to) merge/i);
+    expect(stripAnsi(renderInspector(state([qualified]), 80, 20))).not.toMatch(/ready (for|to) merge/i);
+    expect(stripAnsi(renderInspector(state([{ ...qualified, merge_eligibility: { eligible: true } }]), 80, 20))).toContain("Ready to merge");
   });
 
   it("keeps a trivial WorkRequest compact", () => {

@@ -19,8 +19,6 @@ export const DASHBOARD_THEME_KEY = "symphony-plus-plus.dashboard.theme.v1";
 
 export const DASHBOARD_DEBUG_ANIMATIONS_KEY = "symphony-plus-plus.dashboard.debug-animations";
 
-export const REPO_WORKSTREAM_MOTION_MS = 360;
-
 export const DASHBOARD_RECONNECT_GRACE_MS = 5 * 60 * 1000;
 
 export const CARD_DETAIL_LOADING_HOLD_MS = 110;
@@ -186,13 +184,9 @@ export type ScopedHandoffCopy = {
 
 export type DashboardUiState = {
   workspaceTab?: WorkspaceTab;
-  useFocusBoard?: boolean;
+  workScope?: string | null;
   topPanel?: TopPanelKey | null;
-  repoWorkstreams?: Record<string, boolean>;
-  finishedRequestChildren?: Record<string, boolean>;
   hideEmptyWorkstreams?: boolean;
-  showWorkstreamContextBar?: boolean;
-  showWelcomeToast?: boolean;
   theme?: DashboardTheme;
 };
 

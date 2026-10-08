@@ -95,6 +95,7 @@ function workPackageSignals(slice?: WorkRequestPackage) {
     pr_signal: slice?.pr_signal,
     review_signal: slice?.review_signal,
     dependency_signal: slice?.dependency_signal,
+    merge_eligibility: slice?.merge_eligibility,
   };
 }
 
