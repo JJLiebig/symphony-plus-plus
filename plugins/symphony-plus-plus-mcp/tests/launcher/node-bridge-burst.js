@@ -65,7 +65,7 @@ async function handle(request, response) {
     return setTimeout(() => {
       if (backendStopped) return respond(response, 503, { status: "stopped" });
       readinessCompleted = true;
-      respond(response, 200, { status: "ok", ledger: { reachable: true }, dashboard: { ready: true }, source: { mcp_contract: { fingerprint: contract } } });
+      respond(response, 200, { status: "ok", ledger: { reachable: true, identity: { kind: "sqlite", default_home: true } }, dashboard: { ready: true }, source: { mcp_contract: { fingerprint: contract } } });
     }, 250);
   }
   if (request.url === "/mcp/client-lease") {

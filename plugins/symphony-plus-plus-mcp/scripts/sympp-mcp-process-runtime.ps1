@@ -201,10 +201,6 @@ function Resolve-ArtifactRuntimeArgs($ArtifactRuntime, [string]$Workflow, [strin
 }
 
 function Get-ArtifactBackendCommand($ArtifactRuntime, $Plan, [string]$DashboardOrigin, [string]$ElixirDir, [string]$LogDir) {
-  if (-not [string]::IsNullOrWhiteSpace($env:SYMPP_DATABASE)) {
-    throw "artifact_database_unsupported: verified artifact runtime wrapper does not support SYMPP_DATABASE. Use explicit source fallback for custom ledger paths."
-  }
-
   $manifestArgs = Get-ArtifactRuntimeArgList $ArtifactRuntime
   $runtimeLogRoot = Join-Path $LogDir "artifact-runtime"
   $entrypoint = [string]$ArtifactRuntime.entrypoint
@@ -216,6 +212,9 @@ function Get-ArtifactBackendCommand($ArtifactRuntime, $Plan, [string]$DashboardO
     SYMPP_LOGS_ROOT = $runtimeLogRoot
     SYMPP_BACKEND_PORT = [string]$Plan.port
     SYMPP_WORKFLOW_FILE = ""
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:SYMPP_DATABASE)) {
+    $environment["SYMPP_DATABASE"] = [System.IO.Path]::GetFullPath($env:SYMPP_DATABASE)
   }
   if (-not [string]::IsNullOrWhiteSpace($workflow)) {
     $environment["SYMPP_WORKFLOW_FILE"] = $workflow

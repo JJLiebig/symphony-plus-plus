@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const net = require("net");
+const os = require("os");
 const path = require("path");
 const readline = require("readline");
 const { spawn, spawnSync } = require("child_process");
@@ -686,9 +687,24 @@ function tracedRuntimeIdentity(identity) {
   };
 }
 
+function databasePath(database, displayPath = false) {
+  if (!database || !String(database).trim()) return null;
+  const value = displayPath ? String(database).replace(/^\$HOME(?=\/|$)/, os.homedir()) : String(database);
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function requestedDatabaseMatches(ledgerIdentity) {
+  const requested = databasePath(process.env.SYMPP_DATABASE);
+  if (requested) return ledgerIdentity?.kind === "sqlite" && databasePath(ledgerIdentity.display_path, true) === requested;
+  if (String(process.env.SYMPP_REPO_ROOT || "").trim() || String(process.env.SYMPP_BACKEND_URL || "").trim()) return true;
+  return ledgerIdentity?.kind === "sqlite" && ledgerIdentity.default_home === true;
+}
+
 function resolveStateIdentity(state, pluginRoot, cachedIdentity) {
   if (!state || !state.backend || !state.frontend || !state.plugin_root) return null;
   if (path.resolve(String(state.plugin_root)).toLowerCase() !== path.resolve(pluginRoot).toLowerCase()) return null;
+  if (databasePath(state.publication?.controls?.database) !== databasePath(process.env.SYMPP_DATABASE)) return null;
   const identity = cachedIdentity;
   const sourceRoot = identity && (identity.source_root || identity.sourceRoot);
   if (!sourceRoot) return null;
@@ -800,8 +816,9 @@ async function backendHealth(origin) {
     if (response.status < 200 || response.status >= 300 || !response.body) return null;
     const readiness = JSON.parse(response.body);
     const contract = String((readiness.source && readiness.source.mcp_contract && readiness.source.mcp_contract.fingerprint) || "").toLowerCase();
-    const healthy = readiness.status === "ok" && readiness.ledger && readiness.ledger.reachable === true;
-    return { healthy, contract, retryable: false };
+    const ledgerIdentity = readiness.ledger?.identity;
+    const healthy = readiness.status === "ok" && readiness.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity);
+    return { healthy, contract, ledgerIdentity, retryable: false };
   } catch (error) {
     return { healthy: false, contract: "", retryable: /timed out/i.test(String(error && error.message)) };
   }
@@ -819,7 +836,8 @@ async function legacyBackendHealth(mcpUrl) {
   const structured = payload.result && payload.result.structuredContent;
   if (!structured) return null;
   const contract = String((structured.source && structured.source.mcp_contract && structured.source.mcp_contract.fingerprint) || (structured.mcp_contract && structured.mcp_contract.fingerprint) || "").toLowerCase();
-  return { healthy: structured.status === "ok" && structured.ledger && structured.ledger.reachable === true, contract };
+  const ledgerIdentity = structured.ledger?.identity;
+  return { healthy: structured.status === "ok" && structured.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity), contract, ledgerIdentity };
 }
 
 function healthCacheMatches(cache, state, identity) {
@@ -827,6 +845,7 @@ function healthCacheMatches(cache, state, identity) {
   const ttl = backendPid > 0 ? HEALTH_CACHE_TTL_MS : EXTERNAL_HEALTH_CACHE_TTL_MS;
   return !!cache && cache.runtime_key === identity.runtimeKey &&
     Number(cache.backend_pid) === backendPid && cache.contract === identity.contract &&
+    requestedDatabaseMatches(cache.ledger_identity) &&
     Date.now() - Number(cache.validated_at_ms) <= ttl;
 }
 
@@ -850,7 +869,7 @@ async function ensureRuntimeHealth(runtimeFile, state, identity, clientId) {
           const health = await backendHealth(identity.backend);
           if (health && health.contract === identity.contract && health.healthy) {
             const temporary = `${cacheFile}.${process.pid}.tmp`;
-            fs.writeFileSync(temporary, `${JSON.stringify({ runtime_key: identity.runtimeKey, backend_pid: Number(state.backend.pid), contract: identity.contract, validated_at_ms: Date.now() })}\n`);
+            fs.writeFileSync(temporary, `${JSON.stringify({ runtime_key: identity.runtimeKey, backend_pid: Number(state.backend.pid), contract: identity.contract, ledger_identity: health.ledgerIdentity, validated_at_ms: Date.now() })}\n`);
             try { fs.unlinkSync(cacheFile); } catch (_) { }
             fs.renameSync(temporary, cacheFile);
             return { healthy: true, attachedResponse };
@@ -1390,5 +1409,5 @@ if (require.main === module) {
     process.exit(1);
   });
 } else {
-  module.exports = { ensureLivenessProbe, closeLivenessProbe, tryAcquireProcessLock, releaseProcessLock, livenessMatches, decodeHerdrBinding, generationFromMarker, generationKey, herdrMetadataArgs, resolveStateIdentity };
+  module.exports = { ensureLivenessProbe, closeLivenessProbe, tryAcquireProcessLock, releaseProcessLock, livenessMatches, decodeHerdrBinding, generationFromMarker, generationKey, herdrMetadataArgs, resolveStateIdentity, requestedDatabaseMatches };
 }

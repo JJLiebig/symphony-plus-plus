@@ -58,6 +58,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
       "mode" => health["mode"],
       "ledger" => %{
         "reachable" => get_in(health, ["ledger", "reachable"]),
+        "identity" => get_in(health, ["ledger", "identity"]),
         "mode" => Atom.to_string(config.health_ledger_mode)
       },
       "dashboard" => %{"ready" => dashboard_ready?}

@@ -90,7 +90,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       File.rm(database_path)
     end)
 
-    :ok
+    {:ok, database_path: database_path}
   end
 
   setup do
@@ -192,8 +192,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert Repo.aggregate(from(binding in SessionBinding, where: binding.id in ^binding_ids), :count) == 0
   end
 
-  test "GET /mcp/readiness is loopback-only and creates no MCP state" do
+  test "GET /mcp/readiness is loopback-only and creates no MCP state", %{database_path: database_path} do
     before_state = :sys.get_state(HTTPStateStore)
+    display_path = database_path |> Path.expand() |> String.replace("\\", "/")
+    user_home = System.user_home!() |> Path.expand() |> String.replace("\\", "/")
+    expected_path = String.replace_prefix(display_path, user_home <> "/", "$HOME/")
 
     for _probe <- 1..100 do
       conn = get_local("/mcp/readiness")
@@ -202,13 +205,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
                "status" => "ok",
                "source" => %{"revision" => revision, "mcp_contract" => %{"fingerprint" => fingerprint}},
                "mode" => "http",
-               "ledger" => %{"reachable" => true, "mode" => ledger_mode},
+               "ledger" => %{"reachable" => true, "mode" => ledger_mode, "identity" => ledger_identity},
                "dashboard" => %{"ready" => dashboard_ready?}
              } = json_response(conn, 200)
 
       assert is_binary(revision) or is_nil(revision)
       assert fingerprint =~ ~r/^[0-9a-f]{64}$/
       assert ledger_mode in ["live", "configured_identity"]
+      assert %{"kind" => "sqlite", "display_path" => ^expected_path, "default_home" => false} = ledger_identity
       assert is_boolean(dashboard_ready?)
       assert get_resp_header(conn, "mcp-session-id") == []
     end
