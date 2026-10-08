@@ -83,10 +83,11 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
     if ($RecoverBackend) {
       $ownedState = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
       Stop-Process -Id ([int]$ownedState.backend.pid) -Force -ErrorAction Stop
+      [void](Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 6; method = "tools/list"; params = @{} })
     }
     if ($MarkerSessionId) {
       $marker = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 5; method = "tools/call"; params = @{ name = "solo_show"; arguments = @{ session_id = $MarkerSessionId } } }
-      if (@($marker.result.structuredContent.entries | Where-Object { $_.summary -eq "packaged database persistence marker" }).Count -ne 1) { throw "MCP persistence marker was missing or duplicated." }
+      if (@($marker.result.structuredContent.entries | Where-Object { $_.title -eq "packaged database persistence marker" }).Count -ne 1) { throw "MCP persistence marker was missing or duplicated." }
     }
     $activeState = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
     $activeBackend = Get-Process -Id ([int]$activeState.backend.pid) -ErrorAction Stop
@@ -334,8 +335,9 @@ server.listen(port,"127.0.0.1");
   $frontendProcessId = [int]$sourceState.frontend.pid
   $backendProcessId = $sourceProcessId
   $backendStartTicks = (Get-Process -Id $sourceProcessId -ErrorAction Stop).StartTime.ToUniversalTime().Ticks
-  [void](Invoke-McpBridge $pwsh @("-NoProfile", "-File", $launcher) $sourceEnvironment)
-  Wait-ManagedRuntimeStopped $sourceProcessId $backendPort
+  $sourceRecovery = Invoke-McpBridge $pwsh @("-NoProfile", "-File", $launcher) $sourceEnvironment -RecoverBackend
+  if ($sourceRecovery.backend_pid -eq $sourceProcessId) { throw "Source backend recovery did not replace the backend." }
+  Wait-ManagedRuntimeStopped $sourceRecovery.backend_pid $backendPort
   Wait-ManagedRuntimeStopped $frontendProcessId $dashboardPort
   $backendProcessId = $null
   $frontendProcessId = $null

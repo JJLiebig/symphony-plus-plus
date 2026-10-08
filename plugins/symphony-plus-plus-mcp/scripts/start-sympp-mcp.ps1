@@ -2868,6 +2868,7 @@ try {
     }
     superseded = if ($supersededStates.Count -gt 0) { $supersededStates[0] } else { $null }
     superseded_runtimes = $supersededStates
+    publication = [pscustomobject]@{ controls = $publicationControls }
   }
   if ($installedHttpCold) {
     $readyRoot = if ($runtimeMode -eq "artifact") { [string]$state.artifact.root } elseif ($repoRoot) { [string]$repoRoot } else { [string]$state.artifact.root }
