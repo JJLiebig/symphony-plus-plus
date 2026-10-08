@@ -56,7 +56,7 @@ try {
   $definitions["Write-Diagnostic"] = 'param([string]$Message)'
   $definitions["Get-SymppBackendHealthWithRetry"] = @'
 param([string]$Url, [int]$Attempts = 1, [int]$DelayMs = 1)
-return [pscustomobject]@{ healthy = $true; tcp_open = $true; mcp_ready = $true; ledger_reachable = $true; status = "ok"; source_revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"; contract_fingerprint = $ContractFingerprint }
+return [pscustomobject]@{ healthy = $true; tcp_open = $true; mcp_ready = $true; ledger_reachable = $true; ledger_identity = [pscustomobject]@{ kind = "sqlite"; default_home = $true }; status = "ok"; source_revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"; contract_fingerprint = $ContractFingerprint }
 '@
   $definitions["Invoke-HttpMcpBridge"] = @'
 param([string]$McpUrl, [int]$TimeoutSec, [string]$ClientLeaseId, [int]$HeartbeatIntervalSec)

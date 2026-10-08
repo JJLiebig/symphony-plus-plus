@@ -65,7 +65,11 @@ assert.equal(resolveStateIdentity(state, path.join(pluginRoot, "other"), identit
 assert.equal(resolveStateIdentity(state, pluginRoot, null), null);
 
 const previousDatabase = process.env.SYMPP_DATABASE;
+const previousRepoRoot = process.env.SYMPP_REPO_ROOT;
+const previousBackendUrl = process.env.SYMPP_BACKEND_URL;
 try {
+  delete process.env.SYMPP_REPO_ROOT;
+  delete process.env.SYMPP_BACKEND_URL;
   const database = path.join(os.homedir(), "fixture ledger", "first.sqlite3");
   const databaseState = changed((value) => { value.publication = { controls: { database } }; });
   process.env.SYMPP_DATABASE = database;
@@ -84,9 +88,26 @@ try {
   process.env.SYMPP_DATABASE = " ";
   assert.ok(resolveStateIdentity(state, pluginRoot, identity), "blank override retains default attachment");
   assert.equal(resolveStateIdentity(databaseState, pluginRoot, identity), null, "default request cannot reuse explicitly selected database state");
+  const otherLedger = { kind: "sqlite", display_path: database, default_home: false };
+  assert.equal(requestedDatabaseMatches(otherLedger), false, "blank installed request cannot adopt another live ledger");
+  delete process.env.SYMPP_DATABASE;
+  assert.equal(requestedDatabaseMatches(otherLedger), false, "unset installed request cannot adopt another live ledger");
+  assert.equal(requestedDatabaseMatches(null), false, "implicit installed attachment requires default ledger identity");
+  assert.ok(requestedDatabaseMatches({ kind: "sqlite", default_home: true }), "default installed ledger remains attachable");
+  process.env.SYMPP_REPO_ROOT = pluginRoot;
+  assert.ok(requestedDatabaseMatches(otherLedger), "deliberate source attachment keeps its ledger choice");
+  delete process.env.SYMPP_REPO_ROOT;
+  process.env.SYMPP_BACKEND_URL = state.backend.url;
+  assert.ok(requestedDatabaseMatches(otherLedger), "deliberate backend attachment keeps its ledger choice");
+  process.env.SYMPP_DATABASE = path.join(path.dirname(database), "other.sqlite3");
+  assert.equal(requestedDatabaseMatches(otherLedger), false, "explicit database still constrains deliberate backend attachment");
 } finally {
   if (previousDatabase === undefined) delete process.env.SYMPP_DATABASE;
   else process.env.SYMPP_DATABASE = previousDatabase;
+  if (previousRepoRoot === undefined) delete process.env.SYMPP_REPO_ROOT;
+  else process.env.SYMPP_REPO_ROOT = previousRepoRoot;
+  if (previousBackendUrl === undefined) delete process.env.SYMPP_BACKEND_URL;
+  else process.env.SYMPP_BACKEND_URL = previousBackendUrl;
 }
 
 const marketplaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sympp-node-marketplace-"));

@@ -152,7 +152,11 @@ $state = [pscustomobject]@{
 $identity = Resolve-LocalWarmAttachIdentity $state $pluginRoot 19998 19999 $false $false $null $null
 Assert-True ($null -ne $identity) "Current-contract artifact-static runtime should be eligible for PowerShell fallback warm attach"
 $previousDatabase = $env:SYMPP_DATABASE
+$previousRepoRoot = $env:SYMPP_REPO_ROOT
+$previousBackendUrl = $env:SYMPP_BACKEND_URL
 try {
+  $env:SYMPP_REPO_ROOT = $null
+  $env:SYMPP_BACKEND_URL = $null
   $env:SYMPP_DATABASE = Join-Path $env:USERPROFILE "fixture ledger/first.sqlite3"
   $databaseControls = New-SymppPublicationControls 19998 19999 $false $false $null $null
   $databaseState = $state | ConvertTo-Json -Depth 8 | ConvertFrom-Json
@@ -167,8 +171,23 @@ try {
   Assert-True ($null -eq (Resolve-LocalWarmAttachIdentity $databaseState $pluginRoot 19998 19999 $false $false $null $null)) "Different explicit database must reject recorded attachment"
   Assert-True (-not (Test-SymppPublicationControlsMatch $databaseControls (New-SymppPublicationControls 19998 19999 $false $false $null $null))) "Database mismatch must reject publication and prepared restart"
   $env:SYMPP_DATABASE = " "
-  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Blank override preserves default live compatibility"
-} finally { $env:SYMPP_DATABASE = $previousDatabase }
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "Blank installed request cannot adopt another live ledger"
+  $env:SYMPP_DATABASE = $null
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "Unset installed request cannot adopt another live ledger"
+  $defaultHealth = New-SymppBackendHealth $true $null $null $true $true $true "ok" $fingerprint ([pscustomobject]@{ kind = "sqlite"; default_home = $true })
+  Assert-True (Test-BackendLaunchCompatible $defaultHealth $fingerprint) "Default installed ledger remains attachable"
+  $env:SYMPP_REPO_ROOT = $repoRoot
+  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Deliberate source attachment keeps its ledger choice"
+  $env:SYMPP_REPO_ROOT = $null
+  $env:SYMPP_BACKEND_URL = $backendUrl
+  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Deliberate backend attachment keeps its ledger choice"
+  $env:SYMPP_DATABASE = Join-Path $env:USERPROFILE "fixture ledger/different.sqlite3"
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "Explicit database still constrains deliberate backend attachment"
+} finally {
+  $env:SYMPP_DATABASE = $previousDatabase
+  $env:SYMPP_REPO_ROOT = $previousRepoRoot
+  $env:SYMPP_BACKEND_URL = $previousBackendUrl
+}
 $publishedControls = New-SymppPublicationControls 19998 19999 $false $false $null $null
 $publishedState = $state | ConvertTo-Json -Depth 8 | ConvertFrom-Json
 $publishedState.backend.managed = $false
@@ -183,7 +202,7 @@ try {
   Assert-True (-not (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $null $publishedControls)) "A stopped external backend must not satisfy initial ready publication"
   $script:publishedExternalHealth = [pscustomobject]@{ healthy = $true; contract_fingerprint = $staleFingerprint }
   Assert-True (-not (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $null $publishedControls)) "A live incompatible external backend must not satisfy initial ready publication"
-  $script:publishedExternalHealth = [pscustomobject]@{ healthy = $true; contract_fingerprint = $fingerprint }
+  $script:publishedExternalHealth = [pscustomobject]@{ healthy = $true; contract_fingerprint = $fingerprint; ledger_identity = [pscustomobject]@{ kind = "sqlite"; default_home = $true } }
   Assert-True (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $null $publishedControls) "A live compatible external backend should satisfy local readiness"
   Assert-True (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $publishedIdentity $publishedControls) "A live compatible external backend should satisfy ready publication"
   $mismatchedIdentity = [pscustomobject]@{ generation_key = "other-generation"; contract_fingerprint = $fingerprint }
@@ -200,7 +219,7 @@ $staleState.runtime_key = New-RuntimeKey $backendUrl $backendUrl $staleFingerpri
 $staleState.backend.expected_contract_fingerprint = $staleFingerprint
 $staleState.backend.contract_fingerprint = $staleFingerprint
 Assert-True ($null -eq (Resolve-LocalWarmAttachIdentity $staleState $pluginRoot 19998 19999 $false $false $null $null)) "Stale fallback state must take the cold validation path"
-$health = [pscustomobject]@{ healthy = $true; source_revision = $state.backend.source_revision; contract_fingerprint = $fingerprint }
+$health = [pscustomobject]@{ healthy = $true; source_revision = $state.backend.source_revision; contract_fingerprint = $fingerprint; ledger_identity = [pscustomobject]@{ kind = "sqlite"; default_home = $true } }
 $plan = Resolve-FastAttachRuntimePlan $state $state.backend.source_revision $fingerprint 0 0 $false $false $null $null $health $true $true
 Assert-True ($null -ne $plan -and -not $plan.dashboard_plan.managed) "Artifact-static runtime should produce an unmanaged-dashboard fallback plan"
 Assert-True (Test-BackendShouldShutdownOnIdle $state.backend $state.frontend) "Managed backends without a managed dashboard must shut down on idle in source and artifact modes"

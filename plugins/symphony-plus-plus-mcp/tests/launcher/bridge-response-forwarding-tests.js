@@ -100,7 +100,7 @@ async function main() {
     frontend: { status: "artifact_static", origin: backend, managed: false, pid: null },
   }));
   fs.writeFileSync(path.join(symppHome, "runtime", "codex-plugin-health.json"), JSON.stringify({
-    runtime_key: runtimeKey, backend_pid: 0, contract, validated_at_ms: Date.now(),
+    runtime_key: runtimeKey, backend_pid: 0, contract, validated_at_ms: Date.now(), ledger_identity: { kind: "sqlite", default_home: true },
   }));
 
   const environment = { ...process.env, SYMPP_HOME: symppHome, SYMPP_RUNTIME_FILE: runtimeFile, SYMPP_MCP_BRIDGE_MODE: "http" };

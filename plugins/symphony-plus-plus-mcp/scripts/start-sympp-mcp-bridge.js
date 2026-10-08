@@ -695,8 +695,10 @@ function databasePath(database, displayPath = false) {
 }
 
 function requestedDatabaseMatches(ledgerIdentity) {
-  return !databasePath(process.env.SYMPP_DATABASE) ||
-    (ledgerIdentity?.kind === "sqlite" && databasePath(ledgerIdentity.display_path, true) === databasePath(process.env.SYMPP_DATABASE));
+  const requested = databasePath(process.env.SYMPP_DATABASE);
+  if (requested) return ledgerIdentity?.kind === "sqlite" && databasePath(ledgerIdentity.display_path, true) === requested;
+  if (String(process.env.SYMPP_REPO_ROOT || "").trim() || String(process.env.SYMPP_BACKEND_URL || "").trim()) return true;
+  return ledgerIdentity?.kind === "sqlite" && ledgerIdentity.default_home === true;
 }
 
 function resolveStateIdentity(state, pluginRoot, cachedIdentity) {

@@ -868,7 +868,10 @@ function Test-SymppDatabasePathsMatch([string]$Actual, [string]$Expected, [bool]
 
 function Test-BackendLaunchCompatible($Health, [string]$ExpectedContractFingerprint) {
   if (-not (Test-BackendContractMatches $Health $ExpectedContractFingerprint)) { return $false }
-  if ([string]::IsNullOrWhiteSpace($env:SYMPP_DATABASE)) { return $true }
+  if ([string]::IsNullOrWhiteSpace($env:SYMPP_DATABASE)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:SYMPP_REPO_ROOT) -or -not [string]::IsNullOrWhiteSpace($env:SYMPP_BACKEND_URL)) { return $true }
+    return $Health.ledger_identity.kind -eq "sqlite" -and $Health.ledger_identity.default_home -eq $true
+  }
   return $Health.ledger_identity.kind -eq "sqlite" -and
     (Test-SymppDatabasePathsMatch ([string]$Health.ledger_identity.display_path) $env:SYMPP_DATABASE $true)
 }
@@ -2171,7 +2174,7 @@ function Invoke-WarmAttachFromRuntimeState {
     return $false
   }
 
-  $recordedLedger = [pscustomobject]@{ kind = "sqlite"; display_path = [string]$runtimeState.publication.controls.database }
+  $recordedLedger = [pscustomobject]@{ kind = "sqlite"; display_path = [string]$runtimeState.publication.controls.database; default_home = [string]::IsNullOrWhiteSpace([string]$runtimeState.publication.controls.database) }
   $recordedHealth = New-SymppBackendHealth $true $identity.source_revision "recorded" $true $true $true "ok" $identity.contract_fingerprint $recordedLedger
   $provisionalPlan = Resolve-FastAttachRuntimePlan $runtimeState $identity.source_revision $identity.contract_fingerprint 0 0 $false $false $null $null $recordedHealth $true $true
   if ($null -eq $provisionalPlan) {
