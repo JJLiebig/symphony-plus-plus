@@ -1,0 +1,451 @@
+{
+  "captured_from": "http://127.0.0.1:20242/api/v1/sympp/operator/dashboard/deferred",
+  "source_revision": "b0e73ea19b1923cdcf27721c34f29f90e1c8e3cc",
+  "generated_at": "2026-10-08T02:40:15.846000Z",
+  "capture_method": "Authenticated browser Network.getResponseBody after ordinary Refresh; selected exact work_request_details row, no authentication data exported.",
+  "work_request_details": [
+    {
+      "summary": {
+        "comment_count": 0,
+        "open_comment_count": 0,
+        "answered_question_count": 0,
+        "closed_question_count": 0,
+        "open_question_count": 0,
+        "dispatched_work_package_count": 3,
+        "planned_work_package_count": 0,
+        "skipped_work_package_count": 0,
+        "work_package_count": 3
+      },
+      "work_request": {
+        "id": "wr_2sjv3grxotyokrat",
+        "status": "sliced",
+        "title": "F03 actual native Opus delivery",
+        "repo": "JJLiebig/symphony-plus-plus",
+        "inserted_at": "2026-10-07T17:08:55.954000Z",
+        "updated_at": "2026-10-08T00:29:47.131000Z",
+        "base_branch": "beta",
+        "archived_at": null,
+        "archive_reason": null,
+        "completed_at": "2026-10-08T00:29:47.121000Z",
+        "completion_source": null,
+        "desired_dispatch_shape": "single_package",
+        "work_type": "feature",
+        "comment_count": 0,
+        "open_comment_count": 0,
+        "operational_state": {
+          "label": "Delivered",
+          "reason": "Most actionable WorkPackage state is Delivered across 3 package(s).",
+          "key": "delivered",
+          "last_activity_at": "2026-10-08T00:29:47.123000Z",
+          "raw_status": "sliced",
+          "tone": "success",
+          "attention_items": [],
+          "has_started": true,
+          "has_prepared_worktree": false,
+          "has_active_worker": false,
+          "is_stale": true
+        },
+        "repo_aliases": [
+          "JJLiebig/symphony-plus-plus"
+        ],
+        "repo_display": "JJLiebig/symphony-plus-plus",
+        "repo_key": "jjliebig/symphony-plus-plus",
+        "repo_remote": "JJLiebig/symphony-plus-plus"
+      },
+      "product_tree": {
+        "nodes": [],
+        "mode": "direct_work_packages",
+        "summary": {
+          "work_package_count": 3,
+          "attention_count": 0,
+          "blocker_count": 0,
+          "guidance_count": 0,
+          "deferred_count": 0,
+          "done_count": 0,
+          "node_count": 0,
+          "node_work_package_count": 0,
+          "not_done_count": 0,
+          "partial_count": 0,
+          "root_node_count": 0,
+          "root_work_package_count": 3,
+          "unknown_count": 0
+        },
+        "available": true,
+        "execution_graph": {
+          "available": true,
+          "work_package_ids": [
+            "wp_esdnvffh7d4zmcit",
+            "wp_oo7hfzgxygemcwgm",
+            "wp_w44er25wygwce7z7"
+          ],
+          "effective_edges": [],
+          "cycles": [],
+          "dependency_ready_work_package_ids": [
+            "wp_esdnvffh7d4zmcit",
+            "wp_oo7hfzgxygemcwgm",
+            "wp_w44er25wygwce7z7"
+          ],
+          "resolutions": [
+            {
+              "status": "closed",
+              "resolved": true,
+              "work_package_id": "wp_esdnvffh7d4zmcit",
+              "delivery_outcome": "superseded"
+            },
+            {
+              "status": "closed",
+              "resolved": true,
+              "work_package_id": "wp_oo7hfzgxygemcwgm",
+              "delivery_outcome": "superseded"
+            },
+            {
+              "status": "merged",
+              "resolved": true,
+              "work_package_id": "wp_w44er25wygwce7z7",
+              "delivery_outcome": "pr_merged"
+            }
+          ],
+          "topological_order": [
+            "wp_esdnvffh7d4zmcit",
+            "wp_oo7hfzgxygemcwgm",
+            "wp_w44er25wygwce7z7"
+          ],
+          "unmet_dependencies": []
+        },
+        "dependency_edges": [],
+        "latest_revision": {
+          "id": "ptr_ilzvz5jgskrkvsu3",
+          "reason": "WorkRequest sliced into canonical WorkPackages through MCP.",
+          "created_at": "2026-10-08T00:05:45.355000Z",
+          "created_by": "F03 title correction parent",
+          "decision_ref": null,
+          "revision_number": 3
+        },
+        "root_node_ids": [],
+        "root_work_package_ids": [
+          "wp_oo7hfzgxygemcwgm",
+          "wp_esdnvffh7d4zmcit",
+          "wp_w44er25wygwce7z7"
+        ],
+        "schema_version": "product_tree.v4"
+      },
+      "work_packages": [
+        {
+          "id": "wp_oo7hfzgxygemcwgm",
+          "status": "closed",
+          "title": "F03 — Finished default operator Work board",
+          "kind": "standard_pr",
+          "sequence": 1,
+          "repo": "JJLiebig/symphony-plus-plus",
+          "inserted_at": "2026-10-07T17:09:47.860000Z",
+          "updated_at": "2026-10-07T23:43:16.635000Z",
+          "base_branch": "beta",
+          "work_package_id": "wp_oo7hfzgxygemcwgm",
+          "worker_signal": {
+            "active_since": "2026-10-07T17:10:23.366000Z",
+            "last_activity": "2026-10-07T23:43:16.634000Z",
+            "run_label": "native-claude-wp_n6n4cybjk3bq5rb4",
+            "status": "idle"
+          },
+          "branch_pattern": "dprjegeiv4kbvaei",
+          "work_request_id": "wr_2sjv3grxotyokrat",
+          "dispatched_at": "2026-10-07T17:09:47.968000Z",
+          "goal": "Graduate the existing FocusBoard into the single usable default Work overview, with truthful actor, wait, decision, timing and delivery eligibility. Actual native Claude owns the frontend PR.",
+          "product_tree_node_id": null,
+          "comment_count": 0,
+          "open_comment_count": 0,
+          "operational_state": {
+            "label": "Superseded",
+            "reason": "Recorded delivery outcome says this WorkPackage was superseded by a successor.",
+            "key": "superseded",
+            "last_activity_at": "2026-10-07T23:43:16.663000Z",
+            "raw_status": "closed",
+            "tone": "neutral",
+            "attention_items": [],
+            "work_package_status": "closed",
+            "delivery_outcome": "superseded",
+            "has_started": true,
+            "has_prepared_worktree": false,
+            "has_active_worker": false,
+            "is_stale": true,
+            "attention_reason_codes": []
+          },
+          "delivery": {
+            "id": "wrsd_zcxiwat272kfjxsu",
+            "merge_commit_sha": null,
+            "outcome": "superseded",
+            "pr_merged_at": null,
+            "pr_number": null,
+            "pr_repository": null,
+            "pr_url": null,
+            "recorded_at": "2026-10-07T23:43:16.633000Z",
+            "recorded_by": "F03 grouping correction parent",
+            "successor_work_package_id": "wp_esdnvffh7d4zmcit"
+          },
+          "work_package_status": "closed",
+          "review": {
+            "args": {
+              "base": "origin/beta",
+              "mode": "fast"
+            },
+            "type": "review-suite"
+          },
+          "activity_signal": {
+            "last_update": "Recorded WorkRequest delivery closeout: superseded",
+            "last_update_at": "2026-10-07T23:43:16.663000Z",
+            "observation_state": "unknown",
+            "stage": "superseded",
+            "work_package_id": "wp_oo7hfzgxygemcwgm"
+          },
+          "attention_reason_codes": [],
+          "merge_eligibility": {
+            "eligible": false,
+            "next_action": "finish_worker_qualification",
+            "reason_codes": [
+              "not_ready"
+            ],
+            "work_package_id": "wp_oo7hfzgxygemcwgm"
+          },
+          "successor": {
+            "work_package": {
+              "id": "wp_esdnvffh7d4zmcit",
+              "raw_status": "closed",
+              "sequence": 2,
+              "title": "F03 — Correct qualified-work grouping in the existing Work board",
+              "work_package_id": "wp_esdnvffh7d4zmcit"
+            },
+            "work_package_id": "wp_esdnvffh7d4zmcit"
+          },
+          "review_signal": {
+            "args": {
+              "base": "origin/beta",
+              "mode": "fast"
+            },
+            "observation_state": "unknown",
+            "status": "pending",
+            "type": "review-suite"
+          },
+          "pr_signal": {
+            "checks": {
+              "status": "unavailable"
+            },
+            "current_head_sha": "d83490ca178259dd8bf26503a418e93e1b909c06",
+            "head_matches": true,
+            "head_sha": "d83490ca178259dd8bf26503a418e93e1b909c06",
+            "number": 708,
+            "repository": "JJLiebig/symphony-plus-plus",
+            "status": "open",
+            "url": "https://github.com/JJLiebig/symphony-plus-plus/pull/708"
+          }
+        },
+        {
+          "id": "wp_esdnvffh7d4zmcit",
+          "status": "closed",
+          "title": "F03 — Correct qualified-work grouping in the existing Work board",
+          "kind": "standard_pr",
+          "sequence": 2,
+          "repo": "JJLiebig/symphony-plus-plus",
+          "inserted_at": "2026-10-07T23:43:16.551000Z",
+          "updated_at": "2026-10-08T00:05:45.433000Z",
+          "base_branch": "beta",
+          "work_package_id": "wp_esdnvffh7d4zmcit",
+          "worker_signal": {
+            "active_since": "2026-10-07T23:44:02.926000Z",
+            "last_activity": "2026-10-08T00:05:45.432000Z",
+            "run_label": "native-claude-wp_n6n4cybjk3bq5rb4",
+            "status": "idle"
+          },
+          "branch_pattern": "dprjegeiv4kbvaei",
+          "work_request_id": "wr_2sjv3grxotyokrat",
+          "dispatched_at": "2026-10-07T23:43:16.715000Z",
+          "goal": "Correct the existing shared board classifier: solely qualified and canonically eligible work goes Ready for handoff; false/missing eligibility goes Waiting absent actual active work; mixed real active work remains In progress. Finish the same master F03 PR708 on existing branch/worktree, preserving prior delivered implementation and evidence at d83490ca178259dd8bf26503a418e93e1b909c06. No new evaluator/store or product scope.",
+          "product_tree_node_id": null,
+          "comment_count": 0,
+          "open_comment_count": 0,
+          "operational_state": {
+            "label": "Superseded",
+            "reason": "Recorded delivery outcome says this WorkPackage was superseded by a successor.",
+            "key": "superseded",
+            "last_activity_at": "2026-10-08T00:05:45.436000Z",
+            "raw_status": "closed",
+            "tone": "neutral",
+            "attention_items": [],
+            "work_package_status": "closed",
+            "delivery_outcome": "superseded",
+            "has_started": true,
+            "has_prepared_worktree": false,
+            "has_active_worker": false,
+            "is_stale": true,
+            "attention_reason_codes": []
+          },
+          "delivery": {
+            "id": "wrsd_yaxj6x5tpfmicxdq",
+            "merge_commit_sha": null,
+            "outcome": "superseded",
+            "pr_merged_at": null,
+            "pr_number": null,
+            "pr_repository": null,
+            "pr_url": null,
+            "recorded_at": "2026-10-08T00:05:45.431000Z",
+            "recorded_by": "F03 title correction parent",
+            "successor_work_package_id": "wp_w44er25wygwce7z7"
+          },
+          "work_package_status": "closed",
+          "review": {
+            "args": {
+              "base": "origin/beta",
+              "mode": "fast"
+            },
+            "type": "review-suite"
+          },
+          "activity_signal": {
+            "last_update": "Recorded WorkRequest delivery closeout: superseded",
+            "last_update_at": "2026-10-08T00:05:45.436000Z",
+            "observation_state": "unknown",
+            "stage": "superseded",
+            "work_package_id": "wp_esdnvffh7d4zmcit"
+          },
+          "attention_reason_codes": [],
+          "merge_eligibility": {
+            "eligible": false,
+            "next_action": "finish_worker_qualification",
+            "reason_codes": [
+              "not_ready"
+            ],
+            "work_package_id": "wp_esdnvffh7d4zmcit"
+          },
+          "successor": {
+            "work_package": {
+              "id": "wp_w44er25wygwce7z7",
+              "raw_status": "merged",
+              "sequence": 3,
+              "title": "F03 — Show the complete package title beside actual PR metadata",
+              "work_package_id": "wp_w44er25wygwce7z7"
+            },
+            "work_package_id": "wp_w44er25wygwce7z7"
+          },
+          "review_signal": {
+            "args": {
+              "base": "origin/beta",
+              "mode": "fast"
+            },
+            "observation_state": "unknown",
+            "status": "pending",
+            "type": "review-suite"
+          },
+          "pr_signal": {
+            "checks": {
+              "status": "unavailable"
+            },
+            "current_head_sha": "b770c794c9129447fa61b8c2ca57677efd001b92",
+            "head_matches": true,
+            "head_sha": "b770c794c9129447fa61b8c2ca57677efd001b92",
+            "number": 708,
+            "repository": "JJLiebig/symphony-plus-plus",
+            "status": "open",
+            "url": "https://github.com/JJLiebig/symphony-plus-plus/pull/708"
+          }
+        },
+        {
+          "id": "wp_w44er25wygwce7z7",
+          "status": "merged",
+          "title": "F03 — Show the complete package title beside actual PR metadata",
+          "kind": "standard_pr",
+          "sequence": 3,
+          "repo": "JJLiebig/symphony-plus-plus",
+          "inserted_at": "2026-10-08T00:05:45.341000Z",
+          "updated_at": "2026-10-08T00:29:47.121000Z",
+          "base_branch": "beta",
+          "work_package_id": "wp_w44er25wygwce7z7",
+          "worker_signal": {
+            "active_since": "2026-10-08T00:08:59.940000Z",
+            "last_activity": "2026-10-08T00:29:47.121000Z",
+            "run_label": "native-claude-wp_n6n4cybjk3bq5rb4",
+            "status": "idle"
+          },
+          "branch_pattern": "dprjegeiv4kbvaei",
+          "work_request_id": "wr_2sjv3grxotyokrat",
+          "dispatched_at": "2026-10-08T00:05:45.486000Z",
+          "goal": "Fix the existing package-title/PR metadata layout so the complete actual long package title is visible and readable at desktop and390 without overflow or accessibility regression. Preserve all F03 behavior and b770c794c9129447fa61b8c2ca57677efd001b92 qualification/history. SAME PR708, branch, checkout and master WP; no redesign/new components/dependencies. Native must publish current head and wait for parent browser acceptance before final readiness.",
+          "product_tree_node_id": null,
+          "comment_count": 0,
+          "open_comment_count": 0,
+          "operational_state": {
+            "label": "Delivered",
+            "reason": "Recorded delivery outcome says the linked PR merged.",
+            "key": "delivered",
+            "last_activity_at": "2026-10-08T00:29:47.123000Z",
+            "raw_status": "merged",
+            "tone": "success",
+            "attention_items": [],
+            "work_package_status": "merged",
+            "delivery_outcome": "pr_merged",
+            "has_started": true,
+            "has_prepared_worktree": false,
+            "has_active_worker": false,
+            "is_stale": true,
+            "attention_reason_codes": []
+          },
+          "delivery": {
+            "id": "wrsd_pz4js7lg44xpykss",
+            "merge_commit_sha": "6dc8b8428fc006b36b7053b36d9e9221fb3f7efd",
+            "outcome": "pr_merged",
+            "pr_merged_at": "2026-10-08T00:28:38.000000Z",
+            "pr_number": 708,
+            "pr_repository": "JJLiebig/symphony-plus-plus",
+            "pr_url": "https://github.com/JJLiebig/symphony-plus-plus/pull/708",
+            "recorded_at": "2026-10-08T00:29:47.120000Z",
+            "recorded_by": "F03 factual merge closeout parent",
+            "successor_work_package_id": null
+          },
+          "work_package_status": "merged",
+          "review": {
+            "args": {
+              "base": "origin/beta",
+              "mode": "fast"
+            },
+            "type": "review-suite"
+          },
+          "activity_signal": {
+            "last_update": "Recorded WorkRequest delivery closeout: pr_merged",
+            "last_update_at": "2026-10-08T00:29:47.123000Z",
+            "observation_state": "unknown",
+            "stage": "delivered",
+            "work_package_id": "wp_w44er25wygwce7z7"
+          },
+          "attention_reason_codes": [],
+          "merge_eligibility": {
+            "eligible": false,
+            "next_action": "finish_worker_qualification",
+            "reason_codes": [],
+            "work_package_id": "wp_w44er25wygwce7z7"
+          },
+          "successor": null,
+          "review_signal": {
+            "args": {
+              "base": "origin/beta",
+              "mode": "fast"
+            },
+            "observation_state": "unknown",
+            "status": "pending",
+            "type": "review-suite"
+          },
+          "pr_signal": {
+            "checks": {
+              "status": "unavailable"
+            },
+            "current_head_sha": "0063e4fd03df7789c469c0665add81cc9b239d54",
+            "head_matches": true,
+            "head_sha": "0063e4fd03df7789c469c0665add81cc9b239d54",
+            "number": 708,
+            "repository": "JJLiebig/symphony-plus-plus",
+            "status": "merged",
+            "url": "https://github.com/JJLiebig/symphony-plus-plus/pull/708"
+          }
+        }
+      ],
+      "clarification_questions": []
+    }
+  ],
+  "row_sha256": "ee13a0d300acbef76db82025975d6532686dd0048db3340f67cb9c265791027e"
+}
