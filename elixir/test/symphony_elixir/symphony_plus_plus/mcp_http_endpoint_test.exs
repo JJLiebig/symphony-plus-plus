@@ -27,8 +27,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Repository, as: PhaseRepository
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.Repository, as: SoloSessionRepository
+  alias SymphonyElixir.SymphonyPlusPlus.TrackerAdapter
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.WorkPackageFactory
@@ -976,6 +978,70 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       post_json(resources_read_request("revoked-resource", "sympp://assignment/current"), [{"mcp-session-id", session_id}])
 
     assert get_in(json_response(assignment_resource, 200), ["error", "data", "reason"]) == "missing_session"
+  end
+
+  test "cleanup startup and the first MCP write share the migration file lock" do
+    database_path = WorkPackageFactory.database_path()
+    workspace_path = solo_workspace_path("startup-migration")
+    original_repo_config = Application.get_env(:symphony_elixir, LazyHTTPRepo)
+    observer_key = :sympp_tracker_adapter_lock_wait_observer
+    original_observer = Application.get_env(:symphony_elixir, observer_key)
+    Application.put_env(:symphony_elixir, LazyHTTPRepo, database: database_path)
+    Application.put_env(:symphony_elixir, observer_key, self())
+    start_supervised!({LazyHTTPRepo, database: database_path, pool_size: 5})
+
+    on_exit(fn ->
+      restore_app_env(LazyHTTPRepo, original_repo_config)
+      restore_app_env(observer_key, original_observer)
+      File.rm(database_path)
+      File.rm_rf(workspace_path)
+    end)
+
+    parent = self()
+
+    lock_task =
+      Task.async(fn ->
+        TrackerAdapter.migration_file_lock_for_test(database_path, fn ->
+          send(parent, :migration_lock_held)
+          receive do: (:release_migration_lock -> :ok)
+        end)
+      end)
+
+    try do
+      assert_receive :migration_lock_held, 5_000
+      lock_path = database_path <> ".migration.lock"
+
+      with_endpoint_repo(LazyHTTPRepo, fn ->
+        init = post_json(initialize_request("init"))
+        [session_id] = get_resp_header(init, "mcp-session-id")
+        assert json_response(post_json(tools_list_request("tools"), [{"mcp-session-id", session_id}]), 200)["result"]
+        queue_pid = start_supervised!({WorktreeCleanupQueue, repo: LazyHTTPRepo, name: nil})
+        assert_receive {:tracker_adapter_lock_wait, :migration_file_lock, queue_lock_path, ^queue_pid}, 5_000
+        assert Repo.same_database_path?(queue_lock_path, lock_path)
+
+        request =
+          Task.async(fn ->
+            post_json(
+              tool_call_request("first-write", "solo_attach", %{
+                "repo" => "fixture/startup",
+                "base_branch" => "beta",
+                "workspace_path" => workspace_path,
+                "caller_id" => "startup-test"
+              }),
+              [{"mcp-session-id", session_id}]
+            )
+          end)
+
+        request_pid = request.pid
+        assert_receive {:tracker_adapter_lock_wait, :migration_file_lock, request_lock_path, ^request_pid}, 5_000
+        assert Repo.same_database_path?(request_lock_path, lock_path)
+        send(lock_task.pid, :release_migration_lock)
+        assert :ok = Task.await(lock_task)
+        assert get_in(json_response(Task.await(request, 30_000), 200), ["result", "structuredContent", "action"]) == "solo_attach"
+      end)
+    after
+      send(lock_task.pid, :release_migration_lock)
+    end
   end
 
   test "POST /mcp dispatches Solo tools through the dashboard lazy repo seam" do
