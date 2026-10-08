@@ -1,10 +1,16 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type ViteDevServer } from "vite";
+import type { WorkRequestDetail } from "@/types/dashboard";
+
+const actualF03Delivery = JSON.parse(readFileSync(new URL("./__fixtures__/actual-f03-delivered-row.json", import.meta.url), "utf8")) as {
+  generated_at: string;
+  work_request_details: WorkRequestDetail[];
+};
 
 let browser: Browser;
 let server: ViteDevServer;
@@ -26,6 +32,43 @@ afterAll(async () => {
 }, 20_000);
 
 describe("focus board interactions", () => {
+  it("previews the actual merged F03 result before replaced work and retains its delivery history", async () => {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+    page.setDefaultTimeout(5_000);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const detail = actualF03Delivery.work_request_details[0]!;
+    const dashboard = {
+      ...actualF03Delivery,
+      work_requests: { work_requests: [detail.work_request], total_count: 1 },
+    };
+    await page.route("**/api/v1/sympp/operator/config*", (route) => route.fulfill({ json: { apiBase: "/api/v1/sympp/operator", dashboard } }));
+    await page.route("**/api/v1/sympp/operator/dashboard/events", (route) => route.abort());
+    await page.route("**/api/v1/sympp/operator/dashboard*", (route) => route.fulfill({ json: dashboard }));
+    await page.route(`**/api/v1/sympp/operator/work-requests/${detail.work_request.id}*`, (route) => route.fulfill({ json: detail }));
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    await page.getByRole("button", { name: /^Recently delivered/ }).click();
+    const card = page.locator(`.focus-board__recent [data-request-id="${detail.work_request.id}"]`);
+    const rows = card.locator(".v3-request-frontier-package");
+    expect(await rows.count()).toBe(2);
+    expect(await rows.first().getByRole("button", { name: "Open WorkPackage details for F03 — Show the complete package title beside actual PR metadata", exact: true }).isVisible()).toBe(true);
+    expect(await rows.first().getByText("Merged", { exact: true }).isVisible()).toBe(true);
+    expect(await rows.first().getByRole("link", { name: "PR #708", exact: true }).getAttribute("href")).toBe("https://github.com/JJLiebig/symphony-plus-plus/pull/708");
+
+    await card.getByRole("button", { name: "Show all work (3)", exact: true }).press("Enter");
+    expect(await rows.count()).toBe(3);
+    expect(await card.getByText("Superseded", { exact: true }).count()).toBe(2);
+    for (const slice of detail.work_packages!) expect(await card.getByRole("button", { name: `Open WorkPackage details for ${slice.title}`, exact: true }).isVisible()).toBe(true);
+    await card.getByRole("button", { name: "Show less", exact: true }).click();
+    expect(await rows.count()).toBe(2);
+
+    await card.locator(".v3-request-main").click();
+    const tree = page.locator(".focus-board__workbench .v3-product-plan");
+    await tree.waitFor();
+    for (const slice of detail.work_packages!) expect(await tree.locator(`[data-work-package-id="${slice.id}"]`).isVisible()).toBe(true);
+    await page.close();
+  }, 20_000);
+
   it("paints the application shell and consumes the config bootstrap without a priority waterfall", async () => {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     let releaseConfig!: () => void;
