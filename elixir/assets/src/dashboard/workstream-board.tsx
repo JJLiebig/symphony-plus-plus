@@ -163,13 +163,20 @@ function requestFrontier(
   showAll = false,
 ): RequestFrontierSummary | null {
   const matches = slices.filter((slice) => frontierSliceMatches(mode, detail, slice, packageById.get(slice.work_package_id || slice.id), activeBlockingEdges, guidanceItems));
+  if (mode === "recent") {
+    const isReplaced = (slice: WorkRequestPackage) => {
+      const pkg = packageById.get(slice.work_package_id || slice.id);
+      return (slice.delivery?.outcome || sliceOperationalState(slice, pkg)?.delivery_outcome || sliceStatus(slice, pkg)) === "superseded";
+    };
+    matches.sort((left, right) => Number(isReplaced(left)) - Number(isReplaced(right)));
+  }
   const parallel = mode === "recent" ? [] : slices.filter((slice) => !matches.includes(slice) && !sliceIsFinished(slice, packageById.get(slice.work_package_id || slice.id)));
   const relevant = [...matches, ...parallel];
   if (!relevant.length) return null;
   const visible = showAll ? relevant : relevant.slice(0, FRONTIER_VISIBLE_LIMIT);
   const groups = frontierGroups(detail, visible, packageById, overallLabel);
   const hiddenCount = relevant.length - visible.length;
-  return { groups, hiddenCount, moreLabel: hiddenCount ? `Show all current work (${relevant.length})` : undefined };
+  return { groups, hiddenCount, moreLabel: hiddenCount ? `Show all ${mode === "recent" ? "work" : "current work"} (${relevant.length})` : undefined };
 }
 
 function frontierGroups(
