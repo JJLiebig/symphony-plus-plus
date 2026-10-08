@@ -161,6 +161,16 @@ function Assert-StaticContract {
   $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
   $server = $config.symphony_plus_plus
 
+  $expectedEnvVars = @(
+    "CODEX_HOME", "SYMPP_HOME", "SYMPP_DATABASE", "SYMPP_BACKEND_PORT",
+    "SYMPP_RUNTIME_FILE", "SYMPP_LOG_DIR", "SYMPP_OPEN_DASHBOARD", "SYMPP_LAUNCHER_TRACE_DIR"
+  )
+  $actualEnvVars = @($server.env_vars)
+  if ($actualEnvVars.Count -ne $expectedEnvVars.Count -or
+      @(Compare-Object -ReferenceObject $expectedEnvVars -DifferenceObject $actualEnvVars -CaseSensitive).Count -ne 0) {
+    throw "plugin MCP config must forward exactly the approved launch environment variables"
+  }
+
   if ($server.PSObject.Properties["url"]) {
     throw "plugin MCP config bypasses the cold-start launcher"
   }
