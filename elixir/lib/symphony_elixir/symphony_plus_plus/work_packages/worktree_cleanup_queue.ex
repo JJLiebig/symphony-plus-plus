@@ -7,6 +7,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue do
 
   import Ecto.Query, only: [from: 2]
 
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.Repository, as: MCPRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
@@ -150,7 +151,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue do
 
   @impl true
   def handle_continue(:startup, state) do
-    case Repository.migrate(state.repo) do
+    case MCPRepository.ensure_migrated(state.repo) do
       :ok ->
         {:noreply, run_and_schedule(state)}
 
