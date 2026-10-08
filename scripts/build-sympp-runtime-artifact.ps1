@@ -133,11 +133,12 @@ function Get-FileSha256([string]$Path) {
 function Get-DirectoryFingerprint([string]$Path) {
   $root = (Resolve-Path -LiteralPath $Path).Path
   $lines = New-Object System.Collections.Generic.List[string]
-  foreach ($file in @(Get-ChildItem -LiteralPath $root -File -Recurse | Sort-Object FullName)) {
+  foreach ($file in @(Get-ChildItem -LiteralPath $root -File -Recurse)) {
     $relativePath = [System.IO.Path]::GetRelativePath($root, $file.FullName).Replace("\", "/")
     $lines.Add("$relativePath $(Get-FileSha256 $file.FullName)")
   }
 
+  $lines.Sort([System.StringComparer]::Ordinal)
   $payload = [string]::Join("`n", $lines)
   $sha = [System.Security.Cryptography.SHA256]::Create()
   try {
