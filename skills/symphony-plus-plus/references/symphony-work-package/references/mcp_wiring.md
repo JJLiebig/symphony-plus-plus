@@ -18,6 +18,7 @@ New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
 $env:SYMPP_HOME = Join-Path $env:USERPROFILE '.agents/splusplus-beta'
 $env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'symphony_plus_plus.sqlite3'
 codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
+codex plugin marketplace upgrade symphony-plus-plus
 codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
 ```
 

@@ -38,7 +38,22 @@ async function main() {
 
   server = http.createServer((request, response) => {
     if (request.method === "GET" && request.url === "/sympp/board") return response.end("<title>Symphony++ Dashboard</title>");
-    if (request.method === "POST" && request.url === "/mcp/client-lease") return response.end(JSON.stringify({ stale_after_ms: 300000 }));
+    if (request.method === "POST" && request.url === "/mcp/client-lease") {
+      let body = "";
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        const lease = JSON.parse(body);
+        if (lease.action === "attach") {
+          const directory = path.join(symppHome, "runtime", "codex-plugin-leases");
+          const local = fs.readdirSync(directory).map((file) => JSON.parse(fs.readFileSync(path.join(directory, file))))
+            .find((record) => record.client_id === lease.client_id);
+          assert.ok(local, "local identity must exist before HTTP attach");
+          assert.equal(local.pid, bridge.pid);
+        }
+        response.end(JSON.stringify({ stale_after_ms: 300000 }));
+      });
+      return;
+    }
     if (request.method !== "POST" || request.url !== "/mcp") return response.writeHead(404).end();
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));

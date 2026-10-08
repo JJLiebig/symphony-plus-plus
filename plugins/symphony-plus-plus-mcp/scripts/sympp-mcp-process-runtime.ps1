@@ -283,6 +283,8 @@ function Start-Backend($Plan, [string]$DashboardOrigin, [string]$ElixirDir, [str
 
   if ($ShutdownOnIdle) {
     $command.environment["SYMPP_MCP_SHUTDOWN_ON_IDLE"] = "1"
+    $command.environment["SYMPP_MCP_BRIDGE_LEASE_DIR"] = Join-Path (Split-Path -Parent (Resolve-RuntimeFile)) "codex-plugin-leases"
+    $command.environment["SYMPP_MCP_BRIDGE_PROBE"] = Join-Path $PSScriptRoot "start-sympp-mcp-bridge.js"
   }
 
   $launch = Start-LoggedProcess $command.file $command.args $command.working_directory $command.environment "backend-$($Plan.port)" $LogDir -NormalUserBackend

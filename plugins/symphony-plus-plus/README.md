@@ -13,6 +13,7 @@ Use a separate beta Codex home:
 $env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
 New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
 codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
+codex plugin marketplace upgrade symphony-plus-plus
 codex plugin add symphony-plus-plus@symphony-plus-plus
 ```
 

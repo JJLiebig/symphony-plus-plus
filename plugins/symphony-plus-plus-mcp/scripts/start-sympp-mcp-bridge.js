@@ -908,12 +908,13 @@ function leaseDirectory(runtimeFile) {
   return path.join(path.dirname(runtimeFile), "codex-plugin-leases");
 }
 
-function createLocalLease(runtimeFile, state, identity) {
+function createLocalLease(runtimeFile, state, identity, clientId) {
   const directory = leaseDirectory(runtimeFile);
   fs.mkdirSync(directory, { recursive: true });
   const file = path.join(directory, `bridge-${process.pid}-${crypto.randomUUID().replace(/-/g, "")}.json`);
   const temporary = `${file}.tmp`;
   const lease = {
+    client_id: clientId,
     pid: process.pid,
     process_liveness_pipe: livenessPipe,
     process_liveness_token: livenessToken,
@@ -1048,7 +1049,7 @@ async function bridge(identity, state, runtimeFile) {
     const generationValidation = beginGenerationAttachmentValidation(next.identity);
     const replacementLease = next.identity.runtimeKey.toLowerCase() === current.identity.runtimeKey.toLowerCase()
       ? localLease
-      : createLocalLease(runtimeFile, next.state, next.identity);
+      : createLocalLease(runtimeFile, next.state, next.identity, clientId);
     let attachedResponse;
     let nextCleanupScript;
     let replacementAttached = false;
@@ -1153,7 +1154,7 @@ async function bridge(identity, state, runtimeFile) {
       trace("warm_miss_cleanup");
       return false;
     }
-    localLease = createLocalLease(runtimeFile, state, identity);
+    localLease = createLocalLease(runtimeFile, state, identity, clientId);
     const confirmedState = readJson(runtimeFile);
     const confirmed = resolveStateIdentity(confirmedState, path.resolve(__dirname, ".."), identity);
     if (!confirmed || confirmed.runtimeKey.toLowerCase() !== identity.runtimeKey.toLowerCase()) {
@@ -1387,6 +1388,18 @@ async function resolveColdRuntime(runtimeFile, pluginRoot) {
 }
 
 async function main() {
+  if (process.argv.includes("--probe-client-leases")) {
+    try {
+      const input = readline.createInterface({ input: process.stdin, terminal: false });
+      for await (const line of input) {
+        const dead = await Promise.all(JSON.parse(line).map(async ({ id, pid, pipe, token }) =>
+          await livenessMatches(pid, pipe, token) ? null : id));
+        process.stdout.write(JSON.stringify(dead.filter((id) => id !== null)), () => process.exit(0));
+        return;
+      }
+    } catch (_) { }
+    process.exit(1);
+  }
   if (Number(process.versions.node.split(".")[0]) < 18) process.exit(POWERSHELL_FALLBACK);
   if (process.argv.includes("--runtime-supported")) {
     process.exit(0);
@@ -1409,5 +1422,5 @@ if (require.main === module) {
     process.exit(1);
   });
 } else {
-  module.exports = { ensureLivenessProbe, closeLivenessProbe, tryAcquireProcessLock, releaseProcessLock, livenessMatches, decodeHerdrBinding, generationFromMarker, generationKey, herdrMetadataArgs, resolveStateIdentity, requestedDatabaseMatches };
+  module.exports = { ensureLivenessProbe, closeLivenessProbe, createLocalLease, tryAcquireProcessLock, releaseProcessLock, livenessMatches, decodeHerdrBinding, generationFromMarker, generationKey, herdrMetadataArgs, resolveStateIdentity, requestedDatabaseMatches };
 }
