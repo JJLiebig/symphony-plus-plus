@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
+import type { GuidanceItem, WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
 
 import type { RepoSummary } from "./dashboard-data";
 import { filterWorkstreamsBySearch, matchesDashboardSearch } from "./dashboard-search";
@@ -61,5 +61,18 @@ describe("dashboard search", () => {
       expect(filterWorkstreamsBySearch([repo], details, query).requestDetailsByRepo.get(repo.repoKey)).toEqual([detail]);
     }
     expect(filterWorkstreamsBySearch([repo], details, "ready to merge").repos).toEqual([]);
+  });
+
+  it("finds requests by the guidance decision shown on the Work board", () => {
+    const detail: WorkRequestDetail = {
+      work_request: { id: "wr_guided", title: "Guided request", repo: "vod-api" },
+      work_packages: [{ id: "wp_guided", work_request_id: "wr_guided", title: "Integration", status: "implementing", activity_signal: { waiting_reason: "Integration choice pending" } }],
+    };
+    const guidance = { source: "guidance", packageId: "wp_guided", title: "Choose avocado integration", guidance: { status: "human_info_needed" } } as unknown as GuidanceItem;
+    const repo: RepoSummary = { repoKey: "vod-api", repo: "vod-api", baseBranches: ["main"], requested: 0, active: 1, implementing: 1, finished: 0, guidanceCount: 1, blockerCount: 0, packages: [], requests: [detail.work_request] };
+    const details = new Map([[repo.repoKey, [detail]]]);
+
+    expect(filterWorkstreamsBySearch([repo], details, "avocado", [guidance]).requestDetailsByRepo.get(repo.repoKey)).toEqual([detail]);
+    expect(filterWorkstreamsBySearch([repo], details, "avocado").repos).toEqual([]);
   });
 });

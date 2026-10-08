@@ -7,6 +7,7 @@ import type { GuidanceItem, WorkPackageCard, WorkRequestDetail, WorkRequestPacka
 
 import { FocusBoard, FocusBoardFirstRun } from "./focus-board";
 import { buildFocusBoardItems, requestHumanDecision } from "./focus-board-data";
+import { WorkstreamsPane } from "./workspace-tabs";
 
 // Actual compact /dashboard/deferred response from the isolated F03 ledger; see fixture _source.
 const actualCompactBoard = JSON.parse(readFileSync(new URL("./fixtures/actual-compact-board.json", import.meta.url), "utf8")) as { generated_at: string; work_request_details: WorkRequestDetail[] };
@@ -246,6 +247,21 @@ describe("focus board", () => {
     expect(html).toContain("Beta");
     expect(html).toContain('<option value="" selected="">All repositories</option>');
     expect(html).toContain('<option value="fixture/secondary">fixture/secondary</option>');
+  });
+
+  it("shows received facts instead of loading forever when the first deferred load fails", () => {
+    const detail = request("wr-a", "Alpha", [slice("a", "implementing")]);
+    const repo = { repoKey: "fixture/repo", repo: "fixture/repo", baseBranches: ["main"], requested: 0, active: 1, implementing: 1, finished: 0, guidanceCount: 0, blockerCount: 0, packages: [], requests: [detail.work_request] };
+    const pane = (staleSince?: string | null) => renderToStaticMarkup(createElement(WorkstreamsPane, {
+      repos: [repo], searchActive: false, requestDetailsByRepo: new Map([[repo.repoKey, [detail]]]), focusBoardReady: false,
+      activeBlockingEdges: [], guidanceItems: [], onSelectAttention: () => undefined, onSelectGuidance: () => undefined,
+      onSelectCard: () => undefined, onStartRequest: () => undefined, staleSince, updateAnimations: { motionFor: () => undefined },
+    }));
+
+    expect(pane()).toContain('aria-busy="true"');
+    expect(pane()).not.toContain("Alpha");
+    expect(pane(null)).toContain("Connection interrupted. Showing the last facts received;");
+    expect(pane(null)).toContain("Alpha");
   });
 });
 

@@ -49,7 +49,8 @@ export function WorkstreamsPane({
   if (repos.length === 0) {
     return searchActive ? <EmptyPanel title="No matches" /> : <FocusBoardFirstRun onStartRequest={onStartRequest} />;
   }
-  if (!focusBoardReady) return <FocusBoardLoading />;
+  // A failed first deferred load keeps the received facts visible behind the stale notice.
+  if (!focusBoardReady && staleSince === undefined) return <FocusBoardLoading />;
 
   return (
     <FocusBoard

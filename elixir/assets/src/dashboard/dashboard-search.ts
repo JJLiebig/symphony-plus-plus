@@ -1,10 +1,11 @@
-import type { WorkRequestPackage, WorkPackageCard, WorkRequestCard, WorkRequestDetail } from "@/types/dashboard";
+import type { GuidanceItem, WorkRequestPackage, WorkPackageCard, WorkRequestCard, WorkRequestDetail } from "@/types/dashboard";
 import type { ProductTreeNode } from "@/types/product-tree";
 
 import { workActivitySearchFields } from "@/lib/operational-state-activity";
 import { operationalLabel } from "@/lib/operational-state";
 
 import type { RepoSummary } from "./dashboard-data";
+import { requestHumanDecision } from "./focus-board-data";
 
 export type WorkstreamSearchResult = {
   active: boolean;
@@ -21,6 +22,7 @@ export function filterWorkstreamsBySearch(
   repos: RepoSummary[],
   requestDetailsByRepo: Map<string, WorkRequestDetail[]>,
   query: string,
+  guidanceItems: GuidanceItem[] = [],
 ): WorkstreamSearchResult {
   const terms = searchTerms(query);
   if (terms.length === 0) return { active: false, repos, requestDetailsByRepo };
@@ -31,7 +33,7 @@ export function filterWorkstreamsBySearch(
 
     const repoMatches = matchesTerms(terms, repoFields(repo));
     const matchedPackageIds = new Set(repo.packages.filter((pkg) => matchesTerms(terms, packageFields(pkg))).map((pkg) => pkg.id));
-    const matchedDetails = repoMatches ? details : details.filter((detail) => matchesTerms(terms, requestDetailFields(detail)) || detailHasPackage(detail, matchedPackageIds));
+    const matchedDetails = repoMatches ? details : details.filter((detail) => matchesTerms(terms, requestDetailFields(detail, guidanceItems)) || detailHasPackage(detail, matchedPackageIds));
     const visiblePackageIds = new Set(matchedDetails.flatMap((detail) => (detail.work_packages ?? []).map((slice) => slice.work_package_id).filter(Boolean)));
     const visibleRequestIds = new Set(matchedDetails.map((detail) => detail.work_request.id));
     const packages = repo.packages.filter((pkg) => matchedPackageIds.has(pkg.id) || visiblePackageIds.has(pkg.id));
@@ -81,9 +83,10 @@ function repoFields(repo: RepoSummary) {
   return [repo.repo, repo.repoKey, repo.repoRemote, ...repo.baseBranches];
 }
 
-function requestDetailFields(detail: WorkRequestDetail) {
+function requestDetailFields(detail: WorkRequestDetail, guidanceItems: GuidanceItem[]) {
   return [
     ...requestFields(detail.work_request),
+    requestHumanDecision(detail, guidanceItems)?.text,
     ...(detail.clarification_questions ?? []).flatMap((question) => [question.id, question.decision_prompt?.tl_dr, question.question]),
     ...(detail.decision_logs ?? []).map((decision) => decision.id),
     ...(detail.product_tree?.nodes ?? []).flatMap(productNodeFields),

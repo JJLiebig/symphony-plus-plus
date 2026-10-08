@@ -451,8 +451,8 @@ function useDashboardController() {
     [hideEmptyWorkstreams, repos],
   );
   const searchedWorkstreams = useMemo(
-    () => filterWorkstreamsBySearch(workstreamRepos, requestDetailsByRepo, dashboardSearchQuery),
-    [dashboardSearchQuery, requestDetailsByRepo, workstreamRepos],
+    () => filterWorkstreamsBySearch(workstreamRepos, requestDetailsByRepo, dashboardSearchQuery, guidanceItems),
+    [dashboardSearchQuery, guidanceItems, requestDetailsByRepo, workstreamRepos],
   );
   const hiddenWorkstreamCount = repos.length - workstreamRepos.length;
   const updateAnimations = useDashboardUpdateAnimations({
