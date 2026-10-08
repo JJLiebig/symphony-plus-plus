@@ -32,6 +32,7 @@ For skill-only Codex use, choose a separate beta home and add the marketplace:
 
 ```powershell
 $env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
+New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
 codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
 ```
 
