@@ -54,6 +54,13 @@ export type WorkPackageActivitySignal = {
   observed_at?: string | null;
 };
 
+export type WorkPackageMergeEligibility = {
+  work_package_id?: string | null;
+  eligible?: boolean | null;
+  reason_codes?: string[] | null;
+  next_action?: string | null;
+};
+
 export type WorkPackageDependencySignal = {
   satisfied: number;
   required: number;

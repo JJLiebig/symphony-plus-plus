@@ -2,7 +2,6 @@ import type { DashboardPayload, WorkRequestPackage, WorkPackageCard, WorkRequest
 import { sliceLane } from "@/lib/operational-state";
 import { sortedCopy } from "@/lib/collections";
 import type { CardDetailSelection } from "./runtime";
-import type { WorkstreamCategoryCounts } from "./dashboard-state";
 import { repoIdentityKey } from "./dashboard-persistence";
 import { reconciledValue } from "./dashboard-content-equality";
 
@@ -116,23 +115,3 @@ export function sortableTime(value?: string | null) {
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
-export function workstreamCategoryCounts(details: WorkRequestDetail[]): WorkstreamCategoryCounts {
-  let planNodes = 0;
-  let slices = 0;
-
-  details.forEach((detail) => {
-    const summary = detail.product_tree?.summary;
-    planNodes += summary?.node_count ?? detail.product_tree?.nodes?.length ?? 0;
-    slices += summary?.work_package_count ?? detail.work_packages?.length ?? 0;
-  });
-
-  return {
-    requests: details.length,
-    planNodes,
-    slices,
-  };
-}
-
-export function finishedRequestChildrenStorageKey(scopeKey: string, workRequestId: string) {
-  return `${scopeKey}::${workRequestId}`;
-}

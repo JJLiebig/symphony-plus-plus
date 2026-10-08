@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DASHBOARD_UI_STATE_KEY } from "./runtime";
-import { readStoredUseFocusBoard, writeStoredUseFocusBoard } from "./dashboard-persistence";
+import { readStoredWorkScope, writeDashboardUiStateValue } from "./dashboard-persistence";
 
-describe("Focus Board setting persistence", () => {
+describe("Work board scope persistence", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("defaults off and preserves unrelated dashboard preferences when enabled", () => {
-    let stored = JSON.stringify({ workspaceTab: "workstreams" });
+  it("defaults to every repository, ignores the retired Focus Board flag and preserves unrelated preferences", () => {
+    let stored = JSON.stringify({ workspaceTab: "workstreams", useFocusBoard: false });
     vi.stubGlobal("window", {
       localStorage: {
         getItem: (key: string) => key === DASHBOARD_UI_STATE_KEY ? stored : null,
@@ -17,10 +17,10 @@ describe("Focus Board setting persistence", () => {
       },
     });
 
-    expect(readStoredUseFocusBoard()).toBe(false);
-    writeStoredUseFocusBoard(true);
+    expect(readStoredWorkScope()).toBeNull();
+    writeDashboardUiStateValue("workScope", "fixture/repo");
 
-    expect(readStoredUseFocusBoard()).toBe(true);
-    expect(JSON.parse(stored)).toEqual({ workspaceTab: "workstreams", useFocusBoard: true });
+    expect(readStoredWorkScope()).toBe("fixture/repo");
+    expect(JSON.parse(stored)).toMatchObject({ workspaceTab: "workstreams", workScope: "fixture/repo" });
   });
 });

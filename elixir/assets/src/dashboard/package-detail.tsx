@@ -58,7 +58,7 @@ export function SliceDetailContent({
         eyebrow={`${repoDisplayName(detail.work_request)} / ${detail.work_request.title || detail.work_request.id}`}
         identifier={pkg?.id || slice.work_package_id || slice.id}
         identifierLabel="WorkPackage ID"
-        badge={<Badge variant={operationalBadgeVariant(operational, status)}>{operationalLabel(operational, status)}</Badge>}
+        badge={<Badge variant={operationalBadgeVariant(operational, status)}>{operationalLabel(operational, status, slice.merge_eligibility)}</Badge>}
       />
       <div className="detail-modal-reveal-body grid gap-4">
         <DetailLoadError error={detailError} />
@@ -70,7 +70,7 @@ export function SliceDetailContent({
             { label: "Updated", value: detailDate(slice.updated_at || slice.dispatched_at || slice.inserted_at) },
           ]}
         />
-        <WorkActivity activity={slice.activity_signal ?? operational?.activity_signal ?? pkg?.activity_signal} review={slice.review_signal ?? pkg?.review_signal} />
+        <WorkActivity activity={slice.activity_signal ?? operational?.activity_signal ?? pkg?.activity_signal} review={slice.review_signal ?? pkg?.review_signal} eligibility={slice.merge_eligibility} />
         <DetailSection title="Package Goal">
           <MarkdownBlock value={slice.goal} empty={pkg?.kind || "No package goal has been recorded yet."} />
         </DetailSection>
@@ -81,7 +81,7 @@ export function SliceDetailContent({
           </div>
         </DetailSection>
         {deliverySummary || deliveryFacts.length > 0 ? (
-          <DetailDisclosure title="Delivery" meta={slice.delivery?.outcome ? statusLabel(slice.delivery.outcome) : operationalLabel(operational, status)}>
+          <DetailDisclosure title="Delivery" meta={slice.delivery?.outcome ? statusLabel(slice.delivery.outcome) : operationalLabel(operational, status, slice.merge_eligibility)}>
             {deliveryMarkdown ? (
               <MarkdownDetail label={deliveryMarkdown.label} value={deliveryMarkdown.value} />
             ) : deliverySummary ? (

@@ -17,7 +17,6 @@ import type { DashboardRefreshInvalidation } from "./dashboard-refresh-invalidat
 import { LiveLedgerBadge } from "./status-cards";
 import { RepoSummary } from "./dashboard-data";
 import { DashboardSearchControl } from "./dashboard-search-control";
-import { DashboardWelcomeDialog } from "./dashboard-welcome";
 import { AttentionBarControls } from "./attention-bar-controls";
 import { StatusRail } from "./status-rail";
 import { UpdateSimulationControls } from "./update-simulation-controls";
@@ -27,7 +26,6 @@ import type { AttentionItem, AttentionJumpDestination, AttentionTarget } from ".
 
 type DashboardDisplayPreferences = {
   hideEmptyWorkstreams: boolean;
-  showWorkstreamContextBar: boolean;
 };
 
 export function DashboardShell({
@@ -65,8 +63,6 @@ export function DashboardShell({
   onSelectAttention,
   onSelectCard,
   onSetNewRequestOpen,
-  onShowWorkstreamContextBarChange,
-  onShowWelcomeToastChange,
   onSubmitComment,
   onSubmitGuidanceAnswer,
   onUpdateArchiveAfterDays,
@@ -78,7 +74,6 @@ export function DashboardShell({
   repos,
   showUpdateSimulationControls,
   openDashboardOnBoot,
-  showWelcomeToast,
   soloSessionDeleteAfterDays,
   theme,
   toggleTheme,
@@ -120,8 +115,6 @@ export function DashboardShell({
   onSelectAttention: (target: AttentionTarget | null) => void;
   onSelectCard: (selection: CardDetailSelection | null) => void;
   onSetNewRequestOpen: (open: boolean) => void;
-  onShowWorkstreamContextBarChange: (show: boolean) => void;
-  onShowWelcomeToastChange: (show: boolean) => void;
   onSubmitComment: SubmitContextComment;
   onSubmitGuidanceAnswer: (item: GuidanceItem, submission: GuidanceAnswerSubmission) => Promise<void>;
   onUpdateArchiveAfterDays: (archiveAfterDays: number) => Promise<void>;
@@ -133,7 +126,6 @@ export function DashboardShell({
   repos: RepoSummary[];
   showUpdateSimulationControls: boolean;
   openDashboardOnBoot: boolean;
-  showWelcomeToast: boolean;
   soloSessionDeleteAfterDays: number;
   theme: DashboardTheme;
   toggleTheme: () => void;
@@ -141,7 +133,7 @@ export function DashboardShell({
   workspacePanes: Record<WorkspaceTab, React.ReactNode>;
   workspaceTab: WorkspaceTab;
 }) {
-  const { hideEmptyWorkstreams, showWorkstreamContextBar } = displayPreferences;
+  const { hideEmptyWorkstreams } = displayPreferences;
   const dashboardAlertMessage = error;
   const guidanceCount = attentionItems.filter((item) => item.tone === "guidance").length;
   const blockerCount = attentionItems.filter((item) => item.tone === "blocked").length;
@@ -184,17 +176,13 @@ export function DashboardShell({
                 captureFailedMcpCalls={captureFailedMcpCalls}
                 soloSessionDeleteAfterDays={soloSessionDeleteAfterDays}
                 openDashboardOnBoot={openDashboardOnBoot}
-                showWelcomeToast={showWelcomeToast}
                 hideEmptyWorkstreams={hideEmptyWorkstreams}
                 hiddenWorkstreamCount={hiddenWorkstreamCount}
-                showWorkstreamContextBar={showWorkstreamContextBar}
                 onArchiveAfterDaysChange={onUpdateArchiveAfterDays}
                 onCaptureFailedMcpCallsChange={onCaptureFailedMcpCallsChange}
                 onSoloSessionDeleteAfterDaysChange={onUpdateSoloSessionDeleteAfterDays}
                 onOpenDashboardOnBootChange={onOpenDashboardOnBootChange}
-                onShowWelcomeToastChange={onShowWelcomeToastChange}
                 onHideEmptyWorkstreamsChange={onHideEmptyWorkstreamsChange}
-                onShowWorkstreamContextBarChange={onShowWorkstreamContextBarChange}
               />
               <ArchivedRequestsDialog
                 loading={archivedRequestsLoading}
@@ -291,13 +279,6 @@ export function DashboardShell({
           onSelectCard={onSelectCard}
           onSubmitComment={onSubmitComment}
           onSubmitGuidanceAnswer={onSubmitGuidanceAnswer}
-        />
-        <DashboardWelcomeDialog
-          ready={dashboard !== null}
-          showWelcomeToast={showWelcomeToast}
-          openDashboardOnBoot={openDashboardOnBoot}
-          onShowWelcomeToastChange={onShowWelcomeToastChange}
-          onOpenDashboardOnBootChange={onOpenDashboardOnBootChange}
         />
       </main>
     </TooltipProvider>

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { CopyArchitectHandoff, GuidanceItem, WorkRequestDetail } from "@/types/dashboard";
 import { DetailDisclosure, DetailFacts, DetailHeader, DetailList, DetailLoadError, DetailSection, DetailSummaryBar, JsonDetail } from "@/components/dashboard/detail-layout";
 import { MarkdownBlock } from "@/components/dashboard/markdown-block";
+import { requestMergeEligibility } from "@/lib/delivery-eligibility";
 import { architectHandoffEligibleRequest, isFinishedBoardStatus, operationalBadgeVariant, operationalLabel } from "@/lib/operational-state";
 import { cn } from "@/lib/utils";
 import { formatStatus, statusLabel } from "@/lib/status-labels";
@@ -134,7 +135,7 @@ export function RequestDetailContent({
         eyebrow={`${repoDisplayName(request)} / ${request.base_branch || "main"} / ${request.work_type || "feature"}`}
         identifier={request.id}
         identifierLabel="WorkRequest ID"
-        badge={<Badge variant={operationalBadgeVariant(operational, request.status)}>{operationalLabel(operational, request.status)}</Badge>}
+        badge={<Badge variant={operationalBadgeVariant(operational, request.status)}>{operationalLabel(operational, request.status, requestMergeEligibility(detail))}</Badge>}
       />
       <div className="detail-modal-reveal-body grid gap-4">
         <DetailLoadError error={detailError} />
@@ -239,10 +240,13 @@ export function RequestDetailContent({
 function RequestWorkActivity({ detail }: { detail: WorkRequestDetail }) {
   const activity = detail.work_request.operational_state?.activity_signal;
   const packages = detail.work_packages ?? [];
-  if (activity) return <WorkActivity activity={activity} review={packages.find((slice) => slice.id === activity.work_package_id)?.review_signal} />;
+  if (activity) {
+    const slice = packages.find((item) => item.id === activity.work_package_id);
+    return <WorkActivity activity={activity} review={slice?.review_signal} eligibility={slice?.merge_eligibility} />;
+  }
   const observed = packages.filter((slice) => slice.activity_signal);
-  if (observed.length <= 1) return <WorkActivity activity={observed[0]?.activity_signal} review={observed[0]?.review_signal} />;
-  return <DetailDisclosure title="Current activity" meta={`${observed.length} WorkPackages`}><div className="grid gap-4">{observed.map((slice) => <div key={slice.id}><h4 className="text-sm font-medium">{slice.title || slice.id}</h4><WorkActivityFacts activity={slice.activity_signal} review={slice.review_signal} /></div>)}</div></DetailDisclosure>;
+  if (observed.length <= 1) return <WorkActivity activity={observed[0]?.activity_signal} review={observed[0]?.review_signal} eligibility={observed[0]?.merge_eligibility} />;
+  return <DetailDisclosure title="Current activity" meta={`${observed.length} WorkPackages`}><div className="grid gap-4">{observed.map((slice) => <div key={slice.id}><h4 className="text-sm font-medium">{slice.title || slice.id}</h4><WorkActivityFacts activity={slice.activity_signal} review={slice.review_signal} eligibility={slice.merge_eligibility} /></div>)}</div></DetailDisclosure>;
 }
 
 function RequestDangerActions({

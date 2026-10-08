@@ -5,14 +5,12 @@ import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { CardDetailSelect, DashboardUpdateAnimations, TopPanelDirection, WorkspaceTab, WorkspaceTabPhase } from "./runtime";
 import { EmptyPanel } from "./empty-panel";
 import { RepoSummary } from "./dashboard-data";
-import { RepoWorkstream } from "./repo-workstream";
-import { repoWorkstreamStateKey, useStoredUseFocusBoard, workspaceTabDirection } from "./dashboard-persistence";
-import { FocusBoard, FocusBoardLoading } from "./focus-board";
+import { workspaceTabDirection } from "./dashboard-persistence";
+import { FocusBoard, FocusBoardFirstRun, FocusBoardLoading } from "./focus-board";
 import type { AttentionJumpTarget, AttentionSelect } from "./workstream-attention";
 
 export function WorkstreamsPane({
   repos,
-  hiddenRepoCount,
   searchActive,
   requestDetailsByRepo,
   focusBoardReady,
@@ -23,11 +21,11 @@ export function WorkstreamsPane({
   onSelectAttention,
   onSelectGuidance,
   onSelectCard,
-  showWorkstreamContextBar,
+  onStartRequest,
+  staleSince,
   updateAnimations,
 }: {
   repos: RepoSummary[];
-  hiddenRepoCount: number;
   searchActive: boolean;
   requestDetailsByRepo: Map<string, WorkRequestDetail[]>;
   focusBoardReady: boolean;
@@ -38,54 +36,38 @@ export function WorkstreamsPane({
   onSelectAttention: AttentionSelect;
   onSelectGuidance: (item: GuidanceItem) => void;
   onSelectCard: CardDetailSelect;
-  showWorkstreamContextBar: boolean;
+  onStartRequest: () => void;
+  staleSince?: string | null;
   updateAnimations: DashboardUpdateAnimations;
 }) {
   const primaryBranchByRepo = useMemo(
     () => new Map(repos.map((repo) => [repo.repoKey, repositoryPrimaryBranch(repo.baseBranches)] as const)),
     [repos],
   );
-  const useFocusBoard = useStoredUseFocusBoard();
+  const repositories = useMemo(() => repos.map((repo) => ({ key: repo.repoKey, label: repo.repo })), [repos]);
 
   if (repos.length === 0) {
-    return <EmptyPanel title={searchActive ? "No matches" : hiddenRepoCount > 0 ? "No active repositories" : "No repositories yet"} />;
+    return searchActive ? <EmptyPanel title="No matches" /> : <FocusBoardFirstRun onStartRequest={onStartRequest} />;
   }
-
-  const focusDetails = Array.from(requestDetailsByRepo.values()).flat();
+  // A failed first deferred load keeps the received facts visible behind the stale notice.
+  if (!focusBoardReady && staleSince === undefined) return <FocusBoardLoading />;
 
   return (
-    <div className="v3-workstreams-pane grid gap-5">
-      {useFocusBoard && focusBoardReady ? <FocusBoard
-        details={focusDetails}
-        now={now}
-        packages={repos.flatMap((repo) => repo.packages)}
-        activeBlockingEdges={activeBlockingEdges}
-        guidanceItems={guidanceItems}
-        jumpTarget={jumpTarget}
-        onSelectAttention={onSelectAttention}
-        onSelectGuidance={onSelectGuidance}
-        onSelectCard={onSelectCard}
-        primaryBranchByRepo={primaryBranchByRepo}
-        updateAnimations={updateAnimations}
-      /> : useFocusBoard ? <FocusBoardLoading /> : null}
-      {repos.map((repo) => (
-        <RepoWorkstream
-          key={repoWorkstreamStateKey(repo)}
-          repo={repo}
-          requestDetailsByRepo={requestDetailsByRepo}
-          now={now}
-          activeBlockingEdges={activeBlockingEdges}
-          guidanceItems={guidanceItems}
-          jumpTarget={jumpTarget}
-          onSelectAttention={onSelectAttention}
-          onSelectGuidance={onSelectGuidance}
-          onSelectCard={onSelectCard}
-          primaryBranch={primaryBranchByRepo.get(repo.repoKey)}
-          showWorkstreamContextBar={showWorkstreamContextBar}
-          updateAnimations={updateAnimations}
-        />
-      ))}
-    </div>
+    <FocusBoard
+      details={Array.from(requestDetailsByRepo.values()).flat()}
+      now={now}
+      packages={repos.flatMap((repo) => repo.packages)}
+      activeBlockingEdges={activeBlockingEdges}
+      guidanceItems={guidanceItems}
+      jumpTarget={jumpTarget}
+      onSelectAttention={onSelectAttention}
+      onSelectGuidance={onSelectGuidance}
+      onSelectCard={onSelectCard}
+      primaryBranchByRepo={primaryBranchByRepo}
+      repositories={repositories}
+      staleSince={staleSince}
+      updateAnimations={updateAnimations}
+    />
   );
 }
 

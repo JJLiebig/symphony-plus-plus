@@ -1,10 +1,5 @@
 import type { WorkRequestDetail } from "@/types/dashboard";
 
-export function mergeRequestDetailsWithExiting(currentDetails: WorkRequestDetail[], exitingDetails: WorkRequestDetail[]) {
-  const currentIds = new Set(currentDetails.map((detail) => detail.work_request.id));
-  return [...currentDetails, ...exitingDetails.filter((detail) => !currentIds.has(detail.work_request.id))];
-}
-
 export function visibleRequestBranch(branch?: string | null, primaryBranch?: string | null) {
   const value = branch?.trim();
   if (!value || ["main", "master", primaryBranch?.trim().toLowerCase()].includes(value.toLowerCase())) return undefined;

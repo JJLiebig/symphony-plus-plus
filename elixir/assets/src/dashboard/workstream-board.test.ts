@@ -3,11 +3,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { WorkPackageCard, WorkRequestDetail } from "@/types/dashboard";
-import { ProductRequestRow, WorkstreamBoard } from "./workstream-board";
-import { architectStartPrompt, mergeRequestDetailsWithExiting, requestIdentityCopyText, visibleRequestBranch } from "./workstream-utils";
-import { dashboardWorkRequestDetails, finishedRequestChildrenStorageKey, sortWorkRequestDetails } from "./workstream-data";
+import { EmptyWorkRequest, ProductRequestRow } from "./workstream-board";
+import { ProductPlanBody } from "./workstream-product-plan";
+import { architectStartPrompt, requestIdentityCopyText, visibleRequestBranch } from "./workstream-utils";
+import { dashboardWorkRequestDetails, sortWorkRequestDetails } from "./workstream-data";
 
-describe("workstream board removal rendering", () => {
+describe("work board request rendering", () => {
   it("renders priority WorkRequest cards before compact execution details arrive", () => {
     const [detail] = dashboardWorkRequestDetails({
       work_requests: {
@@ -64,14 +65,6 @@ describe("workstream board removal rendering", () => {
     expect(details.find((detail) => detail.work_request.id === "wr-priority")?.work_request.title).toBe("Priority request");
   });
 
-  it("keeps removed request details renderable while they exit", () => {
-    const active = requestDetail("wr-active");
-    const removed = requestDetail("wr-removed");
-
-    expect(mergeRequestDetailsWithExiting([active], [removed]).map((detail) => detail.work_request.id)).toEqual(["wr-active", "wr-removed"]);
-    expect(mergeRequestDetailsWithExiting([active], [active, removed]).map((detail) => detail.work_request.id)).toEqual(["wr-active", "wr-removed"]);
-  });
-
   it("keeps active and terminal WorkRequests and sorts them by latest update descending", () => {
     const details = dashboardWorkRequestDetails({
       work_requests: {
@@ -94,76 +87,37 @@ describe("workstream board removal rendering", () => {
       "wr-active",
       "wr-created",
     ]);
-    const html = renderBoards(details, {});
-    expect(html.indexOf("Terminal")).toBeLessThan(html.indexOf("Active"));
-    expect(html.indexOf("Active")).toBeLessThan(html.indexOf("Created"));
   });
 
-  it("never renders packages without an owning WorkRequest row", () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkstreamBoard, {
-        repoLabel: "repo",
-        repoDetails: [],
-        packages: [{ id: "pkg-stale", title: "Stale package" }],
-        activeBlockingEdges: [],
-        onSelectAttention: () => undefined,
-        onSelectGuidance: () => undefined,
-        onSelectCard: () => undefined,
-        primaryBranch: "main",
-        expandedFinishedRequests: {},
-        finishedRequestScopeKey: "repo",
-        onSetFinishedRequestChildrenOpen: () => undefined,
-        showContextBar: false,
-        updateAnimations: noUpdateAnimations,
-      }),
-    );
-
-    expect(html).not.toContain("Execution records");
-    expect(html).not.toContain("Stale package");
-  });
-
-  it("renders the compact shared row header and expands the stable Group and WorkPackage list", () => {
+  it("renders the shared card header with per-package current work and the stable Group and WorkPackage tree", () => {
     const detail = graphRequestDetail();
-    const openKey = finishedRequestChildrenStorageKey("repo", detail.work_request.id);
-    const expanded = renderBoard(detail, { [openKey]: true });
-    const collapsed = renderBoard(detail, {});
+    const tree = renderTree(detail);
     const focusCard = renderFocusRow(detail);
 
-    expect(expanded).toContain('data-expanded="true"');
-    expect(expanded).toContain('class="v3-disclosure-reveal" data-open="true"');
-    expect(expanded).toContain('class="v3-product-plan"');
-    expect(expanded).toContain('class="v3-product-node-title">Graph group</span>');
-    expect(expanded).toContain('data-work-package-id="wp-active"');
-    expect(expanded).toContain('aria-label="Open WorkPackage details for Active package"');
-    expect(expanded).toContain('href="https://github.com/example/fixture/pull/101"');
-    expect(expanded).toContain('title="Open PR #101"');
-    expect(expanded).not.toContain("v3-request-frontier-package");
-    expect(expanded).not.toContain("v3-slice-kind");
-    expect(expanded).not.toContain('aria-label="Loading execution graph"');
-    expect(collapsed).toContain("Graph request");
-    expect(collapsed).toContain("fixture/repo");
-    expect(collapsed).toContain("feature/focus-board");
-    expect(collapsed).toContain('class="v3-disclosure-reveal" data-open="false" aria-hidden="true" inert=""');
-    expect(collapsed).toContain("Graph group");
-    expect(collapsed).toContain("Active package");
-    expect(collapsed).not.toContain("v3-request-frontier");
+    expect(tree).toContain('class="v3-product-plan"');
+    expect(tree).toContain('class="v3-product-node-title">Graph group</span>');
+    expect(tree).toContain('data-work-package-id="wp-active"');
+    expect(tree).toContain('aria-label="Open WorkPackage details for Active package"');
+    expect(tree).toContain('href="https://github.com/example/fixture/pull/101"');
+    expect(tree).toContain('title="Open PR #101"');
+    expect(tree).not.toContain("v3-slice-kind");
+    expect(focusCard).toContain("Graph request");
+    expect(focusCard).toContain("fixture/repo");
+    expect(focusCard).toContain("feature/focus-board");
     expect(focusCard).toContain('<span class="v3-request-frontier-group-title-label">Graph group</span>');
     expect(focusCard).toContain('class="v3-request-frontier-title" title="Active package"');
     expect(focusCard).toContain('<span class="v3-request-frontier-pr-label" aria-hidden="true">PR</span><span class="v3-request-frontier-pr-number" aria-hidden="true">#101</span>');
     expect(focusCard).toContain("PR #101");
+    expect(focusCard).toContain("Show all current work (4)");
+    expect(focusCard).not.toContain("Terminal stale package");
     expect(focusCard).not.toContain("v3-disclosure-reveal");
-    expect(collapsed).toContain('aria-label="Open request details"');
-    expect(collapsed).toContain('aria-label="Copy WorkRequest identity"');
-    expect(collapsed).toContain('class="v3-request-controls"');
+    expect(focusCard).toContain('aria-label="Open request details"');
+    expect(focusCard).toContain('aria-label="Copy WorkRequest identity"');
+    expect(focusCard).toContain('class="v3-request-controls"');
     expect(requestIdentityCopyText(detail)).toBe("Graph request - WR ID: wr-graph");
-    expect(collapsed).not.toContain('role="progressbar"');
-    expect(collapsed).not.toContain("v3-progress-value");
-    expect(collapsed).not.toContain('class="v3-row-status"');
-    expect(collapsed).not.toContain("v3-progress-state");
-    expect(collapsed).not.toContain("v3-request-summary");
-    expect(collapsed).not.toContain("v3-entity-kind");
-    expect(collapsed).not.toContain("Architect handoff");
-    expect(collapsed).not.toContain("v3-execution-graph");
+    expect(focusCard).not.toContain('role="progressbar"');
+    expect(focusCard).not.toContain("Architect handoff");
+    expect(focusCard).not.toContain("v3-execution-graph");
   });
 
   it("keeps Group and WorkPackage badges actionable for an explicit blocker record", () => {
@@ -172,11 +126,7 @@ describe("workstream board removal rendering", () => {
       work_packages: [{ id: "wp-blocked", work_package_id: "wp-blocked", work_request_id: "wr-attention", product_tree_node_id: "group-attention", title: "Blocked package", status: "blocked" }],
       product_tree: { nodes: [{ id: "group-attention", title: "Attention group", work_package_ids: ["wp-blocked"] }] },
     };
-    const expanded = renderBoard(
-      detail,
-      { [finishedRequestChildrenStorageKey("repo", detail.work_request.id)]: true },
-      [{ id: "wp-blocked", status: "blocked", active_blockers: [{ id: "blocker-1", active: true }] }],
-    );
+    const expanded = renderTree(detail, [{ id: "wp-blocked", status: "blocked", active_blockers: [{ id: "blocker-1", active: true }] }]);
 
     expect(expanded).toContain('aria-label="Open attention details for Attention group"');
     expect(expanded).toContain('aria-label="Open attention details for Blocked package"');
@@ -199,7 +149,7 @@ describe("workstream board removal rendering", () => {
         ],
       },
     };
-    const html = renderBoard(detail, { [finishedRequestChildrenStorageKey("repo", detail.work_request.id)]: true });
+    const html = renderTree(detail);
     const treeHtml = html.slice(html.indexOf('class="v3-product-plan"'));
 
     expect(html).toContain('class="v3-product-tree"');
@@ -213,41 +163,43 @@ describe("workstream board removal rendering", () => {
     expect(html).not.toContain("v3-execution-graph");
   });
 
-  it("ages the request from the newest update across non-frontier packages", () => {
-    const collapsed = renderBoard(graphRequestDetail(), {}, [{ id: "pkg-terminal", updated_at: "2026-07-18T09:25:00Z" }]);
-    const daysOld = renderBoard({ work_request: { id: "wr-old", title: "Old request", status: "active", updated_at: "2026-07-16T07:30:00Z" } }, {});
-    const requestNewer = renderBoard({
+  it("shows update freshness separately from the state badge instead of implying a stage duration", () => {
+    const collapsed = renderFocusRow(graphRequestDetail(), [{ id: "pkg-terminal", updated_at: "2026-07-18T09:25:00Z" }]);
+    const daysOld = renderFocusRow({ work_request: { id: "wr-old", title: "Old request", status: "active", updated_at: "2026-07-16T07:30:00Z" } });
+    const requestNewer = renderFocusRow({
       work_request: { id: "wr-newer", title: "Recently updated request", status: "active", updated_at: "2026-07-18T09:28:00Z" },
       work_packages: [{ id: "wp-newer", work_request_id: "wr-newer", work_package_id: "pkg-newer", status: "active" }],
-    }, {}, [{ id: "pkg-newer", status: "active", updated_at: "2026-07-18T09:00:00Z" }]);
+    }, [{ id: "pkg-newer", status: "active", updated_at: "2026-07-18T09:00:00Z" }]);
 
-    expect(collapsed).toContain("Active · 5m");
-    expect(daysOld).toContain("Active · 2d");
-    expect(daysOld).not.toContain("Active · 2d 2h");
-    expect(requestNewer).toContain("Active · 2m");
+    expect(collapsed).toContain("Updated 5m ago");
+    expect(daysOld).toContain("Updated 2d ago");
+    expect(requestNewer).toContain("Updated 2m ago");
+    expect(requestNewer).toContain('class="sr-only">Active</span>');
+    expect(requestNewer).not.toContain("Active · 2m");
   });
 
   it("omits generic package activity that only repeats the overall request state", () => {
-    const blocked = renderBoard({
+    const blocked = renderFocusRow({
       work_request: { id: "wr-blocked", title: "Blocked request", status: "blocked" },
       work_packages: [{ id: "wp-blocked", work_request_id: "wr-blocked", title: "Blocked package", status: "blocked" }],
-    }, {});
-    const active = renderBoard({
+    });
+    const active = renderFocusRow({
       work_request: { id: "wr-active", title: "Active request", status: "active", updated_at: "2026-07-18T09:20:00Z" },
       work_packages: [{ id: "wp-active", work_request_id: "wr-active", title: "Active package", status: "active" }],
-    }, {});
+    });
     const linkedDetail: WorkRequestDetail = {
       work_request: { id: "wr-linked", title: "Linked runtime", status: "planned" },
       work_packages: [{ id: "slice-linked", work_request_id: "wr-linked", work_package_id: "wp-linked", title: "Linked active package", status: "planned" }],
     };
     const linkedPackageActive = renderFocusRow(linkedDetail, [{ id: "wp-linked", status: "active" }]);
 
-    expect(blocked).toContain('class="sr-only">Blocked</span>');
+    expect(blocked).toContain('class="sr-only">Waiting</span>');
+    expect(blocked).toContain('title="Blocked">Blocked</span>');
     expect(blocked).not.toContain("border-rose-200");
     expect(blocked).not.toContain("data-first");
-    expect(blocked).not.toContain('class="v3-request-frontier-activity">Blocked</span>');
-    expect(active).toContain('class="sr-only">Active · 10m</span>');
-    expect(active).not.toContain('class="v3-request-frontier-activity">Active</span>');
+    expect(active).toContain('class="sr-only">Active</span>');
+    expect(active).toContain("Active package");
+    expect(active).not.toContain('title="Active">Active</span>');
     expect(linkedPackageActive).toContain("Linked active package");
   });
 
@@ -258,13 +210,13 @@ describe("workstream board removal rendering", () => {
       product_tree: { nodes: [] },
       work_packages: [],
     };
-    const expanded = renderBoard(detail, { [finishedRequestChildrenStorageKey("repo", "wr-empty")]: true });
+    const expanded = renderToStaticMarkup(createElement(EmptyWorkRequest, { workRequestId: "wr-empty" }));
 
     expect(visibleRequestBranch("main", "main")).toBeUndefined();
     expect(visibleRequestBranch("master", "develop")).toBeUndefined();
     expect(visibleRequestBranch("develop", "develop")).toBeUndefined();
     expect(visibleRequestBranch("feature/focus-board", "main")).toBe("feature/focus-board");
-    expect(expanded).not.toContain(">main<");
+    expect(renderFocusRow(detail)).not.toContain(">main<");
     expect(expanded).toContain("No work has been created yet. Copy a prompt to start this WorkRequest with an architect agent.");
     expect(expanded).toContain("lucide-copy");
     expect(expanded).not.toContain("lucide-clipboard-copy");
@@ -277,12 +229,6 @@ describe("workstream board removal rendering", () => {
 const noUpdateAnimations = {
   motionFor: () => undefined,
 };
-
-function requestDetail(id: string): WorkRequestDetail {
-  return {
-    work_request: { id, title: id },
-  };
-}
 
 function graphRequestDetail(): WorkRequestDetail {
   return {
@@ -370,29 +316,18 @@ function graphRequestDetail(): WorkRequestDetail {
   };
 }
 
-function renderBoard(detail: WorkRequestDetail, expandedFinishedRequests: Record<string, boolean>, packages: WorkPackageCard[] = []) {
-  return renderBoards([detail], expandedFinishedRequests, packages);
-}
-
-function renderBoards(repoDetails: WorkRequestDetail[], expandedFinishedRequests: Record<string, boolean>, packages: WorkPackageCard[] = []) {
-  return renderToStaticMarkup(
-    createElement(WorkstreamBoard, {
-      repoLabel: "repo",
-      repoDetails,
-      now: "2026-07-18T09:30:00Z",
-      packages,
-      activeBlockingEdges: [],
-      onSelectAttention: () => undefined,
-      onSelectGuidance: () => undefined,
-      onSelectCard: () => undefined,
-      primaryBranch: "main",
-      expandedFinishedRequests,
-      finishedRequestScopeKey: "repo",
-      onSetFinishedRequestChildrenOpen: () => undefined,
-      showContextBar: false,
-      updateAnimations: noUpdateAnimations,
-    }),
-  );
+function renderTree(detail: WorkRequestDetail, packages: WorkPackageCard[] = []) {
+  return renderToStaticMarkup(createElement(ProductPlanBody, {
+    detail,
+    slices: detail.work_packages ?? [],
+    packageById: new Map(packages.map((pkg) => [pkg.id, pkg])),
+    activeBlockingEdges: [],
+    guidanceItems: [],
+    onSelectAttention: () => undefined,
+    onSelectCard: () => undefined,
+    requestPath: [{ id: detail.work_request.id, label: detail.work_request.title || detail.work_request.id }],
+    updateAnimations: noUpdateAnimations,
+  }));
 }
 
 function renderFocusRow(detail: WorkRequestDetail, packages: WorkPackageCard[] = []) {
@@ -402,13 +337,12 @@ function renderFocusRow(detail: WorkRequestDetail, packages: WorkPackageCard[] =
     activeBlockingEdges: [],
     guidanceItems: [],
     packageById: new Map(packages.map((pkg) => [pkg.id, pkg])),
-    expanded: false,
     focusSelected: false,
     index: 0,
     onSetOpen: () => undefined,
     onSelectAttention: () => undefined,
-    onSelectGuidance: () => undefined,
     onSelectCard: () => undefined,
+    primaryBranch: "main",
     updateAnimations: noUpdateAnimations,
   }));
 }

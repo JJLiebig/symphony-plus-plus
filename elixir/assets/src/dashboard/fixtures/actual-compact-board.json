@@ -1,0 +1,1002 @@
+{
+ "_source": "Actual compact /api/v1/sympp/operator/dashboard/deferred response captured 2026-10-07 from the isolated F03 qualification ledger (source runtime de55c52d); work_request_details only.",
+ "generated_at": "2026-10-07T17:16:12.042000Z",
+ "work_request_details": [
+  {
+   "summary": {
+    "comment_count": 1,
+    "open_comment_count": 1,
+    "answered_question_count": 0,
+    "closed_question_count": 0,
+    "dispatched_work_package_count": 1,
+    "open_question_count": 0,
+    "planned_work_package_count": 0,
+    "skipped_work_package_count": 0,
+    "work_package_count": 1
+   },
+   "work_packages": [
+    {
+     "id": "wp_3ciwnnhobg6kvrjx",
+     "status": "merged",
+     "title": "F02 — Canonical integration eligibility in compact board",
+     "kind": "standard_pr",
+     "repo": "JJLiebig/symphony-plus-plus",
+     "updated_at": "2026-10-07T17:02:32.225000Z",
+     "work_request_id": "wr_2fyzkl6jrtdamisv",
+     "base_branch": "beta",
+     "work_package_id": "wp_3ciwnnhobg6kvrjx",
+     "sequence": 1,
+     "inserted_at": "2026-10-07T16:00:29.702000Z",
+     "branch_pattern": "v7o73sj2zjavcpfd",
+     "goal": "Forward existing per-package DeliveryBoard merge_eligibility into compact board responses; actual native Codex implements and reviews this real PR after F01.",
+     "dispatched_at": "2026-10-07T16:00:44.260000Z",
+     "product_tree_node_id": null,
+     "worker_signal": {
+      "active_since": "2026-10-07T16:01:27.103000Z",
+      "last_activity": "2026-10-07T17:00:10.909000Z",
+      "run_label": "native-codex-wp_ls645lauqzfv4pwr",
+      "status": "idle"
+     },
+     "operational_state": {
+      "label": "Delivered",
+      "reason": "Recorded delivery outcome says the linked PR merged.",
+      "key": "delivered",
+      "last_activity_at": "2026-10-07T17:02:32.225000Z",
+      "attention_items": [],
+      "raw_status": "merged",
+      "work_package_status": "merged",
+      "tone": "success",
+      "attention_reason_codes": [],
+      "delivery_outcome": "pr_merged",
+      "has_started": true,
+      "has_prepared_worktree": false,
+      "has_active_worker": false,
+      "is_stale": true
+     },
+     "delivery": {
+      "id": "wrsd_xpulhatoll46rtys",
+      "merge_commit_sha": "de55c52d6ead4567fded905dcee0846b5f22b2dd",
+      "outcome": "pr_merged",
+      "pr_merged_at": "2026-10-07T16:52:01.000000Z",
+      "pr_number": 705,
+      "pr_repository": "JJLiebig/symphony-plus-plus",
+      "pr_url": "https://github.com/JJLiebig/symphony-plus-plus/pull/705",
+      "recorded_at": "2026-10-07T17:00:10.909000Z",
+      "recorded_by": "F02 isolated bootstrap parent",
+      "successor_work_package_id": null
+     },
+     "work_package_status": "merged",
+     "comment_count": 1,
+     "open_comment_count": 1,
+     "review": {
+      "args": {
+       "base": "origin/beta",
+       "mode": "fast"
+      },
+      "type": "review-suite"
+     },
+     "attention_reason_codes": [],
+     "merge_eligibility": {
+      "eligible": false,
+      "next_action": "finish_worker_qualification",
+      "reason_codes": [],
+      "work_package_id": "wp_3ciwnnhobg6kvrjx"
+     },
+     "successor": null,
+     "activity_signal": {
+      "last_update": "Recorded WorkRequest delivery closeout: pr_merged",
+      "last_update_at": "2026-10-07T17:02:32.225000Z",
+      "observation_state": "unknown",
+      "stage": "delivered",
+      "work_package_id": "wp_3ciwnnhobg6kvrjx"
+     },
+     "review_signal": {
+      "args": {
+       "base": "origin/beta",
+       "mode": "fast"
+      },
+      "observation_state": "unknown",
+      "status": "pending",
+      "type": "review-suite"
+     },
+     "pr_signal": {
+      "checks": {
+       "status": "passing"
+      },
+      "current_head_sha": "cfe57cb3bdc3f40e20c013a918c5ace0faf67756",
+      "head_matches": true,
+      "head_sha": "cfe57cb3bdc3f40e20c013a918c5ace0faf67756",
+      "number": 705,
+      "repository": "JJLiebig/symphony-plus-plus",
+      "status": "merged",
+      "url": "https://github.com/JJLiebig/symphony-plus-plus/pull/705"
+     }
+    }
+   ],
+   "work_request": {
+    "id": "wr_2fyzkl6jrtdamisv",
+    "status": "sliced",
+    "title": "F02 actual native Codex delivery",
+    "repo_key": "jjliebig/symphony-plus-plus",
+    "repo": "JJLiebig/symphony-plus-plus",
+    "updated_at": "2026-10-07T17:00:11.009000Z",
+    "base_branch": "beta",
+    "archive_reason": null,
+    "archived_at": null,
+    "completion_source": null,
+    "completed_at": "2026-10-07T17:00:10.910000Z",
+    "inserted_at": "2026-10-07T16:00:10.876000Z",
+    "work_type": "bugfix",
+    "desired_dispatch_shape": "single_package",
+    "repo_aliases": [
+     "JJLiebig/symphony-plus-plus"
+    ],
+    "repo_display": "JJLiebig/symphony-plus-plus",
+    "repo_remote": "JJLiebig/symphony-plus-plus",
+    "operational_state": {
+     "label": "Delivered",
+     "reason": "Most actionable WorkPackage state is Delivered across 1 package(s).",
+     "key": "delivered",
+     "last_activity_at": "2026-10-07T17:02:32.225000Z",
+     "attention_items": [],
+     "raw_status": "sliced",
+     "tone": "success",
+     "has_started": true,
+     "has_prepared_worktree": false,
+     "has_active_worker": false,
+     "is_stale": true
+    },
+    "comment_count": 1,
+    "open_comment_count": 1
+   },
+   "product_tree": {
+    "nodes": [],
+    "mode": "direct_work_packages",
+    "available": true,
+    "summary": {
+     "work_package_count": 1,
+     "attention_count": 0,
+     "blocker_count": 0,
+     "guidance_count": 0,
+     "deferred_count": 0,
+     "done_count": 0,
+     "node_count": 0,
+     "node_work_package_count": 0,
+     "not_done_count": 0,
+     "partial_count": 0,
+     "root_node_count": 0,
+     "root_work_package_count": 1,
+     "unknown_count": 0
+    },
+    "dependency_edges": [],
+    "latest_revision": {
+     "id": "ptr_jpels6cgdc7hfypy",
+     "reason": "WorkPackage delivery recorded in product tree through MCP.",
+     "created_at": "2026-10-07T17:00:11.014000Z",
+     "created_by": "F02 isolated bootstrap parent",
+     "decision_ref": null,
+     "revision_number": 3
+    },
+    "execution_graph": {
+     "available": true,
+     "effective_edges": [],
+     "cycles": [],
+     "dependency_ready_work_package_ids": [
+      "wp_3ciwnnhobg6kvrjx"
+     ],
+     "resolutions": [
+      {
+       "status": "merged",
+       "resolved": true,
+       "work_package_id": "wp_3ciwnnhobg6kvrjx",
+       "delivery_outcome": "pr_merged"
+      }
+     ],
+     "topological_order": [
+      "wp_3ciwnnhobg6kvrjx"
+     ],
+     "unmet_dependencies": [],
+     "work_package_ids": [
+      "wp_3ciwnnhobg6kvrjx"
+     ]
+    },
+    "root_node_ids": [],
+    "root_work_package_ids": [
+     "wp_3ciwnnhobg6kvrjx"
+    ],
+    "schema_version": "product_tree.v4"
+   },
+   "clarification_questions": []
+  },
+  {
+   "summary": {
+    "comment_count": 0,
+    "open_comment_count": 0,
+    "answered_question_count": 0,
+    "closed_question_count": 0,
+    "dispatched_work_package_count": 1,
+    "open_question_count": 0,
+    "planned_work_package_count": 0,
+    "skipped_work_package_count": 0,
+    "work_package_count": 1
+   },
+   "work_packages": [
+    {
+     "id": "wp_oo7hfzgxygemcwgm",
+     "status": "active",
+     "title": "F03 — Finished default operator Work board",
+     "kind": "standard_pr",
+     "repo": "JJLiebig/symphony-plus-plus",
+     "updated_at": "2026-10-07T17:10:23.374000Z",
+     "work_request_id": "wr_2sjv3grxotyokrat",
+     "base_branch": "beta",
+     "work_package_id": "wp_oo7hfzgxygemcwgm",
+     "sequence": 1,
+     "inserted_at": "2026-10-07T17:09:47.860000Z",
+     "branch_pattern": "dprjegeiv4kbvaei",
+     "goal": "Graduate the existing FocusBoard into the single usable default Work overview, with truthful actor, wait, decision, timing and delivery eligibility. Actual native Claude owns the frontend PR.",
+     "dispatched_at": "2026-10-07T17:09:47.968000Z",
+     "product_tree_node_id": null,
+     "worker_signal": {
+      "active_since": "2026-10-07T17:10:23.366000Z",
+      "last_activity": "2026-10-07T17:10:23.366000Z",
+      "run_label": "native-claude-wp_n6n4cybjk3bq5rb4",
+      "status": "stale"
+     },
+     "operational_state": {
+      "label": "Started / Paused",
+      "reason": "WorkPackage wp_oo7hfzgxygemcwgm is Started / Paused.",
+      "key": "started_paused",
+      "last_activity_at": "2026-10-07T17:10:23.374000Z",
+      "attention_items": [],
+      "raw_status": "active",
+      "tone": "warning",
+      "has_started": true,
+      "has_prepared_worktree": false,
+      "has_active_worker": false,
+      "is_stale": true
+     },
+     "delivery": null,
+     "work_package_status": "active",
+     "comment_count": 0,
+     "open_comment_count": 0,
+     "review": {
+      "args": {
+       "base": "origin/beta",
+       "mode": "fast"
+      },
+      "type": "review-suite"
+     },
+     "attention_reason_codes": [
+      "active_runtime"
+     ],
+     "merge_eligibility": {
+      "eligible": false,
+      "next_action": "finish_worker_qualification",
+      "reason_codes": [
+       "not_ready"
+      ],
+      "work_package_id": "wp_oo7hfzgxygemcwgm"
+     },
+     "successor": null,
+     "activity_signal": {
+      "last_update_at": "2026-10-07T17:10:23.374000Z",
+      "next_action": "inspect_runtime",
+      "observation_state": "stale",
+      "stage": "active",
+      "waiting_reason": "runtime_stale",
+      "work_package_id": "wp_oo7hfzgxygemcwgm"
+     },
+     "review_signal": {
+      "args": {
+       "base": "origin/beta",
+       "mode": "fast"
+      },
+      "observation_state": "unknown",
+      "status": "pending",
+      "type": "review-suite"
+     },
+     "pr_signal": {
+      "status": "none"
+     }
+    }
+   ],
+   "work_request": {
+    "id": "wr_2sjv3grxotyokrat",
+    "status": "sliced",
+    "title": "F03 actual native Opus delivery",
+    "repo_key": "jjliebig/symphony-plus-plus",
+    "repo": "JJLiebig/symphony-plus-plus",
+    "updated_at": "2026-10-07T17:09:47.860000Z",
+    "base_branch": "beta",
+    "archive_reason": null,
+    "archived_at": null,
+    "completion_source": null,
+    "completed_at": null,
+    "inserted_at": "2026-10-07T17:08:55.954000Z",
+    "work_type": "feature",
+    "desired_dispatch_shape": "single_package",
+    "repo_aliases": [
+     "JJLiebig/symphony-plus-plus"
+    ],
+    "repo_display": "JJLiebig/symphony-plus-plus",
+    "repo_remote": "JJLiebig/symphony-plus-plus",
+    "operational_state": {
+     "label": "Started / Paused",
+     "reason": "Most actionable WorkPackage state is Started / Paused across 1 package(s).",
+     "key": "started_paused",
+     "last_activity_at": "2026-10-07T17:10:23.374000Z",
+     "attention_items": [],
+     "raw_status": "sliced",
+     "tone": "warning",
+     "has_started": true,
+     "has_prepared_worktree": false,
+     "has_active_worker": false,
+     "is_stale": true
+    },
+    "comment_count": 0,
+    "open_comment_count": 0
+   },
+   "product_tree": {
+    "nodes": [],
+    "mode": "direct_work_packages",
+    "available": true,
+    "summary": {
+     "work_package_count": 1,
+     "attention_count": 1,
+     "blocker_count": 0,
+     "guidance_count": 0,
+     "deferred_count": 0,
+     "done_count": 0,
+     "node_count": 0,
+     "node_work_package_count": 0,
+     "not_done_count": 0,
+     "partial_count": 0,
+     "root_node_count": 0,
+     "root_work_package_count": 1,
+     "unknown_count": 0
+    },
+    "dependency_edges": [],
+    "latest_revision": {
+     "id": "ptr_jlgjwy25zpu5cfbz",
+     "reason": "WorkRequest sliced into canonical WorkPackages through MCP.",
+     "created_at": "2026-10-07T17:09:47.905000Z",
+     "created_by": "F03 isolated bootstrap parent",
+     "decision_ref": null,
+     "revision_number": 1
+    },
+    "execution_graph": {
+     "available": true,
+     "effective_edges": [],
+     "cycles": [],
+     "dependency_ready_work_package_ids": [
+      "wp_oo7hfzgxygemcwgm"
+     ],
+     "resolutions": [
+      {
+       "status": "active",
+       "resolved": false,
+       "work_package_id": "wp_oo7hfzgxygemcwgm",
+       "delivery_outcome": null
+      }
+     ],
+     "topological_order": [
+      "wp_oo7hfzgxygemcwgm"
+     ],
+     "unmet_dependencies": [],
+     "work_package_ids": [
+      "wp_oo7hfzgxygemcwgm"
+     ]
+    },
+    "root_node_ids": [],
+    "root_work_package_ids": [
+     "wp_oo7hfzgxygemcwgm"
+    ],
+    "schema_version": "product_tree.v4"
+   },
+   "clarification_questions": []
+  },
+  {
+   "summary": {
+    "comment_count": 0,
+    "open_comment_count": 0,
+    "answered_question_count": 0,
+    "closed_question_count": 0,
+    "dispatched_work_package_count": 2,
+    "open_question_count": 1,
+    "planned_work_package_count": 0,
+    "skipped_work_package_count": 0,
+    "work_package_count": 2
+   },
+   "work_packages": [
+    {
+     "id": "wp_q3qep6np23puxyka",
+     "status": "ready_for_worker",
+     "title": "Choose retry behavior",
+     "kind": "investigation",
+     "repo": "qualification/f03-board",
+     "updated_at": "2026-10-07T17:10:51.278000Z",
+     "work_request_id": "wr_4cgmgpzoi7zp4kpx",
+     "base_branch": "beta",
+     "work_package_id": "wp_q3qep6np23puxyka",
+     "sequence": 1,
+     "inserted_at": "2026-10-07T17:10:51.258000Z",
+     "branch_pattern": null,
+     "goal": "Bounded synthetic UI qualification only; no source or provider changes.",
+     "dispatched_at": "2026-10-07T17:10:51.278000Z",
+     "product_tree_node_id": null,
+     "worker_signal": {
+      "active_since": "2026-10-07T17:10:51.278000Z",
+      "last_activity": "2026-10-07T17:10:51.278000Z",
+      "status": "idle"
+     },
+     "operational_state": {
+      "label": "Ready for worker",
+      "reason": "WorkPackage wp_q3qep6np23puxyka has not started.",
+      "key": "ready_for_worker",
+      "attention_items": [],
+      "raw_status": "ready_for_worker",
+      "tone": "neutral"
+     },
+     "delivery": null,
+     "work_package_status": "ready_for_worker",
+     "comment_count": 0,
+     "open_comment_count": 0,
+     "review": null,
+     "attention_reason_codes": [],
+     "merge_eligibility": {
+      "eligible": false,
+      "next_action": "finish_worker_qualification",
+      "reason_codes": [
+       "not_ready"
+      ],
+      "work_package_id": "wp_q3qep6np23puxyka"
+     },
+     "successor": null,
+     "activity_signal": {
+      "last_update_at": "2026-10-07T17:10:51.278000Z",
+      "observation_state": "unknown",
+      "stage": "ready_for_worker",
+      "work_package_id": "wp_q3qep6np23puxyka"
+     },
+     "pr_signal": {
+      "status": "none"
+     }
+    },
+    {
+     "id": "wp_ym7zg5bkrqgi3eim",
+     "status": "closed",
+     "title": "Independent observation",
+     "kind": "investigation",
+     "repo": "qualification/f03-board",
+     "updated_at": "2026-10-07T17:10:51.478000Z",
+     "work_request_id": "wr_4cgmgpzoi7zp4kpx",
+     "base_branch": "beta",
+     "work_package_id": "wp_ym7zg5bkrqgi3eim",
+     "sequence": 2,
+     "inserted_at": "2026-10-07T17:10:51.258000Z",
+     "branch_pattern": null,
+     "goal": "Bounded synthetic UI qualification only; no source or provider changes.",
+     "dispatched_at": "2026-10-07T17:10:51.293000Z",
+     "product_tree_node_id": null,
+     "worker_signal": {
+      "active_since": "2026-10-07T17:10:51.368000Z",
+      "last_activity": "2026-10-07T17:10:51.477000Z",
+      "run_label": "Qualification independent observer",
+      "status": "idle"
+     },
+     "operational_state": {
+      "label": "Completed Without PR",
+      "reason": "Recorded delivery outcome says the WorkPackage completed without a PR.",
+      "key": "completed_no_pr",
+      "last_activity_at": "2026-10-07T17:10:51.480000Z",
+      "attention_items": [],
+      "raw_status": "closed",
+      "work_package_status": "closed",
+      "tone": "success",
+      "attention_reason_codes": [],
+      "delivery_outcome": "completed_no_pr",
+      "has_started": true,
+      "has_prepared_worktree": false,
+      "has_active_worker": false,
+      "is_stale": true
+     },
+     "delivery": {
+      "id": "wrsd_rqlzxiw7nplnxpkf",
+      "merge_commit_sha": null,
+      "outcome": "completed_no_pr",
+      "pr_merged_at": null,
+      "pr_number": null,
+      "pr_repository": null,
+      "pr_url": null,
+      "recorded_at": "2026-10-07T17:10:51.477000Z",
+      "recorded_by": "F03 browser qualification architect",
+      "successor_work_package_id": null
+     },
+     "work_package_status": "closed",
+     "comment_count": 0,
+     "open_comment_count": 0,
+     "review": null,
+     "attention_reason_codes": [],
+     "merge_eligibility": {
+      "eligible": false,
+      "next_action": "finish_worker_qualification",
+      "reason_codes": [
+       "not_ready"
+      ],
+      "work_package_id": "wp_ym7zg5bkrqgi3eim"
+     },
+     "successor": null,
+     "activity_signal": {
+      "last_update": "Recorded WorkRequest delivery closeout: completed_no_pr",
+      "last_update_at": "2026-10-07T17:10:51.480000Z",
+      "observation_state": "unknown",
+      "stage": "completed_no_pr",
+      "work_package_id": "wp_ym7zg5bkrqgi3eim"
+     },
+     "pr_signal": {
+      "status": "none"
+     }
+    }
+   ],
+   "work_request": {
+    "id": "wr_4cgmgpzoi7zp4kpx",
+    "status": "sliced",
+    "title": "QUALIFICATION — human decision and independent work",
+    "repo_key": "qualification/f03-board",
+    "repo": "qualification/f03-board",
+    "updated_at": "2026-10-07T17:10:51.258000Z",
+    "base_branch": "beta",
+    "archive_reason": null,
+    "archived_at": null,
+    "completion_source": null,
+    "completed_at": null,
+    "inserted_at": "2026-10-07T17:10:51.228000Z",
+    "work_type": "investigation",
+    "desired_dispatch_shape": "single_package",
+    "repo_aliases": [
+     "qualification/f03-board"
+    ],
+    "repo_display": "qualification/f03-board",
+    "repo_remote": "qualification/f03-board",
+    "operational_state": {
+     "label": "Ready for worker",
+     "reason": "Most actionable WorkPackage state is Ready for worker across 2 package(s).",
+     "key": "ready_for_worker",
+     "attention_items": [],
+     "raw_status": "sliced",
+     "tone": "neutral"
+    },
+    "comment_count": 0,
+    "open_comment_count": 0
+   },
+   "product_tree": {
+    "nodes": [],
+    "mode": "direct_work_packages",
+    "available": true,
+    "summary": {
+     "work_package_count": 2,
+     "attention_count": 0,
+     "blocker_count": 0,
+     "guidance_count": 0,
+     "deferred_count": 0,
+     "done_count": 0,
+     "node_count": 0,
+     "node_work_package_count": 0,
+     "not_done_count": 0,
+     "partial_count": 0,
+     "root_node_count": 0,
+     "root_work_package_count": 2,
+     "unknown_count": 0
+    },
+    "dependency_edges": [],
+    "latest_revision": {
+     "id": "ptr_vfgicylof5rpf2kj",
+     "reason": "WorkRequest sliced into canonical WorkPackages through MCP.",
+     "created_at": "2026-10-07T17:10:51.262000Z",
+     "created_by": "F03 browser qualification architect",
+     "decision_ref": null,
+     "revision_number": 1
+    },
+    "execution_graph": {
+     "available": true,
+     "effective_edges": [],
+     "cycles": [],
+     "dependency_ready_work_package_ids": [
+      "wp_q3qep6np23puxyka",
+      "wp_ym7zg5bkrqgi3eim"
+     ],
+     "resolutions": [
+      {
+       "status": "ready_for_worker",
+       "resolved": false,
+       "work_package_id": "wp_q3qep6np23puxyka",
+       "delivery_outcome": null
+      },
+      {
+       "status": "closed",
+       "resolved": true,
+       "work_package_id": "wp_ym7zg5bkrqgi3eim",
+       "delivery_outcome": "completed_no_pr"
+      }
+     ],
+     "topological_order": [
+      "wp_q3qep6np23puxyka",
+      "wp_ym7zg5bkrqgi3eim"
+     ],
+     "unmet_dependencies": [],
+     "work_package_ids": [
+      "wp_q3qep6np23puxyka",
+      "wp_ym7zg5bkrqgi3eim"
+     ]
+    },
+    "root_node_ids": [],
+    "root_work_package_ids": [
+     "wp_q3qep6np23puxyka",
+     "wp_ym7zg5bkrqgi3eim"
+    ],
+    "schema_version": "product_tree.v4"
+   },
+   "clarification_questions": [
+    {
+     "id": "wrq_577rfl4lwikrhvos",
+     "status": "open",
+     "category": "product",
+     "question": "QUALIFICATION: Should retry preserve keyboard focus for Choose retry behavior?",
+     "updated_at": "2026-10-07T17:10:51.316000Z",
+     "work_request_id": "wr_4cgmgpzoi7zp4kpx",
+     "answer": null,
+     "answered_by": null,
+     "answered_at": null,
+     "sequence": 1,
+     "inserted_at": "2026-10-07T17:10:51.316000Z",
+     "why_needed": "A bounded synthetic product decision for package wp_q3qep6np23puxyka. Independent observation remains authorized and can finish while this is open.",
+     "asked_by_agent_run_id": null,
+     "decision_prompt": {
+      "details": "This is a synthetic browser answer-durability case. Preserve focus is the recommended existing behavior. No source or real approval changes.",
+      "options": [
+       {
+        "answer": "Preserve keyboard focus for the qualification retry case.",
+        "description": "Keep the existing interaction.",
+        "id": "preserve-focus",
+        "label": "Preserve focus"
+       },
+       {
+        "answer": "Inspect the qualification interaction before choosing.",
+        "description": "Keep this question open for inspection.",
+        "id": "inspect-first",
+        "label": "Inspect first"
+       }
+      ],
+      "tl_dr": "Choose the retry behavior for this qualification case."
+     }
+    }
+   ]
+  },
+  {
+   "summary": {
+    "comment_count": 0,
+    "open_comment_count": 0,
+    "answered_question_count": 0,
+    "closed_question_count": 0,
+    "dispatched_work_package_count": 1,
+    "open_question_count": 0,
+    "planned_work_package_count": 0,
+    "skipped_work_package_count": 0,
+    "work_package_count": 3
+   },
+   "work_packages": [
+    {
+     "id": "wp_bs64gplmzbdlxshv",
+     "status": "closed",
+     "title": "Original bounded investigation",
+     "kind": "investigation",
+     "repo": "qualification/f03-board",
+     "updated_at": "2026-10-07T17:10:51.623000Z",
+     "work_request_id": "wr_h2jrhvq6eqsd4kne",
+     "base_branch": "beta",
+     "work_package_id": "wp_bs64gplmzbdlxshv",
+     "sequence": 1,
+     "inserted_at": "2026-10-07T17:10:51.604000Z",
+     "branch_pattern": null,
+     "goal": "Bounded synthetic UI qualification only; no source or provider changes.",
+     "dispatched_at": null,
+     "product_tree_node_id": null,
+     "operational_state": {
+      "label": "Superseded",
+      "reason": "Recorded delivery outcome says this WorkPackage was superseded by a successor.",
+      "key": "superseded",
+      "last_activity_at": "2026-10-07T17:10:51.625000Z",
+      "attention_items": [],
+      "raw_status": "closed",
+      "work_package_status": "closed",
+      "tone": "neutral",
+      "attention_reason_codes": [],
+      "delivery_outcome": "superseded",
+      "has_started": true,
+      "has_prepared_worktree": false,
+      "has_active_worker": false,
+      "is_stale": true
+     },
+     "delivery": {
+      "id": "wrsd_hxzntrtgua23yogd",
+      "merge_commit_sha": null,
+      "outcome": "superseded",
+      "pr_merged_at": null,
+      "pr_number": null,
+      "pr_repository": null,
+      "pr_url": null,
+      "recorded_at": "2026-10-07T17:10:51.623000Z",
+      "recorded_by": "F03 browser qualification architect",
+      "successor_work_package_id": "wp_x5kofadj42owb7ta"
+     },
+     "work_package_status": "closed",
+     "comment_count": 0,
+     "open_comment_count": 0,
+     "review": null,
+     "attention_reason_codes": [],
+     "merge_eligibility": {
+      "eligible": false,
+      "next_action": "finish_worker_qualification",
+      "reason_codes": [
+       "not_ready"
+      ],
+      "work_package_id": "wp_bs64gplmzbdlxshv"
+     },
+     "successor": {
+      "work_package": {
+       "id": "wp_x5kofadj42owb7ta",
+       "raw_status": "closed",
+       "sequence": 2,
+       "title": "Current first scope",
+       "work_package_id": "wp_x5kofadj42owb7ta"
+      },
+      "work_package_id": "wp_x5kofadj42owb7ta"
+     },
+     "activity_signal": {
+      "last_update": "Recorded WorkRequest delivery closeout: superseded",
+      "last_update_at": "2026-10-07T17:10:51.625000Z",
+      "observation_state": "unknown",
+      "stage": "superseded",
+      "work_package_id": "wp_bs64gplmzbdlxshv"
+     },
+     "pr_signal": {
+      "status": "none"
+     }
+    },
+    {
+     "id": "wp_x5kofadj42owb7ta",
+     "status": "closed",
+     "title": "Current first scope",
+     "kind": "investigation",
+     "repo": "qualification/f03-board",
+     "updated_at": "2026-10-07T17:10:51.650000Z",
+     "work_request_id": "wr_h2jrhvq6eqsd4kne",
+     "base_branch": "beta",
+     "work_package_id": "wp_x5kofadj42owb7ta",
+     "sequence": 2,
+     "inserted_at": "2026-10-07T17:10:51.604000Z",
+     "branch_pattern": null,
+     "goal": "Bounded synthetic UI qualification only; no source or provider changes.",
+     "dispatched_at": null,
+     "product_tree_node_id": null,
+     "operational_state": {
+      "label": "Completed Without PR",
+      "reason": "Recorded delivery outcome says the WorkPackage completed without a PR.",
+      "key": "completed_no_pr",
+      "last_activity_at": "2026-10-07T17:10:51.650000Z",
+      "attention_items": [],
+      "raw_status": "closed",
+      "work_package_status": "closed",
+      "tone": "success",
+      "attention_reason_codes": [],
+      "delivery_outcome": "completed_no_pr",
+      "has_started": true,
+      "has_prepared_worktree": false,
+      "has_active_worker": false,
+      "is_stale": true
+     },
+     "delivery": {
+      "id": "wrsd_ups3fsqkgl5zse4h",
+      "merge_commit_sha": null,
+      "outcome": "completed_no_pr",
+      "pr_merged_at": null,
+      "pr_number": null,
+      "pr_repository": null,
+      "pr_url": null,
+      "recorded_at": "2026-10-07T17:10:51.649000Z",
+      "recorded_by": "F03 browser qualification architect",
+      "successor_work_package_id": null
+     },
+     "work_package_status": "closed",
+     "comment_count": 0,
+     "open_comment_count": 0,
+     "review": null,
+     "attention_reason_codes": [],
+     "merge_eligibility": {
+      "eligible": false,
+      "next_action": "finish_worker_qualification",
+      "reason_codes": [
+       "not_ready"
+      ],
+      "work_package_id": "wp_x5kofadj42owb7ta"
+     },
+     "successor": null,
+     "activity_signal": {
+      "last_update": "Recorded WorkRequest delivery closeout: completed_no_pr",
+      "last_update_at": "2026-10-07T17:10:51.650000Z",
+      "observation_state": "unknown",
+      "stage": "completed_no_pr",
+      "work_package_id": "wp_x5kofadj42owb7ta"
+     },
+     "pr_signal": {
+      "status": "none"
+     }
+    },
+    {
+     "id": "wp_crprvw2iga4o43to",
+     "status": "ready_for_worker",
+     "title": "Current remaining scope",
+     "kind": "investigation",
+     "repo": "qualification/f03-board",
+     "updated_at": "2026-10-07T17:10:51.676000Z",
+     "work_request_id": "wr_h2jrhvq6eqsd4kne",
+     "base_branch": "beta",
+     "work_package_id": "wp_crprvw2iga4o43to",
+     "sequence": 3,
+     "inserted_at": "2026-10-07T17:10:51.604000Z",
+     "branch_pattern": null,
+     "goal": "Bounded synthetic UI qualification only; no source or provider changes.",
+     "dispatched_at": "2026-10-07T17:10:51.676000Z",
+     "product_tree_node_id": null,
+     "worker_signal": {
+      "active_since": "2026-10-07T17:10:51.676000Z",
+      "last_activity": "2026-10-07T17:10:51.676000Z",
+      "status": "idle"
+     },
+     "operational_state": {
+      "label": "Ready for worker",
+      "reason": "WorkPackage wp_crprvw2iga4o43to has not started.",
+      "key": "ready_for_worker",
+      "attention_items": [],
+      "raw_status": "ready_for_worker",
+      "tone": "neutral"
+     },
+     "delivery": null,
+     "work_package_status": "ready_for_worker",
+     "comment_count": 0,
+     "open_comment_count": 0,
+     "review": null,
+     "attention_reason_codes": [],
+     "merge_eligibility": {
+      "eligible": false,
+      "next_action": "finish_worker_qualification",
+      "reason_codes": [
+       "not_ready"
+      ],
+      "work_package_id": "wp_crprvw2iga4o43to"
+     },
+     "successor": null,
+     "activity_signal": {
+      "last_update_at": "2026-10-07T17:10:51.676000Z",
+      "observation_state": "unknown",
+      "stage": "ready_for_worker",
+      "work_package_id": "wp_crprvw2iga4o43to"
+     },
+     "pr_signal": {
+      "status": "none"
+     }
+    }
+   ],
+   "work_request": {
+    "id": "wr_h2jrhvq6eqsd4kne",
+    "status": "sliced",
+    "title": "QUALIFICATION — partial replacement work",
+    "repo_key": "qualification/f03-board",
+    "repo": "qualification/f03-board",
+    "updated_at": "2026-10-07T17:10:51.604000Z",
+    "base_branch": "beta",
+    "archive_reason": null,
+    "archived_at": null,
+    "completion_source": null,
+    "completed_at": null,
+    "inserted_at": "2026-10-07T17:10:51.554000Z",
+    "work_type": "investigation",
+    "desired_dispatch_shape": "single_package",
+    "repo_aliases": [
+     "qualification/f03-board"
+    ],
+    "repo_display": "qualification/f03-board",
+    "repo_remote": "qualification/f03-board",
+    "operational_state": {
+     "label": "Ready for worker",
+     "reason": "Most actionable WorkPackage state is Ready for worker across 3 package(s).",
+     "key": "ready_for_worker",
+     "attention_items": [],
+     "raw_status": "sliced",
+     "tone": "neutral"
+    },
+    "comment_count": 0,
+    "open_comment_count": 0
+   },
+   "product_tree": {
+    "nodes": [],
+    "mode": "direct_work_packages",
+    "available": true,
+    "summary": {
+     "work_package_count": 3,
+     "attention_count": 0,
+     "blocker_count": 0,
+     "guidance_count": 0,
+     "deferred_count": 0,
+     "done_count": 0,
+     "node_count": 0,
+     "node_work_package_count": 0,
+     "not_done_count": 0,
+     "partial_count": 0,
+     "root_node_count": 0,
+     "root_work_package_count": 3,
+     "unknown_count": 0
+    },
+    "dependency_edges": [],
+    "latest_revision": {
+     "id": "ptr_ncpdtxwsxfnmob2l",
+     "reason": "WorkRequest sliced into canonical WorkPackages through MCP.",
+     "created_at": "2026-10-07T17:10:51.608000Z",
+     "created_by": "F03 browser qualification architect",
+     "decision_ref": null,
+     "revision_number": 1
+    },
+    "execution_graph": {
+     "available": true,
+     "effective_edges": [],
+     "cycles": [],
+     "dependency_ready_work_package_ids": [
+      "wp_bs64gplmzbdlxshv",
+      "wp_crprvw2iga4o43to",
+      "wp_x5kofadj42owb7ta"
+     ],
+     "resolutions": [
+      {
+       "status": "closed",
+       "resolved": true,
+       "work_package_id": "wp_bs64gplmzbdlxshv",
+       "delivery_outcome": "superseded"
+      },
+      {
+       "status": "ready_for_worker",
+       "resolved": false,
+       "work_package_id": "wp_crprvw2iga4o43to",
+       "delivery_outcome": null
+      },
+      {
+       "status": "closed",
+       "resolved": true,
+       "work_package_id": "wp_x5kofadj42owb7ta",
+       "delivery_outcome": "completed_no_pr"
+      }
+     ],
+     "topological_order": [
+      "wp_bs64gplmzbdlxshv",
+      "wp_crprvw2iga4o43to",
+      "wp_x5kofadj42owb7ta"
+     ],
+     "unmet_dependencies": [],
+     "work_package_ids": [
+      "wp_bs64gplmzbdlxshv",
+      "wp_crprvw2iga4o43to",
+      "wp_x5kofadj42owb7ta"
+     ]
+    },
+    "root_node_ids": [],
+    "root_work_package_ids": [
+     "wp_bs64gplmzbdlxshv",
+     "wp_x5kofadj42owb7ta",
+     "wp_crprvw2iga4o43to"
+    ],
+    "schema_version": "product_tree.v4"
+   },
+   "clarification_questions": []
+  }
+ ]
+}

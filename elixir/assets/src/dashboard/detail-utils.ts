@@ -1,4 +1,5 @@
-import type { ContextComment, PackageAlertIndicator, PackageOperationalAttention, WorkRequestPackage, WorkPackageCard, WorkPackageDetailPayload, WorkRequestDetail } from "@/types/dashboard";
+import type { ContextComment, PackageAlertIndicator, PackageOperationalAttention, WorkRequestPackage, WorkPackageCard, WorkPackageMergeEligibility, WorkPackageDetailPayload, WorkRequestDetail } from "@/types/dashboard";
+import { requestMergeEligibility } from "@/lib/delivery-eligibility";
 import { attentionTone, operationalLabel } from "@/lib/operational-state";
 import { formatStatus, statusLabel } from "@/lib/status-labels";
 import { packageReviewLabel, planProgressLabel } from "@/lib/review-signals";
@@ -102,7 +103,7 @@ export function requestProgressText(detail: WorkRequestDetail) {
     return requestQuestionsProgressText(questions.length);
   }
 
-  return requestSlicesProgressText(request, operational, slices) || requestStatusProgressText(request.status);
+  return requestSlicesProgressText(request, operational, slices, requestMergeEligibility(detail)) || requestStatusProgressText(request.status);
 }
 
 function requestQuestionsProgressText(count: number) {
@@ -113,10 +114,11 @@ function requestSlicesProgressText(
   request: WorkRequestDetail["work_request"],
   operational: WorkRequestDetail["work_request"]["operational_state"] | null,
   slices: ReturnType<typeof requestSliceCounts>,
+  eligibility?: WorkPackageMergeEligibility,
 ) {
   if (request.status !== "sliced" && slices.total === 0) return null;
 
-  const state = operational?.key && operational.key !== request.status ? `${operational.label || statusLabel(operational.key)}. ` : "";
+  const state = operational?.key && operational.key !== request.status ? `${operationalLabel(operational, operational.key, eligibility)}. ` : "";
   return `${state}${slices.total} WorkPackage${slices.total === 1 ? "" : "s"} recorded: ${slices.planned} planned, ${slices.dispatched} dispatched, ${slices.skipped} skipped.`;
 }
 

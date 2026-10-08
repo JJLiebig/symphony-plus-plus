@@ -1,12 +1,13 @@
 import type { WorkPackageCard, WorkRequestDetail, WorkRequestPackage } from "@/types/dashboard";
 
-export function requestBadgeLabel(label: string, detail: WorkRequestDetail, packageById: Map<string, WorkPackageCard>, now?: string) {
+// Freshness of the latest canonical update; never a stage duration.
+export function requestUpdatedLabel(detail: WorkRequestDetail, packageById: Map<string, WorkPackageCard>, now?: string) {
   const latestAt = latestTimestampAtOrBefore(now, [detail.work_request.updated_at, ...(detail.work_packages ?? []).flatMap((slice) => [
     slice.updated_at,
     linkedPackage(slice, packageById)?.updated_at,
   ])]);
-  const age = elapsedLabel(latestAt, now)?.split(" ", 1)[0];
-  return age ? `${label} · ${age}` : label;
+  const age = elapsedLabel(latestAt, now);
+  return age ? `Updated ${age} ago` : undefined;
 }
 
 export function elapsedLabel(activeSince: string | null | undefined, now?: string | number | Date) {
