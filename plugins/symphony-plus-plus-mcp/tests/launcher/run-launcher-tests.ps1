@@ -274,6 +274,7 @@ try {
     $owned = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapperPid" -ErrorAction SilentlyContinue | Where-Object { [string]$_.CommandLine -match 'start-runtime\.cmd' } | Select-Object -First 1
     if ($null -eq $owned) { Start-Sleep -Milliseconds 25 }
   }
+  while ((Get-Process -Id $wrapperPid -ErrorAction SilentlyContinue) -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 25 }
   Assert-True ($null -ne $owned -and $null -eq (Get-Process -Id $wrapperPid -ErrorAction SilentlyContinue)) "Published wrapper did not exit after creating its backend child"
   $ownedPid = [int]$owned.ProcessId
   Stop-Process -Id $leader.Id -Force; [void]$leader.WaitForExit(5000)
