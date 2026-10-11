@@ -38,7 +38,14 @@ async function main() {
 
   server = http.createServer((request, response) => {
     if (request.method === "GET" && request.url === "/sympp/board") return response.end("<title>Symphony++ Dashboard</title>");
-    if (request.method === "POST" && request.url === "/mcp/client-lease") return response.end(JSON.stringify({ stale_after_ms: 300000 }));
+    if (request.method === "POST" && request.url === "/mcp/client-lease") {
+      // Directory metadata changes during attach must not look like installed payload edits.
+      if (process.platform === "win32") {
+        const now = new Date();
+        fs.utimesSync(path.join(installedRoot, "scripts"), now, now);
+      }
+      return response.end(JSON.stringify({ stale_after_ms: 300000 }));
+    }
     if (request.method !== "POST" || request.url !== "/mcp") return response.writeHead(404).end();
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));

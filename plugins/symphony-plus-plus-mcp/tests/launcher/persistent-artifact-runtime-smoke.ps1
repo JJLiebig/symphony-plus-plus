@@ -2,7 +2,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
 $pluginRoot = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp"
 $launcher = Join-Path $pluginRoot "scripts/start-sympp-mcp.ps1"
-$tempRoot = Join-Path $PSScriptRoot (".persistent-artifact-" + [guid]::NewGuid().ToString("N"))
+# Keep executable fixture paths short even when the checkout is in a deeply nested worktree.
+$testTempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+$tempRoot = Join-Path $testTempBase ("sympp-persistent-" + [guid]::NewGuid().ToString("N"))
 $runtimeFile = Join-Path $tempRoot "state/runtime.json"
 $backendProcessId = $null
 $backendStartTicks = $null
@@ -19,7 +21,12 @@ function New-IsolatedPort([int[]]$Avoid) {
 function Start-IsolatedProcess([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment, [bool]$RedirectStreams = $true) {
   $psi = [System.Diagnostics.ProcessStartInfo]::new()
   $psi.FileName = $FilePath
-  foreach ($argument in $Arguments) { [void]$psi.ArgumentList.Add($argument) }
+  if ([IO.Path]::GetFileName($FilePath) -ieq "cmd.exe") {
+    # cmd uses shell quoting, not ArgumentList's C-runtime quote escaping.
+    $psi.Arguments = $Arguments -join " "
+  } else {
+    foreach ($argument in $Arguments) { [void]$psi.ArgumentList.Add($argument) }
+  }
   $psi.WorkingDirectory = $repoRoot
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
@@ -213,7 +220,7 @@ server.listen(port,"127.0.0.1");
   }
   $cmd = (Get-Command cmd.exe -ErrorAction Stop).Source
   $installedCommand = Join-Path $installedRoot "scripts/start-sympp-mcp.cmd"
-  $firstWave = Invoke-McpBridge $cmd @("/d", "/c", "call $installedCommand") $installedEnvironment
+  $firstWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$installedCommand`"") $installedEnvironment
   if ($firstWave.backend_pid -ne $backendProcessId) { throw "Installed command attached to unexpected backend pid=$($firstWave.backend_pid)." }
   Wait-ManagedRuntimeStopped $backendProcessId $backendPort
   $firstBackendProcessId = $backendProcessId
@@ -230,7 +237,7 @@ server.listen(port,"127.0.0.1");
   $laterInstalledEnvironment.SYMPP_POWERSHELL = $pwsh
   $laterInstalledEnvironment.TEMP = $sourceEnvironment.TEMP
   $laterInstalledEnvironment.TMP = $sourceEnvironment.TMP
-  $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call $installedCommand") $laterInstalledEnvironment
+  $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$installedCommand`"") $laterInstalledEnvironment
   $backendProcessId = $secondWave.backend_pid
   $backendStartTicks = $secondWave.backend_start_ticks
   if ($backendProcessId -eq $firstBackendProcessId) { throw "Later installed command wave reused backend pid=$backendProcessId." }
@@ -266,7 +273,7 @@ server.listen(port,"127.0.0.1");
     $backendProcess = Get-Process -Id $backendProcessId -ErrorAction SilentlyContinue
     if ($backendProcess -and $backendProcess.StartTime.ToUniversalTime().Ticks -eq $backendStartTicks) { Stop-Process -Id $backendProcessId -Force }
   }
-  $ownedRoot = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd("\") + "\"
-  if (-not ([System.IO.Path]::GetFullPath($tempRoot).StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase))) { throw "Cleanup abort: temp root escaped the launcher test directory." }
+  $ownedRoot = $testTempBase.TrimEnd("\") + "\"
+  if (-not ([System.IO.Path]::GetFullPath($tempRoot).StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase))) { throw "Cleanup abort: temp root escaped the system temp directory." }
   Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

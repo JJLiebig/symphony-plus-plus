@@ -209,6 +209,15 @@ jobs:
             }
           }
 
+      - name: Check Windows non-desktop launcher and cutover ownership
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: |
+          # Hosted Windows has an elevated desktop; desktop-owned backend startup requires a normal one.
+          ./plugins/symphony-plus-plus-mcp/tests/launcher/run-launcher-tests.ps1 -SkipDesktopTests
+          ./plugins/symphony-plus-plus-mcp/tests/transport/direct-http-transport.ps1 -StaticOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Cutover ownership checks failed.' }
+
       - name: Upload runtime artifact
         id: upload-runtime-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
