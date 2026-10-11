@@ -32,16 +32,9 @@ function Test-ArtifactRuntimeAllowed([string]$PluginRoot) {
   return -not (Test-SourceCheckoutLaunch $PluginRoot)
 }
 
-function Resolve-SymppArtifactCacheRoot([string]$Platform, [string]$SourceRevision, [string]$PluginVersion, [string]$Sha256) {
-  $revisionKey = if (-not [string]::IsNullOrWhiteSpace($SourceRevision)) {
-    $SourceRevision.Substring(0, [Math]::Min(12, $SourceRevision.Length))
-  } elseif (-not [string]::IsNullOrWhiteSpace($PluginVersion)) {
-    $PluginVersion -replace "[^A-Za-z0-9_.-]", "_"
-  } else {
-    "unknown"
-  }
+function Resolve-SymppArtifactCacheRoot([string]$Platform, [string]$Sha256) {
   $shaKey = $Sha256.Substring(0, 16)
-  return [System.IO.Path]::GetFullPath((Join-Path (Resolve-SymppPluginHome) "artifacts/mcp/$Platform/$revisionKey/$shaKey"))
+  return [System.IO.Path]::GetFullPath((Join-Path (Resolve-SymppPluginHome) "rt/$Platform/$shaKey"))
 }
 
 function New-SymppArtifactRuntimeDescriptor([string]$ExtractRoot, [string]$Entrypoint, [string]$Workflow, [string[]]$RuntimeArgs, [string]$Sha256, [string]$Platform, [string]$SourceRevision, [string]$PluginVersion, [string]$ManifestPath, [string]$DashboardRoot, [string]$DashboardFingerprint) {
@@ -364,7 +357,7 @@ function Resolve-SymppPreparedArtifactRuntime([string]$PluginRoot, [string]$Expe
   }
   $runtimeArgs = Resolve-SymppArtifactRuntimeArgs $artifact
   $cacheSourceRevision = Resolve-SymppArtifactCacheSourceRevision $manifest $artifact $ExpectedSourceRevision $requireSourceRevision
-  $cacheRoot = Resolve-SymppArtifactCacheRoot $platform $cacheSourceRevision $pluginVersion $sha256
+  $cacheRoot = Resolve-SymppArtifactCacheRoot $platform $sha256
   $extractRoot = Join-Path $cacheRoot "runtime"
   $archivePath = Join-Path $cacheRoot "artifact.zip"
   $runtimeDescriptor = New-SymppArtifactRuntimeDescriptor $extractRoot $entrypoint $workflow $runtimeArgs $sha256 $platform $cacheSourceRevision $pluginVersion $manifest.manifest_path $dashboardRoot $dashboardFingerprint

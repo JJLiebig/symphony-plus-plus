@@ -218,11 +218,11 @@ $mcpContractFingerprint = Get-McpContractFingerprint $repoRoot
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
-Copy-Item -LiteralPath $releaseDir -Destination (Join-Path $stagingDir "runtime") -Recurse
+Get-ChildItem -LiteralPath $releaseDir -Force | Copy-Item -Destination $stagingDir -Recurse
 Copy-Item -LiteralPath $sourceStaticDir -Destination (Join-Path $stagingDir "dashboard-static") -Recurse
 if ($platformId -eq "windows-x64") {
-  Get-ChildItem -LiteralPath (Join-Path $stagingDir "runtime") -File -Recurse -Filter "*.pdb" | Remove-Item -Force
-  Get-ChildItem -LiteralPath (Join-Path $stagingDir "runtime") -File -Recurse -Filter "beam.debug.smp.dll" | Remove-Item -Force
+  Get-ChildItem -LiteralPath $stagingDir -File -Recurse -Filter "*.pdb" | Remove-Item -Force
+  Get-ChildItem -LiteralPath $stagingDir -File -Recurse -Filter "beam.debug.smp.dll" | Remove-Item -Force
 }
 @'
 #!/usr/bin/env bash
@@ -276,12 +276,12 @@ done
 [[ "$port" =~ ^[0-9]+$ ]] || { echo "--port must be a non-negative integer." >&2; exit 2; }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-runtime_bin="$script_dir/runtime/bin/symphony_elixir"
+runtime_bin="$script_dir/bin/symphony_elixir"
 chmod +x \
   "$runtime_bin" \
-  "$script_dir"/runtime/bin/* \
-  "$script_dir"/runtime/erts-*/bin/* \
-  "$script_dir"/runtime/releases/*/elixir \
+  "$script_dir"/bin/* \
+  "$script_dir"/erts-*/bin/* \
+  "$script_dir"/releases/*/elixir \
   2>/dev/null || true
 release_tmp="$logs_root/release-tmp"
 mkdir -p "$logs_root" "$release_tmp"
@@ -350,7 +350,7 @@ $env:SYMPP_LOGS_ROOT = $LogsRoot
 $env:SYMPP_BACKEND_PORT = [string]$Port
 $env:RELEASE_TMP = $releaseTmp
 $env:PHX_SERVER = "true"
-& (Join-Path $scriptDir "runtime\bin\symphony_elixir.bat") start
+& (Join-Path $scriptDir "bin\symphony_elixir.bat") start
 exit $LASTEXITCODE
 '@ | Set-Content -LiteralPath (Join-Path $stagingDir "start-runtime.ps1") -Encoding utf8NoBOM
 
@@ -368,7 +368,7 @@ $payload = [ordered]@{
   backend = [ordered]@{
     kind = "mix_release"
     name = "symphony_elixir"
-    relative_path = "runtime"
+    relative_path = "."
     entrypoints = [ordered]@{
       unix = "start-runtime.sh"
       windows = "start-runtime.ps1"

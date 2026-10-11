@@ -119,7 +119,7 @@ function Write-CompatibleSourceMismatchDiagnostic { }
     $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     Invoke-Expression $fn.Extent.Text
   }
-  $testPath = 'C:\cache\artifacts\mcp\windows-x86_64\abc\runtime\erts-16.0\bin\erl.exe'
+  $testPath = 'C:\cache\rt\windows-x86_64\0123456789abcdef\runtime\erts-16.0\bin\erl.exe'
   function Test-SymppWindowsPlatform { $true }
   function Get-CimInstance { throw 'CIM unavailable' }
   function Get-Process { [pscustomobject]@{ Path = $testPath } }
@@ -223,8 +223,9 @@ $health = [pscustomobject]@{ healthy = $true; source_revision = $state.backend.s
 $plan = Resolve-FastAttachRuntimePlan $state $state.backend.source_revision $fingerprint 0 0 $false $false $null $null $health $true $true
 Assert-True ($null -ne $plan -and -not $plan.dashboard_plan.managed) "Artifact-static runtime should produce an unmanaged-dashboard fallback plan"
 Assert-True (Test-BackendShouldShutdownOnIdle $state.backend $state.frontend) "Managed backends without a managed dashboard must shut down on idle in source and artifact modes"
-Assert-True (Test-SymppBackendCommandLine 'cmd.exe /c C:\cache\artifacts\mcp\windows-x86_64\abc\runtime\start-runtime.cmd') "Supported artifact command wrappers must remain recoverable before binding"
-Assert-True (Test-SymppBackendCommandLine 'C:\cache\artifacts\mcp\windows-x86_64\abc\runtime\erts-16.0\bin\erl.exe') "A packaged Erlang executable identifies the artifact listener without command-line discovery"
+Assert-True (Test-SymppBackendCommandLine 'cmd.exe /c C:\cache\rt\windows-x86_64\0123456789abcdef\runtime\start-runtime.cmd') "Supported artifact command wrappers must remain recoverable before binding"
+Assert-True (Test-SymppBackendCommandLine 'C:\cache\rt\windows-x86_64\0123456789abcdef\runtime\erts-16.0\bin\erl.exe') "A packaged Erlang executable identifies the artifact listener without command-line discovery"
+Assert-True (-not (Test-SymppBackendCommandLine 'C:\other\rt\unmanaged\erts-16.0\bin\erl.exe')) "An arbitrary rt directory must not identify a managed artifact listener"
 Assert-True (-not (Test-SymppBackendCommandLine 'C:\Program Files\Erlang\erts-16.0\bin\erl.exe')) "A foreign Erlang executable must not identify a managed artifact listener"
 $sourceState = [pscustomobject]@{ runtime_kind = "managed"; backend = [pscustomobject]@{ url = "http://127.0.0.1:20000" } }
 $reusedSourcePlan = [pscustomobject]@{ reused = $true; should_start = $false; url = "http://127.0.0.1:20000" }
@@ -240,7 +241,7 @@ Assert-True ($restartDashboardPlan.reused -and $restartDashboardPlan.managed -an
 $nodePath = Join-Path $pluginRoot "scripts/start-sympp-mcp-bridge.js"
 
 $pendingBase = Join-Path ([System.IO.Path]::GetTempPath()) "sympp-pending-launch-$([guid]::NewGuid().ToString('N'))"
-$pendingRoot = Join-Path $pendingBase "artifacts/mcp/test/runtime"
+$pendingRoot = Join-Path $pendingBase "rt/windows-x64/0123456789abcdef/runtime"
 $leader = $null; $wrapperPid = 0; $unrelated = $null; $ownedPid = 0
 try {
   New-Item -ItemType Directory -Path $pendingRoot -Force | Out-Null
@@ -337,12 +338,12 @@ Assert-True ($nodeExitCode -eq 0) "Node state identity tests must pass"
 & (Get-Command node.exe -ErrorAction Stop).Source (Join-Path $PSScriptRoot "bridge-response-forwarding-tests.js")
 $nodeExitCode = $LASTEXITCODE
 Assert-True ($nodeExitCode -eq 0) "Node bridge response forwarding test must pass"
-$artifactCommandTemp = Join-Path $PSScriptRoot (".artifact-command-" + [guid]::NewGuid().ToString("N"))
+$artifactCommandTemp = Join-Path ([IO.Path]::GetTempPath()) ("sympp-command-" + [guid]::NewGuid().ToString("N"))
 $previousDatabase = $env:SYMPP_DATABASE
 try {
   $env:SYMPP_DATABASE = "fixture ledger/explicit.sqlite3"
   $artifactRoot = Join-Path $artifactCommandTemp "artifact & command%TEMP%"
-  $releaseEntrypoint = Join-Path $artifactRoot "runtime/bin/symphony_elixir.bat"
+  $releaseEntrypoint = Join-Path $artifactRoot "bin/symphony_elixir.bat"
   New-Item -ItemType Directory -Path (Split-Path -Parent $releaseEntrypoint) -Force | Out-Null
   Set-Content -LiteralPath $releaseEntrypoint -Value "@exit /b 23" -Encoding ascii
   $artifactRuntime = [pscustomobject]@{

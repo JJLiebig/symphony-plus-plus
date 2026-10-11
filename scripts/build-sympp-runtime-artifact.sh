@@ -174,7 +174,7 @@ PY
 mkdir -p "$output_root"
 rm -rf "$staging_dir" "$archive_path" "$manifest_path"
 mkdir -p "$staging_dir"
-cp -R "$release_dir" "$staging_dir/runtime"
+cp -R "$release_dir/." "$staging_dir/"
 cp -R "$source_static_dir" "$staging_dir/dashboard-static"
 cat > "$staging_dir/start-runtime.sh" <<'SH'
 #!/usr/bin/env bash
@@ -228,12 +228,12 @@ done
 [[ "$port" =~ ^[0-9]+$ ]] || { echo "--port must be a non-negative integer." >&2; exit 2; }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-runtime_bin="$script_dir/runtime/bin/symphony_elixir"
+runtime_bin="$script_dir/bin/symphony_elixir"
 chmod +x \
   "$runtime_bin" \
-  "$script_dir"/runtime/bin/* \
-  "$script_dir"/runtime/erts-*/bin/* \
-  "$script_dir"/runtime/releases/*/elixir \
+  "$script_dir"/bin/* \
+  "$script_dir"/erts-*/bin/* \
+  "$script_dir"/releases/*/elixir \
   2>/dev/null || true
 release_tmp="$logs_root/release-tmp"
 mkdir -p "$logs_root" "$release_tmp"
@@ -303,7 +303,7 @@ $env:SYMPP_LOGS_ROOT = $LogsRoot
 $env:SYMPP_BACKEND_PORT = [string]$Port
 $env:RELEASE_TMP = $releaseTmp
 $env:PHX_SERVER = "true"
-& (Join-Path $scriptDir "runtime\bin\symphony_elixir.bat") start
+& (Join-Path $scriptDir "bin\symphony_elixir.bat") start
 exit $LASTEXITCODE
 PS1
 
@@ -328,7 +328,7 @@ payload = {
     "backend": {
         "kind": "mix_release",
         "name": "symphony_elixir",
-        "relative_path": "runtime",
+        "relative_path": ".",
         "entrypoints": {
             "unix": "start-runtime.sh",
             "windows": "start-runtime.ps1",
