@@ -21,7 +21,12 @@ function New-IsolatedPort([int[]]$Avoid) {
 function Start-IsolatedProcess([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment, [bool]$RedirectStreams = $true) {
   $psi = [System.Diagnostics.ProcessStartInfo]::new()
   $psi.FileName = $FilePath
-  foreach ($argument in $Arguments) { [void]$psi.ArgumentList.Add($argument) }
+  if ([IO.Path]::GetFileName($FilePath) -ieq "cmd.exe") {
+    # cmd uses shell quoting, not ArgumentList's C-runtime quote escaping.
+    $psi.Arguments = $Arguments -join " "
+  } else {
+    foreach ($argument in $Arguments) { [void]$psi.ArgumentList.Add($argument) }
+  }
   $psi.WorkingDirectory = $repoRoot
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
