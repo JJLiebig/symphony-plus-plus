@@ -209,6 +209,31 @@ jobs:
             }
           }
 
+      - name: Prepare Windows launcher checks
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        working-directory: elixir
+        run: |
+          mix deps.get --check-locked
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher dependency preparation failed.' }
+          mix compile
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher source compilation failed.' }
+
+      - name: Check Windows launcher and cutover ownership
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: |
+          ./plugins/symphony-plus-plus-mcp/tests/launcher/run-launcher-tests.ps1
+          ./plugins/symphony-plus-plus-mcp/tests/transport/direct-http-transport.ps1 -StaticOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Cutover ownership checks failed.' }
+
+      - name: Check Windows packaged restart and recovery
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: |
+          $manifest = Get-ChildItem artifacts/sympp-runtime -Filter *.manifest.json | Select-Object -First 1
+          ./plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1 -ArtifactManifest $manifest.FullName
+
       - name: Upload runtime artifact
         id: upload-runtime-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
