@@ -299,7 +299,7 @@ Assert-True ($nodeExitCode -eq 0) "Node state identity tests must pass"
 & (Get-Command node.exe -ErrorAction Stop).Source (Join-Path $PSScriptRoot "bridge-response-forwarding-tests.js")
 $nodeExitCode = $LASTEXITCODE
 Assert-True ($nodeExitCode -eq 0) "Node bridge response forwarding test must pass"
-$artifactCommandTemp = Join-Path $PSScriptRoot (".artifact-command-" + [guid]::NewGuid().ToString("N"))
+$artifactCommandTemp = Join-Path ([IO.Path]::GetTempPath()) ("sympp-command-" + [guid]::NewGuid().ToString("N"))
 try {
   $artifactRoot = Join-Path $artifactCommandTemp "artifact & command%TEMP%"
   $releaseEntrypoint = Join-Path $artifactRoot "runtime/bin/symphony_elixir.bat"
