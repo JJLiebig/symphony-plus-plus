@@ -57,9 +57,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLifecycleDiagnosticArtifactSelec
         runtime_artifact = get_in(report, ["readiness", "workrequest_mcp", "runtime_artifact"])
         assert runtime_artifact["status"] == "artifact_selected"
         assert runtime_artifact["detail"] == "download_required"
-
-        assert normalize_path_fragment(runtime_artifact["cache_root"]) =~
-                 "/#{String.slice(stale_revision, 0, 12)}/"
       after
         File.rm_rf!(temp_codex_home)
       end

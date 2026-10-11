@@ -44,6 +44,11 @@ async function main() {
       request.on("end", () => {
         const lease = JSON.parse(body);
         if (lease.action === "attach") {
+          // Directory metadata changes during attach must not look like installed payload edits.
+          if (process.platform === "win32") {
+            const now = new Date();
+            fs.utimesSync(path.join(installedRoot, "scripts"), now, now);
+          }
           const directory = path.join(symppHome, "runtime", "codex-plugin-leases");
           const local = fs.readdirSync(directory).map((file) => JSON.parse(fs.readFileSync(path.join(directory, file))))
             .find((record) => record.client_id === lease.client_id);

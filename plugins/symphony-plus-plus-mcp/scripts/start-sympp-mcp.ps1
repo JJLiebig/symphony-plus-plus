@@ -65,7 +65,7 @@ function Write-Diagnostic([string]$Message) {
 }
 
 function Test-SymppReleaseWrapperCommandLine([string]$CommandLine) {
-  return $CommandLine -match '(?i)^(?:"[^"]*cmd\.exe"|[^\s"]*cmd\.exe)\s+/d\s+/s\s+/c\s+call\s+runtime\\bin\\symphony_elixir\.bat\s+start\s*$'
+  return $CommandLine -match '(?i)^(?:"[^"]*cmd\.exe"|[^\s"]*cmd\.exe)\s+/d\s+/s\s+/c\s+call\s+bin\\symphony_elixir\.bat\s+start\s*$'
 }
 
 function Test-SymppBackendCommandLine([string]$CommandLine) {
@@ -77,7 +77,7 @@ function Test-SymppBackendCommandLine([string]$CommandLine) {
     return $true
   }
 
-  return $CommandLine -match "(?i)(^|[\\/])artifacts[\\/]mcp[\\/]" -and
+  return $CommandLine -match "(?i)(^|[\\/])rt[\\/][^\\/]+[\\/][0-9a-f]{16}[\\/]runtime[\\/]" -and
     $CommandLine -match "(?i)(start-runtime\.ps1|start-runtime\.(cmd|bat)|symphony_elixir(\.bat)?|[\\/]erts-[^\\/]+[\\/]bin[\\/]erl(\.exe)?)"
 }
 
@@ -2394,7 +2394,7 @@ function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) 
     $dashboardRelative = ([string]$artifact.dashboard_root).Substring(([string]$artifact.root).Length).TrimStart([char[]]"\/")
     if ([string]::IsNullOrWhiteSpace($dashboardRelative)) { $dashboardRelative = "." }
     if (-not (Test-SymppArtifactCacheReady $artifact.root $artifact.entrypoint_relative $artifact.sha256 $dashboardRelative $artifact.dashboard_fingerprint) -or
-        -not (Test-Path -LiteralPath (Join-Path $artifact.root "runtime/bin/symphony_elixir.bat") -PathType Leaf)) { return $false }
+        -not (Test-Path -LiteralPath (Join-Path $artifact.root "bin/symphony_elixir.bat") -PathType Leaf)) { return $false }
     $elixirDir = Join-Path $identity.source_root "elixir"
     if ([string]$prepared.workflow -ine [string](Resolve-ArtifactWorkflowPath $artifact $elixirDir)) { return $false }
     $plan = $state.backend

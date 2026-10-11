@@ -94,6 +94,12 @@ or stop another healthy host to repair one failed attachment.
 
 ## Developer Diagnostics
 
+New runtime builds use `<SYMPP_HOME>/rt/<platform>/<hash16>/runtime`, with the
+release directly inside that directory. Full artifact hashes and source
+provenance remain verified metadata. This layout requires newly built artifacts
+paired with the updated launcher; existing published archives use the old
+layout. Do not refresh an installed runtime with an unqualified source build.
+
 Source validation, manual HTTP connections, beta runtime controls and
 performance checks are [developer operations](development.md), separate from
 installed qualification. An elevated Windows client starts a new backend

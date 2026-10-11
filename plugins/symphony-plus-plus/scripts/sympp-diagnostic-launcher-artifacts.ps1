@@ -159,7 +159,7 @@ function Get-DiagnosticRuntimeArtifactStatusFromLauncherHelpers([string]$Root, [
   }
 
   $cacheSourceRevision = Resolve-SymppArtifactCacheSourceRevision $manifest $artifact $expectedRevision $requireSourceRevision
-  $cacheRoot = Resolve-SymppArtifactCacheRoot $platform $cacheSourceRevision $pluginVersion $sha256
+  $cacheRoot = Resolve-SymppArtifactCacheRoot $platform $sha256
   $extractRoot = Join-Path $cacheRoot "runtime"
   $runtime = New-SymppArtifactRuntimeDescriptor $extractRoot $entrypoint $workflow $runtimeArgs $sha256 $platform $cacheSourceRevision $pluginVersion $manifest.manifest_path $dashboardRoot $dashboardFingerprint
   $cacheReady = Test-SymppArtifactCacheReady $extractRoot $entrypoint $sha256 $dashboardRoot $dashboardFingerprint

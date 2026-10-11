@@ -5,8 +5,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
 $pluginRoot = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp"
 $launcher = Join-Path $pluginRoot "scripts/start-sympp-mcp.ps1"
-$fixtureParent = if ($ArtifactManifest) { [IO.Path]::GetTempPath() } else { $PSScriptRoot }
-$tempRoot = Join-Path $fixtureParent (".persistent-artifact-" + [guid]::NewGuid().ToString("N"))
+# Keep executable fixtures outside checkout paths, including deeply nested worktrees.
+$fixtureParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$tempRoot = Join-Path $fixtureParent ("sympp-persistent-" + [guid]::NewGuid().ToString("N"))
 $runtimeFile = Join-Path $tempRoot "state/runtime.json"
 $backendProcessId = $null
 $backendStartTicks = $null
@@ -23,7 +24,12 @@ function New-IsolatedPort([int[]]$Avoid) {
 function Start-IsolatedProcess([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment, [bool]$RedirectStreams = $true) {
   $psi = [System.Diagnostics.ProcessStartInfo]::new()
   $psi.FileName = $FilePath
-  foreach ($argument in $Arguments) { [void]$psi.ArgumentList.Add($argument) }
+  if ([IO.Path]::GetFileName($FilePath) -ieq "cmd.exe") {
+    # cmd uses shell quoting, not ArgumentList's C-runtime quote escaping.
+    $psi.Arguments = $Arguments -join " "
+  } else {
+    foreach ($argument in $Arguments) { [void]$psi.ArgumentList.Add($argument) }
+  }
   $psi.WorkingDirectory = $repoRoot
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
@@ -187,14 +193,14 @@ try {
       if ($readiness.ledger.identity.kind -ne "sqlite" -or [IO.Path]::GetFullPath($actualPath) -ine [IO.Path]::GetFullPath($database)) { throw "Packaged runtime ledger identity '$($readiness.ledger.identity.display_path)' did not match '$database'." }
       if ($activeState.runtime_mode -ne "artifact" -or $readiness.source.revision -ne $manifest.source_revision) { throw "Packaged runtime source identity mismatch." }
     }
-    $first = Invoke-McpBridge $cmd @("/d", "/c", "call $command") $environment -CreateMarker -OnAttached {
+    $first = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -CreateMarker -OnAttached {
       param($activeState, $sessionId)
       & $assertLedger $activeState $sessionId
-      $second = Invoke-McpBridge $cmd @("/d", "/c", "call $command") $environment -MarkerSessionId $sessionId -OnAttached $assertLedger
+      $second = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $sessionId -OnAttached $assertLedger
       if ($second.backend_pid -ne $activeState.backend.pid) { throw "Warm client did not share the packaged backend." }
     }
     Wait-ManagedRuntimeStopped $first.backend_pid $first.backend_port
-    $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call $command") $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
+    $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
     Wait-ManagedRuntimeStopped $secondWave.backend_pid $secondWave.backend_port
     $trace = Get-ChildItem -LiteralPath $environment.SYMPP_LAUNCHER_TRACE_DIR -File | Get-Content -Raw
     if (-not ($trace -match "prepared_runtime_start")) { throw "Second wave did not exercise prepared release restart." }
@@ -301,7 +307,7 @@ server.listen(port,"127.0.0.1");
   }
   $cmd = (Get-Command cmd.exe -ErrorAction Stop).Source
   $installedCommand = Join-Path $installedRoot "scripts/start-sympp-mcp.cmd"
-  $firstWave = Invoke-McpBridge $cmd @("/d", "/c", "call $installedCommand") $installedEnvironment
+  $firstWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$installedCommand`"") $installedEnvironment
   if ($firstWave.backend_pid -ne $backendProcessId) { throw "Installed command attached to unexpected backend pid=$($firstWave.backend_pid)." }
   Wait-ManagedRuntimeStopped $backendProcessId $backendPort
   $firstBackendProcessId = $backendProcessId
@@ -318,12 +324,12 @@ server.listen(port,"127.0.0.1");
   $laterInstalledEnvironment.SYMPP_POWERSHELL = $pwsh
   $laterInstalledEnvironment.TEMP = $sourceEnvironment.TEMP
   $laterInstalledEnvironment.TMP = $sourceEnvironment.TMP
-  $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call $installedCommand") $laterInstalledEnvironment
+  $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$installedCommand`"") $laterInstalledEnvironment
   $backendProcessId = $secondWave.backend_pid
   $backendStartTicks = $secondWave.backend_start_ticks
   if ($backendProcessId -eq $firstBackendProcessId) { throw "Later installed command wave reused backend pid=$backendProcessId." }
   if ($secondWave.backend_port -in @(19998, 19999)) { throw "Explicit dynamic launch used reserved port $($secondWave.backend_port)." }
-  $artifactCacheRoot = [System.IO.Path]::GetFullPath((Join-Path $sourceEnvironment.SYMPP_HOME "artifacts/mcp"))
+  $artifactCacheRoot = [System.IO.Path]::GetFullPath((Join-Path $sourceEnvironment.SYMPP_HOME "rt"))
   if ($secondWave.runtime_mode -ne "artifact" -or -not ([System.IO.Path]::GetFullPath($secondWave.artifact_root).StartsWith($artifactCacheRoot, [StringComparison]::OrdinalIgnoreCase))) {
     throw "Later installed command wave was not artifact-backed."
   }
@@ -364,6 +370,6 @@ server.listen(port,"127.0.0.1");
     if ($backendProcess -and $backendProcess.StartTime.ToUniversalTime().Ticks -eq $backendStartTicks) { Stop-Process -Id $backendProcessId -Force }
   }
   $ownedRoot = [System.IO.Path]::GetFullPath($fixtureParent).TrimEnd("\") + "\"
-  if (-not ([System.IO.Path]::GetFullPath($tempRoot).StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase))) { throw "Cleanup abort: temp root escaped its fixture directory." }
+  if (-not ([System.IO.Path]::GetFullPath($tempRoot).StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase))) { throw "Cleanup abort: temp root escaped the system temp directory." }
   Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

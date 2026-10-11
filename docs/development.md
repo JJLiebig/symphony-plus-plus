@@ -44,6 +44,12 @@ It uses isolated ports, homes, databases, caches, and temporary directories.
 It must not touch the default dashboard ports, installed plugin state, shared
 ledger, existing sessions, or credentials.
 
+On Windows workstations affected by the AMD image-load crash in
+[issue #716](https://github.com/JJLiebig/symphony-plus-plus/issues/716), do not
+run runtime tests or crash reproductions. Use an unaffected Windows environment
+for executable validation. Executable fixtures belong in system temp outside
+checkouts; choose a short temp path there. Shorter paths do not fix the driver.
+
 Backend startup probes:
 
 ```powershell

@@ -133,8 +133,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
       refute body =~ ~s("workflow": "WORKFLOW.md")
       assert body =~ "unset SYMPP_WORKFLOW_FILE"
       assert body =~ "Remove-Item Env:SYMPP_WORKFLOW_FILE"
-      assert body =~ "runtime/erts-*/bin/*"
-      assert body =~ "runtime/bin/*"
       assert body =~ "pluginIdentity.name" or body =~ "plugin_name"
       assert body =~ "pluginIdentity.version" or body =~ "plugin_version"
     end
@@ -174,7 +172,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
       "backend" => %{
         "kind" => "mix_release",
         "name" => "symphony_elixir",
-        "relative_path" => "runtime",
+        "relative_path" => ".",
         "entrypoints" => %{
           "unix" => "start-runtime.sh",
           "windows" => "start-runtime.ps1"
