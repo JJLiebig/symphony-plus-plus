@@ -209,21 +209,12 @@ jobs:
             }
           }
 
-      - name: Prepare Windows launcher checks
-        if: matrix.shell == 'pwsh'
-        shell: pwsh
-        working-directory: elixir
-        run: |
-          mix deps.get --check-locked
-          if ($LASTEXITCODE -ne 0) { throw 'Launcher dependency preparation failed.' }
-          mix compile
-          if ($LASTEXITCODE -ne 0) { throw 'Launcher source compilation failed.' }
-
-      - name: Check Windows launcher and cutover ownership
+      - name: Check Windows non-desktop launcher and cutover ownership
         if: matrix.shell == 'pwsh'
         shell: pwsh
         run: |
-          ./plugins/symphony-plus-plus-mcp/tests/launcher/run-launcher-tests.ps1
+          # Hosted Windows has an elevated desktop; desktop-owned backend startup requires a normal one.
+          ./plugins/symphony-plus-plus-mcp/tests/launcher/run-launcher-tests.ps1 -SkipDesktopTests
           ./plugins/symphony-plus-plus-mcp/tests/transport/direct-http-transport.ps1 -StaticOnly
           if ($LASTEXITCODE -ne 0) { throw 'Cutover ownership checks failed.' }
 
