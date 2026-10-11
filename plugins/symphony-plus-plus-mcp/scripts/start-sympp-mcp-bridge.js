@@ -405,7 +405,15 @@ function watchGeneration(paths, markerFile) {
     trace("generation_watch_invalidated", { event, filename: String(filename) });
   };
   for (const entry of paths) {
-    try { generationWatchers.push(fs.watch(entry.path, { recursive: entry.recursive }, invalidate)); } catch (_) { closeGenerationWatchers(); generationWatchReady = false; return false; }
+    try {
+      generationWatchers.push(fs.watch(entry.path, { recursive: entry.recursive }, (event, filename) => {
+        // Windows directory access timestamps can change when cleanup reads installed scripts.
+        if (process.platform === "win32" && entry.recursive && event === "change" && filename) {
+          try { if (fs.lstatSync(path.join(entry.path, String(filename))).isDirectory()) return; } catch (_) { }
+        }
+        invalidate(event, filename);
+      }));
+    } catch (_) { closeGenerationWatchers(); generationWatchReady = false; return false; }
   }
   generationWatchReady = true;
   return true;
