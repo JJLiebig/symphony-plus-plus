@@ -102,20 +102,19 @@ workflow-page and commit-comparison requests are shared within a read and cached
 for 60 seconds. Stale entries are removed on subsequent reads. A hydrated read
 allows at most 30 provider requests and five seconds of external observation
 work to protect dashboard response time and GitHub API usage. Each workflow is
-paged at 100 runs per page for at most ten pages. Exhausted budgets, missing
+paged at 100 runs per page until complete or the read budget is exhausted. Exhausted budgets, missing
 permissions, unavailable comparisons or incomplete pages yield pending rather
 than a deployment claim. A later read can complete from cached earlier pages.
 
 GitHub lists current run attempts rather than an atomic deployment history. A
 retry can change a run's reported conclusion; concurrent provider changes or
 deleted runs may change what can be observed. This integration only asserts
-current state from the complete bounded run listing it can read. Repositories
-with more than 1,000 workflow runs remain pending until a smaller tagged
-workflow history is available; no historical result is silently assumed.
+current state from the complete bounded run listing it can read. Large histories
+can need several reads to populate the cache; no historical result is silently assumed.
 
 The implementation uses GitHub's [workflow run listing](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow),
 [commit comparison](https://docs.github.com/en/rest/commits/commits#compare-two-commits)
 and [repository metadata](https://docs.github.com/en/rest/repos/repos#get-a-repository)
-endpoints. Listing pages support at most 100 entries; filtered workflow searches
-have a documented 1,000-result limit. Commit ancestry uses comparison status,
+endpoints. Listing pages support at most 100 entries. The listing is unfiltered,
+so GitHub's 1,000-result filtered-search limit does not apply. Commit ancestry uses comparison status,
 so truncated commit-detail arrays do not affect the result.

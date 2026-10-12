@@ -33,7 +33,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
     assert status(result) == "pending"
   end
 
-  test "rollback supersedes old success while a later failed unrelated run leaves the current deployment", %{table: table} do
+  test "rollback replaces success but a subsequent failure does not", %{table: table} do
     old = run(1, @sha_a, "success")
     rollback = run(2, @sha_b, "success", "2026-10-10T12:00:00Z")
     failed = run(3, @sha_c, "failure", "2026-10-10T13:00:00Z")
@@ -120,13 +120,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
 
     result = DeploymentObservation.enrich(payload(), @config, fetch: fn _, _ -> flunk("cache should satisfy repeat read") end, cache_table: table)
     assert status(result) == "pending"
+
+    shifted = fn path, opts ->
+      if String.ends_with?(path, "page=2"), do: {:ok, %{"workflow_runs" => [run(100, @sha_a, "success")], "total_count" => 101}}, else: fetch.(path, opts)
+    end
+
+    result = DeploymentObservation.enrich(payload(), @config, fetch: shifted, cache_table: :ets.new(:shifted, [:set, :public]))
+    assert status(result) == "pending"
+    assert deployment(result).reason == "unavailable"
   end
 
   test "repos remain independent and live attempts carry their own start time" do
     other = "acme-labs/atlas"
     other_package = package(@sha_d) |> Map.put(:repo_remote, other) |> put_in([:delivery, "pr_repository"], other)
     config = put_in(@config, ["repos", other], %{"deploy_workflows" => %{"prod" => "release.yml"}})
-    live = run(5, @sha_d, nil) |> Map.merge(%{"status" => "in_progress", "run_started_at" => "2026-10-10T10:30:00Z", "repository" => %{"full_name" => other}, "head_repository" => %{"full_name" => other}})
+
+    live =
+      run(5, @sha_d, nil) |> Map.merge(%{"status" => "in_progress", "run_started_at" => "2026-10-10T10:30:00Z", "repository" => %{"full_name" => other}, "head_repository" => %{"full_name" => other}})
 
     fetch = fn path, _ ->
       cond do
@@ -152,7 +162,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
   defp deployment(result), do: hd(result.work_requests.work_requests).deployments[@repo]["dev"]
 
   defp payload(packages \\ [package(@sha_a)]) do
-    request = %{id: "WR-COMPASS", repo_remote: @repo, completed_at: "2026-10-10T10:00:00Z", base_branch: "beta"}
+    request = %{
+      id: "WR-COMPASS",
+      repo_remote: @repo,
+      completed_at: "2026-10-10T10:00:00Z",
+      base_branch: "beta"
+    }
     %{work_requests: %{work_requests: [request]}, work_request_details: [%{work_request: request, work_packages: packages}]}
   end
 
@@ -168,7 +183,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
   end
 
   defp run(id, head, conclusion, updated_at \\ "2026-10-10T11:00:00Z") do
-    %{"id" => id, "head_sha" => head, "conclusion" => conclusion, "status" => "completed", "event" => "push", "updated_at" => updated_at,
-      "repository" => %{"full_name" => @repo}, "head_repository" => %{"full_name" => @repo}}
+    %{
+      "id" => id,
+      "head_sha" => head,
+      "conclusion" => conclusion,
+      "status" => "completed",
+      "event" => "push",
+      "updated_at" => updated_at,
+      "repository" => %{"full_name" => @repo},
+      "head_repository" => %{"full_name" => @repo}
+    }
   end
 end

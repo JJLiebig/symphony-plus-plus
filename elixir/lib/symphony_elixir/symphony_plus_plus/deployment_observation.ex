@@ -8,7 +8,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
   @ttl_ms 60_000
   @timeout_ms 5_000
   @request_limit 30
-  @page_limit 10
 
   @spec enrich(map(), map(), keyword()) :: map()
   def enrich(payload, config, opts \\ []) do
@@ -92,9 +91,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
     end
   end
 
-  defp workflow_runs(_repo, _workflow, page, runs, observed_at, state) when page > @page_limit,
-    do: {runs, observed_at, false, state}
-
   defp workflow_runs(repo, workflow, page, runs, observed_at, state) do
     path = "repos/#{repo}/actions/workflows/#{URI.encode_www_form(workflow)}/runs?per_page=100&page=#{page}"
     {result, fetched_at, state} = fetch(path, state)
@@ -103,9 +99,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
     case result do
       {:ok, %{"workflow_runs" => batch, "total_count" => total}} when is_list(batch) and is_integer(total) ->
         collected = runs ++ batch
+        run_ids = Enum.map(collected, &value(&1, :id))
 
         cond do
-          length(collected) >= total -> {collected, observed_at, true, state}
+          length(Enum.uniq(run_ids)) != length(collected) -> {collected, observed_at, false, state}
+          length(collected) == total -> {collected, observed_at, true, state}
+          length(collected) > total -> {collected, observed_at, false, state}
           batch == [] -> {collected, observed_at, false, state}
           true -> workflow_runs(repo, workflow, page + 1, collected, observed_at, state)
         end
@@ -154,19 +153,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
 
   defp contains_all(run, repo, revisions, state) do
     Enum.reduce_while(revisions, {true, state}, fn revision, {_contains, state} ->
-      if revision == run["head_sha"] do
-        {:cont, {true, state}}
-      else
-        path = "repos/#{repo}/compare/#{revision}...#{run["head_sha"]}?per_page=1"
-        {result, _observed_at, state} = fetch(path, state)
-
-        case result do
-          {:ok, %{"status" => status}} when status in ["ahead", "identical"] -> {:cont, {true, state}}
-          {:ok, %{"status" => status}} when status in ["behind", "diverged"] -> {:halt, {false, state}}
-          _unavailable -> {:halt, {:unknown, state}}
-        end
+      case contains_revision(run["head_sha"], repo, revision, state) do
+        {true, state} -> {:cont, {true, state}}
+        result -> {:halt, result}
       end
     end)
+  end
+
+  defp contains_revision(revision, _repo, revision, state), do: {true, state}
+
+  defp contains_revision(head, repo, revision, state) do
+    {result, _observed_at, state} = fetch("repos/#{repo}/compare/#{revision}...#{head}?per_page=1", state)
+
+    case result do
+      {:ok, %{"status" => status}} when status in ["ahead", "identical"] -> {true, state}
+      {:ok, %{"status" => status}} when status in ["behind", "diverged"] -> {false, state}
+      _unavailable -> {:unknown, state}
+    end
   end
 
   defp valid_run?(run, repo) when is_map(run) do
@@ -194,7 +197,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
   end
 
   defp pending(workflow, reason, observed_at \\ nil) do
-    %{status: "pending", at: nil, revision: nil, workflow: workflow, run_id: nil, url: nil, observed_at: observed_at, reason: reason}
+    %{
+      status: "pending",
+      at: nil,
+      revision: nil,
+      workflow: workflow,
+      run_id: nil,
+      url: nil,
+      observed_at: observed_at,
+      reason: reason
+    }
   end
 
   defp put_default_branch(request, config, state) do
@@ -220,12 +232,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
 
     case value(repository_config, :deploy_workflows) do
       workflows when is_map(workflows) ->
-        Enum.flat_map(["dev", "prod"], fn env ->
-          case workflows[env] do
-            name when is_binary(name) and name != "" -> [{env, name}]
-            _absent -> []
-          end
-        end)
+        workflows
+        |> Map.take(["dev", "prod"])
+        |> Enum.filter(fn {_env, name} -> is_binary(name) and String.trim(name) != "" end)
+        |> Enum.sort()
 
       _absent ->
         []
