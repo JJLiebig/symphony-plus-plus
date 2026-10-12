@@ -3,7 +3,7 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  test "trusted local unbound HTTP can read WorkRequest slices and delivery boards without claim", %{repo: repo} do
+  test "trusted local HTTP browses without claiming and auto-claims a scoped mutation", %{repo: repo} do
     work_request =
       create_work_request!(
         repo,
@@ -118,11 +118,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     refute inspect(board_response) =~ "localreadsecretvalue"
     refute inspect(board_response) =~ "raw-secret-localreadbranch"
 
-    mutation_response =
-      Server.handle(
+    {mutation_response, mutation_server} =
+      Server.handle_state(
         %{
           "jsonrpc" => "2.0",
-          "id" => "local-read-mutation-denied",
+          "id" => "local-read-then-mutate",
           "method" => "tools/call",
           "params" => %{
             "name" => "slice_work_request",
@@ -130,16 +130,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
               "work_request_id" => work_request.id,
               "work_packages" => [
                 %{
-                  "title" => "Denied local mutation",
-                  "goal" => "Unclaimed local read must not write.",
+                  "title" => "Automatically claimed local mutation",
+                  "goal" => "Acquire architect ownership before writing.",
                   "kind" => "mcp",
                   "base_branch" => work_request.base_branch,
                   "allowed_file_globs" => ["elixir/lib/symphony_elixir/symphony_plus_plus/mcp/server.ex"],
                   "forbidden_file_globs" => [],
-                  "acceptance_criteria" => ["Mutation remains claim-gated."],
+                  "acceptance_criteria" => ["Mutation acquires architect ownership automatically."],
                   "validation_steps" => ["mix test test/symphony_elixir/symphony_plus_plus/mcp"],
                   "review" => %{"type" => "review-suite", "args" => %{"mode" => "normal"}},
-                  "stop_conditions" => ["Stop before unclaimed mutation."]
+                  "stop_conditions" => ["Stop after the single scoped mutation."]
                 }
               ]
             }
@@ -148,9 +148,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         read_server
       )
 
-    assert get_in(mutation_response, ["error", "data", "reason"]) == "claim_required"
-    assert {:ok, [persisted_slice]} = WorkRequestRepository.list_work_packages(repo, work_request.id)
-    assert persisted_slice.id == work_package.id
+    assert get_in(mutation_response, ["result", "structuredContent", "status", "work_request_status"]) == "sliced"
+    assert mutation_server.session.assignment.grant_role == "architect"
+    assert {:ok, persisted_slices} = WorkRequestRepository.list_work_packages(repo, work_request.id)
+    assert length(persisted_slices) == 2
+    assert Enum.any?(persisted_slices, &(&1.id == work_package.id))
   end
 
   test "claimed architect syncs only an explicit descendant PR through the merge reconciler", %{repo: repo} do
