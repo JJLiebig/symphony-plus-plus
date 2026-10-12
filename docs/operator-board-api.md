@@ -73,7 +73,7 @@ for best-effort "since last looked" indicators.
 ## Finished goal retention and operator actions
 
 `settings.work_request_archive_after_days` stays an integer day setting, now
-defaulting to `1` (24 elapsed hours after `completed_at`, including the exact
+defaulting to `3` (72 elapsed hours after `completed_at`, including the exact
 boundary). Only completed goals qualify. The background retention pass runs
 every 30 minutes; saving operator settings forces an immediate pass. Dashboard
 reads do not run retention. Archiving happens on the next successful pass
@@ -82,7 +82,7 @@ of ten visible completed goals per repository/base branch can archive older
 completed goals sooner.
 
 On upgrade, the normal ledger migrations convert stored archive settings of
-`14` to `1`, preserving all other values and settings. An explicitly chosen
+`14` to `3`, preserving all other values (including `1`) and settings. An explicitly chosen
 `14` is indistinguishable from the former default and also converts; choose
 `14` again after upgrading to retain it. The migration cannot safely reverse
 that data conversion. No manual database edit is required. Already overdue

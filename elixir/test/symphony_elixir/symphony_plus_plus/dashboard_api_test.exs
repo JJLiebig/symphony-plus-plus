@@ -3091,13 +3091,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
   test "local operator can tune archive cutoff and restore archived WorkRequests", %{repo: repo} do
     with_local_operator_endpoint(fn ->
-      completed_at = DateTime.add(DateTime.utc_now(:microsecond), -2 * 24 * 60 * 60, :second)
+      completed_at = DateTime.add(DateTime.utc_now(:microsecond), -4 * 24 * 60 * 60, :second)
       request = create_completed_delivered_work_request!(repo, "WR-LOCAL-ARCHIVE-SETTINGS", completed_at)
 
       run_operator_retention(repo)
       dashboard_payload = local_operator_dashboard_payload()
 
-      assert dashboard_payload["settings"]["work_request_archive_after_days"] == 1
+      assert dashboard_payload["settings"]["work_request_archive_after_days"] == 3
       assert dashboard_payload["settings"]["solo_session_delete_after_days"] == 30
       assert dashboard_payload["settings"]["open_dashboard_on_boot"] == true
       assert dashboard_payload["settings"]["capture_failed_mcp_calls"] == false

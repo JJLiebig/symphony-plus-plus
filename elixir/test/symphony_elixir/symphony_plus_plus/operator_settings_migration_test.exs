@@ -8,7 +8,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorSettingsMigrationTest do
   @previous_version 20_261_005_040_000
   @migration_version 20_261_013_120_000
 
-  for {stored_days, expected_days} <- [{14, 1}, {7, 7}, {1, 1}] do
+  for {stored_days, expected_days} <- [{14, 3}, {7, 7}, {1, 1}] do
     test "archive window upgrade handles stored #{stored_days} days without resetting other settings" do
       database_path = Path.join(System.tmp_dir!(), "sympp-archive-upgrade-#{System.unique_integer([:positive])}.sqlite3")
       {:ok, pid} = Repo.start_link(database: database_path, name: nil, pool_size: 1, log: false)

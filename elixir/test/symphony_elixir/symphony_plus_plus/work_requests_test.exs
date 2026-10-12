@@ -498,9 +498,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert still_archived.archived_at == archived.archived_at
   end
 
-  test "retention archives at exactly twenty-four hours and preserves unfinished goals and history", %{repo: repo} do
+  test "retention archives at exactly seventy-two hours and preserves unfinished goals and history", %{repo: repo} do
     now = utc_usec(~U[2026-05-23 12:00:00Z])
-    old_completed_at = utc_usec(~U[2026-05-22 12:00:00Z])
+    old_completed_at = utc_usec(~U[2026-05-20 12:00:00Z])
     recent_completed_at = DateTime.add(old_completed_at, 1, :microsecond)
 
     old_request = completed_delivered_request!(repo, "WR-RETENTION-OLD", old_completed_at)
@@ -538,7 +538,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
 
   test "retention emits no writes when no WorkRequest is eligible", %{repo: repo} do
     now = utc_usec(~U[2026-05-23 12:00:00Z])
-    recent_completed_at = now |> DateTime.add(-24 * 60 * 60, :second) |> DateTime.add(1, :microsecond)
+    recent_completed_at = now |> DateTime.add(-72 * 60 * 60, :second) |> DateTime.add(1, :microsecond)
 
     assert {:ok, _draft} = Repository.create(repo, attrs(id: "WR-RETENTION-INELIGIBLE-DRAFT"))
     completed_delivered_request!(repo, "WR-RETENTION-INELIGIBLE-RECENT", recent_completed_at)
