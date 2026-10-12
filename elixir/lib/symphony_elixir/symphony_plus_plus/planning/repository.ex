@@ -161,10 +161,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
       previous =
         case list_progress_events(repo, work_package_id) do
           {:ok, events} ->
-            case PullRequestProgress.current_pr_state(events, ["attach_pr", "sync_pr"]) do
-              {:ok, %{payload: payload}} -> payload
-              {:error, _reason} -> nil
-            end
+            current_pr_observation(events)
 
           {:error, reason} ->
             repo.rollback(reason)
@@ -178,6 +175,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
       Map.put(attrs, "payload", payload)
     else
       attrs
+    end
+  end
+
+  defp current_pr_observation(events) do
+    case PullRequestProgress.current_pr_state(events, ["attach_pr", "sync_pr"]) do
+      {:ok, %{payload: payload}} -> payload
+      {:error, _reason} -> nil
     end
   end
 
