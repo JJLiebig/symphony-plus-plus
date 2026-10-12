@@ -342,7 +342,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
           "dispatch:work_request",
           "write:work_request",
           "read:work_request"
-        ], repo: "nextide/repo")
+        ],
+        repo: "nextide/repo"
+      )
 
     work_request =
       create_work_request!(repo,
