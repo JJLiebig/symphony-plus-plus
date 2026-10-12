@@ -456,7 +456,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     new_arguments = %{"work_request_id" => work_request.id, "claimed_by" => "architect-after-reboot"}
 
     {claim_response, claimed_server} =
-      Server.handle_state(
+      Server.handle_response_state(
         %{
           "jsonrpc" => "2.0",
           "id" => "local-architect-stale-claim",
@@ -474,7 +474,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     |> repo.update!()
 
     {response, server} =
-      Server.handle_state(
+      Server.handle_response_state(
         %{
           "jsonrpc" => "2.0",
           "id" => "local-architect-rebind-after-stale-worker",
@@ -490,6 +490,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     assert get_in(response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "reclaimed"
     assert server.session.assignment.grant_role == "architect"
     assert server.session.assignment.work_package_id == handoff.anchor_package.id
+
+    {old_handle_response, _old_handle_server} =
+      Server.handle_response_state(
+        %{
+          "jsonrpc" => "2.0",
+          "id" => "old-architect-handle-must-not-adopt-replacement",
+          "method" => "tools/call",
+          "params" => %{"name" => "list_guidance_requests", "arguments" => %{}}
+        },
+        claimed_server
+      )
+
+    assert get_in(old_handle_response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
+    assert {:ok, current_lease} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
+    assert current_lease.actor_display_name == "architect-after-reboot"
   end
 
   test "claim_local_architect_assignment preserves a bound owner but rejects an unrelated session without its owner label", %{repo: repo} do
