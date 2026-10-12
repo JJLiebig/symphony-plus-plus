@@ -5,6 +5,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Repo do
     otp_app: :symphony_elixir,
     adapter: Ecto.Adapters.SQLite3
 
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
+
   @data_dir Path.join([".agents", "splusplus"])
   @default_database_file "symphony_plus_plus.sqlite3"
   @default_database_display_path "$HOME/.agents/splusplus/symphony_plus_plus.sqlite3"
@@ -15,7 +17,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Repo do
 
   @impl true
   def init(:supervisor, config) do
-    :ok = SymphonyElixir.SymphonyPlusPlus.OfflineSandbox.verify!(Keyword.fetch!(config, :database))
+    :ok = OfflineSandbox.verify!(Keyword.fetch!(config, :database))
     {:ok, config}
   end
 

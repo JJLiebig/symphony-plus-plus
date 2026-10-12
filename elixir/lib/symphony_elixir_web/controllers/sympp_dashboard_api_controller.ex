@@ -613,13 +613,13 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
     )
   end
 
-  defp send_local_operator_response(conn, action, %Target{} = target, tool_name, fun)
-       when is_atom(action) and is_atom(tool_name) and is_function(fun, 1) do
+  defp send_local_operator_response(conn, action, %Target{} = target, tool, fun)
+       when is_atom(action) and is_atom(tool) and is_function(fun, 1) do
     if OfflineSandbox.enabled?() and
-         tool_name in [:operator_sync_github_prs, :operator_create_architect_handoff, :operator_dispatch_work_package] do
+         tool in [:operator_sync_github_prs, :operator_create_architect_handoff, :operator_dispatch_work_package] do
       conn |> put_status(403) |> json(%{error: "This action is unavailable in the offline beta sandbox."})
     else
-      send_online_or_local_response(conn, action, target, tool_name, fun)
+      send_online_or_local_response(conn, action, target, tool, fun)
     end
   end
 

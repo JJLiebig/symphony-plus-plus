@@ -1,6 +1,7 @@
 defmodule SymphonyElixir.ApplicationTest do
   use ExUnit.Case, async: false
 
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.RetentionThrottle
@@ -120,8 +121,8 @@ defmodule SymphonyElixir.ApplicationTest do
 
   test "normal runtime keeps legacy workflow daemon children" do
     with_envs([{"SYMPP_RUNTIME_ARTIFACT", nil}, {"SYMPP_OFFLINE_SANDBOX", nil}], fn ->
-      assert :ok = SymphonyElixir.SymphonyPlusPlus.OfflineSandbox.verify!(nil)
-      assert :ok = SymphonyElixir.SymphonyPlusPlus.OfflineSandbox.verify!(":memory:")
+      assert :ok = OfflineSandbox.verify!(nil)
+      assert :ok = OfflineSandbox.verify!(":memory:")
       children = SymphonyElixir.Application.children()
 
       assert SymphonyElixir.WorkflowStore in children
@@ -138,7 +139,7 @@ defmodule SymphonyElixir.ApplicationTest do
 
     try do
       with_envs([{"SYMPP_OFFLINE_SANDBOX", "1"}, {"SYMPP_RUNTIME_ARTIFACT", nil}], fn ->
-        assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> SymphonyElixir.SymphonyPlusPlus.OfflineSandbox.verify!(nil) end
+        assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> OfflineSandbox.verify!(nil) end
         assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> SymphonyElixir.Application.start(:normal, []) end
         refute File.exists?(database)
         children = SymphonyElixir.Application.children()

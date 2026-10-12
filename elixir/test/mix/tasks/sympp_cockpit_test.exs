@@ -1,9 +1,15 @@
 defmodule Mix.Tasks.Sympp.CockpitTest do
   use ExUnit.Case, async: false
 
+  alias Mix.Tasks.Sympp.BetaMigrate
   alias Mix.Tasks.Sympp.Cockpit, as: CockpitTask
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.{Config, Server, Stdio}
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.Repo
+  alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
+  alias SymphonyElixir.SymphonyPlusPlus.ReviewObservation
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -70,7 +76,7 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
 
       System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
       assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> OfflineSandbox.verify!(database <> ".missing") end
-      Mix.Tasks.Sympp.BetaMigrate.run(["--database", database])
+      BetaMigrate.run(["--database", database])
       assert :ok = OfflineSandbox.verify!(database)
 
       opts = Keyword.put(opts, :operator_dashboard_opener, fn _url -> flunk("browser opened") end)
@@ -101,21 +107,21 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
         assert Repo.get(WorkRequest, request.id) == nil
         assert Req.post!(path <> "/architect-handoff", json: %{}, headers: browser_api_headers()).status == 403
 
-        server = SymphonyElixir.SymphonyPlusPlus.MCP.Server.new(SymphonyElixir.SymphonyPlusPlus.MCP.Config.default())
-        response = SymphonyElixir.SymphonyPlusPlus.MCP.Stdio.handle_payload(%{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize"}, server)
+        server = Server.new(Config.default())
+        response = Stdio.handle_payload(%{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize"}, server)
         assert response["error"]["data"]["reason"] == "offline_sandbox"
 
         package = %WorkPackage{id: "WP-OFFLINE", status: "active", worktree_path: File.cwd!(), review_requirement: %{"type" => "review-suite"}}
 
-        assert SymphonyElixir.SymphonyPlusPlus.ReviewObservation.observe([package],
+        assert ReviewObservation.observe([package],
                  find_executable: fn _name -> "/unused/probe" end,
                  runner: fn _, _, _, _ -> flunk("review probe") end
                ) == %{}
 
-        assert SymphonyElixir.SymphonyPlusPlus.RepoIdentity.local_git_origin_remote(File.cwd!()) == nil
-        assert {:error, :offline_sandbox} = SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient.auth_status()
-        assert {:error, :offline_sandbox} = SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient.get_json("repos/example/widget", [])
-        assert :ok = SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener.open_once(opener: fn _url -> flunk("browser opened") end)
+        assert RepoIdentity.local_git_origin_remote(File.cwd!()) == nil
+        assert {:error, :offline_sandbox} = DefaultClient.auth_status()
+        assert {:error, :offline_sandbox} = DefaultClient.get_json("repos/example/widget", [])
+        assert :ok = OperatorDashboardOpener.open_once(opener: fn _url -> flunk("browser opened") end)
       end)
     after
       restore_system_env("SYMPP_OFFLINE_SANDBOX", previous)
