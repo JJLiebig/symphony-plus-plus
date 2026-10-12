@@ -71,6 +71,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
     result = enrich(payload([no_pr]), responses([], %{}))
     refute Map.has_key?(hd(result.work_requests.work_requests), :deployments)
 
+    unfinished_other_repo = %{repo_remote: "acme-labs/atlas", status: "implementing", delivery: nil}
+
+    unfinished_no_pr =
+      payload([no_pr, unfinished_other_repo])
+      |> put_in([:work_request_details, Access.at(0), :work_request, :completed_at], nil)
+
+    result = enrich(unfinished_no_pr, responses([], %{}))
+    refute Map.has_key?(hd(result.work_requests.work_requests), :deployments)
+
     result = DeploymentObservation.enrich(payload(), %{}, fetch: fn _, _ -> flunk("untagged repo must not make requests") end)
     refute Map.has_key?(hd(result.work_requests.work_requests), :deployments)
     refute Map.has_key?(hd(result.work_requests.work_requests), :default_branch)

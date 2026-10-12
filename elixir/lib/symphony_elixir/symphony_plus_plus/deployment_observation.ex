@@ -70,11 +70,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
     revisions = packages |> Enum.filter(&(outcome(&1) == "pr_merged")) |> Enum.map(&value(value(&1, :delivery), :merge_commit_sha))
 
     cond do
-      is_nil(request.completed_at) ->
-        {pending(workflow, "unfinished"), state}
-
       packages != [] and Enum.all?(packages, &(outcome(&1) == "completed_no_pr")) ->
         {nil, state}
+
+      is_nil(request.completed_at) ->
+        {pending(workflow, "unfinished"), state}
 
       revisions == [] or Enum.any?(revisions, &(not sha?(&1))) or
           Enum.any?(packages, &(outcome(&1) not in ["pr_merged", "completed_no_pr"])) ->
@@ -102,10 +102,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
         run_ids = Enum.map(collected, &value(&1, :id))
 
         cond do
-          not is_nil(expected_total) and expected_total != total -> {collected, observed_at, false, state}
-          length(Enum.uniq(run_ids)) != length(collected) -> {collected, observed_at, false, state}
+          not consistent_page?(run_ids, total, expected_total) -> {collected, observed_at, false, state}
           length(collected) == total -> {collected, observed_at, true, state}
-          length(collected) > total -> {collected, observed_at, false, state}
           batch == [] -> {collected, observed_at, false, state}
           true -> workflow_runs(repo, workflow, page + 1, collected, observed_at, total, state)
         end
@@ -113,6 +111,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
       _unavailable ->
         {runs, observed_at, false, state}
     end
+  end
+
+  defp consistent_page?(run_ids, total, expected_total) do
+    (is_nil(expected_total) or expected_total == total) and
+      length(Enum.uniq(run_ids)) == length(run_ids) and length(run_ids) <= total
   end
 
   defp select_observation(runs, repo, revisions, workflow, observed_at, state) do
