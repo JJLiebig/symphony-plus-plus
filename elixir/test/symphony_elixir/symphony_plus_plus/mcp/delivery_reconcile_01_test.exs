@@ -334,6 +334,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
   end
 
   test "architect dispatch and normal PR handoff need no worker MCP calls", %{repo: repo} do
+    repo_path = TestSupport.git_repo_with_origin_fixture!("https://github.com/nextide/repo.git", prefix: "sympp-architect-handoff")
+
     {anchor, session, _grant} =
       create_phase_architect_session(
         repo,
@@ -343,7 +345,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
           "write:work_request",
           "read:work_request"
         ],
-        repo: "nextide/repo"
+        repo: repo_path
       )
 
     work_request =
@@ -466,6 +468,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
       assert {:ok, _released} = ClaimLeaseService.release(repo, other_owner.id, reason: "Architect confirmed the owner finished")
 
+      assert {:ok, claimed_grant} = AccessGrantService.claim_local_worker_grant(repo, approved_slice.id, claimed_by: "grant-only-worker")
+      grant_owned = mcp_tool(repo, session, "sync_pr", handoff)
+      assert grant_owned["error"]
+      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
+      assert {:ok, _revoked} = AccessGrantService.revoke(repo, claimed_grant.id)
+
       declared =
         mcp_tool(repo, session, "append_progress", %{
           "work_package_id" => approved_slice.id,
@@ -479,6 +487,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       waiting = mcp_tool(repo, session, "sync_pr", handoff)
       assert get_in(waiting, ["result", "structuredContent", "work_package", "status"]) == "ready_for_worker"
       assert "no_active_blockers" in get_in(waiting, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
+
+      changed_head = String.duplicate("c", 40)
+      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, SymphonyElixir.GitHubPullRequestFixtures.metadata(412, changed_head, base_branch: anchor.base_branch))
+      refute mcp_tool(repo, session, "sync_pr", %{handoff | "head_sha" => changed_head})["error"]
+      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, metadata)
+      returned_head = mcp_tool(repo, session, "sync_pr", handoff)
+      refute returned_head["error"]
+      assert {:ok, returned_state} = PlanningRepository.get_state(repo, approved_slice.id)
+      branch = returned_state.progress_events |> Enum.filter(&(&1.payload["source_tool"] == "attach_branch")) |> List.last()
+      assert branch.payload["head_sha"] == head
 
       resolved =
         mcp_tool(repo, session, "resolve_blocker", %{

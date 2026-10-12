@@ -5,7 +5,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
   import SymphonyElixir.SymphonyPlusPlus.MCP.ToolArguments, only: [required_argument: 2]
 
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
-  alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.OperationalProjection
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{Client, DefaultClient, MergeReconciler, PullRequest, PullRequestArtifact, PullRequestProgress}
@@ -45,7 +44,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
 
   defp require_delivery_scope(work_package, payload) do
     cond do
-      not RepoIdentity.scope_match?(work_package.repo, payload["repository"]) -> {:error, :repository_mismatch}
+      not RepoIdentity.scope_match?(work_package.repo, payload["repository"], local_path_remotes?: true) -> {:error, :repository_mismatch}
       BaseBranch.canonicalize(work_package.base_branch) != BaseBranch.canonicalize(payload["base_branch"]) -> {:error, :base_branch_mismatch}
       true -> :ok
     end
@@ -104,9 +103,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
 
   defp require_unowned(repo, work_package_id) do
     # A stale/missing observation never authorizes accepting over an existing claim.
-    claimed? = repo.exists?(from(lease in ClaimLease, where: lease.work_package_id == ^work_package_id and lease.status in ["active", "paused"]))
     runtime = WorkPackageActivity.context(repo, work_package_id).runtime_state
-    if claimed? or runtime.active_agent_run_ids != [] or runtime.stale_agent_run_ids != [], do: {:error, :active_runtime}, else: :ok
+    if runtime.active? or runtime.stale?, do: {:error, :active_runtime}, else: :ok
   end
 
   defp require_mutable_handoff(repo, %WorkPackage{status: "ready_for_merge"} = work_package, payload) do
@@ -122,7 +120,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
   defp require_mutable_handoff(_repo, %WorkPackage{}, _payload), do: {:error, :invalid_work_package_status}
 
   defp append_snapshot(repo, session, work_package, payload) do
-    branch = %{"type" => "branch", "source_tool" => "attach_branch", "branch" => payload["branch"], "head_sha" => payload["head_sha"]}
+    branch = %{"type" => "branch", "source_tool" => "attach_branch", "branch" => payload["branch"], "head_sha" => payload["head_sha"], "observed_at" => payload["observed_at"]}
 
     with {:ok, _branch} <- append_event(repo, session, work_package.id, branch, "branch_attached"),
          {:ok, _attachment} <- append_event(repo, session, work_package.id, Map.put(payload, "source_tool", "attach_pr"), "pr_attached"),
