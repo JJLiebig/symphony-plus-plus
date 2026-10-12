@@ -63,7 +63,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionBindingTools do
           server
           | session: nil,
             session_refresh_required: true,
-            stale_assignment_role: session.assignment.grant_role
+            stale_assignment_role: session.assignment.grant_role,
+            stale_architect_claim: Session.architect_claim_arguments(session)
         }
 
         {:ok, unbound_assignment_payload(updated_server, "stale", session.assignment.grant_role), updated_server}
@@ -115,7 +116,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionBindingTools do
         }
       }
 
-      {:ok, result, %{server | session_refresh_required: false, stale_assignment_role: nil}}
+      {:ok, result, %{server | session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil}}
     end
   end
 
@@ -142,7 +143,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionBindingTools do
 
       updated_server =
         if binding_cleared?,
-          do: %{server | session: nil, session_refresh_required: false, stale_assignment_role: nil},
+          do: %{server | session: nil, session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil},
           else: %{server | session_refresh_required: server.session_refresh_required or fresh_mcp_session_required?}
 
       {:ok, result, updated_server}
@@ -535,7 +536,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionBindingTools do
       server
       | session: nil,
         session_refresh_required: true,
-        stale_assignment_role: session.assignment.grant_role
+        stale_assignment_role: session.assignment.grant_role,
+        stale_architect_claim: Session.architect_claim_arguments(session)
     }
 
     {:error, -32_001, "Unauthorized",

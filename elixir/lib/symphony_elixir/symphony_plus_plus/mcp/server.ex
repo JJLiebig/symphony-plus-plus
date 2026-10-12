@@ -89,6 +89,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     :session,
     :state_key,
     :state_key_version,
+    :stale_architect_claim,
     local_daemon_trusted: false,
     state_key_explicit: false,
     session_refresh_required: false,
@@ -101,6 +102,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
           session: Session.t() | nil,
           state_key: term(),
           state_key_version: integer() | nil,
+          stale_architect_claim: map() | nil,
           local_daemon_trusted: boolean(),
           state_key_explicit: boolean(),
           session_refresh_required: boolean(),
@@ -120,10 +122,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
       session: Keyword.get(opts, :session),
       state_key: state_key,
       state_key_version: nil,
+      stale_architect_claim: Keyword.get(opts, :stale_architect_claim),
       local_daemon_trusted: Keyword.get(opts, :local_daemon_trusted, config.local_daemon_trusted),
       state_key_explicit: state_key_explicit?,
       session_refresh_required: false,
-      stale_assignment_role: nil,
+      stale_assignment_role: if(Keyword.get(opts, :stale_architect_claim), do: "architect"),
       initialized: Keyword.get(opts, :initialized, false)
     }
   end
@@ -505,7 +508,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp dispatch("tools/call", %{"name" => @local_assignment_claim_tool} = params, %__MODULE__{} = server) do
     case claim_local_assignment(params, server) do
       {:ok, result, session} ->
-        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil}
+        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil}
         {:ok, ToolResult.claim_tool_result(result), updated_server}
 
       {:error, code, message, data} ->
@@ -516,7 +519,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp dispatch("tools/call", %{"name" => @local_architect_assignment_claim_tool} = params, %__MODULE__{} = server) do
     case claim_local_architect_assignment(params, server) do
       {:ok, result, session} ->
-        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil}
+        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil}
         {:ok, ToolResult.claim_tool_result(result), updated_server}
 
       {:error, code, message, data} ->
@@ -735,7 +738,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp handle_session_claim_tool(@local_assignment_claim_tool, params, id, %__MODULE__{} = server) do
     case claim_local_assignment(params, server) do
       {:ok, result, session} ->
-        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil}
+        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil}
 
         tool_result =
           build_tool_result(server, fn ->
@@ -755,7 +758,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp handle_session_claim_tool(@local_architect_assignment_claim_tool, params, id, %__MODULE__{} = server) do
     case claim_local_architect_assignment(params, server) do
       {:ok, result, session} ->
-        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil}
+        updated_server = %{server | session: session, session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil}
 
         tool_result =
           build_tool_result(server, fn ->
@@ -1505,18 +1508,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   end
 
   defp dispatch_request_state({:ok, params}, method, id, %__MODULE__{} = server) do
-    case require_current_session_claim_for_bound_call(server, method, params) do
-      {:ok, server} ->
-        case dispatch_with_text_profile(method, params, server) do
-          {:ok, result} ->
-            {Response.response(id, result), server}
+    with {:ok, server} <- auto_claim_architect(server, method, params),
+         {:ok, server} <- require_current_session_claim_for_bound_call(server, method, params) do
+      case dispatch_with_text_profile(method, params, server) do
+        {:ok, result} ->
+          {Response.response(id, result), server}
 
-          {:ok, result, %__MODULE__{} = updated_server} ->
-            {Response.response(id, result), updated_server}
+        {:ok, result, %__MODULE__{} = updated_server} ->
+          {Response.response(id, result), updated_server}
 
-          {:error, code, message, data} ->
-            {Response.error(id, code, message, data), server}
-        end
+        {:error, code, message, data} ->
+          {Response.error(id, code, message, data), server}
+      end
+    else
+      {:error, code, message, data} ->
+        {Response.error(id, code, message, data), server}
 
       {:error, code, message, data, %__MODULE__{} = updated_server} ->
         {Response.error(id, code, message, data), updated_server}
@@ -1526,6 +1532,30 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp dispatch_request_state({:error, code, message, data}, _method, id, %__MODULE__{} = server) do
     {Response.error(id, code, message, data), server}
   end
+
+  defp auto_claim_architect(
+         %__MODULE__{session: nil, config: %Config{surface_profile: profile}, stale_assignment_role: role} = server,
+         "tools/call",
+         %{"name" => name} = params
+       )
+       when profile in [:full, :architect] and role != "worker" and name in @architect_tools do
+    architect_call? = name not in @worker_tools or profile == :architect or role == "architect"
+    arguments = Map.get(params, "arguments", %{})
+    claim_arguments = server.stale_architect_claim || if(is_map(arguments), do: Map.take(arguments, ["work_request_id"]), else: %{})
+
+    if architect_call? and name not in @local_trusted_work_request_read_tools and
+         is_binary(claim_arguments["work_request_id"]) and Surface.local_trusted_tools_enabled?(server) do
+      with {:ok, _arguments} <- architect_tool_arguments(params, name),
+           {:ok, _result, session} <-
+             claim_local_architect_assignment(%{"arguments" => claim_arguments}, server) do
+        {:ok, %{server | session: session, session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil}}
+      end
+    else
+      {:ok, server}
+    end
+  end
+
+  defp auto_claim_architect(%__MODULE__{} = server, _method, _params), do: {:ok, server}
 
   defp dispatch_with_text_profile(method, params, %__MODULE__{} = server) do
     build_tool_result(server, fn -> dispatch(method, params, server) end)
