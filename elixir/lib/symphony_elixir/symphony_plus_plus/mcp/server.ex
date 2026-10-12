@@ -90,6 +90,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     :state_key,
     :state_key_version,
     :stale_architect_claim,
+    batch_claim_pending: false,
     local_daemon_trusted: false,
     state_key_explicit: false,
     session_refresh_required: false,
@@ -103,6 +104,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
           state_key: term(),
           state_key_version: integer() | nil,
           stale_architect_claim: map() | nil,
+          batch_claim_pending: boolean(),
           local_daemon_trusted: boolean(),
           state_key_explicit: boolean(),
           session_refresh_required: boolean(),
@@ -382,11 +384,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   end
 
   defp handle_unblocked_batch_item(payload, {claimed?, %__MODULE__{} = current_server, claimed_server}) do
-    item = handle_batch_item(payload, current_server)
-    {_response, %__MODULE__{} = item_server} = item
+    item = handle_batch_item(payload, %{current_server | batch_claim_pending: claimed?})
+    {response, %__MODULE__{} = item_server} = item
+    item_server = %{item_server | batch_claim_pending: current_server.batch_claim_pending}
+    item = {response, item_server}
 
     claim_succeeded? =
-      batch_session_claim_request?(payload, current_server) and batch_session_claim_success?(item, current_server)
+      (batch_session_claim_request?(payload, current_server) and batch_session_claim_success?(item, current_server)) or
+        (is_nil(current_server.session) and match?(%Session{}, item_server.session))
 
     updated_server =
       if claim_succeeded? do
@@ -1534,7 +1539,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   end
 
   defp auto_claim_architect(
-         %__MODULE__{session: nil, config: %Config{surface_profile: profile}, stale_assignment_role: role} = server,
+         %__MODULE__{session: nil, batch_claim_pending: false, config: %Config{surface_profile: profile}, stale_assignment_role: role} = server,
          "tools/call",
          %{"name" => name} = params
        )
