@@ -450,7 +450,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
       for ownership <- [:stale, :paused] do
         if ownership == :paused do
-          assert {:ok, _paused} = ClaimLeaseService.pause(repo, other_owner.id, %{"actor_id" => "operator"}, reason: "Owner paused")
+          assert {:ok, _paused} =
+                   ClaimLeaseService.pause(repo, other_owner.id, %{"actor_id" => "operator"},
+                     reason: "Owner paused",
+                     now: other_owner.last_seen_at
+                   )
         end
 
         refused = mcp_tool(repo, session, "sync_pr", handoff)
