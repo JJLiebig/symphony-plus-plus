@@ -76,6 +76,7 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
       opts = Keyword.put(opts, :operator_dashboard_opener, fn _url -> flunk("browser opened") end)
 
       CockpitTask.run_cockpit_for_test(opts, fn ->
+        assert is_list(Repo.config())
         port = wait_for_bound_port()
         origin = "http://127.0.0.1:#{port}"
         assert Req.get!(origin <> "/api/v1/sympp/operator/dashboard", headers: browser_api_headers()).status == 200
@@ -104,7 +105,12 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
         response = SymphonyElixir.SymphonyPlusPlus.MCP.Stdio.handle_payload(%{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize"}, server)
         assert response["error"]["data"]["reason"] == "offline_sandbox"
 
-        assert SymphonyElixir.SymphonyPlusPlus.ReviewObservation.observe([], runner: fn _, _, _, _ -> flunk("review probe") end) == %{}
+        package = %WorkPackage{id: "WP-OFFLINE", status: "active", worktree_path: File.cwd!(), review_requirement: %{"type" => "review-suite"}}
+
+        assert SymphonyElixir.SymphonyPlusPlus.ReviewObservation.observe([package],
+                 find_executable: fn _name -> "/unused/probe" end,
+                 runner: fn _, _, _, _ -> flunk("review probe") end
+               ) == %{}
         assert SymphonyElixir.SymphonyPlusPlus.RepoIdentity.local_git_origin_remote(File.cwd!()) == nil
         assert {:error, :offline_sandbox} = SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient.auth_status()
         assert {:error, :offline_sandbox} = SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient.get_json("repos/example/widget", [])

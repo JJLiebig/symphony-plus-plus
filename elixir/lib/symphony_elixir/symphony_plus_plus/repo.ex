@@ -14,10 +14,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Repo do
   @default_queue_interval 5_000
 
   @impl true
-  def init(_type, config) do
+  def init(:supervisor, config) do
     :ok = SymphonyElixir.SymphonyPlusPlus.OfflineSandbox.verify!(Keyword.fetch!(config, :database))
     {:ok, config}
   end
+
+  def init(:runtime, config), do: {:ok, config}
 
   @spec child_options(keyword()) :: keyword()
   def child_options(opts \\ []) do
