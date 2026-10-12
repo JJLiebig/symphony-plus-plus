@@ -109,7 +109,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
               {"NO-SESSION", %{worker_host: "build-desk", session_id: nil}},
               {"STALE", %{worker_host: "build-desk", session_id: "session-stale", last_seen_at: DateTime.add(now, -301, :second)}},
               {"FINISHED", %{worker_host: "build-desk", session_id: "session-finished", status: "completed", finished_at: now}}
-            ], into: %{} do
+            ],
+            into: %{} do
           package = create_dispatched_package!(repo, request, slice_id: "WRS-LABEL-#{suffix}", package_id: "WP-LABEL-#{suffix}", status: "implementing")
           attrs = Map.merge(%{work_package_id: package.id, status: "running", last_seen_at: now}, run_attrs)
           attrs |> AgentRun.create_changeset() |> repo.insert!()
@@ -136,7 +137,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
         refute Map.has_key?(terminal_package, "session_location")
       end
 
-      File.write!(config_path, Jason.encode!(%{"repos" => %{"example-org/widget-service" => %{"area" => ["A", "B", "C", "D"]}}, "machines" => %{"build-desk" => %{"label" => "Build Desk", "kind" => "guessed"}}}))
+      File.write!(
+        config_path,
+        Jason.encode!(%{"repos" => %{"example-org/widget-service" => %{"area" => ["A", "B", "C", "D"]}}, "machines" => %{"build-desk" => %{"label" => "Build Desk", "kind" => "guessed"}}})
+      )
+
       invalid = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
       invalid_detail = work_request_detail(invalid, request.id)
       assert invalid_detail["work_request"]["area_path"] == nil
