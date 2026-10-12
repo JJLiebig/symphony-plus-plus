@@ -120,7 +120,7 @@ Conversion uses the same versioned migrations as ordinary startup; no separate
 data rewrite is needed. A future live cutover must use the original live ledger
 after stopping its old runtime, with a backup and verified installed runtime.
 Never promote the exercised sandbox back to live. Both the snapshot change and
-the 24-hour archive migration must be on beta before copying if existing stored
+the archive-setting migration must be on beta before copying if existing stored
 14-day settings should convert during this migration pass.
 
 The helper isolates ports, home, build output and sandbox database. It keeps
