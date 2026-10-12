@@ -35,6 +35,18 @@ Start a request from the inline first-run flow or the board's new-request action
 Choose direct delivery for bounded work or architect-led delivery for work
 that needs clarification and slicing. Preferences live in Settings.
 
+An optional architect report gives the goal a brief, free-text ETA, parking
+reason, and explicit question requiring a human decision. The hydrated dashboard
+returns it at `work_request_details[].work_request.operator_report`;
+`read_work_request` returns the same report. Each brief/ETA has `text` and
+`written_at`. Parking has `reason`, `parked_at`, and `resumed_at`; escalation has
+`question`, `raised_at`, and `resolved_at`. A missing report/field is absent
+information; a non-null resume/resolution time means that interval is closed.
+Open clarification questions and worker waits do not imply escalation. Reports
+do not change blockers or completion, and the board remains read-only. See the
+[architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#guidance)
+for optional milestone updates and resolving answers given in the conversation.
+
 ### Herdr Execution Inspector
 
 Install the optional Herdr plugin from the repository root:

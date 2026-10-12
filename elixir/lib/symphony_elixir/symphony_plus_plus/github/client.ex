@@ -124,6 +124,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
     "isDraft",
     "mergeable",
     "mergeStateStatus",
+    "createdAt",
+    "updatedAt",
     "mergedAt",
     "mergeCommit"
   ]
@@ -265,6 +267,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
       "mergeable_state" => normalized_gh_string(Map.get(metadata, "mergeStateStatus")),
       "merged" => merged?,
       "merged_at" => blank_to_nil(Map.get(metadata, "mergedAt")),
+      "created_at" => blank_to_nil(Map.get(metadata, "createdAt")),
+      "updated_at" => blank_to_nil(Map.get(metadata, "updatedAt")),
       "merge_commit_sha" => merge_commit_sha(metadata)
     }
     |> reject_nil_values()
