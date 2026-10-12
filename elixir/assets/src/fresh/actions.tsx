@@ -12,14 +12,16 @@ type Action = { key: string; label: string; hint: string; confirm: string; steps
 const COMPLETE: Step = ["state", { state: "completed" }];
 const ARCHIVE: Step = ["archive", {}];
 
+// None of these stops a running worker or merges a PR, so a goal with work in flight says so.
 // The backend archives only finished goals, so archiving an unfinished one marks it done first.
-function actionsFor(goal: Goal): Action[] {
+function actionsFor(goal: Goal, moving: number): Action[] {
   const finished = goal.closedAt !== null;
-  const done: Action = { key: "done", label: "Mark as done", hint: "Close this goal as finished, whatever its packages say.", confirm: "Mark as done?", steps: [COMPLETE] };
+  const running = moving > 0 ? ` ${moving} ${moving === 1 ? "package is" : "packages are"} still moving and will keep running.` : "";
+  const done: Action = { key: "done", label: "Mark as done", hint: `Close this goal as finished, whatever its packages say.${running}`, confirm: "Mark as done?", steps: [COMPLETE] };
   const archive: Action = finished
     ? { key: "archive", label: "Archive", hint: "Take it off the board. It can be restored.", confirm: "Archive?", steps: [ARCHIVE] }
-    : { key: "archive", label: "Archive", hint: "Mark it done and take it off the board. It can be restored.", confirm: "Archive?", steps: [COMPLETE, ARCHIVE] };
-  const remove: Action = { key: "delete", label: "Delete", hint: "Remove it for good, with its packages and their worktrees.", confirm: "Delete for good?", steps: [["delete", {}]] };
+    : { key: "archive", label: "Archive", hint: `Mark it done and take it off the board. It can be restored.${running}`, confirm: "Archive?", steps: [COMPLETE, ARCHIVE] };
+  const remove: Action = { key: "delete", label: "Delete", hint: `Remove it for good, with its history, its packages and their worktrees.${running}`, confirm: "Delete for good?", steps: [["delete", {}]] };
   return finished ? [archive, remove] : [done, archive, remove];
 }
 
@@ -35,7 +37,7 @@ async function run(goalId: string, [path, body]: Step) {
 }
 
 // The only things the board changes: closing, archiving or deleting a goal. Each takes a second click.
-export function GoalActions({ className, goal }: { className?: string; goal: Goal }) {
+export function GoalActions({ className, goal, moving = 0 }: { className?: string; goal: Goal; moving?: number }) {
   const reload = useContext(ReloadContext);
   const [open, setOpen] = useState(false);
   const [armed, setArmed] = useState<string | null>(null);
@@ -82,7 +84,7 @@ export function GoalActions({ className, goal }: { className?: string; goal: Goa
       </button>
       {open ? (
         <span className="absolute right-0 top-full z-30 mt-1 block w-72 rounded border border-line bg-bg p-1 text-left text-sm font-normal shadow-xl">
-          {actionsFor(goal).map((action) => (
+          {actionsFor(goal, moving).map((action) => (
             <button key={action.key} className={`block w-full rounded px-2.5 py-1.5 text-left hover:bg-line disabled:opacity-50 ${action.key === "delete" ? "text-fail" : "text-ink"}`} disabled={busy} type="button" onClick={() => void pick(action)}>
               <span className="block font-medium">{armed === action.key ? `${action.confirm} Click again` : action.label}</span>
               <span className="block text-xs text-dim">{action.hint}</span>

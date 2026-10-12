@@ -49,7 +49,7 @@ function GoalRoute({ at, view }: { at: number; view: GoalView }) {
           <SinceChip goalId={view.goal.id} />
           <VerdictBadge verdict={report.verdict} />
         </button>
-        <GoalActions className="ml-2" goal={view.goal} />
+        <GoalActions className="ml-2" goal={view.goal} moving={view.live.length} />
       </div>
       <p className="mt-1 pl-7 text-sm text-dim">
         {report.brief}

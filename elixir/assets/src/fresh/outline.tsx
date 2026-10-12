@@ -78,7 +78,7 @@ function GoalRow({ at, tagged, view }: { at: number; tagged?: boolean; view: Goa
             </span>
           </span>
         </button>
-        <GoalActions className="mt-2" goal={view.goal} />
+        <GoalActions className="mt-2" goal={view.goal} moving={view.live.length} />
       </div>
       <AskLine at={at} className="mb-3 ml-7 mr-2" view={view} />
       {level !== "closed" ? (

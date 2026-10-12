@@ -82,7 +82,7 @@ export function Shelf({ at, hint, label, views }: { at: number; hint?: string; l
             <span className="shrink-0 font-mono text-xs text-faint">
               {view.done.length}/{view.done.length + view.queued.length + view.live.length} · {span(at - view.lastMoveAt)}
             </span>
-            <GoalActions goal={view.goal} />
+            <GoalActions goal={view.goal} moving={view.live.length} />
           </li>
         ))}
       </ul>
