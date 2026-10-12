@@ -323,6 +323,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
   defp progress_payload_replay_matches?(%{"type" => "pr"} = existing, %{"type" => "pr"} = normalized) do
     existing = Map.drop(existing, ["head_changed_at", "checks_changed_at"])
     normalized = Map.drop(normalized, ["head_changed_at", "checks_changed_at"])
+    absent_provider_dates = Enum.reject(["created_at", "updated_at"], &Map.has_key?(existing, &1))
+    normalized = Map.drop(normalized, absent_provider_dates)
 
     existing == normalized or
       (existing["source_tool"] == "attach_pr" and normalized["source_tool"] == "attach_pr" and

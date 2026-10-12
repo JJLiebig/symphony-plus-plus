@@ -6,7 +6,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
   alias Ecto.Changeset
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
-  alias SymphonyElixir.SymphonyPlusPlus.Dashboard.MetadataProjection
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Artifact
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Finding
@@ -162,9 +161,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
       previous =
         case list_progress_events(repo, work_package_id) do
           {:ok, events} ->
-            # Compare observations across heads; display selection deliberately prefers the current branch head.
-            events = Enum.reject(events, &MetadataProjection.payload_type?(&1, "branch", "attach_branch"))
-            MetadataProjection.metadata(events).pr
+            case PullRequestProgress.current_pr_state(events, ["attach_pr", "sync_pr"]) do
+              {:ok, %{payload: payload}} -> payload
+              {:error, _reason} -> nil
+            end
 
           {:error, reason} ->
             repo.rollback(reason)

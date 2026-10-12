@@ -2339,12 +2339,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         "check_summary" => %{"status" => "pending"}
       }
 
-      append = fn payload ->
-        assert {:ok, event} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Observed widget PR", status: "pr_synced", payload: payload})
+      append = fn payload, offset ->
+        attrs = %{work_package_id: package.id, summary: "Observed widget PR", status: "pr_synced", payload: payload, created_at: DateTime.add(~U[2026-10-01 09:10:00Z], offset, :second)}
+        assert {:ok, event} = PlanningRepository.append_progress_event(repo, attrs)
         event
       end
 
-      first = append.(snapshot)
+      first = append.(snapshot, 0)
       assert %{"stage" => "checks", "entered_at" => nil} = fetch.()["board_state"]
       assert fetch.()["pr_signal"]["checks"]["changed_at"] == first.payload["checks_changed_at"]
       assert fetch.()["pr_signal"]["created_at"] == "2026-10-01T09:05:00Z"
@@ -2358,21 +2359,30 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  created_at: ~U[2025-10-01 09:00:00Z]
                })
 
-      repeated = append.(Map.put(snapshot, "source_tool", "sync_pr"))
+      repeated = append.(Map.put(snapshot, "source_tool", "sync_pr"), 2)
       assert repeated.payload["checks_changed_at"] == first.payload["checks_changed_at"]
       assert fetch.()["board_state"]["entered_at"] == nil
 
-      next_head = append.(snapshot |> Map.put("source_tool", "sync_pr") |> Map.put("head_sha", "head-b"))
+      next_head = append.(snapshot |> Map.put("source_tool", "sync_pr") |> Map.put("head_sha", "head-b"), 3)
       assert next_head.payload["head_changed_at"] != first.payload["head_changed_at"]
       assert fetch.()["pr_signal"]["head_sha"] == "head-b"
       assert fetch.()["pr_signal"]["checks"]["changed_at"] == next_head.payload["checks_changed_at"]
 
-      append.(%{"type" => "branch", "source_tool" => "attach_branch", "branch" => "feat/widget", "head_sha" => "head-a"})
-      returning = append.(Map.put(snapshot, "source_tool", "sync_pr"))
+      append.(%{"type" => "branch", "source_tool" => "attach_branch", "branch" => "feat/widget", "head_sha" => "head-a"}, 4)
+      returning = append.(Map.put(snapshot, "source_tool", "sync_pr"), 5)
       assert returning.payload["head_changed_at"] != first.payload["head_changed_at"]
       assert returning.payload["head_changed_at"] != next_head.payload["head_changed_at"]
       assert returning.payload["checks_changed_at"] != next_head.payload["checks_changed_at"]
       assert fetch.()["pr_signal"]["head_changed_at"] == returning.payload["head_changed_at"]
+
+      passing_snapshot = snapshot |> Map.put("source_tool", "sync_pr") |> Map.put("check_summary", %{"status" => "passing"})
+      passing = append.(passing_snapshot, 7)
+      append.(snapshot, 6)
+      stable = append.(passing_snapshot, 8)
+      assert stable.payload["checks_changed_at"] == passing.payload["checks_changed_at"]
+      assert stable.payload["head_changed_at"] == returning.payload["head_changed_at"]
+      assert fetch.()["pr_signal"]["checks"]["changed_at"] == passing.payload["checks_changed_at"]
+
       assert {:ok, current_request} = WorkRequestRepository.get(repo, request.id)
       assert current_request.completed_at == nil
     end)
