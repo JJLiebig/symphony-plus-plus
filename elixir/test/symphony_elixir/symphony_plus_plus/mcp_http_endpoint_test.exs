@@ -973,6 +973,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     assert get_in(json_response(progress, 200), ["error", "data", "reason"]) == "claim_required"
 
+    reset_mcp_runtime_state()
+
+    architect_call =
+      post_json(
+        tool_call_request("revoked-worker-architect-call", "list_guidance_requests", %{"work_request_id" => "WR-NOT-A-WORKER-PROMOTION"}),
+        [{"mcp-session-id", session_id}]
+      )
+
+    assert get_in(json_response(architect_call, 200), ["error", "data", "reason"]) == "claim_required"
+
     assignment_resource =
       post_json(resources_read_request("revoked-resource", "sympp://assignment/current"), [{"mcp-session-id", session_id}])
 

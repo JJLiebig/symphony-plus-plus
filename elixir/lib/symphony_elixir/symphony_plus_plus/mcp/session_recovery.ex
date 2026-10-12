@@ -75,6 +75,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
            initialized: true,
            local_daemon_trusted: config.local_daemon_trusted,
            state_key: state_key,
+           stale_assignment_role: binding.grant_role,
            stale_architect_claim: recover_architect_claim(repo, binding)
          )}
     end

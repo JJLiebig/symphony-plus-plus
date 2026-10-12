@@ -126,7 +126,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
       local_daemon_trusted: Keyword.get(opts, :local_daemon_trusted, config.local_daemon_trusted),
       state_key_explicit: state_key_explicit?,
       session_refresh_required: false,
-      stale_assignment_role: if(Keyword.get(opts, :stale_architect_claim), do: "architect"),
+      stale_assignment_role: Keyword.get(opts, :stale_assignment_role),
       initialized: Keyword.get(opts, :initialized, false)
     }
   end
