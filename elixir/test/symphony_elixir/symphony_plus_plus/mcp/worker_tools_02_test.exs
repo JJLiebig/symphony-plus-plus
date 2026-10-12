@@ -89,9 +89,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
     {anchor, architect, _grant} = create_work_request_handoff_architect_session(repo, request, ArchitectHandoff.capabilities())
 
     assert {:ok, package} =
-             CanonicalWorkPackageFixtures.add_work_package(repo, request.id,
-               WorkPackageFactory.attrs(id: "WP-REPORT-AUTH", repo: request.repo, status: "planning")
-             )
+             CanonicalWorkPackageFixtures.add_work_package(repo, request.id, WorkPackageFactory.attrs(id: "WP-REPORT-AUTH", repo: request.repo, status: "planning"))
 
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
@@ -120,12 +118,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
   end
 
   defp append_report!(repo, session, anchor, patch, key) do
-    response = mcp_tool(repo, session, "append_progress", %{
-      "work_package_id" => anchor.id,
-      "summary" => "Goal update",
-      "idempotency_key" => key,
-      "payload" => Map.put(patch, "type", "architect_operator_report")
-    })
+    response =
+      mcp_tool(repo, session, "append_progress", %{
+        "work_package_id" => anchor.id,
+        "summary" => "Goal update",
+        "idempotency_key" => key,
+        "payload" => Map.put(patch, "type", "architect_operator_report")
+      })
 
     assert response["error"] == nil
     get_in(response, ["result", "structuredContent", "progress_event", "id"])
