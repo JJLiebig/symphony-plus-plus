@@ -1539,7 +1539,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   end
 
   defp auto_claim_architect(
-         %__MODULE__{session: nil, batch_claim_pending: false, config: %Config{surface_profile: profile}, stale_assignment_role: role} = server,
+         %__MODULE__{
+           session: nil,
+           batch_claim_pending: false,
+           config: %Config{surface_profile: profile},
+           stale_assignment_role: role
+         } = server,
          "tools/call",
          %{"name" => name} = params
        )

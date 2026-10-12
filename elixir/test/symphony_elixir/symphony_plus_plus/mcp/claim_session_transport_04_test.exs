@@ -48,6 +48,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
         Server.new(local_mcp_config(repo), state_key: state_key)
       )
 
+    work_request = create_work_request!(repo, id: "WR-RECREATED-WORKER-HANDLE", status: "ready_for_clarification")
+
+    architect_response =
+      Server.handle(
+        %{
+          "jsonrpc" => "2.0",
+          "id" => "recreated-worker-architect-call",
+          "method" => "tools/call",
+          "params" => %{"name" => "list_guidance_requests", "arguments" => %{"work_request_id" => work_request.id}}
+        },
+        Server.new(local_mcp_config(repo), state_key: state_key)
+      )
+
+    assert get_in(architect_response, ["error", "data", "reason"]) == "claim_required"
+    assert {:error, :not_found} = WorkPackageRepository.get(repo, ArchitectHandoff.anchor_id_for_work_request(work_request))
+
     reconnect_claim_response =
       Server.handle(
         %{
