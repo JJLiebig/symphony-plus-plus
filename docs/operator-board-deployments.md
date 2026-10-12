@@ -104,7 +104,9 @@ allows at most 30 provider requests and five seconds of external observation
 work to protect dashboard response time and GitHub API usage. Each workflow is
 paged at 100 runs per page until complete or the read budget is exhausted. Exhausted budgets, missing
 permissions, unavailable comparisons or incomplete pages yield pending rather
-than a deployment claim. A later read can complete from cached earlier pages.
+than a deployment claim. Duplicate run IDs or changing totals across pages also
+yield pending, since concurrent runs can shift page boundaries. A later read
+can complete from cached earlier pages once the page set is consistent.
 
 GitHub lists current run attempts rather than an atomic deployment history. A
 retry can change a run's reported conclusion; concurrent provider changes or

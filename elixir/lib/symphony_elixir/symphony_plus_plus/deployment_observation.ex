@@ -53,7 +53,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
             {{environment, observation}, state}
           end)
 
-        {{repo, Map.new(environments, fn {env, observation} -> {env, observation} end)}, state}
+        {{repo, Map.new(environments)}, state}
       end)
 
     deployments =
@@ -81,7 +81,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
         {pending(workflow, "missing_merge_evidence"), state}
 
       true ->
-        {runs, observed_at, complete?, state} = workflow_runs(repo, workflow, 1, [], nil, state)
+        {runs, observed_at, complete?, state} = workflow_runs(repo, workflow, 1, [], nil, nil, state)
 
         if complete? do
           select_observation(runs, repo, Enum.uniq(revisions), workflow, observed_at, state)
@@ -91,8 +91,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
     end
   end
 
-  defp workflow_runs(repo, workflow, page, runs, observed_at, state) do
-    path = "repos/#{repo}/actions/workflows/#{URI.encode_www_form(workflow)}/runs?per_page=100&page=#{page}"
+  defp workflow_runs(repo, workflow, page, runs, observed_at, expected_total, state) do
+    path = "repos/#{repo}/actions/workflows/#{URI.encode(workflow, &URI.char_unreserved?/1)}/runs?per_page=100&page=#{page}"
     {result, fetched_at, state} = fetch(path, state)
     observed_at = oldest_timestamp(observed_at, fetched_at)
 
@@ -102,11 +102,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
         run_ids = Enum.map(collected, &value(&1, :id))
 
         cond do
+          not is_nil(expected_total) and expected_total != total -> {collected, observed_at, false, state}
           length(Enum.uniq(run_ids)) != length(collected) -> {collected, observed_at, false, state}
           length(collected) == total -> {collected, observed_at, true, state}
           length(collected) > total -> {collected, observed_at, false, state}
           batch == [] -> {collected, observed_at, false, state}
-          true -> workflow_runs(repo, workflow, page + 1, collected, observed_at, state)
+          true -> workflow_runs(repo, workflow, page + 1, collected, observed_at, total, state)
         end
 
       _unavailable ->

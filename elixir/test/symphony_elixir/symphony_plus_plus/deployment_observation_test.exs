@@ -128,6 +128,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
     result = DeploymentObservation.enrich(payload(), @config, fetch: shifted, cache_table: :ets.new(:shifted, [:set, :public]))
     assert status(result) == "pending"
     assert deployment(result).reason == "unavailable"
+
+    changed_total = fn path, opts ->
+      if String.ends_with?(path, "page=2"), do: {:ok, %{"workflow_runs" => [run(101, @sha_a, "success")], "total_count" => 102}}, else: fetch.(path, opts)
+    end
+
+    result = DeploymentObservation.enrich(payload(), @config, fetch: changed_total, cache_table: :ets.new(:changed_total, [:set, :public]))
+    assert status(result) == "pending"
   end
 
   test "repos remain independent and live attempts carry their own start time" do
