@@ -201,7 +201,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
     :ok
   end
 
-  defp stored_server(%{__struct__: @server, state_key_explicit: true} = server), do: %{server | session: nil}
+  defp stored_server(%{__struct__: @server, state_key_explicit: true} = server) do
+    role = if match?(%Session{}, server.session), do: server.session.assignment.grant_role
+    claim = Session.architect_claim_arguments(server.session)
+
+    %{
+      server
+      | session: nil,
+        stale_assignment_role: role || server.stale_assignment_role,
+        stale_architect_claim: claim || server.stale_architect_claim
+    }
+  end
+
   defp stored_server(%{__struct__: @server} = server), do: server
 
   defp lookup(%{__struct__: @server} = server), do: get() |> Map.get(key(server))
