@@ -70,9 +70,28 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
         {:ok, Server.new(config, initialized: true, local_daemon_trusted: config.local_daemon_trusted, session: session, state_key: state_key)}
 
       {:error, _reason} ->
-        {:ok, Server.new(config, initialized: true, local_daemon_trusted: config.local_daemon_trusted, state_key: state_key)}
+        {:ok,
+         Server.new(config,
+           initialized: true,
+           local_daemon_trusted: config.local_daemon_trusted,
+           state_key: state_key,
+           stale_architect_claim: recover_architect_claim(repo, binding)
+         )}
     end
   end
+
+  defp recover_architect_claim(repo, %SessionBinding{recoverable: true, grant_role: "architect"} = binding) do
+    with {:ok, grant} <- AccessGrantRepository.get(repo, binding.access_grant_id),
+         :ok <- require_grant_matches_binding(grant, binding),
+         :ok <- AccessGrantService.require_live_package_authority(repo, grant),
+         {:ok, session} <- Auth.session_from_grant(repo, grant, proof_hash: grant.secret_hash) do
+      Session.architect_claim_arguments(session)
+    else
+      _unavailable -> nil
+    end
+  end
+
+  defp recover_architect_claim(_repo, _binding), do: nil
 
   defp best_effort_touch(config, repo, binding) do
     persist_action(config, repo, {:touch, binding.id, now()})
@@ -100,7 +119,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
         if release_current_assignment_success?(payload, response, server) do
           remember_unbound_initialized(client_key, state_key, @release_current_assignment_tool)
         else
-          {:touch, SessionBinding.binding_id(client_key, state_key), now()}
+          case {session.assignment.grant_role, get_binding(config.repo, client_key, state_key)} do
+            {"architect", {:error, :not_found}} ->
+              remember_session_claim(config, client_key, state_key, session, response, "claim_local_architect_assignment")
+
+            {"architect", {:ok, %SessionBinding{recovery_kind: "ambiguous_claim"}}} ->
+              {:touch, SessionBinding.binding_id(client_key, state_key), now()}
+
+            {"architect", {:ok, binding}} ->
+              if binding.recoverable and require_session_matches_binding(session, binding) == :ok do
+                {:touch, binding.id, now()}
+              else
+                remember_session_claim(config, client_key, state_key, session, response, "claim_local_architect_assignment")
+              end
+
+            _existing_binding ->
+              {:touch, SessionBinding.binding_id(client_key, state_key), now()}
+          end
         end
     end
   end

@@ -137,14 +137,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport07Test do
     assert get_in(assignment_result.response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
   end
 
-  test "HTTP architect claims and slices after one startup tools list", %{repo: repo} do
+  test "HTTP architect auto-claims once, excludes live owners, and reclaims stale ownership", %{repo: repo} do
     work_request =
       create_work_request!(repo,
         id: "WR-HTTP-STABLE-ARCHITECT-CATALOG",
         status: "ready_for_slicing"
       )
 
-    assert {:ok, _handoff} =
+    assert {:ok, handoff} =
              ArchitectHandoff.create_or_replay(repo, work_request.id,
                local_operator?: true,
                handoff_opts: [
@@ -193,22 +193,47 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport07Test do
 
     assert get_in(unclaimed_slice.response, ["error", "data", "reason"]) == "claim_required"
 
-    claim =
-      http!(config, client_key, state_key, "architect-claim", "tools/call", %{
-        "name" => "claim_local_architect_assignment",
-        "arguments" => %{"work_request_id" => work_request.id}
-      })
-
-    assert get_in(claim.response, ["result", "structuredContent", "assignment", "grant_role"]) == "architect"
-
     slice =
       http!(config, client_key, state_key, "slice-without-relist", "tools/call", %{
         "name" => "slice_work_request",
-        "arguments" => slice_arguments
+        "arguments" => Map.put(slice_arguments, "work_request_id", work_request.id)
       })
 
     assert get_in(slice.response, ["result", "structuredContent", "status", "work_request_status"]) == "sliced"
     assert [_work_package_id] = get_in(slice.response, ["result", "structuredContent", "work_package_ids"])
+    assert {:ok, lease} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
+
+    assert {:ok, competing_init} =
+             HTTPTransport.handle(
+               config,
+               %{"jsonrpc" => "2.0", "id" => "competing-init", "method" => "initialize", "params" => initialize_params()},
+               client_key: "competing-architect"
+             )
+
+    guidance_params = %{"name" => "list_guidance_requests", "arguments" => %{"work_request_id" => work_request.id}}
+
+    conflict = http!(config, "competing-architect", competing_init.state_key, "live-owner", "tools/call", guidance_params)
+    assert get_in(conflict.response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
+    assert {:ok, unchanged_lease} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
+    assert unchanged_lease == lease
+
+    lease
+    |> ClaimLease.update_changeset(%{last_seen_at: DateTime.add(DateTime.utc_now(:microsecond), -6, :minute)})
+    |> repo.update!()
+
+    reclaimed = http!(config, "competing-architect", competing_init.state_key, "stale-owner", "tools/call", guidance_params)
+    assert get_in(reclaimed.response, ["result", "structuredContent", "guidance_requests"]) == []
+    assert {:ok, replacement} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
+    refute replacement.id == lease.id
+    refute replacement.actor_id == lease.actor_id
+
+    assert {:ok, _paused} = ClaimLeaseService.pause(repo, replacement.id, %{"actor_id" => "operator"}, reason: "operator pause")
+    blocked = http!(config, client_key, state_key, "paused-owner", "tools/call", guidance_params)
+    assert get_in(blocked.response, ["error", "data", "reason"]) == "claim_lease_lost"
+    still_blocked = http!(config, client_key, state_key, "paused-retry", "tools/call", guidance_params)
+    assert get_in(still_blocked.response, ["error", "data", "reason"]) == "claim_lease_paused"
+
+    assert 1 == repo.aggregate(from(package in WorkPackage, where: package.work_request_id == ^work_request.id and package.id != ^handoff.anchor_package.id), :count)
   end
 
   defp http!(config, client_key, state_key, id, method, params) do

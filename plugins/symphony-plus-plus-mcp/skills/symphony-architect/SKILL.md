@@ -18,12 +18,12 @@ payloads, claim secrets, or secret-bearing commands.
 ## Start
 
 1. Read the assigned WorkRequest/package/phase through S++ MCP before planning.
-   Tool visibility is not authorization; if a tool returns `claim_required` or
-   another binding denial, use the assignment's configured bootstrap. Normal
-   local WorkRequest architect bootstrap is `claim_local_architect_assignment`
-   with the WorkRequest id and optional non-secret `claimed_by`. Use
-   `caller_id` only for the current runtime/thread identity. The claim can
-   recover stale handoff scope only with matching ledger evidence. For
+   Trusted local architect calls automatically claim the WorkRequest. Supply
+   `work_request_id` on the first scoped call; reconnects retain known scope.
+   An active claim held by another architect means leave that work with its
+   owner; retry after the claim expires. Do not copy its identity to join it.
+   Use `claim_local_architect_assignment` only when an explicit bootstrap is
+   needed. Worker sessions cannot become architects implicitly. For
    `phase_scope_not_available` or `work_request_terminal`, follow
    [bootstrap recovery](references/operations.md#bootstrap-recovery).
 2. For WorkRequest lanes, read `read_work_request(work_request_id)`,
