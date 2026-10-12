@@ -1624,6 +1624,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
          delivery_successor_ids: Map.get(delivery_successors_by_id, work_package.id, []),
          blocker_state: activity_context.blocker_state,
          runtime_state: activity_context.runtime_state,
+         current_worker_session: activity_context.current_worker_session,
          worker_signal: activity_context.worker_signal,
          card: %{operational_state: operational_state, metadata: metadata}
        }}

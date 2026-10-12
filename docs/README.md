@@ -25,6 +25,7 @@ documents do not remain in the active documentation tree.
 - Understand the model and boundaries: [Current system](system.md)
 - Operate Symphony++: [Operations](operations.md)
 - Configure deploy observations: [Operator board deployments](operator-board-deployments.md)
+- Configure board area and machine labels: [Operator board labels](operator-board-configuration.md)
 - Review trust boundaries: [Security](security.md)
 - Develop and validate changes: [Development](development.md)
 - Install, connect, upgrade or recover: [Runtime](runtime.md)
