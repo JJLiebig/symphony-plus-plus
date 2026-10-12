@@ -176,6 +176,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
       {:ok,
        %{
          evidence_id: review,
+         mode: bounded_string(map_value(payload, "mode")),
          status: observed_status(payload),
          provider_status: bounded_string(map_value(payload, "status")),
          next_action: bounded_string(map_value(payload, "next_action")),

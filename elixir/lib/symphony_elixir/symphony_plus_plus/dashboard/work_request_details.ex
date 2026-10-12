@@ -13,7 +13,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
   import Ecto.Query, only: [from: 2]
 
   @work_request_detail_comment_target_chunk_size 500
-  @delivery_signal_keys [:dependency_signal, :pr_signal, :review_signal, :worker_signal, :activity_signal]
+  @delivery_signal_keys [:dependency_signal, :pr_signal, :review_signal, :worker_signal, :activity_signal, :board_state]
 
   @type repo :: module()
   @type dashboard_error :: Dashboard.dashboard_error()
