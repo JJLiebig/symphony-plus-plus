@@ -1561,7 +1561,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp auto_claim_architect(%__MODULE__{} = server, _method, _params), do: {:ok, server}
 
   defp architect_claim_call?(profile, role, name) do
-    name not in @local_trusted_work_request_read_tools and
+    name not in ["list_comments" | @local_trusted_work_request_read_tools] and
       (name not in @worker_tools or profile == :architect or role == "architect")
   end
 

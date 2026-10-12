@@ -125,8 +125,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
 
     %{
       updated
-      | stale_assignment_role: server.stale_assignment_role || stored.stale_assignment_role || previous_role,
-        stale_architect_claim: server.stale_architect_claim || stored.stale_architect_claim || previous_claim
+      | stale_assignment_role: server.stale_assignment_role || previous_role || stored.stale_assignment_role,
+        stale_architect_claim: server.stale_architect_claim || previous_claim || stored.stale_architect_claim
     }
   end
 
@@ -155,7 +155,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
         server.session_refresh_required != updated_server.session_refresh_required ->
           put(updated_server)
 
-        server.initialized != updated_server.initialized or server.session != updated_server.session ->
+        binding_changed?(server, updated_server) ->
           put(updated_server)
 
         lookup(updated_server) != nil ->
@@ -166,6 +166,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
       end
 
     if is_integer(timestamp_ms), do: %{updated_server | state_key_version: timestamp_ms}, else: updated_server
+  end
+
+  defp binding_changed?(server, updated_server) do
+    fields = [:initialized, :session, :stale_assignment_role, :stale_architect_claim]
+    Map.take(server, fields) != Map.take(updated_server, fields)
   end
 
   defp stale_explicit_session?(%{__struct__: @server, session_refresh_required: true, state_key_version: version}, timestamp_ms) when version == timestamp_ms, do: true

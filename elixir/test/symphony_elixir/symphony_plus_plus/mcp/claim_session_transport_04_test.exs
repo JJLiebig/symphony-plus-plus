@@ -81,6 +81,47 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
     assert get_in(assignment_response, ["result", "structuredContent", "assignment"]) == nil
     assert get_in(assignment_response, ["result", "structuredContent", "binding", "state"]) in ["unbound", "stale"]
     assert get_in(reconnect_claim_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
+
+    release_request = %{
+      "jsonrpc" => "2.0",
+      "id" => "release-recreated-handle",
+      "method" => "tools/call",
+      "params" => %{"name" => "release_current_assignment", "arguments" => %{}}
+    }
+
+    worker_release = Server.handle(release_request, Server.new(local_mcp_config(repo), state_key: state_key))
+    assert get_in(worker_release, ["result", "structuredContent", "binding_cleared"]) == true
+
+    architect_call = %{
+      "jsonrpc" => "2.0",
+      "id" => "architect-after-explicit-worker-release",
+      "method" => "tools/call",
+      "params" => %{"name" => "list_guidance_requests", "arguments" => %{"work_request_id" => work_request.id}}
+    }
+
+    architect_result = Server.handle(architect_call, Server.new(local_mcp_config(repo), state_key: state_key))
+    assert get_in(architect_result, ["result", "structuredContent", "guidance_requests"]) == []
+
+    {comments, comments_server} =
+      Server.handle_response_state(
+        %{
+          "jsonrpc" => "2.0",
+          "id" => "recreated-architect-comment-browsing",
+          "method" => "tools/call",
+          "params" => %{"name" => "list_comments", "arguments" => %{"target_kind" => "work_request", "target_id" => work_request.id}}
+        },
+        Server.new(local_mcp_config(repo), state_key: state_key)
+      )
+
+    assert get_in(comments, ["result", "structuredContent", "comments"]) == []
+    assert comments_server.session == nil
+
+    architect_release = Server.handle(release_request, Server.new(local_mcp_config(repo), state_key: state_key))
+    assert get_in(architect_release, ["result", "structuredContent", "binding_cleared"]) == true
+
+    omitted_scope_call = put_in(architect_call, ["params", "arguments"], %{})
+    unbound_result = Server.handle(omitted_scope_call, Server.new(local_mcp_config(repo), state_key: state_key))
+    assert get_in(unbound_result, ["error", "data", "reason"]) == "claim_required"
   end
 
   test "response-only handle supports explicit state keys across processes", %{repo: repo} do
