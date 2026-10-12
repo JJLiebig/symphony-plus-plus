@@ -110,7 +110,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
             session: session,
             state_key_version: state_key_version,
             session_refresh_required: session_refresh_required?,
-            stale_assignment_role: server.stale_assignment_role || stored.stale_assignment_role,
+            stale_assignment_role:
+              server.stale_assignment_role || stored.stale_assignment_role ||
+                if(session_refresh_required? and match?(%Session{}, server.session), do: server.session.assignment.grant_role),
             stale_architect_claim:
               server.stale_architect_claim || stored.stale_architect_claim ||
                 if(session_refresh_required?, do: Session.architect_claim_arguments(server.session))

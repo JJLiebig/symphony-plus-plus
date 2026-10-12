@@ -200,6 +200,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
 
     tools_by_name = tools_response |> get_in(["result", "tools"]) |> Map.new(&{&1["name"], &1})
 
+    {stale_architect_response, _stale_architect_server} =
+      Server.handle_response_state(
+        %{
+          "jsonrpc" => "2.0",
+          "id" => "architect-after-stale-worker-handle",
+          "method" => "tools/call",
+          "params" => %{"name" => "list_guidance_requests", "arguments" => %{"work_request_id" => "WR-NOT-A-WORKER-PROMOTION"}}
+        },
+        tools_server
+      )
+
+    assert get_in(stale_architect_response, ["error", "data", "reason"]) == "claim_required"
+
     {stale_solo_response, _stale_solo_server} =
       Server.handle_response_state(
         %{"jsonrpc" => "2.0", "id" => "solo-after-stale-init", "method" => "tools/call", "params" => %{"name" => "solo_attach", "arguments" => %{}}},
