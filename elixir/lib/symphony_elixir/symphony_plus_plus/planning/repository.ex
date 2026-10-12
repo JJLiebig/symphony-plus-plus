@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
   alias Ecto.Changeset
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Artifact
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Finding
   alias SymphonyElixir.SymphonyPlusPlus.Planning.PlanNode
@@ -141,7 +142,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
            existing_progress_event_by_idempotency_key_with_retry(repo, attrs, append_retry_attempts()) do
       repo
       |> insert_with_allocated_value(
-        attrs,
+        stamp_pr_observation(repo, attrs),
         ProgressEvent,
         :sequence,
         changeset_fun
@@ -150,6 +151,47 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
       |> clear_work_request_completion_after_reopening_progress(repo)
     end
   end
+
+  defp stamp_pr_observation(repo, attrs) do
+    payload = Map.get(attrs, "payload")
+
+    if pr_observation_payload?(payload) do
+      work_package_id = Map.get(attrs, "work_package_id")
+
+      previous =
+        case list_progress_events(repo, work_package_id) do
+          {:ok, events} ->
+            current_pr_observation(events)
+
+          {:error, reason} ->
+            repo.rollback(reason)
+        end
+
+      payload =
+        payload
+        |> PullRequestProgress.stringify_keys()
+        |> PullRequestProgress.stamp_observation(previous, DateTime.utc_now(:microsecond))
+
+      Map.put(attrs, "payload", payload)
+    else
+      attrs
+    end
+  end
+
+  defp current_pr_observation(events) do
+    case PullRequestProgress.current_pr_state(events, ["attach_pr", "sync_pr"]) do
+      {:ok, %{payload: payload}} -> payload
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp pr_observation_payload?(%{} = payload) do
+    type = Map.get(payload, "type", Map.get(payload, :type))
+    source_tool = Map.get(payload, "source_tool", Map.get(payload, :source_tool))
+    type == "pr" and source_tool in ["attach_pr", "sync_pr"]
+  end
+
+  defp pr_observation_payload?(_payload), do: false
 
   defp clear_work_request_completion_after_reopening_progress({:ok, %ProgressEvent{} = event}, repo) do
     if reopening_progress_event?(event) do

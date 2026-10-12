@@ -232,7 +232,16 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   @spec herdr_events(Conn.t(), map()) :: Conn.t()
   def herdr_events(conn, _params) do
-    with true <- herdr_consumer?(conn),
+    notification_events(conn, herdr_consumer?(conn))
+  end
+
+  @spec operator_events(Conn.t(), map()) :: Conn.t()
+  def operator_events(conn, _params) do
+    notification_events(conn, local_operator_browser?(conn))
+  end
+
+  defp notification_events(conn, authorized?) do
+    with true <- authorized?,
          :ok <- DashboardPubSub.subscribe() do
       conn =
         conn

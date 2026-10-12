@@ -141,11 +141,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
           repository: bounded_string(first_map_value(pr, ["repository", "pr_repository"])),
           head_sha: head_sha,
           current_head_sha: current_head_sha,
+          created_at: map_value(pr, "created_at"),
+          updated_at: map_value(pr, "updated_at"),
+          observed_at: map_value(pr, "observed_at"),
+          source: if(map_value(pr, "provider_reference"), do: "provider", else: "recorded_pr"),
+          merged_at: map_value(pr, "merged_at"),
+          head_changed_at: map_value(pr, "head_changed_at"),
           head_matches:
             if(filled_string?(raw_head_sha) and filled_string?(raw_current_head_sha),
               do: PullRequest.head_sha_matches?(raw_head_sha, raw_current_head_sha)
             ),
-          checks: checks(map_value(pr, "check_summary"))
+          checks: checks(map_value(pr, "check_summary"), map_value(pr, "checks_changed_at"))
         }
         |> reject_nil_values()
 
@@ -168,6 +174,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
 
     %{
       type: type,
+      mode: evidence |> signal_value(["mode"]) |> bounded_string(),
       args: if(is_map(args), do: Sanitizer.redacted_json(args)),
       status: map_value(observation, "status") || if(filled_string?(type), do: "pending", else: "unavailable"),
       current: evidence |> signal_value(["current", "completed", "completed_count"]) |> integer_value(),
@@ -187,6 +194,84 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   end
 
   def review(%WorkPackage{}, _metadata, _observation), do: %{status: "unavailable"}
+
+  @spec board_state(WorkPackage.t(), map(), map() | nil) :: map()
+  def board_state(work_package, summary, delivery) do
+    pr = Map.get(summary, :pr_signal, %{})
+    review = Map.get(summary, :review_signal) || %{}
+    outcome = delivery && delivery.outcome
+    track = board_track(summary, pr, outcome)
+    {stage, entered_at, source} = board_stage(work_package, pr, review, delivery)
+
+    %{
+      stage: stage,
+      entered_at: stage_timestamp(entered_at),
+      source: source,
+      track: track,
+      outcome: outcome,
+      delivered: if(outcome, do: outcome in ["pr_merged", "completed_no_pr"], else: pr[:status] == "merged" or work_package.status == "merged")
+    }
+  end
+
+  defp board_track(_summary, _pr, "completed_no_pr"), do: "no_pr"
+  defp board_track(_summary, _pr, "pr_merged"), do: "pr"
+
+  defp board_track(summary, pr, _outcome) do
+    if summary[:merge_required] == true or is_integer(pr[:number]) or is_binary(pr[:url]), do: "pr", else: "no_pr"
+  end
+
+  defp board_stage(_package, _pr, _review, %{outcome: "pr_merged"} = delivery),
+    do: {"done", delivery.pr_merged_at, "recorded_delivery"}
+
+  defp board_stage(_package, _pr, _review, %{outcome: "completed_no_pr"} = delivery),
+    do: {"done", delivery.recorded_at, "recorded_delivery"}
+
+  defp board_stage(_package, _pr, _review, %{outcome: outcome}) when outcome in ["superseded", "abandoned"],
+    do: {nil, nil, "recorded_delivery"}
+
+  defp board_stage(_package, %{status: "merged"} = pr, _review, _delivery),
+    do: {"done", pr[:merged_at], pr[:source] || "recorded_pr"}
+
+  defp board_stage(%{status: "merged"}, _pr, _review, _delivery), do: {"done", nil, "recorded_status"}
+
+  defp board_stage(%{status: status}, _pr, _review, _delivery) when status in ["skipped", "closed", "abandoned"],
+    do: {nil, nil, "recorded_status"}
+
+  defp board_stage(_package, _pr, %{status: "in_progress"} = review, _delivery),
+    do: {"review", review[:round_started_at] || review[:started_at], "provider"}
+
+  defp board_stage(%{status: "ready_for_merge"}, _pr, _review, _delivery), do: {"merge", nil, "recorded_status"}
+
+  defp board_stage(%{status: "reviewing"}, _pr, review, _delivery),
+    do: {"review", review[:round_started_at] || review[:started_at], "recorded_status"}
+
+  defp board_stage(package, pr, _review, _delivery) do
+    cond do
+      pr[:status] == "open" and pr[:head_matches] != false ->
+        {"checks", nil, pr[:source] || "recorded_pr"}
+
+      package.status == "ci_waiting" ->
+        {"checks", nil, "recorded_status"}
+
+      package.dispatched_at ->
+        {"build", package.dispatched_at, "dispatched"}
+
+      package.status in ["active", "claimed", "planning", "implementing", "blocked"] ->
+        {"build", nil, "recorded_status"}
+
+      true ->
+        {"queued", package.inserted_at, "created"}
+    end
+  end
+
+  defp stage_timestamp(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> DateTime.to_iso8601(datetime)
+      _invalid -> nil
+    end
+  end
+
+  defp stage_timestamp(value), do: Sanitizer.timestamp(value)
 
   defp review_observation_state(nil), do: "unknown"
 
@@ -399,28 +484,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   defp override_pr_status(signal, %{outcome: "pr_merged"}), do: %{signal | status: "merged"}
   defp override_pr_status(signal, _delivery), do: signal
 
-  defp checks(nil), do: nil
-  defp checks(value) when not is_map(value), do: %{status: "unavailable"}
+  defp checks(nil, _changed_at), do: nil
+  defp checks(value, _changed_at) when not is_map(value), do: %{status: "unavailable"}
 
-  defp checks(value) do
+  defp checks(value, changed_at) do
     %{
-      status: value |> first_map_value(["conclusion", "state", "status"]) |> check_status(),
+      status: value |> first_map_value(["conclusion", "state", "status"]) |> PullRequestProgress.check_status(),
       current: integer_value(first_map_value(value, ["current", "completed", "completed_count"])),
-      total: integer_value(first_map_value(value, ["total", "total_count", "check_count"]))
+      total: integer_value(first_map_value(value, ["total", "total_count", "check_count"])),
+      changed_at: changed_at
     }
     |> reject_nil_values()
   end
-
-  defp check_status(value) when is_binary(value) do
-    case value |> String.trim() |> String.downcase() do
-      status when status in ["success", "succeeded", "passed", "passing", "complete", "completed"] -> "passing"
-      status when status in ["failure", "failed", "failing", "error", "cancelled", "timed_out"] -> "failing"
-      status when status in ["pending", "queued", "running", "in_progress", "in progress", "waiting"] -> "pending"
-      _status -> "unavailable"
-    end
-  end
-
-  defp check_status(_value), do: "unavailable"
 
   defp dependency_input_status(work_package_id, unmet_ids, context) do
     activity = get_in(context, [:activity_contexts, work_package_id]) || WorkPackageActivity.empty_context()
