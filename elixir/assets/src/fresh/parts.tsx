@@ -99,25 +99,25 @@ const DEPLOY_MARK: Record<DeployStep["state"], { mark: string; tone: string }> =
   ok: { mark: "✓", tone: "text-merge" },
   failed: { mark: "✗ failed", tone: "text-fail" },
   pending: { mark: "…", tone: "text-checks" },
+  waiting: { mark: "", tone: "" },
 };
 
-export function deployLabel(steps: DeployStep[], env: DeployStep["env"]) {
-  const step = steps.find((entry) => entry.env === env);
-  return step ? { text: `${env} ${DEPLOY_MARK[step.state].mark}`, tone: DEPLOY_MARK[step.state].tone } : { text: env, tone: "" };
+export function deployLabel(step: DeployStep) {
+  return { text: `${step.env} ${DEPLOY_MARK[step.state].mark}`.trim(), tone: DEPLOY_MARK[step.state].tone };
 }
 
 // After the last merge: where the result is running. Shown only for goals whose repository has its
 // deploy workflows tagged, and faint until a deploy has reported.
 export function Deploy({ at, goal }: { at: number; goal: Goal }) {
   const steps = deployAt(goal, at);
-  if (!goal.deploy) return null;
+  if (steps.length === 0) return null;
 
   return (
     <span className="shrink-0 font-mono text-xs text-faint">
-      {(["Dev", "Prod"] as const).map((env) => {
-        const label = deployLabel(steps, env);
+      {steps.map((step) => {
+        const label = deployLabel(step);
         return (
-          <span key={env}>
+          <span key={step.env}>
             {" ┄ "}
             <span className={label.tone}>{label.text}</span>
           </span>

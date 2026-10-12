@@ -25,8 +25,8 @@ function laneOf(view: GoalView, at: number): keyof Lanes {
 function settledLane(view: GoalView, at: number): keyof Lanes {
   const steps = deployAt(view.goal, at);
   if (steps.some((step) => step.state === "failed")) return "main";
-  const lastStep = Math.max(view.lastMoveAt, ...steps.map((step) => step.at));
-  const undeployed = view.goal.deploy !== undefined && !steps.some((step) => step.state === "ok");
+  const lastStep = Math.max(view.lastMoveAt, ...steps.map((step) => step.at ?? 0));
+  const undeployed = steps.length > 0 && !steps.some((step) => step.state === "ok");
   return at - lastStep < DAY || undeployed ? "landed" : "settled";
 }
 

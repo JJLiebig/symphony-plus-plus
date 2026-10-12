@@ -25,7 +25,10 @@ export type Pkg = {
   prUrl: string | null;
   rounds: number[];
   actors: Array<{ at: number; id: string }>;
+  location: Machine | null;
 };
+// The machine a running session is on, as the operator labelled it. Absent when the machine is not labelled.
+export type Machine = { label: string; kind: string };
 
 export type Ask = { from: number; to: number; title: string };
 // Something the architect wrote, and when.
@@ -33,10 +36,11 @@ export type Note = { text: string; at: number };
 // The architect's own words about a goal. `parked` is set only while the goal is set aside.
 export type ArchitectReport = { brief: Note | null; eta: Note | null; parked: Note | null };
 export type Group = { id: string; title: string; parentId: string | null };
-// Where the result runs after the last merge. Not in the ledger yet; only the mock goals carry it.
-export type DeployStep = { env: "Dev" | "Prod"; state: "ok" | "failed" | "pending"; at: number };
+// Where the result runs after the last merge: one step per environment whose deploy workflow is tagged.
+// "waiting" means nothing has been deployed or started yet.
+export type DeployStep = { env: "Dev" | "Prod"; state: "ok" | "failed" | "pending" | "waiting"; at: number | null };
 // `deploy` is present only for goals whose repository has its deploy workflows tagged.
-export type Goal = { id: string; title: string; area: string[]; repo: string; baseBranch: string | null; createdAt: number; closedAt: number | null; pkgs: Pkg[]; asks: Ask[]; groups: Group[]; report?: ArchitectReport; mock?: boolean; deploy?: DeployStep[] };
+export type Goal = { id: string; title: string; area: string[]; repo: string; baseBranch: string | null; defaultBranch: string | null; createdAt: number; closedAt: number | null; pkgs: Pkg[]; asks: Ask[]; groups: Group[]; report?: ArchitectReport; mock?: boolean; deploy?: DeployStep[] };
 
 export type PkgView = { pkg: Pkg; stage: Stage; since: number; untimed: boolean; failed: boolean; round: number; actor: string | null };
 export type GoalView = { goal: Goal; live: PkgView[]; queued: Pkg[]; done: Pkg[]; ask: Ask | null; state: "live" | "resting" | "settled"; lastMoveAt: number };
@@ -56,7 +60,10 @@ type Slice = {
   board_state?: BoardState | null;
   pr_signal?: { number?: number | null; url?: string | null; created_at?: string | null; head_changed_at?: string | null; checks?: { status?: string | null; changed_at?: string | null } | null } | null;
   review_signal?: { mode?: string | null; round?: number | null; started_at?: string | null; round_started_at?: string | null } | null;
+  session_location?: { label?: string | null; kind?: string | null } | null;
 };
+type Observed = { status?: string | null; at?: string | null };
+type Deployments = Record<string, { dev?: Observed | null; prod?: Observed | null } | null>;
 type BoardState = { stage?: Stage | null; entered_at?: string | null; track?: string | null; delivered?: boolean | null };
 type Written = { text?: string | null; written_at?: string | null };
 type OperatorReport = {
@@ -66,7 +73,7 @@ type OperatorReport = {
   human_escalation?: { question?: string | null; raised_at?: string | null; resolved_at?: string | null } | null;
 };
 type Detail = {
-  work_request: { id: string; title?: string | null; repo?: string | null; repo_display?: string | null; base_branch?: string | null; inserted_at?: string | null; completed_at?: string | null; status?: string | null; operator_report?: OperatorReport | null };
+  work_request: { id: string; title?: string | null; repo?: string | null; repo_display?: string | null; base_branch?: string | null; inserted_at?: string | null; completed_at?: string | null; status?: string | null; operator_report?: OperatorReport | null; area_path?: string[] | null; default_branch?: string | null; deployments?: Deployments | null };
   work_packages?: Slice[];
   product_tree?: { nodes?: Array<{ id: string; title?: string | null; position?: number; parent_id?: string | null }> } | null;
 };
@@ -91,7 +98,7 @@ function buildGoal(detail: Detail, history: Record<string, HistoryEvent[]>, now:
   const request = detail.work_request;
   const title = request.title || request.id;
   const repo = request.repo_display || request.repo || "";
-  const area = areaFor(repo);
+  const area = areaOf(request.area_path, repo);
 
   return {
     id: request.id,
@@ -99,6 +106,8 @@ function buildGoal(detail: Detail, history: Record<string, HistoryEvent[]>, now:
     area,
     repo,
     baseBranch: request.base_branch ?? null,
+    defaultBranch: request.default_branch ?? null,
+    deploy: deployOf(request.deployments),
     createdAt: ms(request.inserted_at) ?? now,
     closedAt: ms(request.completed_at),
     pkgs: (detail.work_packages ?? []).map((slice) => ({ ...buildPkg(slice, history[slice.work_package_id || slice.id] ?? [], now), goalTitle: title, area })),
@@ -112,6 +121,30 @@ function buildGoal(detail: Detail, history: Record<string, HistoryEvent[]>, now:
 function asksOf(escalation: OperatorReport["human_escalation"], now: number): Ask[] {
   if (!escalation?.question) return [];
   return [{ from: ms(escalation.raised_at) ?? now, to: ms(escalation.resolved_at) ?? Infinity, title: escalation.question }];
+}
+
+// The backend's operator-owned labels come first; the local mapping only files what they leave out.
+function areaOf(labelled: string[] | null | undefined, repo: string) {
+  return labelled?.length ? labelled : areaFor(repo);
+}
+
+const ENVS = [["dev", "Dev"], ["prod", "Prod"]] as const;
+const WORST_FIRST: Array<DeployStep["state"]> = ["failed", "pending", "waiting", "ok"];
+
+// One step per tagged environment. A goal spanning several repositories shows the one furthest behind.
+function deployOf(deployments: Deployments | null | undefined): DeployStep[] | undefined {
+  const repos = Object.values(deployments ?? {});
+  const steps = ENVS.flatMap(([key, env]) => {
+    const seen = repos.flatMap((repo) => (repo?.[key] ? [stepOf(env, repo[key])] : []));
+    return seen.sort((left, right) => WORST_FIRST.indexOf(left.state) - WORST_FIRST.indexOf(right.state)).slice(0, 1);
+  });
+  return steps.length > 0 ? steps : undefined;
+}
+
+function stepOf(env: DeployStep["env"], seen: Observed): DeployStep {
+  const at = ms(seen.at);
+  if (seen.status === "ok" || seen.status === "failed") return { env, state: seen.status, at };
+  return { env, state: at === null ? "waiting" : "pending", at };
 }
 
 function reportOf(report: OperatorReport | null | undefined, now: number): ArchitectReport | undefined {
@@ -140,6 +173,7 @@ function blankPkg(slice: Slice, now: number): Pkg {
     prUrl: null,
     rounds: [],
     actors: [],
+    location: slice.session_location?.label ? { label: slice.session_location.label, kind: slice.session_location.kind ?? "" } : null,
   };
 }
 
@@ -306,8 +340,8 @@ function stageAt(pkg: Pkg, seg: Seg | undefined, ended: boolean): Pick<PkgView, 
   return { stage: seg.stage, since: seg.from, untimed: seg.untimed === true, failed: seg.failed };
 }
 
-export function deployAt(goal: Goal, at: number) {
-  return (goal.deploy ?? []).filter((step) => step.at <= at);
+export function deployAt(goal: Goal, at: number): DeployStep[] {
+  return (goal.deploy ?? []).map((step) => (step.at !== null && step.at > at ? { ...step, state: "waiting", at: null } : step));
 }
 
 export function liveCountAt(goals: Goal[], at: number) {

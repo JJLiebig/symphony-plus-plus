@@ -114,7 +114,7 @@ function verdictFor(view: GoalView, bumps: string[], at: number): Verdict {
 
 // Road bumps that belong to the goal as a whole rather than to one package.
 function goalBumps(view: GoalView, at: number) {
-  const failed = deployAt(view.goal, at).filter((step) => step.state === "failed").map((step) => `${step.env} deploy failed ${span(at - step.at)} ago`);
+  const failed = deployAt(view.goal, at).filter((step) => step.state === "failed").map((step) => (step.at === null ? `${step.env} deploy failed` : `${step.env} deploy failed ${span(at - step.at)} ago`));
   return isStalled(view, at) && !view.goal.report?.parked ? [...failed, `Nothing has moved for ${span(at - view.lastMoveAt)} with ${view.queued.length} queued`] : failed;
 }
 
@@ -339,12 +339,17 @@ function Lines({ all, at, keep, state }: { all: boolean; at: number; keep: (id: 
 
 const PRIMARY_BRANCH = /^(main|master)$/;
 
+// Against the repository's default branch where the backend knows it, otherwise against the usual names.
+function offPrimary(goal: Goal, base: string) {
+  return goal.defaultBranch ? base !== goal.defaultBranch : !PRIMARY_BRANCH.test(base);
+}
+
 export function GoalTitle({ goal }: { goal: Goal }) {
   return (
     <>
       {goal.title}
       {goal.mock ? <span className="ml-2 rounded border border-line px-1 align-middle font-mono text-[10px] font-normal uppercase text-faint">mock</span> : null}
-      {goal.baseBranch && !PRIMARY_BRANCH.test(goal.baseBranch) ? <span className="ml-2 align-middle font-mono text-[11px] font-normal text-faint" title="This goal lands on a branch other than the repository's main one">→ {goal.baseBranch}</span> : null}
+      {goal.baseBranch && offPrimary(goal, goal.baseBranch) ? <span className="ml-2 align-middle font-mono text-[11px] font-normal text-faint" title="This goal lands on a branch other than the repository's main one">→ {goal.baseBranch}</span> : null}
     </>
   );
 }
@@ -396,11 +401,14 @@ const MACHINES: Array<{ name: string; kind: string; icon: LucideIcon }> = [
   { name: "vps-1", kind: "Server", icon: Server },
 ];
 
-// Stand-in until the backend records where a session runs: machine, Herdr space, tab and pane.
+const KIND: Record<string, { kind: string; icon: LucideIcon }> = { desktop: { kind: "Desktop", icon: Monitor }, laptop: { kind: "Laptop", icon: Laptop }, server: { kind: "Server", icon: Server } };
+
+// The machine is the operator's label where the backend has one. The Herdr space, tab and pane are a stand-in.
 function sessionPlace(view: PkgView) {
   const hash = [...view.pkg.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const known = view.pkg.location;
   return {
-    machine: MACHINES[hash % MACHINES.length],
+    machine: known ? { name: known.label, ...(KIND[known.kind] ?? { kind: "Machine", icon: Monitor }) } : MACHINES[hash % MACHINES.length],
     space: ((view.pkg.area ?? []).at(-1) ?? "work").split(/[ &]/)[0].toLowerCase(),
     tab: (view.pkg.goalTitle ?? "").split(/\s+/).slice(0, 2).join(" ").toLowerCase(),
     pane: `pane ${(hash % 4) + 1}`,
@@ -409,16 +417,13 @@ function sessionPlace(view: PkgView) {
 
 // Where the session is: only the machine icon on the line, the full address on hover.
 export function Session({ view }: { view: PkgView }) {
-  if (!view.actor) return <span />;
+  if (!view.actor && !view.pkg.location) return <span />;
   const place = sessionPlace(view);
-  const rows = [
-    [place.machine.kind, place.machine.name],
-    ["Where", `${place.space} › ${place.tab} › ${place.pane}`],
-    ["Thread", view.actor],
-  ];
+  const address = view.actor ? `${place.space} › ${place.tab} › ${place.pane}` : "";
+  const rows = [[place.machine.kind, place.machine.name], ...(view.actor ? [["Where", address], ["Thread", view.actor]] : [])];
 
   return (
-    <button className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate(`${place.machine.name} › ${place.space} › ${place.tab} › ${place.pane}`)}>
+    <button className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate([place.machine.name, address].filter(Boolean).join(" › "))}>
       <place.machine.icon className="size-3.5" />
       <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-72 rounded border border-line bg-bg p-2.5 text-left text-xs shadow-xl group-hover:block">
         {rows.map(([label, value]) => (

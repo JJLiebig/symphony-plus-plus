@@ -81,10 +81,10 @@ function Route({ at, goal, isOpen, onPick, phases }: { at: number; goal: Goal; i
       {phases.map((state) => (
         <PhaseBox key={state.phase.id} state={state} open={isOpen(state)} onToggle={() => onPick(state)} />
       ))}
-      {(goal.deploy ? (["Dev", "Prod"] as const) : []).map((env) => {
-        const label = deployLabel(steps, env);
+      {steps.map((step) => {
+        const label = deployLabel(step);
         return (
-          <li key={env} className={`flex w-20 shrink-0 items-center justify-center rounded border border-dashed border-line px-1 text-center font-mono text-xs ${label.tone || "text-faint"}`}>
+          <li key={step.env} className={`flex w-20 shrink-0 items-center justify-center rounded border border-dashed border-line px-1 text-center font-mono text-xs ${label.tone || "text-faint"}`}>
             {label.text}
           </li>
         );

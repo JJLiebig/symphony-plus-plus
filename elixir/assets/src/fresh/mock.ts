@@ -28,6 +28,7 @@ function pkg(goal: Pick<Goal, "id" | "title" | "area">, groupId: string, seq: nu
     prUrl: null,
     rounds: [],
     actors: [],
+    location: null,
   };
   if (plan.merged !== undefined) {
     const endAt = at - plan.merged * MIN;
@@ -65,6 +66,7 @@ function goal(id: string, title: string, repo: string, groups: GroupPlan[], at: 
     ...head,
     repo,
     baseBranch: "main",
+    defaultBranch: "main",
     mock: true,
     createdAt: at - 2 * 24 * 60 * MIN,
     closedAt: null,
@@ -102,7 +104,7 @@ function aftermathGoals(at: number, now: number): Goal[] {
 
   return [
     { ...restore, baseBranch: "release/0.9" },
-    { ...playback, deploy: [{ env: "Dev", state: "failed", at: at - 55 * MIN }], report: report(at, 40, "Everything is merged, but the dev deploy failed on the migration step. I am rerunning it now.", "On dev within the hour if the rerun passes") },
+    { ...playback, deploy: [{ env: "Dev", state: "failed", at: at - 55 * MIN }, { env: "Prod", state: "waiting", at: null }], report: report(at, 40, "Everything is merged, but the dev deploy failed on the migration step. I am rerunning it now.", "On dev within the hour if the rerun passes") },
     { ...timing, deploy: [{ env: "Dev", state: "ok", at: at - 165 * MIN }, { env: "Prod", state: "ok", at: at - 150 * MIN }], report: report(at, 145, "All four packages are merged and live. Step timings now show in every fast review.") },
     { ...search, report: report(at, 2800, "The tokenizer and scorer are in. The rest waits for the index migration.", undefined, "Waiting for the index migration to land next week.") },
   ];
@@ -165,5 +167,6 @@ export function mockGoals(at: number, now: number): Goal[] {
   quotes.report = report(at, 50, "Four of seven carrier adapters are in and the rest are moving. I need production credentials for two carriers before their adapters can be verified.", "Adapters done tomorrow once the credentials arrive");
 
   // Both repositories have their deploy workflows tagged, so the board shows where the result is running.
-  return [{ ...payouts, deploy: [] }, { ...quotes, deploy: [] }, ...aftermathGoals(at, now)];
+  const untouched: Goal["deploy"] = [{ env: "Dev", state: "waiting", at: null }, { env: "Prod", state: "waiting", at: null }];
+  return [{ ...payouts, deploy: untouched }, { ...quotes, deploy: untouched }, ...aftermathGoals(at, now)];
 }
