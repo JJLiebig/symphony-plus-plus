@@ -119,6 +119,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
       |> Map.put("work_package", WorkRequestPayloads.work_package(work_package))
       |> Map.update!("work_package", &Map.merge(&1, %{"product_description" => work_package.product_description, "engineering_scope" => work_package.engineering_scope}))
       |> Map.put("delivery_context", handoff)
+      |> Redactor.json_safe()
       |> Redactor.redact_output()
 
     %{
