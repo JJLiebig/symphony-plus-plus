@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 
+import { GoalActions } from "./actions";
 import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import type { GoalView } from "./model";
@@ -30,17 +31,20 @@ function GoalReport({ at, view }: { at: number; view: GoalView }) {
 
   return (
     <article className="rounded-lg border border-line bg-panel p-5" data-goal={view.goal.id}>
-      <button className="block w-full text-left" type="button" onClick={toggle}>
-        <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">{areaLabel(view.goal.area)}</span>
-        <span className="mt-1 flex items-baseline gap-3">
-          <ChevronRight className={`size-4 shrink-0 self-center text-faint transition-transform ${level === "closed" ? "" : "rotate-90"}`} />
-          <span className="min-w-0 flex-1 text-lg font-semibold leading-snug">
-            <GoalTitle goal={view.goal} />
+      <div className="flex items-start">
+        <button className="block min-w-0 flex-1 text-left" type="button" onClick={toggle}>
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">{areaLabel(view.goal.area)}</span>
+          <span className="mt-1 flex items-baseline gap-3">
+            <ChevronRight className={`size-4 shrink-0 self-center text-faint transition-transform ${level === "closed" ? "" : "rotate-90"}`} />
+            <span className="min-w-0 flex-1 text-lg font-semibold leading-snug">
+              <GoalTitle goal={view.goal} />
+            </span>
+            <SinceChip goalId={view.goal.id} />
+            <VerdictBadge verdict={report.verdict} />
           </span>
-          <SinceChip goalId={view.goal.id} />
-          <VerdictBadge verdict={report.verdict} />
-        </span>
-      </button>
+        </button>
+        <GoalActions className="ml-2 mt-5" goal={view.goal} />
+      </div>
       <p className="mt-2 max-w-[72ch] pl-7 text-[15px] leading-relaxed text-ink/90">
         {report.brief}
         {report.eta ? <span className="text-dim"> ETA: {report.eta}.</span> : null}

@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 
+import { GoalActions } from "./actions";
 import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import type { GoalView } from "./model";
@@ -46,36 +47,39 @@ function GoalRow({ at, tagged, view }: { at: number; tagged?: boolean; view: Goa
   return (
     <div data-goal={view.goal.id}>
       {/* Two lines, each with words on the left and the matching figure on the right edge. */}
-      <button className="flex w-full items-start gap-3 py-2.5 pr-2 text-left hover:bg-panel" type="button" onClick={toggle}>
-        <ChevronRight className={`mt-1 size-4 shrink-0 text-faint transition-transform ${level === "closed" ? "" : "rotate-90"}`} />
-        <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-3">
-            <span className="truncate font-medium">
-              <GoalTitle goal={view.goal} />
-            </span>
-            <VerdictBadge small verdict={report.verdict} />
-            <SinceChip goalId={view.goal.id} />
-            {tagged ? <span className="shrink-0 text-[11px] uppercase tracking-[0.12em] text-faint">{areaLabel(view.goal.area)}</span> : null}
-            <span className="ml-auto shrink-0 pl-6 font-mono text-xs text-dim">
-              {view.live.length > 0 ? `${view.live.length} moving · ` : ""}
-              {view.done.length}/{total} done
-            </span>
-          </span>
-          <span className="mt-1 flex items-center gap-6">
-            <span className="flex min-w-0 flex-1 items-baseline">
-              <span className="truncate text-sm text-dim">
-                {report.brief}
-                {report.eta ? ` ETA: ${report.eta}.` : ""}
+      <div className="flex items-start">
+        <button className="flex min-w-0 flex-1 items-start gap-3 py-2.5 pr-2 text-left hover:bg-panel" type="button" onClick={toggle}>
+          <ChevronRight className={`mt-1 size-4 shrink-0 text-faint transition-transform ${level === "closed" ? "" : "rotate-90"}`} />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline gap-3">
+              <span className="truncate font-medium">
+                <GoalTitle goal={view.goal} />
               </span>
-              <BriefAge at={at} report={report} />
+              <VerdictBadge small verdict={report.verdict} />
+              <SinceChip goalId={view.goal.id} />
+              {tagged ? <span className="shrink-0 text-[11px] uppercase tracking-[0.12em] text-faint">{areaLabel(view.goal.area)}</span> : null}
+              <span className="ml-auto shrink-0 pl-6 font-mono text-xs text-dim">
+                {view.live.length > 0 ? `${view.live.length} moving · ` : ""}
+                {view.done.length}/{total} done
+              </span>
             </span>
-            <span className="flex w-[440px] shrink-0 items-center justify-end">
-              <DotStrip view={view} />
-              <Deploy at={at} goal={view.goal} />
+            <span className="mt-1 flex items-center gap-6">
+              <span className="flex min-w-0 flex-1 items-baseline">
+                <span className="truncate text-sm text-dim">
+                  {report.brief}
+                  {report.eta ? ` ETA: ${report.eta}.` : ""}
+                </span>
+                <BriefAge at={at} report={report} />
+              </span>
+              <span className="flex w-[440px] shrink-0 items-center justify-end">
+                <DotStrip view={view} />
+                <Deploy at={at} goal={view.goal} />
+              </span>
             </span>
           </span>
-        </span>
-      </button>
+        </button>
+        <GoalActions className="mt-2" goal={view.goal} />
+      </div>
       <AskLine at={at} className="mb-3 ml-7 mr-2" view={view} />
       {level !== "closed" ? (
         <div className="pb-3 pl-5">

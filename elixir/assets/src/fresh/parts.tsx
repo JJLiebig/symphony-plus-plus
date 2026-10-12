@@ -1,3 +1,4 @@
+import { GoalActions } from "./actions";
 import { deployAt, span, type DeployStep, type Goal, type GoalView, type PkgView, type Stage } from "./model";
 import { POP, useFlash } from "./motion";
 
@@ -75,12 +76,13 @@ export function Shelf({ at, hint, label, views }: { at: number; hint?: string; l
       </summary>
       <ul className="mt-2 max-w-[900px] space-y-1">
         {views.map((view) => (
-          <li key={view.goal.id} className="flex justify-between gap-4">
+          <li key={view.goal.id} className="flex items-center justify-between gap-4">
             <span className="shrink-0 truncate">{view.goal.title}</span>
             <span className="min-w-0 flex-1 truncate text-faint">{view.goal.report?.parked?.text}</span>
             <span className="shrink-0 font-mono text-xs text-faint">
               {view.done.length}/{view.done.length + view.queued.length + view.live.length} · {span(at - view.lastMoveAt)}
             </span>
+            <GoalActions goal={view.goal} />
           </li>
         ))}
       </ul>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ReloadContext } from "./actions";
 import { areaLabel, setAreas, type AreaRule } from "./areas";
 import { Briefing } from "./briefing";
 import { mockGoals } from "./mock";
@@ -103,11 +104,13 @@ export function App() {
       </header>
       <main className="px-8 py-6">
         <SinceLine at={at} changes={changes} since={since} width={DIRECTIONS[direction].width} onSeen={() => smoothly(() => setSeenAt(at))} />
-        <SinceContext.Provider value={changes.notes}>
-          <DensityContext.Provider value={density}>
-            <View at={at} views={shown} />
-          </DensityContext.Provider>
-        </SinceContext.Provider>
+        <ReloadContext.Provider value={read}>
+          <SinceContext.Provider value={changes.notes}>
+            <DensityContext.Provider value={density}>
+              <View at={at} views={shown} />
+            </DensityContext.Provider>
+          </SinceContext.Provider>
+        </ReloadContext.Provider>
       </main>
       {replay ? <Scrubber at={at} data={data} onChange={setAt} /> : null}
       {located ? <p className="fixed bottom-24 left-1/2 z-30 -translate-x-1/2 rounded bg-ink px-3 py-2 text-sm text-bg">Would jump to the Herdr pane running “{located}”.</p> : null}

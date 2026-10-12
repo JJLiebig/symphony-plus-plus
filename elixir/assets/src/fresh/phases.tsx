@@ -1,5 +1,6 @@
 import { Check, ChevronRight } from "lucide-react";
 
+import { GoalActions } from "./actions";
 import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import { deployAt, type Goal, type GoalView } from "./model";
@@ -38,15 +39,18 @@ function GoalRoute({ at, view }: { at: number; view: GoalView }) {
 
   return (
     <section className="py-5" data-goal={view.goal.id}>
-      <button className="flex w-full items-baseline gap-3 text-left" type="button" onClick={toggle}>
-        <ChevronRight className={`size-4 shrink-0 self-center text-faint transition-transform ${level === "closed" ? "" : "rotate-90"}`} />
-        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">{areaLabel(view.goal.area.slice(-1))}</span>
-        <span className="min-w-0 flex-1 truncate font-semibold">
-          <GoalTitle goal={view.goal} />
-        </span>
-        <SinceChip goalId={view.goal.id} />
-        <VerdictBadge verdict={report.verdict} />
-      </button>
+      <div className="flex items-center">
+        <button className="flex min-w-0 flex-1 items-baseline gap-3 text-left" type="button" onClick={toggle}>
+          <ChevronRight className={`size-4 shrink-0 self-center text-faint transition-transform ${level === "closed" ? "" : "rotate-90"}`} />
+          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">{areaLabel(view.goal.area.slice(-1))}</span>
+          <span className="min-w-0 flex-1 truncate font-semibold">
+            <GoalTitle goal={view.goal} />
+          </span>
+          <SinceChip goalId={view.goal.id} />
+          <VerdictBadge verdict={report.verdict} />
+        </button>
+        <GoalActions className="ml-2" goal={view.goal} />
+      </div>
       <p className="mt-1 pl-7 text-sm text-dim">
         {report.brief}
         {report.eta ? ` ETA: ${report.eta}.` : ""}
