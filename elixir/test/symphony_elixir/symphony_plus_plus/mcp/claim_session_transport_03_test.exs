@@ -52,7 +52,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
 
     assert get_in(claim_response, ["result", "structuredContent", "assignment", "grant_role"]) == "architect"
     assert get_in(claim_response, ["result", "structuredContent", "assignment", "work_package_id"]) == handoff.anchor_package.id
-    assert get_in(claim_response, ["result", "structuredContent", "assignment", "claimed_by"]) == ArchitectHandoff.claimed_by()
+    owner = claimed_server.session.assignment.claimed_by
+    assert String.starts_with?(owner, "architect:mcp-state:")
+    refute owner == config.claimed_by
+    assert get_in(claim_response, ["result", "structuredContent", "assignment", "claimed_by"]) == owner
     assert get_in(claim_response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "created"
     assert claimed_server.session.assignment.grant_role == "architect"
     assert Scope.work_request(work_request.id) in claimed_server.session.assignment.scopes
@@ -61,7 +64,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     refute inspect(claim_response) =~ "private_handoff"
 
     assert {:ok, claimed_grant} = AccessGrantRepository.get(repo, handoff.grant.id)
-    assert claimed_grant.claimed_by == ArchitectHandoff.claimed_by()
+    assert claimed_grant.claimed_by == owner
     assert {:ok, scope_rows} = AccessGrantRepository.list_scopes(repo, handoff.grant.id)
     assert Enum.any?(scope_rows, &(&1.scope_type == "work_request" and &1.scope_id == work_request.id))
 
@@ -108,12 +111,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
         local_mcp_server(config, "local-architect-reboot-state")
       )
 
-    assert get_in(reboot_response, ["result", "structuredContent", "assignment", "grant_id"]) == handoff.grant.id
-    assert get_in(reboot_response, ["result", "structuredContent", "local_claim", "caller_id"]) == "codex-local-architect-reboot"
-    assert get_in(reboot_response, ["result", "structuredContent", "local_claim", "claimed_by"]) == ArchitectHandoff.claimed_by()
-    assert get_in(reboot_response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "heartbeat"
-    assert rebooted_server.session.assignment.grant_role == "architect"
-    assert Scope.work_request(work_request.id) in rebooted_server.session.assignment.scopes
+    assert get_in(reboot_response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
+    assert rebooted_server.session == nil
+    assert {:ok, current_lease} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
+    assert current_lease.id == claimed_server.session.claim_lease_id
+    assert current_lease.actor_display_name == owner
   end
 
   test "claim_local_architect_assignment creates a missing local handoff for existing WorkRequests", %{repo: repo} do
@@ -454,7 +456,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     new_arguments = %{"work_request_id" => work_request.id, "claimed_by" => "architect-after-reboot"}
 
     {claim_response, claimed_server} =
-      Server.handle_state(
+      Server.handle_response_state(
         %{
           "jsonrpc" => "2.0",
           "id" => "local-architect-stale-claim",
@@ -472,7 +474,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     |> repo.update!()
 
     {response, server} =
-      Server.handle_state(
+      Server.handle_response_state(
         %{
           "jsonrpc" => "2.0",
           "id" => "local-architect-rebind-after-stale-worker",
@@ -488,9 +490,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     assert get_in(response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "reclaimed"
     assert server.session.assignment.grant_role == "architect"
     assert server.session.assignment.work_package_id == handoff.anchor_package.id
+
+    {old_handle_response, _old_handle_server} =
+      Server.handle_response_state(
+        %{
+          "jsonrpc" => "2.0",
+          "id" => "old-architect-handle-must-not-adopt-replacement",
+          "method" => "tools/call",
+          "params" => %{"name" => "list_guidance_requests", "arguments" => %{}}
+        },
+        claimed_server
+      )
+
+    assert get_in(old_handle_response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
+    assert {:ok, current_lease} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
+    assert current_lease.actor_display_name == "architect-after-reboot"
   end
 
-  test "claim_local_architect_assignment reconnects an active same-anchor assignment without its owner label", %{repo: repo} do
+  test "claim_local_architect_assignment preserves a bound owner but rejects an unrelated session without its owner label", %{repo: repo} do
     work_request =
       create_work_request!(repo,
         id: "WR-MCP-LOCAL-ARCHITECT-ACTIVE-BOUND",
@@ -531,9 +548,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
         local_mcp_server(local_mcp_config(repo), "local-architect-active-reclaim-state")
       )
 
-    assert get_in(response, ["result", "structuredContent", "assignment", "claimed_by"]) == "architect-before-reboot"
-    assert get_in(response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "heartbeat"
-    assert server.session.assignment.grant_role == "architect"
+    assert get_in(response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
+    assert get_in(response, ["error", "data", "action"]) == "wait_for_claim_expiry"
+    assert server.session == nil
+
+    {reconnect_response, reconnected_server} =
+      Server.handle_state(
+        %{
+          "jsonrpc" => "2.0",
+          "id" => "local-architect-bound-reconnect",
+          "method" => "tools/call",
+          "params" => %{"name" => "claim_local_architect_assignment", "arguments" => %{"work_request_id" => work_request.id}}
+        },
+        claimed_server
+      )
+
+    assert get_in(reconnect_response, ["result", "structuredContent", "assignment", "claimed_by"]) == "architect-before-reboot"
+    assert reconnected_server.session.claim_lease_id == claimed_server.session.claim_lease_id
 
     assert {:ok, current_lease} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
     assert current_lease.id == claimed_server.session.claim_lease_id

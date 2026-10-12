@@ -484,8 +484,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.LocalAssignmentClaims do
          phase_id: phase_id,
          mode: local_claim_transport_mode(server),
          caller_id: caller_id,
-         claimed_by: claimed_by,
-         claimed_by_explicit?: Map.has_key?(arguments, "claimed_by")
+         claimed_by: claimed_by
        }}
     end
   end
@@ -632,16 +631,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.LocalAssignmentClaims do
   defp require_architect_handoff_anchor_kind(%WorkPackage{}), do: {:error, :architect_anchor_scope_mismatch}
 
   defp ensure_local_architect_assignment_claim_lease(repo, %WorkPackage{} = anchor, claim) do
-    case ensure_requested_local_architect_assignment_claim_lease(repo, anchor, claim) do
-      {:error, :claim_lease_active_for_other_actor} when not claim.claimed_by_explicit? ->
-        reconnect_active_local_architect_assignment(repo, anchor, claim)
-
-      result ->
-        result
-    end
-  end
-
-  defp ensure_requested_local_architect_assignment_claim_lease(repo, %WorkPackage{} = anchor, claim) do
     case LocalClaimLeases.ensure(
            repo,
            anchor.id,
@@ -651,20 +640,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.LocalAssignmentClaims do
          ) do
       {:ok, lease, lease_action} -> {:ok, claim, lease, lease_action}
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp reconnect_active_local_architect_assignment(repo, %WorkPackage{} = anchor, claim) do
-    case ClaimLeaseService.current_for_work_package(repo, anchor.id) do
-      {:ok, %ClaimLease{} = lease} ->
-        case ClaimLeaseService.heartbeat(repo, lease.id, stale_after_ms: @local_assignment_claim_stale_after_ms) do
-          {:ok, renewed} -> {:ok, %{claim | claimed_by: renewed.actor_display_name}, renewed, :heartbeat}
-          {:error, :claim_stale} -> ensure_requested_local_architect_assignment_claim_lease(repo, anchor, claim)
-          {:error, reason} -> {:error, reason}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 
@@ -820,7 +795,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.LocalAssignmentClaims do
     end
   end
 
-  defp default_architect_claimed_by(%{}), do: ArchitectHandoff.claimed_by()
+  defp default_architect_claimed_by(%{session: %Session{assignment: %{grant_role: "architect", claimed_by: owner}}}), do: owner
+  defp default_architect_claimed_by(%{stale_architect_claim: %{"claimed_by" => owner}}), do: owner
+  defp default_architect_claimed_by(server), do: "architect:" <> default_caller_id(server)
 
   defp default_caller_id(%{state_key_explicit: true} = server) do
     material =
@@ -930,8 +907,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.LocalAssignmentClaims do
     {:error, -32_001, "Unauthorized",
      claim_lease_active_for_other_actor_data(
        @local_architect_assignment_claim_tool,
-       "Reuse the same work_request_id and claimed_by. If the live claim belongs to another owner or is stale, ask the operator to recycle it."
-     )}
+       "Another architect is actively handling this WorkRequest. Leave it with that owner; retry after its claim expires."
+     )
+     |> Map.put("action", "wait_for_claim_expiry")}
   end
 
   defp local_architect_assignment_claim_error({:phase_scope_not_available, missing_evidence}) do

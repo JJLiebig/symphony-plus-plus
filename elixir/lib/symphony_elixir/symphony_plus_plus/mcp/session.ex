@@ -4,9 +4,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Session do
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.CurrentWorkRequest
 
   @enforce_keys [:assignment]
   defstruct [:assignment, :proof_hash, :claim_lease_id, :claim_actor_kind, :claim_actor_id, :claim_actor_display_name]
+
+  @doc false
+  @spec architect_claim_arguments(t() | nil) :: map() | nil
+  def architect_claim_arguments(%__MODULE__{assignment: %{grant_role: "architect"}} = session) do
+    case CurrentWorkRequest.id_argument(%{}, session) do
+      {:ok, id} -> %{"work_request_id" => id, "claimed_by" => session.assignment.claimed_by}
+      _missing_scope -> nil
+    end
+  end
+
+  def architect_claim_arguments(_session), do: nil
 
   @public_assignment_fields [
     "grant_id",
