@@ -7,10 +7,12 @@ dashboard improve workflow but cannot grant authority.
 
 - A worker claims exactly one WorkPackage.
 - An architect claims exactly one WorkRequest.
+- Trusted local architect calls acquire or recover the claim automatically
+  when the WorkRequest is known. Read-only browsing does not claim work.
 - `claimed_by` is an optional audit label, not a secret.
 - Repository, branch, worktree, phase, and anchor values are derived from the
   ledger and treated as validation context when supplied.
-- Fresh claims block competing workers; stale unpaused residue can be
+- Fresh claims block competing workers and architects; stale unpaused residue can be
   reclaimed; paused claims remain operator-controlled.
 
 ## Capabilities And Scope

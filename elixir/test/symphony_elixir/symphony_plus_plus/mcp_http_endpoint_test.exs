@@ -9,6 +9,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
+  alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.Service, as: ClaimLeaseService
 
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{
     ClientLeases,
@@ -851,7 +852,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert get_in(json_response(assignment, 200), ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
   end
 
-  test "POST /mcp rehydrates claimed local architect session after backend state reset" do
+  test "POST /mcp auto-claims and rehydrates local architect scope after backend state reset" do
     assert {:ok, work_request} =
              WorkRequestRepository.create(
                Repo,
@@ -872,23 +873,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     claim =
       post_json(
-        tool_call_request("local-architect-claim", "claim_local_architect_assignment", %{
-          "work_request_id" => work_request.id,
-          "architect_anchor_work_package_id" => handoff.anchor_package.id,
-          "repo" => work_request.repo,
-          "base_branch" => work_request.base_branch,
-          "phase_id" => handoff.phase.id,
-          "caller_id" => "codex-http-rehydrate-architect",
-          "claimed_by" => "local-architect-http-rehydrate"
-        }),
+        tool_call_request("local-architect-auto-claim", "list_guidance_requests", %{"work_request_id" => work_request.id}),
         [{"mcp-session-id", session_id}]
       )
 
     claim_payload = get_in(json_response(claim, 200), ["result", "structuredContent"])
-    assert get_in(claim_payload, ["assignment", "grant_role"]) == "architect"
-    assert get_in(claim_payload, ["assignment", "work_package_id"]) == handoff.anchor_package.id
-    assert get_in(claim_payload, ["local_claim", "claim_lease_action"]) == "created"
-    claim_lease_id = get_in(claim_payload, ["local_claim", "claim_lease_id"])
+    assert claim_payload["guidance_requests"] == []
+    assert [%ClaimLease{id: claim_lease_id, actor_display_name: owner}] = active_claim_leases(handoff.anchor_package.id)
 
     reset_mcp_runtime_state()
 
@@ -912,7 +903,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       )
 
     assert get_in(json_response(delivery_board, 200), ["result", "structuredContent", "work_request", "id"]) == work_request.id
-    assert [%ClaimLease{id: ^claim_lease_id, actor_display_name: "local-architect-http-rehydrate"}] = active_claim_leases(handoff.anchor_package.id)
+    assert [%ClaimLease{id: ^claim_lease_id, actor_display_name: ^owner}] = active_claim_leases(handoff.anchor_package.id)
+
+    assert {:ok, _released} = ClaimLeaseService.release(Repo, claim_lease_id, reason: "connection recovery regression")
+    reset_mcp_runtime_state()
+
+    recovered = post_json(tool_call_request("local-architect-recover-scope", "list_guidance_requests", %{}), [{"mcp-session-id", session_id}])
+    assert get_in(json_response(recovered, 200), ["result", "structuredContent", "guidance_requests"]) == []
+    assert [%ClaimLease{id: replacement_id, actor_display_name: ^owner}] = active_claim_leases(handoff.anchor_package.id)
+    refute replacement_id == claim_lease_id
   end
 
   test "POST /mcp claimed worker follow-ups fail closed after grant revocation" do
@@ -967,6 +966,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       )
 
     assert get_in(json_response(progress, 200), ["error", "data", "reason"]) == "claim_required"
+
+    reset_mcp_runtime_state()
+
+    architect_call =
+      post_json(
+        tool_call_request("revoked-worker-architect-call", "list_guidance_requests", %{"work_request_id" => "WR-NOT-A-WORKER-PROMOTION"}),
+        [{"mcp-session-id", session_id}]
+      )
+
+    assert get_in(json_response(architect_call, 200), ["error", "data", "reason"]) == "claim_required"
 
     assignment_resource =
       post_json(resources_read_request("revoked-resource", "sympp://assignment/current"), [{"mcp-session-id", session_id}])
