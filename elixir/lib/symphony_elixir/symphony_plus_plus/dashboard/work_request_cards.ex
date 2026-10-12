@@ -146,6 +146,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
 
     work_request
     |> base_payload(repo_identity_catalog)
+    |> Map.put(:operator_report, Keyword.get(opts, :operator_report))
     |> Map.put(:completed_at, timestamp(completion_state.completed_at))
     |> Map.put(:completion_source, work_request.completion_source)
     |> Map.put(:archived_at, timestamp(completion_state.archived_at))

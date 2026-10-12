@@ -342,8 +342,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools03Test do
 
     assert get_in(response, ["result", "structuredContent", "status", "work_request_status"]) == "sliced"
     assert [work_package_id] = get_in(response, ["result", "structuredContent", "work_package_ids"])
-    # The 611-package Daedalus request exhausted its transaction deadline loading this history twice.
-    assert :counters.get(counter, 1) <= 3
+    # Keep history reads constant; operator reports add one batched architect-anchor read.
+    assert :counters.get(counter, 1) <= 4
     assert {:ok, tree} = ProductTree.tree_for_work_request(repo, work_request.id)
     assert get_in(response, ["result", "structuredContent", "product_tree_revision", "id"]) == tree.latest_revision.id
     assert work_package_id in tree.latest_revision.tree_snapshot["root_work_package_ids"]

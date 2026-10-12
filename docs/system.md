@@ -44,6 +44,15 @@ All ledger operations, including Solo, use MCP. The packaged
 
 ## Review And Delivery Authority
 
+The architect can optionally author a goal brief, free-text ETA, parking reason,
+and explicit human escalation question. The dashboard and `read_work_request`
+expose these under `work_request.operator_report`, with server-written times.
+Partial edits preserve other fields; resolving an escalation or resuming parked
+work retains the original question/reason and its times. Ordinary questions and
+worker waits are not escalation. Reports neither create/clear blockers nor
+complete/reopen work: `completed_at` remains delivery truth. Reports reuse the
+authenticated architect anchor history; there is no worker reporting cadence.
+
 A declared review requirement identifies a provider and optional arguments,
 such as `review-suite` with its selected mode. It can also name another plugin
 or a human process. Results remain with the provider and worker handoff;

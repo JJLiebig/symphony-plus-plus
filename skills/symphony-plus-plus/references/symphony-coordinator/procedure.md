@@ -48,6 +48,13 @@ Worker prompts should include:
 
 ## Supervise
 
+For an existing WorkRequest you coordinate, optionally publish a brief/ETA,
+parking reason, or explicit human question at meaningful delivery milestones or
+road bumps using the [architect report procedure](../symphony-architect/procedure.md#guidance).
+Route decisions to the chief when present, otherwise the user; a conversational
+answer is enough to resolve the escalation. Do not create a WorkRequest solely
+for reporting, require worker receipts, or turn ordinary waits into escalation.
+
 - Do not take over worker implementation by default.
 - Answer architecture questions in the conversation; escalate human/product
   decisions to a chief when present, otherwise the user. Questions and ordinary
