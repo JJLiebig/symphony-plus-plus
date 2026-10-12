@@ -486,11 +486,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
 
     assert {:ok, _declared} =
              SymphonyElixir.SymphonyPlusPlus.Planning.Repository.append_audit_progress_event_for_work_package(
-               repo, architect_session.assignment, package.id, %{
+               repo,
+               architect_session.assignment,
+               package.id,
+               %{
                  "summary" => "Architect declared a concrete work blocker",
                  "idempotency_key" => "explicit-guidance-blocker",
                  "payload" => %{"type" => "blocker", "source_tool" => "report_blocker", "blocker_id" => "product-decision", "active" => true}
-               })
+               }
+             )
 
     ready_response = mcp_tool(repo, worker_session, "mark_ready", %{})
     assert get_in(ready_response, ["error", "data", "reason_code"]) == "blocker_closeout_required"

@@ -335,9 +335,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
   test "architect dispatch and normal PR handoff need no worker MCP calls", %{repo: repo} do
     {anchor, session, _grant} =
-      create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-SLICE-DISPATCH", [
-        "dispatch:work_request", "write:work_request", "read:work_request"
-      ], repo: "nextide/repo")
+      create_phase_architect_session(
+        repo,
+        "SYMPP-ARCHITECT-WR-SLICE-DISPATCH",
+        [
+          "dispatch:work_request",
+          "write:work_request",
+          "read:work_request"
+        ], repo: "nextide/repo")
 
     work_request =
       create_work_request!(repo,
@@ -435,9 +440,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert get_in(mismatch, ["error", "code"]) == -32_602
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
 
-      assert {:ok, other_owner} = ClaimLeaseService.claim(repo, approved_slice.id,
-        %{"actor_kind" => "agent", "actor_id" => "another-worker"},
-        now: DateTime.add(DateTime.utc_now(:microsecond), -1, :hour), stale_after_ms: 1)
+      assert {:ok, other_owner} =
+               ClaimLeaseService.claim(repo, approved_slice.id, %{"actor_kind" => "agent", "actor_id" => "another-worker"},
+                 now: DateTime.add(DateTime.utc_now(:microsecond), -1, :hour),
+                 stale_after_ms: 1
+               )
 
       for ownership <- [:stale, :paused] do
         if ownership == :paused do
@@ -453,42 +460,59 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
       assert {:ok, _released} = ClaimLeaseService.release(repo, other_owner.id, reason: "Architect confirmed the owner finished")
 
-      declared = mcp_tool(repo, session, "append_progress", %{
-        "work_package_id" => approved_slice.id,
-        "summary" => "Architect needs an affected-scope decision",
-        "idempotency_key" => "explicit-work-blocker",
-        "payload" => %{"type" => "blocker", "active" => true, "blocker_id" => "decision"}
-      })
+      declared =
+        mcp_tool(repo, session, "append_progress", %{
+          "work_package_id" => approved_slice.id,
+          "summary" => "Architect needs an affected-scope decision",
+          "idempotency_key" => "explicit-work-blocker",
+          "payload" => %{"type" => "blocker", "active" => true, "blocker_id" => "decision"}
+        })
+
       refute declared["error"]
 
       waiting = mcp_tool(repo, session, "sync_pr", handoff)
       assert get_in(waiting, ["result", "structuredContent", "work_package", "status"]) == "ready_for_worker"
       assert "no_active_blockers" in get_in(waiting, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
 
-      resolved = mcp_tool(repo, session, "resolve_blocker", %{
-        "work_package_id" => approved_slice.id,
-        "blocker_id" => "decision", "resolution" => "Architect resolved the scope decision",
-        "summary" => "Work may finish", "idempotency_key" => "explicit-work-blocker-resolved"
-      })
+      resolved =
+        mcp_tool(repo, session, "resolve_blocker", %{
+          "work_package_id" => approved_slice.id,
+          "blocker_id" => "decision",
+          "resolution" => "Architect resolved the scope decision",
+          "summary" => "Work may finish",
+          "idempotency_key" => "explicit-work-blocker-resolved"
+        })
+
       refute resolved["error"]
 
-      assert {:ok, prerequisite} = CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id,
-        work_request_work_package_attrs(id: "WRS-MCP-DISPATCH-PREREQUISITE", base_branch: anchor.base_branch))
-      assert {:ok, _edge} = SymphonyElixir.SymphonyPlusPlus.ProductTree.create_dependency_edge(repo, %{
-        id: "dep_handoff", work_request_id: work_request.id,
-        source_kind: "work_package", source_id: approved_slice.id,
-        target_kind: "work_package", target_id: prerequisite.id,
-        kind: "depends_on", reason: "Architect added a prerequisite after dispatch."
-      })
+      assert {:ok, prerequisite} =
+               CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_request_work_package_attrs(id: "WRS-MCP-DISPATCH-PREREQUISITE", base_branch: anchor.base_branch))
+
+      assert {:ok, _edge} =
+               SymphonyElixir.SymphonyPlusPlus.ProductTree.create_dependency_edge(repo, %{
+                 id: "dep_handoff",
+                 work_request_id: work_request.id,
+                 source_kind: "work_package",
+                 source_id: approved_slice.id,
+                 target_kind: "work_package",
+                 target_id: prerequisite.id,
+                 kind: "depends_on",
+                 reason: "Architect added a prerequisite after dispatch."
+               })
+
       pending_dependency = mcp_tool(repo, session, "sync_pr", handoff)
       assert "dependencies_unavailable" in get_in(pending_dependency, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
 
-      completed_dependency = mcp_tool(repo, session, "record_work_package_delivery", %{
-        "work_request_id" => work_request.id, "work_package_id" => prerequisite.id,
-        "outcome" => "completed_no_pr", "idempotency_key" => "handoff-prerequisite-completed",
-        "evidence" => %{"completed_no_pr" => %{"no_pr_evidence" => "Architect accepted the contract investigation findings."}}
-      })
+      completed_dependency =
+        mcp_tool(repo, session, "record_work_package_delivery", %{
+          "work_request_id" => work_request.id,
+          "work_package_id" => prerequisite.id,
+          "outcome" => "completed_no_pr",
+          "idempotency_key" => "handoff-prerequisite-completed",
+          "evidence" => %{"completed_no_pr" => %{"no_pr_evidence" => "Architect accepted the contract investigation findings."}}
+        })
+
       refute completed_dependency["error"]
 
       accepted = mcp_tool(repo, session, "sync_pr", Map.put(handoff, "future_provider_field", true))
@@ -501,8 +525,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert snapshot.payload["head_sha"] == head
 
       # Readiness records the architect's acceptance; it does not invent native check/review results.
-      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412,
-        SymphonyElixir.GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch))
+      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, SymphonyElixir.GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch))
       merged = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id})
       assert get_in(merged, ["result", "structuredContent", "work_package", "status"]) == "merged"
     after
@@ -539,6 +562,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
     assert {:ok, approved_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, work_package.id, "planned")
     assert {:ok, _work_request} = CanonicalWorkPackageFixtures.mark_sliced(repo, work_request.id, "ready_for_slicing")
+
     response =
       mcp_tool(repo, session, "dispatch_work_package", %{
         "work_request_id" => work_request.id,

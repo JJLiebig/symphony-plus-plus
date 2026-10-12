@@ -444,5 +444,4 @@ defmodule SymphonyElixirWeb.SymppDashboardApi.LocalOperatorActions do
       local_architect_claim?: true
     ]
   end
-
 end

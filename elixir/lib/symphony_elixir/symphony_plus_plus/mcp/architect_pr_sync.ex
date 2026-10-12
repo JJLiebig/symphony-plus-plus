@@ -64,6 +64,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
            {:ok, state} <- PlanningRepository.get_state(repo, current.id),
            {:ok, graph} <- ExecutionGraph.evaluate(repo, current.work_request_id) do
         reasons = readiness_reasons(state, graph)
+
         case reconcile_readiness(repo, current, reasons) do
           {:ok, updated} -> %{status: updated.status, head_sha: payload["head_sha"], readiness_reasons: reasons}
           {:error, reason} -> repo.rollback(reason)

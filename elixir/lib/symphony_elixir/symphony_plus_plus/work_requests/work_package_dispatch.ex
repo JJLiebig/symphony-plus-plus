@@ -54,9 +54,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
          {:ok, creation} <- CreateWork.activate(repo, work_package, broadcast?: false),
          {:ok, state} <- PlanningRepository.get_state(repo, creation.work_package.id),
          {:ok, context} <- WorkRequestPayloads.worker_context(repo, creation.work_package, creation.work_package),
-         {:ok, findings} <- WorkerContext.virtual_file_payload(state, "findings.md"),
-         {:ok, progress} <- WorkerContext.virtual_file_payload(state, "progress.md"),
-         {:ok, handoff} <- WorkerContext.virtual_file_payload(state, "handoff.md") do
+         {:ok, findings} <- WorkerContext.virtual_file_payload(state, "findings.md", []),
+         {:ok, progress} <- WorkerContext.virtual_file_payload(state, "progress.md", []),
+         {:ok, handoff} <- WorkerContext.virtual_file_payload(state, "handoff.md", []) do
       activated = creation.work_package
       context = context |> Map.put("prior_findings", findings) |> Map.put("prior_progress", progress)
       bootstrap = worker_bootstrap(work_request, activated, context, handoff)
