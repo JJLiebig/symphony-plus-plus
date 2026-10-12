@@ -2303,6 +2303,60 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
+  test "hydrated board exposes dispatch and stable forward PR observations", %{repo: repo} do
+    with_local_operator_endpoint(fn ->
+      assert {:ok, request} = WorkRequestRepository.create(repo, %{
+        title: "Widget delivery",
+        repo: "example-org/widget-service",
+        base_branch: "beta",
+        work_type: "feature",
+        human_description: "Deliver widget support.",
+        desired_dispatch_shape: "single_package",
+        status: "ready_for_slicing"
+      })
+
+      assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WP-WIDGET-BOARD", repo: "example-org/widget-service", base_branch: "beta"))
+      package |> Ecto.Changeset.change(dispatched_at: ~U[2026-10-01 09:00:00.000000Z]) |> repo.update!()
+      fetch = fn ->
+        payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+        detail = Enum.find(payload["work_request_details"], &(&1["work_request"]["id"] == request.id))
+        Enum.find(detail["work_packages"], &(&1["id"] == package.id))
+      end
+
+      assert %{"stage" => "build", "entered_at" => "2026-10-01T09:00:00.000000Z"} = fetch.()["board_state"]
+      snapshot = %{
+        "type" => "pr", "source_tool" => "attach_pr", "repository" => "example-org/widget-service", "number" => 42,
+        "url" => "https://github.com/example-org/widget-service/pull/42", "head_sha" => "head-a",
+        "created_at" => "2026-10-01T09:05:00Z", "check_summary" => %{"status" => "pending"}
+      }
+      append = fn payload ->
+        assert {:ok, event} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Observed widget PR", status: "pr_synced", payload: payload})
+        event
+      end
+
+      first = append.(snapshot)
+      assert %{"stage" => "checks", "entered_at" => first_entered} = fetch.()["board_state"]
+      assert first_entered == first.payload["checks_changed_at"]
+      assert fetch.()["pr_signal"]["created_at"] == "2026-10-01T09:05:00Z"
+      repeated = append.(Map.put(snapshot, "source_tool", "sync_pr"))
+      assert repeated.payload["checks_changed_at"] == first.payload["checks_changed_at"]
+      assert fetch.()["board_state"]["entered_at"] == first_entered
+
+      next_head = append.(snapshot |> Map.put("source_tool", "sync_pr") |> Map.put("head_sha", "head-b"))
+      assert next_head.payload["head_changed_at"] != first.payload["head_changed_at"]
+      assert fetch.()["pr_signal"]["head_sha"] == "head-b"
+      assert fetch.()["pr_signal"]["checks"]["changed_at"] == next_head.payload["checks_changed_at"]
+      assert {:ok, current_request} = WorkRequestRepository.get(repo, request.id)
+      assert current_request.completed_at == nil
+    end)
+  end
+
+  test "operator notification stream rejects cross-origin requests and unsupported methods" do
+    conn = local_operator_conn() |> put_req_header("origin", "https://example.invalid")
+    assert json_response(get(conn, "/api/v1/sympp/operator/events"), 401)["error"]["code"] == "unauthorized"
+    assert json_response(post(local_operator_conn(), "/api/v1/sympp/operator/events", %{}), 405)["error"]["code"] == "method_not_allowed"
+  end
+
   test "local operator config returns runtime paths" do
     with_local_operator_endpoint(fn ->
       payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/config"), 200)

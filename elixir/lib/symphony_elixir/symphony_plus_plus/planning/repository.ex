@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
   alias Ecto.Changeset
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Artifact
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Finding
   alias SymphonyElixir.SymphonyPlusPlus.Planning.PlanNode
@@ -141,13 +142,38 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
            existing_progress_event_by_idempotency_key_with_retry(repo, attrs, append_retry_attempts()) do
       repo
       |> insert_with_allocated_value(
-        attrs,
+        stamp_pr_observation(repo, attrs),
         ProgressEvent,
         :sequence,
         changeset_fun
       )
       |> fetch_after_idempotency_conflict(repo, attrs)
       |> clear_work_request_completion_after_reopening_progress(repo)
+    end
+  end
+
+  defp stamp_pr_observation(repo, attrs) do
+    payload = Map.get(attrs, "payload") || Map.get(attrs, :payload)
+
+    if is_map(payload) and (payload["type"] || payload[:type]) == "pr" and
+         (payload["source_tool"] || payload[:source_tool]) in ["attach_pr", "sync_pr"] do
+      work_package_id = Map.get(attrs, "work_package_id") || Map.get(attrs, :work_package_id)
+
+      previous =
+        repo.one(
+          from(event in ProgressEvent,
+            where: event.work_package_id == ^work_package_id and fragment("json_extract(?, '$.type')", event.payload) == "pr",
+            order_by: [desc: event.sequence],
+            limit: 1,
+            select: event.payload
+          )
+        )
+
+      payload = payload |> PullRequestProgress.stringify_keys() |> PullRequestProgress.stamp_observation(previous, DateTime.utc_now(:microsecond))
+      key = if Map.has_key?(attrs, "payload"), do: "payload", else: :payload
+      Map.put(attrs, key, payload)
+    else
+      attrs
     end
   end
 

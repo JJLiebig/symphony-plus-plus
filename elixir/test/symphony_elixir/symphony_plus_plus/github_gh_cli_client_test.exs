@@ -27,7 +27,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
           %{"status" => "COMPLETED", "conclusion" => "SUCCESS"},
           %{"__typename" => "StatusContext", "state" => "SUCCESS"}
         ],
-        "reviewDecision" => "APPROVED"
+        "reviewDecision" => "APPROVED",
+        "createdAt" => "2026-10-01T09:00:00Z",
+        "updatedAt" => "2026-10-02T09:00:00Z"
       })
 
     FakeGhCli.put_response("nextide/repo", 22, response)
@@ -49,6 +51,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
     assert payload["review_state"] == %{"status" => "approved"}
     assert payload["merge_state"] == %{"merged" => true, "status" => "merged"}
     assert payload["provider_reference"] == "PR_provider_22"
+    assert payload["created_at"] == "2026-10-01T09:00:00Z"
+    assert payload["updated_at"] == "2026-10-02T09:00:00Z"
 
     assert [
              %{
@@ -59,7 +63,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
            ] = FakeGhCli.commands()
 
     assert fields ==
-             "id,number,url,headRefName,headRefOid,baseRefName,baseRefOid,changedFiles,files,statusCheckRollup,reviewDecision,state,isDraft,mergeable,mergeStateStatus,mergedAt,mergeCommit"
+             "id,number,url,headRefName,headRefOid,baseRefName,baseRefOid,changedFiles,files,statusCheckRollup,reviewDecision,state,isDraft,mergeable,mergeStateStatus,createdAt,updatedAt,mergedAt,mergeCommit"
   end
 
   test "rejects a truncated gh file list as an incomplete provider snapshot" do

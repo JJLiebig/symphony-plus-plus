@@ -505,6 +505,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
 
     operational_state = Map.put(operational_state, :activity_signal, activity_signal)
     work_package_summary = if(work_package_summary, do: Map.put(work_package_summary, :activity_signal, activity_signal))
+    work_package_summary =
+      if(work_package_summary, do: Map.put(work_package_summary, :board_state, Signals.board_state(work_package, work_package_summary, delivery)))
 
     if Keyword.get(opts, :slice_projection) == :operational_state do
       operational_slice(work_package, delivery, operational_state, context)

@@ -4,6 +4,32 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress do
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
 
+  @spec stamp_observation(map(), map() | nil, DateTime.t()) :: map()
+  def stamp_observation(payload, previous, recorded_at) do
+    same_pr = is_map(previous) and same_pr?(previous, pr_ref(payload))
+    same_head = same_pr and previous["head_sha"] == payload["head_sha"]
+    previous_times = if same_head, do: previous, else: %{}
+    observed_at = DateTime.to_iso8601(recorded_at)
+    same_checks = same_head and check_status(previous) == check_status(payload)
+
+    Map.merge(payload, %{
+      "head_changed_at" => previous_times["head_changed_at"] || observed_at,
+      "checks_changed_at" => if(same_checks, do: previous_times["checks_changed_at"] || observed_at, else: observed_at)
+    })
+  end
+
+  defp pr_ref(payload) do
+    case PullRequest.parse(payload, nil) do
+      {:ok, ref} -> ref
+      {:error, _reason} -> %{repository: nil, number: nil}
+    end
+  end
+
+  defp check_status(payload) do
+    summary = Map.get(payload, "check_summary") || %{}
+    Map.get(summary, "conclusion") || Map.get(summary, "state") || Map.get(summary, "status")
+  end
+
   @spec chronological_events([ProgressEvent.t()]) :: [ProgressEvent.t()]
   def chronological_events(events) when is_list(events) do
     Enum.sort_by(events, fn %ProgressEvent{sequence: sequence, created_at: created_at, id: id} ->

@@ -4,6 +4,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubPullRequestTest do
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{Client, DryClient, PullRequest, PullRequestProgress}
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
 
+  test "observation timestamps stay stable until the checks, PR, or head change" do
+    payload = %{"repository" => "example-org/widget-service", "number" => 42, "head_sha" => "head-a", "check_summary" => %{"status" => "pending"}}
+    first_at = ~U[2026-10-01 09:00:00Z]
+    later_at = DateTime.add(first_at, 60, :second)
+    first = PullRequestProgress.stamp_observation(payload, nil, first_at)
+    repeated = PullRequestProgress.stamp_observation(payload, first, later_at)
+    assert repeated == first
+
+    passing = PullRequestProgress.stamp_observation(put_in(payload, ["check_summary", "status"], "passing"), first, later_at)
+    assert passing["head_changed_at"] == "2026-10-01T09:00:00Z"
+    assert passing["checks_changed_at"] == "2026-10-01T09:01:00Z"
+
+    for changed <- [Map.put(payload, "head_sha", "head-b"), Map.put(payload, "number", 43)] do
+      observed = PullRequestProgress.stamp_observation(changed, first, later_at)
+      assert observed["head_changed_at"] == "2026-10-01T09:01:00Z"
+      assert observed["checks_changed_at"] == "2026-10-01T09:01:00Z"
+    end
+  end
+
   test "orders provider head evidence by the DateTime instant across second boundaries" do
     earlier = %ProgressEvent{
       id: "earlier",

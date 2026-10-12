@@ -20,6 +20,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
           {:ok,
            Jason.encode!(%{
              "review" => "rvw_observed",
+             "mode" => "fast",
              "done" => false,
              "review_ladder" => "pending",
              "next_action" => "continue",
@@ -52,6 +53,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
     assert observed[package.id].round_started_at == "2026-10-05T01:00:00Z"
     assert {:ok, _, _} = DateTime.from_iso8601(observed[package.id].observed_at)
     signal = Signals.review(package, %{}, observed[package.id])
+    assert signal.mode == "fast"
     activity = Signals.activity(package, %{review_signal: signal}, %{key: "active"}, [], [])
     assert activity["started_at"] == "2026-10-05T01:00:00Z"
     assert is_integer(activity["elapsed_seconds"])

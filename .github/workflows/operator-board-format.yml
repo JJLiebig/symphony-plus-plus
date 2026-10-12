@@ -1,0 +1,27 @@
+name: operator-board-format
+on:
+  pull_request:
+    branches: [beta]
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - name: Format changed Elixir files
+        working-directory: elixir
+        run: |
+          mix deps.get
+          git diff --name-only origin/beta...HEAD -- '*.ex' '*.exs' | sed 's|^elixir/||' | xargs mix format
+          git diff --binary > ../operator-board-format.patch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: operator-board-format
+          path: operator-board-format.patch

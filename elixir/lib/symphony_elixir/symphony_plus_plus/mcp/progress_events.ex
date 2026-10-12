@@ -320,8 +320,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
       progress_payload_replay_matches?(event.payload, normalized_payload)
   end
 
-  defp progress_payload_replay_matches?(%{"type" => "pr", "source_tool" => "attach_pr"} = existing, %{"type" => "pr", "source_tool" => "attach_pr"} = normalized) do
-    existing == normalized or legacy_attach_pr_replay_matches?(existing, normalized)
+  defp progress_payload_replay_matches?(%{"type" => "pr"} = existing, %{"type" => "pr"} = normalized) do
+    existing = Map.drop(existing, ["head_changed_at", "checks_changed_at"])
+    normalized = Map.drop(normalized, ["head_changed_at", "checks_changed_at"])
+
+    existing == normalized or
+      (existing["source_tool"] == "attach_pr" and normalized["source_tool"] == "attach_pr" and
+         legacy_attach_pr_replay_matches?(existing, normalized))
   end
 
   defp progress_payload_replay_matches?(existing, normalized), do: existing == normalized
