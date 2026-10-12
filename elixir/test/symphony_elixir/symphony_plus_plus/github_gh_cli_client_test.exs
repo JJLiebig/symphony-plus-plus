@@ -159,4 +159,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
     FakeGhCli.authenticate(:unavailable)
     assert GhCliClient.auth_status(command_runner: &FakeGhCli.run/3) == {:error, :gh_unavailable}
   end
+
+  test "read-only REST observations use the command runner and sanitize provider failures" do
+    path = "repos/acme-labs/compass/actions/workflows/deploy-dev.yml/runs?per_page=100&page=2"
+
+    runner = fn "gh", ["api", "--hostname", "github.com", "--method", "GET", ^path], [timeout: 120] ->
+      {:ok, ~s({"total_count":0,"workflow_runs":[],"additional_field":true})}
+    end
+
+    assert {:ok, %{"workflow_runs" => [], "additional_field" => true}} = GhCliClient.get_json(path, command_runner: runner, timeout: 120)
+
+    runner = fn _, _, _ -> {:error, {1, "HTTP 403 private provider diagnostics"}} end
+    assert {:error, :gh_unauthorized} = GhCliClient.get_json(path, command_runner: runner)
+
+    runner = fn _, _, _ -> {:ok, "not JSON"} end
+    assert {:error, :invalid_github_response} = GhCliClient.get_json(path, command_runner: runner)
+  end
 end
