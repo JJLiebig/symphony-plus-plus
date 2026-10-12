@@ -69,3 +69,37 @@ register a dashboard opener or mutate business state. The existing
 `/api/v1/sympp/herdr/events` consumer endpoint remains available. Notifications
 are hints, not durable history; compare saved client-side timestamps and heads
 for best-effort "since last looked" indicators.
+
+## Finished goal retention and operator actions
+
+`settings.work_request_archive_after_days` stays an integer day setting, now
+defaulting to `1` (24 elapsed hours after `completed_at`, including the exact
+boundary). Only completed goals qualify. The background retention pass runs
+every 30 minutes; dashboard visits can trigger an earlier pass, throttled to
+once per 30 seconds. Archiving therefore happens on the next successful pass
+after the threshold, rather than on an exact per-goal timer. The existing limit
+of ten visible completed goals per repository/base branch can archive older
+completed goals sooner.
+
+On upgrade, the normal ledger migrations convert stored archive settings of
+`14` to `1`, preserving all other values and settings. An explicitly chosen
+`14` is indistinguishable from the former default and also converts; choose
+`14` again after upgrading to retain it. The migration cannot safely reverse
+that data conversion. No manual database edit is required. Already overdue
+completed goals qualify on the next retention pass. The same setting also
+controls hiding terminal packages without a parent goal. Archived goals retain
+their history until deletion; the existing deletion setting
+`solo_session_delete_after_days` also governs archived goals (default 30 days).
+
+These existing POST routes require local operator authorization:
+
+| Route suffix under `/api/v1/sympp/operator/work-requests/:id` | Preconditions and consequences |
+| --- | --- |
+| `/state` with `{"state":"completed"}` | Operator override; no delivery or inactive-worker precondition. Marks the goal complete, clears its archive state and open questions, clears package attention and queues terminal package worktree cleanup. Does not stop workers or merge PRs. Confirm the override when work is still running. |
+| `/archive` | Requires completion after refreshing current evidence; otherwise returns `not_completed`. Hides the goal and queues terminal package worktree cleanup. History remains. |
+| `/delete` | Requires only that the goal exists; archive and completion are **not** backend prerequisites. Permanently removes the goal and dependent ledger history/comments/grant scopes and queues linked worktree cleanup, including nonterminal packages. Confirm deletion and finish or stop active work first; it is not a safe unconditional one-click action. |
+| `/restore` | Requires an existing goal. Refreshes completion, clears archive state and, for a still-completed archived goal, resets `completed_at` to give it a new retention window. Does not restore deleted worktrees or undo queued cleanup. |
+
+Worktree cleanup runs asynchronously and defers active or paused workers while
+their package records exist. Deleting those records removes that activity check,
+so deletion must not be treated as a way to stop a running worker.

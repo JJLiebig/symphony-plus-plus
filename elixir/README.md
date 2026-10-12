@@ -12,6 +12,12 @@ Tool calls retain their JSON `structuredContent`; architect resources remain Mar
 `create_work_request` takes `description`, `creator_kind`, and `creator_name`; the former
 `human_description`, `created_by_kind`, and `created_by_name` argument aliases are removed.
 
+Finished goals archive by default after 24 hours, on the next retention pass.
+The existing integer-day setting remains configurable; normal ledger migrations
+convert the former stored default of 14 days to 1 day. See
+[operator retention and actions](../docs/operator-board-api.md#finished-goal-retention-and-operator-actions)
+for upgrade details and cleanup consequences.
+
 ## Screenshot
 
 ![Symphony Elixir screenshot](../.github/media/elixir-screenshot.png)

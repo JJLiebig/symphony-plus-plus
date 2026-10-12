@@ -38,7 +38,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings do
   end
 
   @settings_id "local_operator"
-  @default_work_request_archive_after_days 14
+  @default_work_request_archive_after_days 1
   @default_solo_session_delete_after_days 30
   @default_open_dashboard_on_boot true
   @default_capture_failed_mcp_calls false

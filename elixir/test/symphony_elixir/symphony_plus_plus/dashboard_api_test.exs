@@ -3096,12 +3096,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       dashboard_payload = local_operator_dashboard_payload()
 
-      assert dashboard_payload["settings"]["work_request_archive_after_days"] == 14
+      assert dashboard_payload["settings"]["work_request_archive_after_days"] == 1
       assert dashboard_payload["settings"]["solo_session_delete_after_days"] == 30
       assert dashboard_payload["settings"]["open_dashboard_on_boot"] == true
       assert dashboard_payload["settings"]["capture_failed_mcp_calls"] == false
-      assert Enum.any?(dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
-      assert dashboard_payload["archived_work_requests"]["work_requests"] == []
+      refute Enum.any?(dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
+      assert [%{"id" => "WR-LOCAL-ARCHIVE-SETTINGS"}] = dashboard_payload["archived_work_requests"]["work_requests"]
+
+      local_operator_conn()
+      |> post("/api/v1/sympp/operator/settings", %{"work_request_archive_after_days" => 7})
+      |> json_response(200)
+
+      relaxed_dashboard_payload = local_operator_dashboard_payload()
+      assert Enum.any?(relaxed_dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
+      assert relaxed_dashboard_payload["archived_work_requests"]["work_requests"] == []
 
       archive_payload =
         local_operator_conn()
