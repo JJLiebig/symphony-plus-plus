@@ -10,6 +10,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Session do
   defstruct [:assignment, :proof_hash, :claim_lease_id, :claim_actor_kind, :claim_actor_id, :claim_actor_display_name]
 
   @doc false
+  @spec architect_claim_arguments(t() | nil) :: map() | nil
   def architect_claim_arguments(%__MODULE__{assignment: %{grant_role: "architect"}} = session) do
     case CurrentWorkRequest.id_argument(%{}, session) do
       {:ok, id} -> %{"work_request_id" => id, "claimed_by" => session.assignment.claimed_by}
