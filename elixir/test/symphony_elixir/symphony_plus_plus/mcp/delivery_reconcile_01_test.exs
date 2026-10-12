@@ -478,11 +478,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
       assert {:ok, _revoked} = AccessGrantService.revoke(repo, claimed_grant.id)
 
-      ordinary_wait = mcp_tool(repo, session, "append_progress", %{
-        "work_package_id" => approved_slice.id,
-        "summary" => "Waiting for an ordinary answer", "idempotency_key" => "ordinary-wait",
-        "payload" => %{"type" => "waiting", "active" => true, "source_tool" => "report_blocker", "blocker_id" => "ordinary-wait"}
-      })
+      ordinary_wait =
+        mcp_tool(repo, session, "append_progress", %{
+          "work_package_id" => approved_slice.id,
+          "summary" => "Waiting for an ordinary answer",
+          "idempotency_key" => "ordinary-wait",
+          "payload" => %{"type" => "waiting", "active" => true, "source_tool" => "report_blocker", "blocker_id" => "ordinary-wait"}
+        })
+
       refute ordinary_wait["error"]
 
       declared =

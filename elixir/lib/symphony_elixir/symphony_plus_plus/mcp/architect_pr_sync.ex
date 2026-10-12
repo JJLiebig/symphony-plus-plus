@@ -7,6 +7,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.OperationalProjection
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
+
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{
     Client,
     DefaultClient,
@@ -15,6 +16,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
     PullRequestArtifact,
     PullRequestProgress
   }
+
   alias SymphonyElixir.SymphonyPlusPlus.Lifecycle.StateMachine
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Session
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
