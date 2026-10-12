@@ -141,14 +141,16 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   defp operator_board_labels(details, context, projection_context) do
     Enum.map(details, fn detail ->
       work_packages =
-        Enum.map(detail.work_packages, fn work_package ->
-          session = get_in(projection_context, [:work_package_contexts, work_package.id, :current_worker_session])
-          location = OperatorConfig.session_location(context.operator_config, session)
-          if location, do: Map.put(work_package, :session_location, location), else: work_package
-        end)
+        Enum.map(detail.work_packages, &put_session_location(&1, context.operator_config, projection_context))
 
       %{detail | work_request: put_area_path(detail.work_request, context), work_packages: work_packages}
     end)
+  end
+
+  defp put_session_location(work_package, operator_config, projection_context) do
+    session = get_in(projection_context, [:work_package_contexts, work_package.id, :current_worker_session])
+    location = OperatorConfig.session_location(operator_config, session)
+    if location, do: Map.put(work_package, :session_location, location), else: work_package
   end
 
   defp operator_projection_context(repo, work_requests, context) do
