@@ -111,6 +111,7 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
                  find_executable: fn _name -> "/unused/probe" end,
                  runner: fn _, _, _, _ -> flunk("review probe") end
                ) == %{}
+
         assert SymphonyElixir.SymphonyPlusPlus.RepoIdentity.local_git_origin_remote(File.cwd!()) == nil
         assert {:error, :offline_sandbox} = SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient.auth_status()
         assert {:error, :offline_sandbox} = SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient.get_json("repos/example/widget", [])
