@@ -38,7 +38,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
     rollback = run(2, @sha_b, "success", "2026-10-10T12:00:00Z")
     failed = run(3, @sha_c, "failure", "2026-10-10T13:00:00Z")
 
-    result = enrich(payload(), responses([failed, rollback, old], %{{@sha_a, @sha_b} => "behind", {@sha_a, @sha_c} => "ahead"}), table)
+    comparisons = %{{@sha_a, @sha_b} => "behind", {@sha_a, @sha_c} => "ahead"}
+    result = enrich(payload(), responses([failed, rollback, old], comparisons), table)
     assert status(result) == "failed"
 
     result = enrich(payload(), responses([failed, old], %{}))
@@ -175,7 +176,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservationTest do
       completed_at: "2026-10-10T10:00:00Z",
       base_branch: "beta"
     }
-    %{work_requests: %{work_requests: [request]}, work_request_details: [%{work_request: request, work_packages: packages}]}
+
+    %{
+      work_requests: %{work_requests: [request]},
+      work_request_details: [%{work_request: request, work_packages: packages}]
+    }
   end
 
   defp package(sha, outcome \\ "pr_merged") do
