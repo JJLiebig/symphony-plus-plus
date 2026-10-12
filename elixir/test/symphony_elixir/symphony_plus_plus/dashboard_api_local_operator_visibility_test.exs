@@ -88,7 +88,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
     end)
 
     config = %{
-      "repos" => %{"example-org/widget-service" => %{"area" => ["Example Company", "Widgets"], "deploy_workflows" => %{"dev" => "deploy-dev.yml"}}},
+      "repos" => %{"Example-Org/Widget-Service" => %{"area" => ["Example Company", "Widgets"], "deploy_workflows" => %{"dev" => "deploy-dev.yml"}}},
       "machines" => %{"build-desk" => %{"label" => "Build Desk", "kind" => "desktop", "future_field" => true}},
       "future_field" => true
     }

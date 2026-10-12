@@ -7,11 +7,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorConfig do
   def load do
     with {:ok, contents} <- File.read(config_path()),
          {:ok, config} when is_map(config) <- Jason.decode(contents) do
-      Map.take(config, ["repos", "machines"])
+      config
+      |> Map.take(["repos", "machines"])
+      |> Map.update("repos", %{}, &normalize_repos/1)
     else
       _result -> %{}
     end
   end
+
+  defp normalize_repos(repos) when is_map(repos), do: Map.new(repos, fn {key, value} -> {String.downcase(key), value} end)
+  defp normalize_repos(_repos), do: %{}
 
   @spec area_path(map(), map()) :: [String.t()] | nil
   def area_path(config, repo_identity) do

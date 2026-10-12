@@ -21,7 +21,7 @@ Set these variables in the environment of the dashboard backend process.
 }
 ```
 
-Use the canonical lowercase GitHub `owner/repository` as the repository key.
+Use GitHub `owner/repository` as the repository key; casing is normalized.
 The dashboard resolves known remote and local checkout aliases through its
 existing repository identity catalog. An area has one to three nonblank text
 levels. Without a valid explicit mapping, `area_path` is `null`; the UI may
