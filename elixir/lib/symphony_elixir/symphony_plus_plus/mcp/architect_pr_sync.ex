@@ -53,10 +53,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
 
   defp require_delivery_scope(work_package, payload) do
     repo_matches? = RepoIdentity.scope_match?(work_package.repo, payload["repository"], local_path_remotes?: true)
+    expected_base = BaseBranch.canonicalize(work_package.base_branch)
+    actual_base = BaseBranch.canonicalize(payload["base_branch"])
 
     cond do
       not repo_matches? -> {:error, :repository_mismatch}
-      BaseBranch.canonicalize(work_package.base_branch) != BaseBranch.canonicalize(payload["base_branch"]) -> {:error, :base_branch_mismatch}
+      expected_base != actual_base -> {:error, :base_branch_mismatch}
       true -> :ok
     end
   end

@@ -503,7 +503,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert "no_active_blockers" in get_in(waiting, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
 
       changed_head = String.duplicate("c", 40)
-      FakeGitHubClient.put_response("nextide/repo", 412, GitHubPullRequestFixtures.metadata(412, changed_head, base_branch: anchor.base_branch))
+      changed_metadata = GitHubPullRequestFixtures.metadata(412, changed_head, base_branch: anchor.base_branch)
+      FakeGitHubClient.put_response("nextide/repo", 412, changed_metadata)
       refute mcp_tool(repo, session, "sync_pr", %{handoff | "head_sha" => changed_head})["error"]
       FakeGitHubClient.put_response("nextide/repo", 412, metadata)
       returned_head = mcp_tool(repo, session, "sync_pr", handoff)
@@ -563,7 +564,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert snapshot.payload["head_sha"] == head
 
       # Readiness records the architect's acceptance; it does not invent native check/review results.
-      FakeGitHubClient.put_response("nextide/repo", 412, GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch))
+      merged_metadata = GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch)
+      FakeGitHubClient.put_response("nextide/repo", 412, merged_metadata)
       merged = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id})
       assert get_in(merged, ["result", "structuredContent", "work_package", "status"]) == "merged"
     after
