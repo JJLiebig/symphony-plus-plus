@@ -7,7 +7,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.OperationalProjection
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
-  alias SymphonyElixir.SymphonyPlusPlus.GitHub.{Client, DefaultClient, MergeReconciler, PullRequest, PullRequestArtifact, PullRequestProgress}
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.{
+    Client,
+    DefaultClient,
+    MergeReconciler,
+    PullRequest,
+    PullRequestArtifact,
+    PullRequestProgress
+  }
   alias SymphonyElixir.SymphonyPlusPlus.Lifecycle.StateMachine
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Session
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
@@ -43,8 +50,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
   end
 
   defp require_delivery_scope(work_package, payload) do
+    repo_matches? = RepoIdentity.scope_match?(work_package.repo, payload["repository"], local_path_remotes?: true)
+
     cond do
-      not RepoIdentity.scope_match?(work_package.repo, payload["repository"], local_path_remotes?: true) -> {:error, :repository_mismatch}
+      not repo_matches? -> {:error, :repository_mismatch}
       BaseBranch.canonicalize(work_package.base_branch) != BaseBranch.canonicalize(payload["base_branch"]) -> {:error, :base_branch_mismatch}
       true -> :ok
     end
@@ -61,13 +70,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
            :ok <- require_mutable_handoff(repo, current, payload),
            :ok <- append_snapshot(repo, session, current, payload),
            {:ok, state} <- PlanningRepository.get_state(repo, current.id),
-           {:ok, graph} <- ExecutionGraph.evaluate(repo, current.work_request_id) do
-        reasons = readiness_reasons(state, graph)
-
-        case reconcile_readiness(repo, current, reasons) do
-          {:ok, updated} -> %{status: updated.status, head_sha: payload["head_sha"], readiness_reasons: reasons}
-          {:error, reason} -> repo.rollback(reason)
-        end
+           {:ok, graph} <- ExecutionGraph.evaluate(repo, current.work_request_id),
+           reasons = readiness_reasons(state, graph),
+           {:ok, updated} <- reconcile_readiness(repo, current, reasons) do
+        %{status: updated.status, head_sha: payload["head_sha"], readiness_reasons: reasons}
       else
         {:error, reason} -> repo.rollback(reason)
       end

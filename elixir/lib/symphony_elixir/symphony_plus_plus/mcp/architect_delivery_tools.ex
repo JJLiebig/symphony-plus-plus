@@ -31,8 +31,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
 
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{
-    Auth,
     ArchitectPRSync,
+    Auth,
     Config,
     CurrentWorkRequest,
     ErrorDetails,

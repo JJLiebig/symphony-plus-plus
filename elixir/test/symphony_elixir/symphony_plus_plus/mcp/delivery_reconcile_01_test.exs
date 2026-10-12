@@ -3,6 +3,10 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
+  alias SymphonyElixir.FakeGitHubClient
+  alias SymphonyElixir.GitHubPullRequestFixtures
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree
+
   test "trusted local HTTP browses without claiming and auto-claims a scoped mutation", %{repo: repo} do
     work_request =
       create_work_request!(
@@ -157,11 +161,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
   test "claimed architect syncs only an explicit descendant PR through the merge reconciler", %{repo: repo} do
     original_client = Application.get_env(:symphony_elixir, :sympp_github_client)
-    Application.put_env(:symphony_elixir, :sympp_github_client, SymphonyElixir.FakeGitHubClient)
-    SymphonyElixir.FakeGitHubClient.clear()
+    Application.put_env(:symphony_elixir, :sympp_github_client, FakeGitHubClient)
+    FakeGitHubClient.clear()
 
     on_exit(fn ->
-      SymphonyElixir.FakeGitHubClient.clear()
+      FakeGitHubClient.clear()
 
       case original_client do
         nil -> Application.delete_env(:symphony_elixir, :sympp_github_client)
@@ -210,10 +214,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
                }
              })
 
-    SymphonyElixir.FakeGitHubClient.put_response(
+    FakeGitHubClient.put_response(
       "nextide/repo",
       411,
-      SymphonyElixir.GitHubPullRequestFixtures.metadata(411, "head-411",
+      GitHubPullRequestFixtures.metadata(411, "head-411",
         merged?: true,
         base_branch: work_request.base_branch
       )
@@ -432,12 +436,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     refute serialized_response =~ secret_hash
 
     original_client = Application.get_env(:symphony_elixir, :sympp_github_client)
-    Application.put_env(:symphony_elixir, :sympp_github_client, SymphonyElixir.FakeGitHubClient)
+    Application.put_env(:symphony_elixir, :sympp_github_client, FakeGitHubClient)
 
     try do
       head = String.duplicate("a", 40)
-      metadata = SymphonyElixir.GitHubPullRequestFixtures.metadata(412, head, base_branch: anchor.base_branch)
-      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, metadata)
+      metadata = GitHubPullRequestFixtures.metadata(412, head, base_branch: anchor.base_branch)
+      FakeGitHubClient.put_response("nextide/repo", 412, metadata)
       handoff = %{"work_package_id" => approved_slice.id, "url" => "https://github.com/nextide/repo/pull/412", "head_sha" => head}
 
       mismatch = mcp_tool(repo, session, "sync_pr", %{handoff | "head_sha" => String.duplicate("b", 40)})
@@ -474,6 +478,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
       assert {:ok, _revoked} = AccessGrantService.revoke(repo, claimed_grant.id)
 
+      ordinary_wait = mcp_tool(repo, session, "append_progress", %{
+        "work_package_id" => approved_slice.id,
+        "summary" => "Waiting for an ordinary answer", "idempotency_key" => "ordinary-wait",
+        "payload" => %{"type" => "waiting", "active" => true, "source_tool" => "report_blocker", "blocker_id" => "ordinary-wait"}
+      })
+      refute ordinary_wait["error"]
+
       declared =
         mcp_tool(repo, session, "append_progress", %{
           "work_package_id" => approved_slice.id,
@@ -489,9 +500,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert "no_active_blockers" in get_in(waiting, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
 
       changed_head = String.duplicate("c", 40)
-      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, SymphonyElixir.GitHubPullRequestFixtures.metadata(412, changed_head, base_branch: anchor.base_branch))
+      FakeGitHubClient.put_response("nextide/repo", 412, GitHubPullRequestFixtures.metadata(412, changed_head, base_branch: anchor.base_branch))
       refute mcp_tool(repo, session, "sync_pr", %{handoff | "head_sha" => changed_head})["error"]
-      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, metadata)
+      FakeGitHubClient.put_response("nextide/repo", 412, metadata)
       returned_head = mcp_tool(repo, session, "sync_pr", handoff)
       refute returned_head["error"]
       assert {:ok, returned_state} = PlanningRepository.get_state(repo, approved_slice.id)
@@ -513,7 +524,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
                CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_request_work_package_attrs(id: "WRS-MCP-DISPATCH-PREREQUISITE", base_branch: anchor.base_branch))
 
       assert {:ok, _edge} =
-               SymphonyElixir.SymphonyPlusPlus.ProductTree.create_dependency_edge(repo, %{
+               ProductTree.create_dependency_edge(repo, %{
                  id: "dep_handoff",
                  work_request_id: work_request.id,
                  source_kind: "work_package",
@@ -549,12 +560,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert snapshot.payload["head_sha"] == head
 
       # Readiness records the architect's acceptance; it does not invent native check/review results.
-      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, SymphonyElixir.GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch))
+      FakeGitHubClient.put_response("nextide/repo", 412, GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch))
       merged = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id})
       assert get_in(merged, ["result", "structuredContent", "work_package", "status"]) == "merged"
     after
       restore_app_env(:sympp_github_client, original_client)
-      SymphonyElixir.FakeGitHubClient.clear()
+      FakeGitHubClient.clear()
     end
   end
 

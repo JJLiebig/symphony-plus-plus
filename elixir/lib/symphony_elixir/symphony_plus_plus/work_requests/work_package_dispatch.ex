@@ -1,13 +1,13 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
   @moduledoc false
 
-  alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
   alias SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext
+  alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
   alias SymphonyElixir.SymphonyPlusPlus.CreateWork
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
-  alias SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDeliveryScope

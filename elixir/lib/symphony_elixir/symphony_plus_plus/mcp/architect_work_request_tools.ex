@@ -431,7 +431,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
            ),
          :ok <- require_planned_dispatch_work_package(work_package),
          {:ok, dispatch} <- WorkPackageDispatch.dispatch(config.repo, work_request_id, work_package_id) do
-      {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.tool_result(dispatch_work_package_result_payload(dispatch, scope)) end)}
+      payload = dispatch_work_package_result_payload(dispatch, scope)
+      {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.tool_result(payload) end)}
     else
       {:tool_error, reason} -> invalid_params_error("dispatch_work_package", reason)
       {:error, :not_found} -> not_found_error("dispatch_work_package")
