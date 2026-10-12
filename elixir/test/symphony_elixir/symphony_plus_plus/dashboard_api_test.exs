@@ -3094,6 +3094,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       completed_at = DateTime.add(DateTime.utc_now(:microsecond), -2 * 24 * 60 * 60, :second)
       request = create_completed_delivered_work_request!(repo, "WR-LOCAL-ARCHIVE-SETTINGS", completed_at)
 
+      run_operator_retention(repo)
       dashboard_payload = local_operator_dashboard_payload()
 
       assert dashboard_payload["settings"]["work_request_archive_after_days"] == 1

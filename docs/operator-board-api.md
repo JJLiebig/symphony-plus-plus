@@ -75,8 +75,8 @@ for best-effort "since last looked" indicators.
 `settings.work_request_archive_after_days` stays an integer day setting, now
 defaulting to `1` (24 elapsed hours after `completed_at`, including the exact
 boundary). Only completed goals qualify. The background retention pass runs
-every 30 minutes; dashboard visits can trigger an earlier pass, throttled to
-once per 30 seconds. Archiving therefore happens on the next successful pass
+every 30 minutes; saving operator settings forces an immediate pass. Dashboard
+reads do not run retention. Archiving happens on the next successful pass
 after the threshold, rather than on an exact per-goal timer. The existing limit
 of ten visible completed goals per repository/base branch can archive older
 completed goals sooner.
