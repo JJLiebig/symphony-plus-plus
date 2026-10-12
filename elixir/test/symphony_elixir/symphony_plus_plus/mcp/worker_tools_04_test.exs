@@ -431,6 +431,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools04Test do
       "idempotency_key" => "full-pr-key",
       "metadata" => %{"head_sha" => "legacy-head", "created_at" => "2026-10-01T09:00:00Z", "updated_at" => "2026-10-01T10:00:00Z"}
     }
+
     full_response = attach_tool(repo, session, "attach_pr", full_arguments)
     full_id = get_in(full_response, ["result", "structuredContent", "progress_event", "id"])
     full_event = repo.get!(ProgressEvent, full_id)
