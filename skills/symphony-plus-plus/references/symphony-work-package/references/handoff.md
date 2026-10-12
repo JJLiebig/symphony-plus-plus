@@ -23,7 +23,7 @@ Head SHA: <sha or not applicable for policy-approved no-PR work>
 ### Consumed inputs (when candidate dependencies apply)
 
 <Human-approved decision IDs; dependency edge/backend WP and exact consumed head;
-final dependent head; progress selection reference and affected requalification>
+final dependent head and affected requalification>
 
 ### Tests and static checks
 

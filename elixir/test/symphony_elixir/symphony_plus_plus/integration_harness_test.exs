@@ -197,7 +197,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.IntegrationHarnessTest do
 
     assert context["completion"] == %{
              "next_owner" => "architect",
-             "next_action" => "return_ready_or_terminal_work_package"
+             "next_action" => "return_pr_or_evidence"
            }
 
     context_text = get_in(response, ["result", "content", Access.at(0), "text"])

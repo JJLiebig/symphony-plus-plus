@@ -25,7 +25,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
     Auth,
     Config,
     CurrentWorkRequest,
-    HandoffDatabase,
     LocalTrustedTools,
     Session,
     ToolCatalog,
@@ -421,7 +420,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
     with {:ok, session} <- Auth.require_session(session, config.repo),
          {:ok, work_request_id} <- CurrentWorkRequest.id_argument(arguments, session),
          {:ok, work_package_id} <- required_argument(arguments, "work_package_id"),
-         {:ok, claimed_by} <- optional_string_argument(arguments, "claimed_by", default_claimed_by(config)),
          {:ok, _work_request, work_package, _filters, scope} <-
            WorkRequestScope.authorized_work_package_scope(
              config.repo,
@@ -432,9 +430,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              "dispatch_work_package"
            ),
          :ok <- require_planned_dispatch_work_package(work_package),
-         {:ok, handoff_opts} <- dispatch_work_package_bootstrap_opts(config, claimed_by),
-         {:ok, dispatch} <- WorkPackageDispatch.dispatch(config.repo, work_request_id, work_package_id, handoff_opts) do
-      {:ok, ToolResult.tool_result(dispatch_work_package_result_payload(dispatch, scope))}
+         {:ok, dispatch} <- WorkPackageDispatch.dispatch(config.repo, work_request_id, work_package_id) do
+      payload = dispatch_work_package_result_payload(dispatch, scope)
+      {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.tool_result(payload) end)}
     else
       {:tool_error, reason} -> invalid_params_error("dispatch_work_package", reason)
       {:error, :not_found} -> not_found_error("dispatch_work_package")
@@ -551,12 +549,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
       ToolResult.architect_agent_tool_result(payload, :work_request_product_tree)
     else
       error -> repo.rollback(error)
-    end
-  end
-
-  defp dispatch_work_package_bootstrap_opts(%Config{} = config, claimed_by) do
-    with {:ok, database} <- HandoffDatabase.resolve(config.database, config.repo) do
-      {:ok, [claimed_by: claimed_by, database: database]}
     end
   end
 
@@ -847,23 +839,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
   end
 
   defp require_architect_capability(_assignment, _capability), do: {:error, :insufficient_capability}
-
-  defp default_claimed_by(%Config{claimed_by: claimed_by}) do
-    case normalize_optional_value(claimed_by) do
-      claimed_by when is_binary(claimed_by) -> claimed_by
-      nil -> "local-agent"
-    end
-  end
-
-  defp normalize_optional_value(value) when is_binary(value) do
-    case String.trim(value) do
-      "" -> nil
-      trimmed -> trimmed
-    end
-  end
-
-  defp normalize_optional_value(nil), do: nil
-  defp normalize_optional_value(value), do: value
 
   defp expected_question_status_argument(arguments) do
     cond do

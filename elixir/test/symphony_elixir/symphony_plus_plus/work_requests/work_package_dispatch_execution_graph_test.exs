@@ -2,6 +2,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
   use ExUnit.Case, async: false
 
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge
   alias SymphonyElixir.SymphonyPlusPlus.Repo
@@ -25,7 +26,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
     :ok
   end
 
-  test "dispatch remains blocked after prerequisite cancellation", %{repo: repo, database_path: database_path} do
+  test "dispatch remains blocked after prerequisite cancellation", %{repo: repo} do
     work_request = work_request!(repo)
 
     assert {:ok, %{work_packages: [prerequisite, dependent]}} =
@@ -44,13 +45,57 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
              })
 
     assert {:error, {:unmet_work_package_dependencies, "wp_dependent", ["wp_prerequisite"]}} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id, database: database_path)
+             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id)
 
     assert repo.get!(WorkPackage, dependent.id).status == "planned"
     assert {:ok, %{status: "skipped"}} = Repository.skip_work_package(repo, work_request.id, prerequisite.id, "planned")
 
     assert {:error, {:unmet_work_package_dependencies, "wp_dependent", ["wp_prerequisite"]}} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id, database: database_path)
+             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id)
+  end
+
+  test "dispatch includes an available pinned candidate without worker context pagination", %{repo: repo} do
+    work_request = work_request!(repo)
+    head = String.duplicate("a", 40)
+
+    assert {:ok, %{work_packages: [prerequisite, dependent]}} =
+             Repository.slice_work_request(repo, work_request.id, [package("wp_candidate"), package("wp_consumer")])
+
+    repo.update!(Ecto.Changeset.change(prerequisite, status: "ready_for_merge"))
+
+    for payload <- [
+          %{"type" => "branch", "source_tool" => "attach_branch", "branch" => "feat/candidate", "head_sha" => head},
+          %{"type" => "pr", "source_tool" => "attach_pr", "url" => "https://github.com/nextide/example/pull/1", "head_sha" => head},
+          %{"type" => "pr", "source_tool" => "sync_pr", "url" => "https://github.com/nextide/example/pull/1", "head_sha" => head}
+        ] do
+      assert {:ok, _event} =
+               PlanningRepository.append_progress_event(repo, %{
+                 work_package_id: prerequisite.id,
+                 summary: "Current candidate evidence",
+                 status: "recorded",
+                 payload: payload
+               })
+    end
+
+    assert {:ok, dependency} =
+             ProductTree.create_dependency_edge(repo, %{
+               id: "dep_candidate_dispatch",
+               work_request_id: work_request.id,
+               source_kind: "work_package",
+               source_id: dependent.id,
+               target_kind: "work_package",
+               target_id: prerequisite.id,
+               kind: "depends_on",
+               reason: "Use the qualified candidate contract.",
+               candidate_head_sha: head
+             })
+
+    assert {:ok, dispatch} = WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id)
+    assert [%{"constraints" => [selection]}] = dispatch.worker_bootstrap.assignment["dependency_selections"]
+    assert selection["candidate_head_sha"] == head
+    assert selection["candidate_state"] == "current"
+    assert selection["selection_updated_at"] == DateTime.to_iso8601(dependency.selection_updated_at)
+    assert dispatch.work_package.status == "ready_for_worker"
   end
 
   defp work_request!(repo) do

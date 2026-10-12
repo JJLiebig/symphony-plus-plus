@@ -84,7 +84,10 @@ development. See [Runtime](runtime.md) for lifecycle and installation details.
 | Plugin packages | Installation, launchers, and authoritative agent procedures. |
 | GitHub | Branches, commits, PRs, checks, reviews, and merge truth. |
 
-Workers claim one WorkPackage; architects claim one WorkRequest. The server
+Workers receive a complete assignment, run native checks/review, and return a
+normal PR or evidence handoff. The architect owns dispatch, readiness, blockers,
+and delivery reconciliation. Worker MCP access is optional and scoped to one
+WorkPackage; architects claim one WorkRequest. The server
 derives repository, base branch, phase, anchor, worktree, and grant context from
 the ledger and validates supplied context against it. Tool discovery is not
 authorization: calls still check session, role, capabilities, resource scope,

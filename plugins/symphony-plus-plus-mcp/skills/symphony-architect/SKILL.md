@@ -8,8 +8,9 @@ description: Use when assigned a Symphony++ WorkRequest, product-tree planning l
 Own product clarification, optional Group organization, WorkPackage planning, worker
 dispatch, guidance routing, and delivery closeout. Do not implement worker
 packages yourself. Workers own implementation, required validation/review,
-CI/static gates, and exact-head PR readiness; send findings back to the owner.
-Keep dispatch prompts task-specific; the worker skills supply the procedure.
+CI/static gates, and a normal PR/evidence handoff; send findings back to the owner.
+The architect owns readiness and delivery reconciliation. Keep dispatch prompts
+task-specific and supply the full scoped assignment; no worker MCP calls are required.
 Stop for material scope/product ambiguity, missing authority/evidence, branch
 ambiguity, or global Codex/plugin configuration changes. Never expose raw work
 keys, bearer/API/GitHub/Linear/MCP tokens, grant verifiers, private handoff
@@ -44,11 +45,12 @@ TOON is presentation only. Send schema-native JSON tool arguments;
 - Ask focused product/architecture questions before planning WorkPackages when intent,
   compatibility, branch strategy, acceptance, validation, or ownership is
   unclear.
-- Use `ask_question` with `decision_prompt` for material choices;
-  use plain questions for simple facts.
+- Ask questions naturally in the conversation. Use `ask_question` only when a
+  durable planning question helps; do not duplicate every conversational question.
 - Record durable decisions with `record_decision`. Valid
   `source_type`: `human`, `architect`, `operator`, `ask_pro_advisory`.
-- Escalate to `human_info_needed` when the human must decide. Do not choose
+- Route human decisions to the chief when present, otherwise the user. Optional
+  `human_info_needed` guidance records do not declare blockers. Do not choose
   product behavior just to keep work moving.
 - Once open questions are answered or closed, continue straight to
   `read_work_request` and `slice_work_request`; no separate
@@ -96,8 +98,8 @@ may use `force_release_work_package_claim`; read
 
 Call `dispatch_work_package` for planned packages. It enforces the same graph
 as `read_plan`, rejecting cycles/unmet dependencies, and atomically activates
-the canonical row with worker grant/resources and ledger bootstrap:
-`type=ledger_claim`, `mode=local_assignment`, `claim.tool=claim_local_assignment`.
+the canonical row with optional worker grant/resources and an ordinary assignment
+bootstrap. Dispatch ownership belongs to the architect; workers need no claim.
 
 Prepare/provide worktree scope before launch. Use
 `prepare_work_package_worktree(work_package_id)` and its returned
@@ -108,13 +110,12 @@ from prepare/cleanup, retry with the product checkout owning the recorded path.
 
 Worker prompts contain task-specific data only:
 
-- `symphony-plus-plus-mcp:symphony-worker` plus
-  `symphony-plus-plus-mcp:symphony-work-package`.
+- `symphony-plus-plus-mcp:symphony-worker`.
 - WorkPackage id, goal, prepared workspace/branch/base, relevant evidence,
   decisions/dependencies, and contract deviations or assigned budgets.
-- Ledger claim payload or explicit recovery/legacy bootstrap label. Normal
-  claims use the WorkPackage id only; add runtime validation context only when
-  needed, never raw secrets.
+- Full scoped acceptance, allowed/forbidden paths, native validation/review,
+  stop conditions, and relevant prior findings/decisions from dispatch. No worker
+  MCP setup, claims, status calls, or duplicate review receipts.
 - Delivery owner and required PR/no-PR evidence. Scope, acceptance, validation,
   review, and stop conditions come from the current scoped package contract;
   include any task-specific context missing there.
@@ -126,7 +127,16 @@ worker finish review convergence and delivery.
 
 ## Guidance
 
-- Answer package guidance when recorded intent already decides it.
+- Answer worker questions in the conversation when recorded intent decides them.
+  Do not require a duplicate Symphony++ question record. Ordinary waits are not blockers.
+- Only the architect (or coordinating parent for direct work) explicitly declares
+  and clears work blockers after resolving or escalating the issue. Scope each
+  blocker to affected work; do not automatically block the whole WorkRequest.
+  Declare with scoped `append_progress` and explicit payload
+  `{"type":"blocker","active":true,"blocker_id":"<id>"}`; clear with `resolve_blocker`.
+  Asking, escalation, and answering do not create or clear these blockers.
+- Optional Herdr/OSC observations augment last-known state. Missing observation
+  means unknown and never blocks work or grants takeover authority.
 - Escalate with `escalate_guidance_request` when human product input is needed.
 - For human choices, include a compact `decision_prompt`: `tl_dr`, `details`,
   concrete options with labels, exact answer text, descriptions, and useful
@@ -134,7 +144,16 @@ worker finish review convergence and delivery.
 
 ## Delivery Closeout
 
-After dispatch, use `read_delivery_board` for lifecycle evidence.
+After the worker returns, verify acceptance and the required native checks/review
+for the exact PR head once. Then call architect `sync_pr` with `work_package_id`,
+`url`, and `head_sha` from the normal handoff. It fetches GitHub evidence and
+applies existing readiness and dependency gates without worker claims or receipts.
+Readiness does not independently prove native checks/review passed; unknown provider
+fields stay unknown. Missing optional observations do not prevent this workflow.
+For selected candidate inputs, reconcile qualification from the native handoff
+using existing scoped `append_progress` dependency provenance for the dependent head.
+
+Use `read_delivery_board` for lifecycle evidence.
 
 Before an authorized GitHub merge, require the package's `merge_eligibility.eligible`
 and current candidate selections on that board, plus the worker's exact-head

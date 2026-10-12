@@ -35,8 +35,9 @@ unresolved product decisions require it, not because of request type or model.
   PR/evidence.
 - Honor assigned budgets; otherwise keep one cohesive outcome and escalate
   material scope growth or reviewability risk. Numerical budgets are optional.
-- For S++ WorkPackages, pass ledger claim metadata and local worktree scope.
-  Do not prompt normal workers for work keys or private handoff secrets.
+- For S++ WorkPackages, provide the full scoped assignment and local worktree
+  scope, including relevant prior findings/decisions. The parent owns dispatch
+  authority; workers need no ledger claim or status calls.
 - Use explorers for reconnaissance only.
 
 ## Dispatch
@@ -44,9 +45,6 @@ unresolved product decisions require it, not because of request type or model.
 Worker prompts should include:
 
 - `symphony-plus-plus:symphony-worker`.
-- `symphony-plus-plus:symphony-solo-session` when durable task memory helps
-  and no WorkPackage is assigned. Each worker uses its own session; short
-  read-only scouts need no Solo ledger.
 - Task-specific scope, evidence, constraints, and deviations from the baseline
   worker contract.
 - For manual worktrees, use `C:\Code\.worktrees\<repo>\<feature>`. After
@@ -56,13 +54,20 @@ Worker prompts should include:
 ## Supervise
 
 - Do not take over worker implementation by default.
-- Answer architecture questions; escalate human/product ambiguity.
+- Answer architecture questions in the conversation; escalate human/product
+  decisions to a chief when present, otherwise the user. Questions and ordinary
+  waits are not blockers. Only the architect or coordinating parent explicitly
+  declares/clears blockers for affected work after resolving or escalating it.
+- Optional Herdr/OSC observations augment last-known state. Missing observation
+  means unknown; it never blocks work or authorizes takeover.
 - Treat review findings as risk signals, not scope authority.
 - Stop or reslice when scope grows, workers collide, or PR budget is at risk.
 
 ## Integrate
 
 - Verify PR/evidence against the assigned slice.
-- Check changed files, validation, review, CI/check status, and residual risk.
+- Check changed files, acceptance, native validation/review evidence for the
+  exact head, CI/check status, and residual risk. Own readiness and delivery
+  reconciliation; do not request duplicate worker MCP or review receipts.
 - Merge only when authorized.
 - Summarize PRs/no-PR evidence and follow-ups.

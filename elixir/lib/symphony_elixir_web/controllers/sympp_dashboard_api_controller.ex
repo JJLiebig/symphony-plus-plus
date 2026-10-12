@@ -592,8 +592,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
                WorkPackageDispatch.dispatch(
                  repo,
                  work_request_id,
-                 work_package_id,
-                 LocalOperatorActions.dispatch_handoff_opts(repo)
+                 work_package_id
                ) do
           refresh = %{work_request_id: work_request_id, work_package_id: work_package_id}
           payload = %{dispatch: WorkPackageDispatch.response_payload(dispatch)}

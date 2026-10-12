@@ -143,7 +143,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
   def call("append_progress", %Config{} = config, %Session{assignment: %{grant_role: "architect"}} = session, arguments) do
     case architect_package_scope(config.repo, session, arguments, :progress_append, "append_progress") do
       {:ok, session, work_package_id} ->
-        append_progress_for_package(config.repo, session, work_package_id, arguments, "append_progress", %{})
+        payload =
+          case Map.get(arguments, "payload") do
+            %{"type" => "blocker", "active" => true} -> %{"type" => "blocker", "source_tool" => "report_blocker", "active" => true}
+            _ordinary_progress -> %{}
+          end
+
+        append_progress_for_package(config.repo, session, work_package_id, arguments, "append_progress", payload)
 
       {:tool_error, reason} ->
         invalid_params_error("append_progress", reason)

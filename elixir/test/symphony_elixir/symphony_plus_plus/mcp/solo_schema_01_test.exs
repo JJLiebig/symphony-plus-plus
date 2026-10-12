@@ -991,7 +991,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SoloSchema01Test do
     assert get_in(tools_by_name, ["dispatch_work_package", "inputSchema", "required"]) == ["work_request_id", "work_package_id"]
 
     dispatch_properties = get_in(tools_by_name, ["dispatch_work_package", "inputSchema", "properties"])
-    assert get_in(dispatch_properties, ["claimed_by", "type"]) == "string"
     refute Map.has_key?(dispatch_properties, "secret_handoff")
     refute Map.has_key?(dispatch_properties, "secret_store_dir")
     refute Map.has_key?(dispatch_properties, "legacy_private_handoff")

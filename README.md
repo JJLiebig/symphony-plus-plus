@@ -10,6 +10,11 @@ coordinators also work without a backend; optional Solo Sessions provide
 lightweight planning memory through MCP. Symphony++ does not own model
 accounts or terminal sessions.
 
+Ordinary workers receive an assignment, implement it, run required native checks
+and review, and return a PR or evidence. The architect coordinates ownership,
+dependencies, explicit blockers, readiness, and delivery; worker MCP calls and
+duplicate status/review reporting are optional.
+
 ## Install
 
 Windows beta installation and connection for Codex or Claude Code:

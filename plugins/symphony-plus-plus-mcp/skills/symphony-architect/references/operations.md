@@ -54,7 +54,8 @@ the WorkRequest to its planned state; there is no separate approval or finish st
 
 If a replacement worker is blocked by an old claim, call
 `force_release_work_package_claim` with `work_package_id` and `reason`, then
-retry `claim_local_assignment`. Any authenticated architect can release a
+deliver the ordinary assignment to the replacement worker. Only an optional
+worker MCP workflow retries `claim_local_assignment`. Any authenticated architect can release a
 worker claim across WorkRequests, including active or paused claims. The old
 worker loses session authority; package status and delivery evidence stay intact.
 
