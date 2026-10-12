@@ -8,6 +8,8 @@
     "build": "npm run typecheck && node scripts/clean-vite-output.mjs && vite build",
     "build:herdr": "vite build --config vite.herdr.config.ts",
     "dev": "vite",
+    "dev:snapshot": "vite --mode snapshot",
+    "snapshot:capture": "node scripts/capture-snapshot.mjs",
     "lint": "eslint . --max-warnings 0",
     "quality": "npm run typecheck && npm run lint",
     "test": "vitest run",
