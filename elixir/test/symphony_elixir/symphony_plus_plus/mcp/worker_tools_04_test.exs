@@ -387,11 +387,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools04Test do
     assert response_progress_payload(repo, url_response)["number"] == 43
   end
 
-  test "attach_pr idempotency replay accepts legacy URL-only payload shape", %{repo: repo} do
+  test "attach_pr idempotency replay accepts stored URL-only and full payloads", %{repo: repo} do
     assert {:ok, package} =
              WorkPackageRepository.create(
                repo,
-               WorkPackageFactory.attrs(id: "SYMPP-PR-LEGACY-REPLAY", kind: "mcp", repo: "nextide/symphony-plus-plus", status: "ci_waiting")
+               WorkPackageFactory.attrs(id: "SYMPP-PR-LEGACY-REPLAY", kind: "mcp", repo: "example-org/widget-service", status: "ci_waiting")
              )
 
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
@@ -408,7 +408,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools04Test do
                payload: %{
                  type: "pr",
                  source_tool: "attach_pr",
-                 url: "https://github.com/nextide/symphony-plus-plus/pull/42",
+                 url: "https://github.com/example-org/widget-service/pull/42",
                  head_sha: "legacy-head"
                }
              })
@@ -424,6 +424,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools04Test do
 
     assert {:ok, events} = PlanningRepository.list_progress_events(repo, package.id)
     assert Enum.count(events, &(&1.idempotency_key == idempotency_key)) == 1
+
+    full_arguments = %{"number" => 42, "head_sha" => "legacy-head", "idempotency_key" => "full-pr-key"}
+    full_response = attach_tool(repo, session, "attach_pr", full_arguments)
+    full_id = get_in(full_response, ["result", "structuredContent", "progress_event", "id"])
+    full_event = repo.get!(ProgressEvent, full_id)
+
+    # A persisted full attachment from before provider dates and observation stamps were added.
+    full_event
+    |> Ecto.Changeset.change(payload: Map.drop(full_event.payload, ~w(created_at updated_at head_changed_at checks_changed_at)))
+    |> repo.update!()
+
+    replay = attach_tool(repo, session, "attach_pr", full_arguments)
+    assert get_in(replay, ["result", "structuredContent", "progress_event", "id"]) == full_id
   end
 
   test "sync_pr preserves service error shape for PR metadata lookup failures" do

@@ -101,7 +101,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest do
          "merge_commit_sha" => metadata_merge_commit_sha(metadata),
          "observed_at" => clean_string(Map.get(metadata, "observed_at")),
          "provider_reference" => clean_provider_reference(Map.get(metadata, "provider_reference"))
-       }}
+       }
+       |> Map.reject(fn {key, value} -> key in ["created_at", "updated_at"] and is_nil(value) end)}
     end
   end
 
