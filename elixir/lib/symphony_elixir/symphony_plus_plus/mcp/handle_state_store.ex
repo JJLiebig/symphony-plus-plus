@@ -109,18 +109,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
           | initialized: server.initialized or stored.initialized,
             session: session,
             state_key_version: state_key_version,
-            session_refresh_required: session_refresh_required?,
-            stale_assignment_role:
-              server.stale_assignment_role || stored.stale_assignment_role ||
-                if(session_refresh_required? and match?(%Session{}, server.session), do: server.session.assignment.grant_role),
-            stale_architect_claim:
-              server.stale_architect_claim || stored.stale_architect_claim ||
-                if(session_refresh_required?, do: Session.architect_claim_arguments(server.session))
+            session_refresh_required: session_refresh_required?
         }
+        |> restore_stale_assignment(server, stored, session_refresh_required?)
 
       _stored ->
         server
     end
+  end
+
+  defp restore_stale_assignment(updated, server, stored, refresh?) do
+    discarded_session = if refresh?, do: server.session
+    previous_role = if match?(%Session{}, discarded_session), do: discarded_session.assignment.grant_role
+
+    %{
+      updated
+      | stale_assignment_role: server.stale_assignment_role || stored.stale_assignment_role || previous_role,
+        stale_architect_claim:
+          server.stale_architect_claim || stored.stale_architect_claim || Session.architect_claim_arguments(discarded_session)
+    }
   end
 
   defp restore(%{__struct__: @server} = server) do

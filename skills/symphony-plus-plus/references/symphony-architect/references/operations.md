@@ -5,6 +5,11 @@ delivery invariants remain in `../procedure.md`.
 
 ## Bootstrap recovery
 
+Trusted local architect calls acquire an unclaimed WorkRequest or reclaim an
+expired, unpaused claim automatically. Known scope survives connection loss;
+otherwise supply `work_request_id` on the call. A different live owner blocks
+the call without changing ownership. Paused claims remain operator-controlled.
+
 A local architect claim can recover stale handoff scope when the ledger proves
 one matching WorkRequest, repo, base branch, anchor, and grant. For
 `phase_scope_not_available`, follow returned `missing_evidence` and `action`.
@@ -13,7 +18,7 @@ or start a new one. Do not invent state or bypass a binding denial.
 
 ## Planning operations
 
-After claiming a WorkRequest, current-WR lifecycle tools may omit
+Once a WorkRequest is bound, current-WR lifecycle tools may omit
 `work_request_id`: `slice_work_request`,
 `update_work_package`,
 `upsert_group`,

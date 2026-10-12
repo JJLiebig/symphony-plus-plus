@@ -143,7 +143,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionBindingTools do
 
       updated_server =
         if binding_cleared?,
-          do: %{server | session: nil, session_refresh_required: false, stale_assignment_role: nil, stale_architect_claim: nil},
+          do: %{
+            server
+            | session: nil,
+              session_refresh_required: false,
+              stale_assignment_role: nil,
+              stale_architect_claim: nil
+          },
           else: %{server | session_refresh_required: server.session_refresh_required or fresh_mcp_session_required?}
 
       {:ok, result, updated_server}

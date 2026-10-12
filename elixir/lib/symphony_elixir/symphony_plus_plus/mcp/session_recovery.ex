@@ -120,28 +120,34 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
         if release_current_assignment_success?(payload, response, server) do
           remember_unbound_initialized(client_key, state_key, @release_current_assignment_tool)
         else
-          case {session.assignment.grant_role, get_binding(config.repo, client_key, state_key)} do
-            {"architect", {:error, :not_found}} ->
-              remember_session_claim(config, client_key, state_key, session, response, "claim_local_architect_assignment")
-
-            {"architect", {:ok, %SessionBinding{recovery_kind: "ambiguous_claim"}}} ->
-              {:touch, SessionBinding.binding_id(client_key, state_key), now()}
-
-            {"architect", {:ok, binding}} ->
-              if binding.recoverable and require_session_matches_binding(session, binding) == :ok do
-                {:touch, binding.id, now()}
-              else
-                remember_session_claim(config, client_key, state_key, session, response, "claim_local_architect_assignment")
-              end
-
-            _existing_binding ->
-              {:touch, SessionBinding.binding_id(client_key, state_key), now()}
-          end
+          remember_bound_session(config, client_key, state_key, session, response)
         end
     end
   end
 
   defp remember_action(_config, _client_key, _state_key, _payload, %Server{}, _response), do: :skip
+
+  defp remember_bound_session(config, client_key, state_key, session, response) do
+    touch = {:touch, SessionBinding.binding_id(client_key, state_key), now()}
+
+    case {session.assignment.grant_role, get_binding(config.repo, client_key, state_key)} do
+      {"architect", {:error, :not_found}} ->
+        remember_session_claim(config, client_key, state_key, session, response, "claim_local_architect_assignment")
+
+      {"architect", {:ok, %SessionBinding{recovery_kind: "ambiguous_claim"}}} ->
+        touch
+
+      {"architect", {:ok, binding}} ->
+        if binding.recoverable and require_session_matches_binding(session, binding) == :ok do
+          touch
+        else
+          remember_session_claim(config, client_key, state_key, session, response, "claim_local_architect_assignment")
+        end
+
+      _existing_binding ->
+        touch
+    end
+  end
 
   defp remember_session_claim(%Config{repo: repo}, client_key, state_key, %Session{} = session, response, tool_name) do
     case session_claim_lease(repo, session, response) do
