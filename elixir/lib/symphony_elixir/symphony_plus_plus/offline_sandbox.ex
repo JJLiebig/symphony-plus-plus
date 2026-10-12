@@ -10,7 +10,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OfflineSandbox do
   @spec require_online() :: :ok | {:error, :offline_sandbox}
   def require_online, do: if(enabled?(), do: {:error, :offline_sandbox}, else: :ok)
 
-  @spec verify!(String.t()) :: :ok
+  @spec verify!(String.t() | nil) :: :ok
   def verify!(database) do
     marked? = marked?(database)
 
@@ -26,13 +26,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OfflineSandbox do
     end
   end
 
+  defp marked?(nil), do: false
+
   defp marked?(database) do
     path = Repo.sqlite_file_uri_path(database) || database
 
     if Repo.memory_database?(database) or not File.regular?(path) do
       false
     else
-      {:ok, connection} = Sqlite3.open(database, mode: :readonly)
+      {:ok, connection} = Sqlite3.open(path, mode: :readonly)
 
       try do
         {:ok, statement} =

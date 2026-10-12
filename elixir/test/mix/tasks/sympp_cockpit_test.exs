@@ -64,6 +64,10 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
         Repo.init(:supervisor, database: database)
       end
 
+      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+        OfflineSandbox.verify!("file:#{URI.encode(database)}?mode=rwc")
+      end
+
       System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
       assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> OfflineSandbox.verify!(database <> ".missing") end
       Mix.Tasks.Sympp.BetaMigrate.run(["--database", database])
@@ -88,6 +92,7 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
                    human_description: "Exercise a copied goal.",
                    desired_dispatch_shape: "single_package"
                  })
+
         path = origin <> "/api/v1/sympp/operator/work-requests/#{request.id}"
         assert Req.post!(path <> "/state", json: %{state: "completed"}, headers: browser_api_headers()).status == 200
         assert Req.post!(path <> "/archive", json: %{}, headers: browser_api_headers()).status == 200
