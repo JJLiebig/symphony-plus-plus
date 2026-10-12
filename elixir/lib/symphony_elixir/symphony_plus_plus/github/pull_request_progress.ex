@@ -21,6 +21,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress do
   defp same_observed_pr?(previous, payload) do
     previous_ref = pr_ref(previous)
     current_ref = pr_ref(payload)
+
     is_binary(previous_ref.repository) and is_binary(current_ref.repository) and
       String.downcase(previous_ref.repository) == String.downcase(current_ref.repository) and previous_ref.number == current_ref.number
   end

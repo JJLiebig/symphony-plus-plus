@@ -2349,10 +2349,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert fetch.()["pr_signal"]["checks"]["changed_at"] == first.payload["checks_changed_at"]
       assert fetch.()["pr_signal"]["created_at"] == "2026-10-01T09:05:00Z"
 
-      assert {:ok, _backfill} = PlanningRepository.append_progress_event(repo, %{
-        work_package_id: package.id, summary: "Earlier widget attachment", status: "pr_attached",
-        payload: Map.delete(snapshot, "check_summary"), created_at: ~U[2025-10-01 09:00:00Z]
-      })
+      assert {:ok, _backfill} =
+               PlanningRepository.append_progress_event(repo, %{
+                 work_package_id: package.id,
+                 summary: "Earlier widget attachment",
+                 status: "pr_attached",
+                 payload: Map.delete(snapshot, "check_summary"),
+                 created_at: ~U[2025-10-01 09:00:00Z]
+               })
 
       repeated = append.(Map.put(snapshot, "source_tool", "sync_pr"))
       assert repeated.payload["checks_changed_at"] == first.payload["checks_changed_at"]
