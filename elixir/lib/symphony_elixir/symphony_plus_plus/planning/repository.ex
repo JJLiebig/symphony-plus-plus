@@ -154,21 +154,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
   end
 
   defp stamp_pr_observation(repo, attrs) do
-    payload = Map.get(attrs, "payload") || Map.get(attrs, :payload)
+    payload = Map.get(attrs, "payload")
 
-    if is_map(payload) and (payload["type"] || payload[:type]) == "pr" and
-         (payload["source_tool"] || payload[:source_tool]) in ["attach_pr", "sync_pr"] do
-      work_package_id = Map.get(attrs, "work_package_id") || Map.get(attrs, :work_package_id)
+    if is_map(payload) and payload["type"] == "pr" and payload["source_tool"] in ["attach_pr", "sync_pr"] do
+      work_package_id = Map.get(attrs, "work_package_id")
 
       previous =
         case list_progress_events(repo, work_package_id) do
-          {:ok, events} -> MetadataProjection.metadata(events).pr
+          {:ok, events} ->
+            # Compare observations across heads; display selection deliberately prefers the current branch head.
+            events = Enum.reject(events, &MetadataProjection.payload_type?(&1, "branch", "attach_branch"))
+            MetadataProjection.metadata(events).pr
+
           {:error, reason} -> repo.rollback(reason)
         end
 
       payload = payload |> PullRequestProgress.stringify_keys() |> PullRequestProgress.stamp_observation(previous, DateTime.utc_now(:microsecond))
-      key = if Map.has_key?(attrs, "payload"), do: "payload", else: :payload
-      Map.put(attrs, key, payload)
+      Map.put(attrs, "payload", payload)
     else
       attrs
     end

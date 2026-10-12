@@ -237,17 +237,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   defp board_stage(%{status: status}, _pr, _review, _delivery) when status in ["skipped", "closed", "abandoned"],
     do: {nil, nil, "recorded_status"}
 
-  defp board_stage(package, pr, review, _delivery) do
+  defp board_stage(_package, _pr, %{status: "in_progress"} = review, _delivery),
+    do: {"review", review[:round_started_at] || review[:started_at], "provider"}
+
+  defp board_stage(%{status: "ready_for_merge"}, _pr, _review, _delivery), do: {"merge", nil, "recorded_status"}
+
+  defp board_stage(%{status: "reviewing"}, _pr, review, _delivery),
+    do: {"review", review[:round_started_at] || review[:started_at], "recorded_status"}
+
+  defp board_stage(package, pr, _review, _delivery) do
     cond do
-      review[:status] == "in_progress" ->
-        {"review", review[:round_started_at] || review[:started_at], "provider"}
-
-      package.status == "ready_for_merge" ->
-        {"merge", nil, "recorded_status"}
-
-      package.status == "reviewing" ->
-        {"review", review[:round_started_at] || review[:started_at], "recorded_status"}
-
       pr[:status] == "open" and pr[:head_matches] != false ->
         {"checks", nil, pr[:source] || "recorded_pr"}
 

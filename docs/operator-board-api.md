@@ -55,8 +55,8 @@ Example package fragment (invented repository):
 ```
 
 Use `work_request_details[].product_tree`: `root_node_ids` and each node's
-`parent_id` describe nesting; `position` orders siblings, with id as a stable tie
-breaker. Nodes include empty groups and `work_package_ids`; root packages appear
+`parent_id` describe nesting; `position` orders siblings, while `root_node_ids`
+provides the ordered root identifiers. Nodes include empty groups and `work_package_ids`; root packages appear
 in `root_work_package_ids`. WorkRequest `completed_at` remains the canonical
 delivery time. Deploy observations and repository default branches are not
 included by this change.

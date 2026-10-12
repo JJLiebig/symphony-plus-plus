@@ -2366,6 +2366,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert next_head.payload["head_changed_at"] != first.payload["head_changed_at"]
       assert fetch.()["pr_signal"]["head_sha"] == "head-b"
       assert fetch.()["pr_signal"]["checks"]["changed_at"] == next_head.payload["checks_changed_at"]
+
+      append.(%{"type" => "branch", "source_tool" => "attach_branch", "branch" => "feat/widget", "head_sha" => "head-a"})
+      returning = append.(Map.put(snapshot, "source_tool", "sync_pr"))
+      assert returning.payload["head_changed_at"] != first.payload["head_changed_at"]
+      assert returning.payload["head_changed_at"] != next_head.payload["head_changed_at"]
+      assert returning.payload["checks_changed_at"] != next_head.payload["checks_changed_at"]
+      assert fetch.()["pr_signal"]["head_changed_at"] == returning.payload["head_changed_at"]
       assert {:ok, current_request} = WorkRequestRepository.get(repo, request.id)
       assert current_request.completed_at == nil
     end)

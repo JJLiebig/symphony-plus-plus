@@ -29,13 +29,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
     assert %{stage: "build", track: "no_pr"} = Signals.board_state(package, %{summary | merge_required: false}, nil)
 
     reviewing = Map.put(summary, :review_signal, %{status: "in_progress", round_started_at: "2026-10-01T09:05:00Z"})
-    assert %{stage: "review", entered_at: "2026-10-01T09:05:00Z", source: "provider"} = Signals.board_state(package, reviewing, nil)
+    reviewing_state = Signals.board_state(package, reviewing, nil)
+    assert %{stage: "review", entered_at: "2026-10-01T09:05:00Z", source: "provider"} = reviewing_state
 
     done = %WorkPackageDelivery{outcome: "completed_no_pr", recorded_at: DateTime.add(dispatched_at, 600, :second)}
-    assert %{stage: "done", delivered: true, outcome: "completed_no_pr"} = Signals.board_state(package, %{summary | merge_required: false}, done)
+    done_state = Signals.board_state(package, %{summary | merge_required: false}, done)
+    assert %{stage: "done", delivered: true, outcome: "completed_no_pr"} = done_state
 
     for outcome <- ["superseded", "abandoned"] do
-      assert %{stage: nil, delivered: false, outcome: ^outcome} = Signals.board_state(package, summary, %{done | outcome: outcome})
+      state = Signals.board_state(package, summary, %{done | outcome: outcome})
+      assert %{stage: nil, delivered: false, outcome: ^outcome} = state
     end
   end
 
