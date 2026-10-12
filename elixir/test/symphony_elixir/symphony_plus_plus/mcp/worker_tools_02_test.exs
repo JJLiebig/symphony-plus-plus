@@ -113,7 +113,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
     assert {:ok, reports} = OperatorReport.load_many(repo, [request])
     assert Map.fetch!(reports, request.id) == nil
 
-    append_report!(repo, architect, anchor, %{"brief" => String.duplicate("x", ProgressEvent.payload_string_limit()), "unknown" => "ignored"}, "at-limit")
+    limit_text = String.duplicate("x", ProgressEvent.payload_string_limit())
+    append_report!(repo, architect, anchor, %{"brief" => limit_text, "unknown" => "ignored"}, "at-limit")
     accepted_text = read_operator_report!(repo, architect, request)["brief"]["text"]
     assert String.length(accepted_text) == ProgressEvent.payload_string_limit()
 
