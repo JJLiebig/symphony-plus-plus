@@ -121,12 +121,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
   defp restore_stale_assignment(updated, server, stored, refresh?) do
     discarded_session = if refresh?, do: server.session
     previous_role = if match?(%Session{}, discarded_session), do: discarded_session.assignment.grant_role
+    previous_claim = Session.architect_claim_arguments(discarded_session)
 
     %{
       updated
       | stale_assignment_role: server.stale_assignment_role || stored.stale_assignment_role || previous_role,
-        stale_architect_claim:
-          server.stale_architect_claim || stored.stale_architect_claim || Session.architect_claim_arguments(discarded_session)
+        stale_architect_claim: server.stale_architect_claim || stored.stale_architect_claim || previous_claim
     }
   end
 

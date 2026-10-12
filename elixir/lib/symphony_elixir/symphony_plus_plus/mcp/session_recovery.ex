@@ -83,10 +83,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
 
   defp recover_architect_claim(repo, %SessionBinding{recoverable: true, grant_role: "architect"} = binding) do
     with {:ok, grant} <- AccessGrantRepository.get(repo, binding.access_grant_id),
-         :ok <- require_grant_matches_binding(grant, binding),
+         :ok <- require_grant_scope_matches_binding(grant, binding),
          :ok <- AccessGrantService.require_live_package_authority(repo, grant),
-         {:ok, session} <- Auth.session_from_grant(repo, grant, proof_hash: grant.secret_hash) do
-      Session.architect_claim_arguments(session)
+         {:ok, session} <- Auth.session_from_grant(repo, grant, proof_hash: grant.secret_hash),
+         %{} = arguments <- Session.architect_claim_arguments(session) do
+      Map.put(arguments, "claimed_by", binding.claimed_by)
     else
       _unavailable -> nil
     end
@@ -108,7 +109,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
       else: :skip
   end
 
-  defp remember_action(config, client_key, state_key, payload, %Server{initialized: true, session: %Session{} = session} = server, response) do
+  defp remember_action(config, client_key, state_key, payload, %Server{initialized: true, session: %Session{} = session}, response) do
     case claim_tool_name(payload, response, session) do
       tool_name when tool_name in @local_claim_tools ->
         remember_session_claim(config, client_key, state_key, session, response, tool_name)
@@ -117,11 +118,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
         remember_nonrecoverable_claim(client_key, state_key, session, "ambiguous_claim")
 
       _tool_name ->
-        if release_current_assignment_success?(payload, response, server) do
-          remember_unbound_initialized(client_key, state_key, @release_current_assignment_tool)
-        else
-          remember_bound_session(config, client_key, state_key, session, response)
-        end
+        remember_bound_session(config, client_key, state_key, session, response)
     end
   end
 
@@ -282,12 +279,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.SessionRecovery do
   end
 
   defp require_grant_matches_binding(%AccessGrant{} = grant, %SessionBinding{} = binding) do
+    with :ok <- require_grant_scope_matches_binding(grant, binding) do
+      if grant.claimed_by == binding.claimed_by, do: :ok, else: {:error, :claim_owner_mismatch}
+    end
+  end
+
+  defp require_grant_scope_matches_binding(%AccessGrant{} = grant, %SessionBinding{} = binding) do
     cond do
       grant.id != binding.access_grant_id -> {:error, :grant_mismatch}
       grant.work_package_id != binding.work_package_id -> {:error, :work_package_mismatch}
       grant.phase_id != binding.phase_id -> {:error, :phase_mismatch}
       grant.grant_role != binding.grant_role -> {:error, :role_mismatch}
-      grant.claimed_by != binding.claimed_by -> {:error, :claim_owner_mismatch}
       true -> :ok
     end
   end

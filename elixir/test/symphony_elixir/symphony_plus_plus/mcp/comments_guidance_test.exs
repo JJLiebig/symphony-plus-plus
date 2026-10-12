@@ -369,7 +369,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.CommentsGuidanceTest do
         note_server
       )
 
-    assert get_in(dispatch_response, ["error", "data", "reason"]) == "claim_required"
+    assert get_in(dispatch_response, ["error", "data", "reason"]) == "missing_work_package_id"
   end
 
   test "unclaimed WorkRequest reads require trusted local HTTP with explicit state", %{repo: repo} do

@@ -157,7 +157,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport05Test do
           tool_call("progress-after-claim", "append_progress", %{
             "summary" => "should append",
             "idempotency_key" => "progress-after-local-claim"
-          })
+          }),
+          tool_call("architect-after-worker-claim", "list_guidance_requests", %{"work_request_id" => "WR-NOT-A-WORKER-PROMOTION"})
         ],
         local_mcp_server(local_mcp_config(repo), "local-batch-thread-state")
       )
@@ -166,6 +167,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport05Test do
     assert get_in(Enum.at(responses, 1), ["error", "data", "reason"]) == "claim_required"
     assert get_in(Enum.at(responses, 2), ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
     assert get_in(Enum.at(responses, 3), ["error", "data", "reason"]) == "claim_required"
+    assert get_in(Enum.at(responses, 4), ["error", "data", "reason"]) == "claim_required"
   end
 
   test "single-item batch preserves local claim session for later requests", %{repo: repo} do
