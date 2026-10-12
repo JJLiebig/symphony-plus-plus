@@ -127,6 +127,16 @@ worker finish review convergence and delivery.
 
 ## Guidance
 
+Optionally write one concise operator report at a meaningful package/phase delivery,
+road bump, or human escalation. Use `append_progress` on your current architect
+anchor with payload `{"type":"architect_operator_report"}` and only changed fields:
+`brief` (2–3 sentences), free-text `eta`, `parking:{reason}`, or
+`human_escalation:{question}`. Set parking/escalation to `null` to resume/resolve;
+the server owns times and preserves other fields. Route human decisions to the chief
+when present, otherwise the user; resolve the escalation after a native conversational
+answer without duplicate worker receipts. Questions and ordinary waits do not declare
+escalations or blockers. No report cadence or extra checklist is required.
+
 - Answer worker questions in the conversation when recorded intent decides them.
   Do not require a duplicate Symphony++ question record. Ordinary waits are not blockers.
 - Only the architect (or coordinating parent for direct work) explicitly declares

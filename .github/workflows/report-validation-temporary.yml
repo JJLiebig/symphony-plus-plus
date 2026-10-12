@@ -1,0 +1,36 @@
+name: report-validation-temporary
+on:
+  push:
+    branches: [feat/beta-architect-operator-report]
+permissions:
+  contents: read
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elixir
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: |
+            elixir/deps
+            elixir/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('elixir/mise.toml') }}-${{ hashFiles('elixir/mix.exs') }}-${{ hashFiles('elixir/mix.lock') }}
+      - name: Prepare and format report files
+        run: |
+          mix deps.get
+          mix format lib/symphony_elixir/symphony_plus_plus/work_requests/operator_report.ex lib/symphony_elixir/symphony_plus_plus/planning/progress_event.ex lib/symphony_elixir/symphony_plus_plus/mcp/worker_tools.ex lib/symphony_elixir/symphony_plus_plus/mcp/work_request_payloads.ex lib/symphony_elixir/symphony_plus_plus/dashboard/work_request_cards.ex lib/symphony_elixir/symphony_plus_plus/dashboard/work_request_details.ex test/symphony_elixir/symphony_plus_plus/mcp/worker_tools_02_test.exs
+          git diff --binary > ../report-format.patch
+      - uses: actions/upload-artifact@4cec3d8b58ebc0b767b20e39d161457c23e8b6e39
+        with:
+          name: report-format
+          path: report-format.patch
+      - name: Report regressions
+        run: mix test test/symphony_elixir/symphony_plus_plus/mcp/worker_tools_02_test.exs test/symphony_elixir/symphony_plus_plus/dashboard_work_request_details_batch_test.exs
