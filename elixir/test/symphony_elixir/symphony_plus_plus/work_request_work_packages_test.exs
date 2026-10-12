@@ -232,7 +232,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
     repo: repo
   } do
     work_request = create_work_request!(repo)
-    package = slice_one!(repo, work_request.id)
+    assert {:ok, decision} = Repository.record_decision(repo, work_request.id, %{
+      source_type: "architect", decision: "Preserve prior investigation evidence.",
+      rationale: "Workers need relevant context in their ordinary assignment.",
+      scope_impact: "Include the package's existing findings.", created_by: "architect"
+    })
+    package = slice_one!(repo, work_request.id, package_attrs(goal: "Apply #{decision.id}."))
+
+    for number <- 1..101 do
+      assert {:ok, _finding} = PlanningRepository.append_finding(repo, %{
+        work_package_id: package.id, title: "Prior finding #{number}", body: "Evidence #{number} remains relevant."
+      })
+    end
+
     assert :ok = DashboardPubSub.subscribe()
 
     assert {:ok, dispatch} =
@@ -245,6 +257,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
 
     assert dispatch.worker_bootstrap.coordinates.primary_execution ==
              %{kind: "work_package", work_package_id: package.id}
+
+    assignment = dispatch.worker_bootstrap.assignment
+    findings = assignment["prior_findings"]["findings"]
+    assert length(findings) == 101
+    assert hd(findings)["body"] == "Evidence 1 remains relevant."
+    assert List.last(findings)["body"] == "Evidence 101 remains relevant."
+    assert assignment["selected_decisions"] == [%{
+      "id" => decision.id, "decision" => decision.decision,
+      "rationale" => decision.rationale, "scope_impact" => decision.scope_impact
+    }]
 
     assert Repo.aggregate(WorkPackage, :count) == 1
     assert_receive :operator_dashboard_changed
