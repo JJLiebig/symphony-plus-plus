@@ -7,6 +7,18 @@ on:
       - main
 
 jobs:
+  beta-snapshot:
+    name: beta snapshot safety
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Check online SQLite snapshot
+        run: python -m unittest discover -s scripts/tests -p test_sympp_beta_snapshot.py
+      - name: Check beta launcher isolation and refusal paths
+        shell: pwsh
+        run: ./plugins/symphony-plus-plus-mcp/tests/launcher/run-launcher-tests.ps1 -SkipDesktopTests
+
   single-gates:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -231,6 +243,7 @@ jobs:
   make-all:
     runs-on: ubuntu-latest
     needs:
+      - beta-snapshot
       - single-gates
       - parallel-gates
       - frontend
@@ -238,6 +251,10 @@ jobs:
     steps:
       - name: Verify split gates
         run: |
+          if [ "${{ needs.beta-snapshot.result }}" != "success" ]; then
+            echo "beta snapshot result: ${{ needs.beta-snapshot.result }}"
+            exit 1
+          fi
           if [ "${{ needs.single-gates.result }}" != "success" ]; then
             echo "single gate result: ${{ needs.single-gates.result }}"
             exit 1

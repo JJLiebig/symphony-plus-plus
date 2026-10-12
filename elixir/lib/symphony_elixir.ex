@@ -19,12 +19,14 @@ defmodule SymphonyElixir.Application do
 
   use Application
 
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue
 
   @impl true
   def start(_type, _args) do
+    :ok = OfflineSandbox.verify!(Repo.database_path_without_side_effects())
     :ok = SymphonyElixir.LogFile.configure()
 
     Supervisor.start_link(
@@ -47,7 +49,7 @@ defmodule SymphonyElixir.Application do
   end
 
   defp legacy_daemon_children do
-    if artifact_runtime?() do
+    if artifact_runtime?() or OfflineSandbox.enabled?() do
       []
     else
       [
@@ -58,6 +60,18 @@ defmodule SymphonyElixir.Application do
   end
 
   defp mcp_runtime_children do
+    if OfflineSandbox.enabled?() do
+      [
+        {Repo, Repo.child_options()},
+        {Retention, repo: Repo},
+        {SymphonyElixir.HttpServer, host: "127.0.0.1"}
+      ]
+    else
+      online_runtime_children()
+    end
+  end
+
+  defp online_runtime_children do
     if artifact_runtime?() do
       [
         {Repo, Repo.child_options()},

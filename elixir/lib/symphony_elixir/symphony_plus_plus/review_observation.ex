@@ -1,6 +1,7 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
 
   @cache_table __MODULE__
@@ -11,6 +12,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
 
   @spec observe([WorkPackage.t()], keyword()) :: %{optional(String.t()) => map()}
   def observe(work_packages, opts \\ []) when is_list(work_packages) do
+    if OfflineSandbox.enabled?(), do: %{}, else: observe_online(work_packages, opts)
+  end
+
+  defp observe_online(work_packages, opts) do
     table = Keyword.get(opts, :cache_table, @cache_table)
     now_ms = Keyword.get(opts, :now_ms, System.monotonic_time(:millisecond))
     ttl_ms = Keyword.get(opts, :ttl_ms, @ttl_ms)

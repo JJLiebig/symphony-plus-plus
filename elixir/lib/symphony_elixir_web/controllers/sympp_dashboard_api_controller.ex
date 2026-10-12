@@ -12,6 +12,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Service, as: GuidanceRequestService
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
   alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
@@ -614,6 +615,15 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   defp send_local_operator_response(conn, action, %Target{} = target, tool_name, fun)
        when is_atom(action) and is_atom(tool_name) and is_function(fun, 1) do
+    if OfflineSandbox.enabled?() and
+         tool_name in [:operator_sync_github_prs, :operator_create_architect_handoff, :operator_dispatch_work_package] do
+      conn |> put_status(403) |> json(%{error: "This action is unavailable in the offline beta sandbox."})
+    else
+      send_online_or_local_response(conn, action, target, tool_name, fun)
+    end
+  end
+
+  defp send_online_or_local_response(conn, action, target, tool_name, fun) do
     if local_operator_browser?(conn) do
       Runtime.with_dashboard_repo(fn repo ->
         local_operator_response(repo, conn, action, target, tool_name, fun)

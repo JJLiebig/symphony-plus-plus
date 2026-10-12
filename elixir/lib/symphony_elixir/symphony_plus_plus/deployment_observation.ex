@@ -2,6 +2,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
   @moduledoc false
 
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
 
   @cache_table __MODULE__
@@ -11,6 +12,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
 
   @spec enrich(map(), map(), keyword()) :: map()
   def enrich(payload, config, opts \\ []) do
+    if OfflineSandbox.enabled?(), do: payload, else: enrich_online(payload, config, opts)
+  end
+
+  defp enrich_online(payload, config, opts) do
     table = ensure_table(Keyword.get(opts, :cache_table, @cache_table))
     :ets.select_delete(table, [{{:"$1", :"$2", :"$3", :"$4"}, [{:<, :"$2", now_ms() - @ttl_ms}], [true]}])
 

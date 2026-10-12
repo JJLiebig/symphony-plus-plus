@@ -109,6 +109,9 @@ try {
 foreach ($name in @("Get-PathIdentity", "Test-SamePath", "Test-SameDatabasePath", "Test-PathInside", "Resolve-BetaConfiguration", "Invoke-BetaGit", "Invoke-BetaGitNullPaths", "Get-BetaGitWorktrees", "Assert-BetaWorktreeIdentity", "Initialize-BetaWorktree", "Assert-BetaPackageSource", "Get-BetaEnvironment", "Invoke-WithBetaEnvironment", "Get-BetaCodexArguments", "Assert-BetaRuntimeIdentity", "Test-BetaRuntimeProcessRunning")) {
   Import-ScriptFunction $betaPath $name
 }
+foreach ($name in @("Get-BetaRuntimeState", "Assert-BetaSnapshotStopped", "Invoke-WithBetaLedgerLock", "New-BetaSnapshot", "Get-BetaPython")) {
+  Import-ScriptFunction $betaPath $name
+}
 function script:git { Write-Error "normal git progress"; $script:LASTEXITCODE = 0; "ok" }
 try { $gitOutput = @(Invoke-BetaGit $repoRoot @("fetch")) } finally { Remove-Item Function:git }
 Assert-True ($gitOutput -contains "ok") "Successful git stderr must not terminate the beta launcher"
@@ -492,6 +495,20 @@ try {
   Assert-True ($environment.SYMPP_HOME -eq $betaConfig.sympp_home -and $environment.SYMPP_RUNTIME_FILE -eq $betaConfig.runtime_file -and $environment.SYMPP_LOG_DIR -eq $betaConfig.log_dir) "Beta runtime state and logs must use the isolated home"
   Assert-True ($environment.MIX_BUILD_ROOT -eq $betaConfig.mix_build_root -and $environment.SYMPP_DATABASE -eq $betaConfig.database -and $environment.SYMPP_REPO_ROOT -eq $betaWorktree) "Beta source build and ledger must use isolated paths"
   Assert-True (-not $environment.Contains("CODEX_HOME")) "Source beta Codex must inherit the normal authenticated Codex home"
+  $previousHerdr = $env:HERDR_ENV
+  $previousProbe = $env:SYMPP_MCP_BRIDGE_PROBE
+  try {
+    $env:HERDR_ENV = "1"
+    $env:SYMPP_MCP_BRIDGE_PROBE = "do-not-run"
+    Invoke-WithBetaEnvironment $betaConfig {
+      Assert-True ($env:SYMPP_OFFLINE_SANDBOX -eq "1" -and -not $env:HERDR_ENV -and -not $env:SYMPP_MCP_BRIDGE_PROBE) "Offline launch must neutralize inherited Herdr and probe execution"
+      Assert-True (Test-PathInside $env:TEMP $betaHome) "Offline launch must confine temporary files"
+    }
+    Assert-True ($env:HERDR_ENV -eq "1" -and $env:SYMPP_MCP_BRIDGE_PROBE -eq "do-not-run") "Beta environment must restore its caller's values"
+  } finally {
+    $env:HERDR_ENV = $previousHerdr
+    $env:SYMPP_MCP_BRIDGE_PROBE = $previousProbe
+  }
   Assert-True ($environment.SYMPP_BACKEND_PORT -eq "20000" -and $environment.SYMPP_DASHBOARD_PORT -eq "20001") "Beta ports must remain separate from stable"
   Assert-True ($null -eq $environment.SYMPP_BACKEND_URL -and $null -eq $environment.SYMPP_DASHBOARD_ORIGIN -and $null -eq $environment.SYMPP_AUTOSTART_SERVERS) "Beta commands must clear inherited runtime overrides"
   $previousCodexHome = $env:CODEX_HOME
@@ -539,6 +556,17 @@ try {
     frontend = [pscustomobject]@{ port = 20001; origin = "http://127.0.0.1:20001" }
   }
   Assert-BetaRuntimeIdentity $betaConfig $state
+  New-Item -ItemType Directory -Path (Split-Path -Parent $betaConfig.runtime_file) -Force | Out-Null
+  $state.backend | Add-Member -NotePropertyName managed -NotePropertyValue $true
+  $state.backend | Add-Member -NotePropertyName pid -NotePropertyValue $PID
+  $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $betaConfig.runtime_file
+  $activeSnapshotRejected = $false
+  try { New-BetaSnapshot $betaConfig $ledgerTarget $true } catch { $activeSnapshotRejected = $_.Exception.Message -like "Stop the beta runtime*" }
+  Assert-True $activeSnapshotRejected "Snapshot must refuse a running beta backend before executing the backup or migrations"
+  Remove-Item -LiteralPath $betaConfig.runtime_file
+  $expectedControls = [pscustomobject]@{ database = $ledgerTarget; offline_sandbox = $true }
+  $oldControls = [pscustomobject]@{ database = $ledgerTarget }
+  Assert-True (-not (Test-SymppPublicationControlsMatch $oldControls $expectedControls)) "Offline beta must not reuse an unprotected runtime on the same ledger"
   Assert-True (Test-BetaRuntimeProcessRunning ([pscustomobject]@{ managed = $true; pid = $PID })) "Status must recognize a live recorded managed process"
   foreach ($pidValue in @($null, 0, 2147483647)) {
     Assert-True (-not (Test-BetaRuntimeProcessRunning ([pscustomobject]@{ managed = $true; pid = $pidValue }))) "Status must reject null, zero, and dead PIDs"

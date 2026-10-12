@@ -4,6 +4,7 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
   alias Plug.Conn
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{ClientLeases, Config, FailedCall, Health, HerdrBinding}
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{HTTPStateStore, HTTPTransport}
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixirWeb.Endpoint
   alias SymphonyElixirWeb.SymppDashboardApi.Runtime
@@ -19,7 +20,8 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
 
   @spec call(Conn.t(), keyword()) :: Conn.t()
   def call(%Conn{path_info: ["mcp"]} = conn, _opts) do
-    with {:ok, local_daemon_trusted?} <- validate_local_request(conn),
+    with :ok <- OfflineSandbox.require_online(),
+         {:ok, local_daemon_trusted?} <- validate_local_request(conn),
          :ok <- validate_origin(conn),
          :ok <- HTTPStateStore.ensure_started() do
       dispatch(conn, local_daemon_trusted?)
@@ -42,7 +44,8 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
   def call(%Conn{path_info: ["mcp", "readiness"]} = conn, _opts), do: send_readiness_method_not_allowed(conn)
 
   def call(%Conn{path_info: ["mcp", "client-lease"]} = conn, _opts) do
-    with {:ok, _trusted?} <- validate_local_request(conn),
+    with :ok <- OfflineSandbox.require_online(),
+         {:ok, _trusted?} <- validate_local_request(conn),
          :ok <- validate_origin(conn),
          {:ok, payload, conn} <- read_json_body(conn),
          {:ok, result} <- ClientLeases.handle_payload(payload) do
@@ -56,6 +59,7 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
       {:error, :body_too_large, conn} -> send_json_rpc_error(conn, 413, :body_too_large)
       {:error, :body_read_failed, conn} -> send_json_rpc_error(conn, 400, :body_read_failed)
       {:error, :client_lease_unavailable} -> send_json_rpc_error(conn, 503, :ledger_unavailable)
+      {:error, :offline_sandbox} -> send_json_rpc_error(conn, 403, :offline_sandbox)
       {:error, reason} when reason in [:local_only, :origin_not_allowed] -> send_json_rpc_error(conn, 403, reason)
       {:error, _reason} -> send_json_rpc_error(conn, 400, :invalid_request)
     end
@@ -258,6 +262,7 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
   defp json_rpc_error(id, :local_only), do: error_response(id, -32_600, "Invalid Request", "local_only")
   defp json_rpc_error(id, :origin_not_allowed), do: error_response(id, -32_600, "Invalid Request", "origin_not_allowed")
   defp json_rpc_error(id, :invalid_request), do: error_response(id, -32_600, "Invalid Request", "invalid_request")
+  defp json_rpc_error(id, :offline_sandbox), do: error_response(id, -32_003, "Offline beta sandbox", "offline_sandbox")
   defp json_rpc_error(id, :method_not_allowed), do: error_response(id, -32_601, "Method not found", "method_not_allowed")
 
   defp error_response(id, code, message, reason) do
