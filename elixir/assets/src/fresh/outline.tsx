@@ -4,7 +4,7 @@ import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import type { GoalView } from "./model";
 import { Deploy } from "./parts";
-import { DotStrip, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge, wantsAttention } from "./report";
+import { BriefAge, DotStrip, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge, wantsAttention } from "./report";
 import { SinceChip } from "./since";
 
 // Direction 1: the old dropdown, alive. Goals that want attention come first; the rest are filed by area.
@@ -62,9 +62,12 @@ function GoalRow({ at, tagged, view }: { at: number; tagged?: boolean; view: Goa
             </span>
           </span>
           <span className="mt-1 flex items-center gap-6">
-            <span className="min-w-0 flex-1 truncate text-sm text-dim">
-              {report.brief}
-              {report.eta ? ` ETA: ${report.eta}.` : ""}
+            <span className="flex min-w-0 flex-1 items-baseline">
+              <span className="truncate text-sm text-dim">
+                {report.brief}
+                {report.eta ? ` ETA: ${report.eta}.` : ""}
+              </span>
+              <BriefAge at={at} report={report} />
             </span>
             <span className="flex w-[440px] shrink-0 items-center justify-end">
               <DotStrip view={view} />

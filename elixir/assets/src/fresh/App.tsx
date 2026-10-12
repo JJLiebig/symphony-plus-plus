@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { areaLabel, setAreas, type AreaRule } from "./areas";
 import { Briefing } from "./briefing";
@@ -41,12 +41,18 @@ export function App() {
   const [replay, setReplay] = useState(false);
   const [located, setLocated] = useState<string | null>(null);
 
-  useEffect(() => {
+  const shownNow = useRef<number | null>(null);
+  // The first read opens on the busiest moment; later reads keep the board live unless it is replaying.
+  const read = useCallback(() => {
     void load().then((loaded) => {
+      const before = shownNow.current;
+      shownNow.current = loaded.now;
       setData(loaded);
-      setAt(loaded.busiest);
+      setAt((current) => (before === null ? loaded.busiest : followNow(current, before, loaded.now)));
     }, (caught: unknown) => setFailure(caught instanceof Error ? caught.message : "Could not read the ledger"));
   }, []);
+  useEffect(read, [read]);
+  useChangeSignal(read);
   useShortcuts(setDirection, setLocated);
 
   const since = seenAt !== null && seenAt <= at ? seenAt : at - AWAY_MS;
@@ -124,6 +130,26 @@ async function load(): Promise<Loaded> {
   const busiest = start + realSamples.indexOf(Math.max(...realSamples)) * STEP_MS;
   const goals = [...real, ...mockGoals(busiest, now)];
   return { goals, now, busiest, samples: sample(goals) };
+}
+
+function followNow(current: number, before: number, now: number) {
+  return current >= before ? now : current;
+}
+
+// The backend only says that something changed; the board then reads everything again.
+function useChangeSignal(read: () => void) {
+  useEffect(() => {
+    const stream = new EventSource("/api/v1/sympp/operator/events");
+    let connected = false;
+    // "ready" also arrives after a reconnect, when changes may have been missed.
+    const onReady = () => {
+      if (connected) read();
+      connected = true;
+    };
+    stream.addEventListener("ready", onReady);
+    stream.addEventListener("invalidated", read);
+    return () => stream.close();
+  }, [read]);
 }
 
 function stamp(at: number) {

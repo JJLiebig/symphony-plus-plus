@@ -1,8 +1,8 @@
 // Invented goals, so the sketches can be judged with grouped and nested work, road bumps, an escalation,
-// a stall, a failed deploy and a goal that just landed.
+// a stall, a parked goal, a failed deploy and a goal that just landed.
 // They are anchored to the replay's busiest moment and are not in the ledger.
 import { areaFor } from "./areas";
-import type { Goal, Pkg, Stage } from "./model";
+import type { ArchitectReport, Goal, Pkg, Stage } from "./model";
 
 const MIN = 60e3;
 type Live = { stage: Stage; since: number; started: number; failed?: boolean; round?: number; mode?: string; actor: string };
@@ -74,6 +74,12 @@ function goal(id: string, title: string, repo: string, groups: GroupPlan[], at: 
   };
 }
 
+// What the architect wrote, and how many minutes ago.
+function report(at: number, ago: number, brief: string, eta?: string, parked?: string): ArchitectReport {
+  const note = (text?: string) => (text ? { text, at: at - ago * MIN } : null);
+  return { brief: note(brief), eta: note(eta), parked: note(parked) };
+}
+
 const merged = (titles: string[], from: number): Plan[] => titles.map((title, index) => ({ title, merged: from + index * 35 }));
 const queued = (titles: string[]): Plan[] => titles.map((title) => ({ title }));
 // A goal the architect did not group.
@@ -92,10 +98,13 @@ function aftermathGoals(at: number, now: number): Goal[] {
   const playback = plain("mock-playback", "VOD gateway: signed playback URLs", "mock/video", merged(["Signing key rotation", "Signed URL issuer", "Edge verification", "Expiry and clock-skew rules", "Playback client update"], 70), at, now);
   const timing = plain("mock-timing", "Review Suite: per-step timing in fast mode", "mock/review", merged(["Record step start and end", "Show timings in the review summary", "Flag the slowest step", "Document the timing fields"], 180), at, now);
 
+  const search = plain("mock-search", "Search: typo-tolerant matching", "mock/video", [...merged(["Index tokenizer", "Edit-distance scorer"], 2900), ...queued(["Ranking blend", "Query-time fallback", "Relevance test set"])], at, now);
+
   return [
     { ...restore, baseBranch: "release/0.9" },
-    { ...playback, deploy: [{ env: "Dev", state: "failed", at: at - 55 * MIN }] },
-    { ...timing, deploy: [{ env: "Dev", state: "ok", at: at - 165 * MIN }, { env: "Prod", state: "ok", at: at - 150 * MIN }] },
+    { ...playback, deploy: [{ env: "Dev", state: "failed", at: at - 55 * MIN }], report: report(at, 40, "Everything is merged, but the dev deploy failed on the migration step. I am rerunning it now.", "On dev within the hour if the rerun passes") },
+    { ...timing, deploy: [{ env: "Dev", state: "ok", at: at - 165 * MIN }, { env: "Prod", state: "ok", at: at - 150 * MIN }], report: report(at, 145, "All four packages are merged and live. Step timings now show in every fast review.") },
+    { ...search, report: report(at, 2800, "The tokenizer and scorer are in. The rest waits for the index migration.", undefined, "Waiting for the index migration to land next week.") },
   ];
 }
 
@@ -152,6 +161,8 @@ export function mockGoals(at: number, now: number): Goal[] {
     now,
   );
   quotes.asks = [{ from: at - 50 * MIN, to: Infinity, title: "Two carriers need production credentials before their adapters can be verified." }];
+  payouts.report = report(at, 25, "The backend is done and most of the API is merged. Two packages are dragging: webhook retries are on their third review round, and idempotency keys have failing checks. Console UI has started in parallel.", "API finished today if round three passes; UI later this week");
+  quotes.report = report(at, 50, "Four of seven carrier adapters are in and the rest are moving. I need production credentials for two carriers before their adapters can be verified.", "Adapters done tomorrow once the credentials arrive");
 
   // Both repositories have their deploy workflows tagged, so the board shows where the result is running.
   return [{ ...payouts, deploy: [] }, { ...quotes, deploy: [] }, ...aftermathGoals(at, now)];

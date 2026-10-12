@@ -53,7 +53,8 @@ function CurrentStep({ at, view }: { at: number; view: PkgView }) {
     <span className={`font-semibold ${tone}`}>
       {label}
       {view.failed ? " failing" : ""}
-      {round} · {span(at - view.since)}
+      {round}
+      {view.untimed ? "" : ` · ${span(at - view.since)}`}
     </span>
   );
 }
@@ -75,7 +76,8 @@ export function Shelf({ at, hint, label, views }: { at: number; hint?: string; l
       <ul className="mt-2 max-w-[900px] space-y-1">
         {views.map((view) => (
           <li key={view.goal.id} className="flex justify-between gap-4">
-            <span className="truncate">{view.goal.title}</span>
+            <span className="shrink-0 truncate">{view.goal.title}</span>
+            <span className="min-w-0 flex-1 truncate text-faint">{view.goal.report?.parked?.text}</span>
             <span className="shrink-0 font-mono text-xs text-faint">
               {view.done.length}/{view.done.length + view.queued.length + view.live.length} · {span(at - view.lastMoveAt)}
             </span>

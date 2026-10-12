@@ -6,12 +6,14 @@ import { GoalTitle, reportFor, type Verdict } from "./report";
 
 const DAY = 24 * 3600e3;
 const DORMANT_AFTER = 14 * DAY;
-const RANK: Record<Verdict, number> = { needs_you: 0, bump: 1, stalled: 2, on_track: 3, idle: 4, settled: 5 };
+const RANK: Record<Verdict, number> = { needs_you: 0, bump: 1, stalled: 2, on_track: 3, idle: 4, parked: 5, settled: 6 };
 
 // Where a goal belongs on the page. Only "main" asks for attention; the rest are kept out of the way.
-export type Lanes = { main: GoalView[]; landed: GoalView[]; dormant: GoalView[]; backlog: GoalView[]; settled: GoalView[] };
+export type Lanes = { main: GoalView[]; landed: GoalView[]; parked: GoalView[]; dormant: GoalView[]; backlog: GoalView[]; settled: GoalView[] };
 
 function laneOf(view: GoalView, at: number): keyof Lanes {
+  // The architect set the goal aside on purpose; it comes back when work resumes or a question is raised.
+  if (view.goal.report?.parked && !view.ask && view.state !== "settled") return "parked";
   if (view.state === "live") return "main";
   if (view.state === "settled") return settledLane(view, at);
   if (view.done.length === 0) return "backlog";
@@ -30,7 +32,7 @@ function settledLane(view: GoalView, at: number): keyof Lanes {
 
 // The main lane is ordered by who needs attention first, not by where the work is filed.
 export function lanesOf(views: GoalView[], at: number): Lanes {
-  const lanes: Lanes = { main: [], landed: [], dormant: [], backlog: [], settled: [] };
+  const lanes: Lanes = { main: [], landed: [], parked: [], dormant: [], backlog: [], settled: [] };
   for (const view of views) lanes[laneOf(view, at)].push(view);
   const rank = new Map(lanes.main.map((view) => [view.goal.id, RANK[reportFor(view, at).verdict]]));
   lanes.main.sort((left, right) => rank.get(left.goal.id)! - rank.get(right.goal.id)!);
@@ -41,6 +43,7 @@ export function Rest({ at, lanes }: { at: number; lanes: Lanes }) {
   return (
     <>
       <Landed at={at} views={lanes.landed} />
+      <Shelf at={at} hint="set aside by the architect" label="Parked" views={lanes.parked} />
       <Shelf at={at} hint="started, then nothing for two weeks or more" label="Dormant" views={lanes.dormant} />
       <Shelf at={at} hint="no package has been picked up" label="Not started" views={lanes.backlog} />
       <Shelf at={at} label="Settled" views={lanes.settled} />

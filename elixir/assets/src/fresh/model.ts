@@ -3,7 +3,8 @@ import { areaFor } from "./areas";
 
 export type Stage = "queued" | "build" | "checks" | "review" | "merge" | "done";
 export type Outcome = "merged" | "finished" | "dropped";
-export type Seg = { stage: Stage; from: number; to: number; failed: boolean };
+// `untimed` marks a stage whose start nobody observed: `from` is then only the closest known time.
+export type Seg = { stage: Stage; from: number; to: number; failed: boolean; untimed?: boolean };
 export type HistoryEvent = { t: string; s?: string; y?: string; c?: string; m?: boolean; n?: number; u?: string; a?: string; r?: string; x?: string };
 
 export type Pkg = {
@@ -27,13 +28,17 @@ export type Pkg = {
 };
 
 export type Ask = { from: number; to: number; title: string };
+// Something the architect wrote, and when.
+export type Note = { text: string; at: number };
+// The architect's own words about a goal. `parked` is set only while the goal is set aside.
+export type ArchitectReport = { brief: Note | null; eta: Note | null; parked: Note | null };
 export type Group = { id: string; title: string; parentId: string | null };
 // Where the result runs after the last merge. Not in the ledger yet; only the mock goals carry it.
 export type DeployStep = { env: "Dev" | "Prod"; state: "ok" | "failed" | "pending"; at: number };
 // `deploy` is present only for goals whose repository has its deploy workflows tagged.
-export type Goal = { id: string; title: string; area: string[]; repo: string; baseBranch: string | null; createdAt: number; closedAt: number | null; pkgs: Pkg[]; asks: Ask[]; groups: Group[]; mock?: boolean; deploy?: DeployStep[] };
+export type Goal = { id: string; title: string; area: string[]; repo: string; baseBranch: string | null; createdAt: number; closedAt: number | null; pkgs: Pkg[]; asks: Ask[]; groups: Group[]; report?: ArchitectReport; mock?: boolean; deploy?: DeployStep[] };
 
-export type PkgView = { pkg: Pkg; stage: Stage; since: number; failed: boolean; round: number; actor: string | null };
+export type PkgView = { pkg: Pkg; stage: Stage; since: number; untimed: boolean; failed: boolean; round: number; actor: string | null };
 export type GoalView = { goal: Goal; live: PkgView[]; queued: Pkg[]; done: Pkg[]; ask: Ask | null; state: "live" | "resting" | "settled"; lastMoveAt: number };
 
 type Slice = {
@@ -48,12 +53,22 @@ type Slice = {
   review?: { args?: { mode?: string | null } | null } | null;
   delivery?: { outcome?: string | null; recorded_at?: string | null; pr_merged_at?: string | null } | null;
   operational_state?: { key?: string | null } | null;
+  board_state?: BoardState | null;
+  pr_signal?: { number?: number | null; url?: string | null; created_at?: string | null; head_changed_at?: string | null; checks?: { status?: string | null; changed_at?: string | null } | null } | null;
+  review_signal?: { mode?: string | null; round?: number | null; started_at?: string | null; round_started_at?: string | null } | null;
+};
+type BoardState = { stage?: Stage | null; entered_at?: string | null; track?: string | null; delivered?: boolean | null };
+type Written = { text?: string | null; written_at?: string | null };
+type OperatorReport = {
+  brief?: Written | null;
+  eta?: Written | null;
+  parking?: { reason?: string | null; parked_at?: string | null; resumed_at?: string | null } | null;
+  human_escalation?: { question?: string | null; raised_at?: string | null; resolved_at?: string | null } | null;
 };
 type Detail = {
-  work_request: { id: string; title?: string | null; repo?: string | null; repo_display?: string | null; base_branch?: string | null; inserted_at?: string | null; completed_at?: string | null; status?: string | null };
+  work_request: { id: string; title?: string | null; repo?: string | null; repo_display?: string | null; base_branch?: string | null; inserted_at?: string | null; completed_at?: string | null; status?: string | null; operator_report?: OperatorReport | null };
   work_packages?: Slice[];
   product_tree?: { nodes?: Array<{ id: string; title?: string | null; position?: number; parent_id?: string | null }> } | null;
-  clarification_questions?: Array<{ question?: string | null; decision_prompt?: { tl_dr?: string } | null; inserted_at?: string | null; answered_at?: string | null; status?: string | null }>;
 };
 export type Hydrated = { generated_at?: string; work_request_details?: Detail[] };
 type Timed = { event: HistoryEvent; at: number };
@@ -87,14 +102,23 @@ function buildGoal(detail: Detail, history: Record<string, HistoryEvent[]>, now:
     createdAt: ms(request.inserted_at) ?? now,
     closedAt: ms(request.completed_at),
     pkgs: (detail.work_packages ?? []).map((slice) => ({ ...buildPkg(slice, history[slice.work_package_id || slice.id] ?? [], now), goalTitle: title, area })),
-    asks: (detail.clarification_questions ?? []).map((question) => buildAsk(question, now)),
+    asks: asksOf(request.operator_report?.human_escalation, now),
+    report: reportOf(request.operator_report, now),
     groups: [...(detail.product_tree?.nodes ?? [])].sort((left, right) => (left.position ?? 0) - (right.position ?? 0)).map((node) => ({ id: node.id, title: node.title || "Untitled", parentId: node.parent_id ?? null })),
   };
 }
 
-function buildAsk(question: NonNullable<Detail["clarification_questions"]>[number], now: number): Ask {
-  const from = ms(question.inserted_at) ?? now;
-  return { from, to: ms(question.answered_at) ?? (question.status === "open" ? Infinity : from), title: question.decision_prompt?.tl_dr || question.question || "Question" };
+// Only an explicit escalation by the architect asks for the operator. An open question does not.
+function asksOf(escalation: OperatorReport["human_escalation"], now: number): Ask[] {
+  if (!escalation?.question) return [];
+  return [{ from: ms(escalation.raised_at) ?? now, to: ms(escalation.resolved_at) ?? Infinity, title: escalation.question }];
+}
+
+function reportOf(report: OperatorReport | null | undefined, now: number): ArchitectReport | undefined {
+  if (!report) return undefined;
+  const note = (text?: string | null, at?: string | null): Note | null => (text ? { text, at: ms(at) ?? now } : null);
+  const parking = report.parking?.resumed_at ? null : report.parking;
+  return { brief: note(report.brief?.text, report.brief?.written_at), eta: note(report.eta?.text, report.eta?.written_at), parked: note(parking?.reason, parking?.parked_at) };
 }
 
 function blankPkg(slice: Slice, now: number): Pkg {
@@ -135,6 +159,53 @@ function startOf(slice: Slice, timed: Timed[], endAt: number | null) {
 }
 
 function buildPkg(slice: Slice, events: HistoryEvent[], now: number): Pkg {
+  return slice.board_state ? boardPkg(slice, slice.board_state, now) : historyPkg(slice, events, now);
+}
+
+// The backend's own reading of a package: its stage, when it got there, and whether it ends in a merge.
+function boardPkg(slice: Slice, board: BoardState, now: number): Pkg {
+  const pkg = { ...blankPkg(slice, now), ...signalFacts(slice), short: board.track === "no_pr" };
+  const stage = board.stage ?? "queued";
+  const observed = stageTime(slice, board);
+  const since = observed ?? ms(slice.dispatched_at) ?? pkg.createdAt;
+  pkg.outcome = outcomeOf(slice) ?? boardOutcome(board, pkg.short);
+  if (pkg.outcome) return { ...pkg, endAt: since };
+  if (stage === "queued") return pkg;
+
+  pkg.segs = [{ stage, from: since, to: now, failed: slice.pr_signal?.checks?.status === "failing", untimed: observed === null }];
+  pkg.rounds = Array.from({ length: Math.max(0, (slice.review_signal?.round ?? 1) - 1) }, () => since);
+  return pkg;
+}
+
+function signalFacts(slice: Slice): Pick<Pkg, "reviewMode" | "prAt" | "prNumber" | "prUrl"> {
+  const pr = slice.pr_signal ?? {};
+  return { reviewMode: slice.review_signal?.mode ?? slice.review?.args?.mode ?? null, prAt: ms(pr.created_at), prNumber: pr.number ?? null, prUrl: pr.url ?? null };
+}
+
+function boardOutcome(board: BoardState, short: boolean): Outcome | null {
+  if (!board.delivered && board.stage !== "done") return null;
+  return short ? "finished" : "merged";
+}
+
+// When the package reached its stage: the backend's evidence first, then what it observed about that stage.
+function stageTime(slice: Slice, board: BoardState) {
+  const pr = slice.pr_signal ?? {};
+  const checks = pr.checks ?? {};
+  const review = slice.review_signal ?? {};
+  const delivery = slice.delivery ?? {};
+  const observed: Partial<Record<Stage, Array<string | null | undefined>>> = {
+    build: [slice.dispatched_at],
+    checks: [checks.changed_at, pr.head_changed_at, pr.created_at],
+    review: [review.round_started_at, review.started_at],
+    merge: [checks.changed_at, pr.head_changed_at],
+    done: [delivery.pr_merged_at, delivery.recorded_at],
+  };
+  const stage = delivery.outcome ? "done" : (board.stage ?? "queued");
+  return [board.entered_at, ...(observed[stage] ?? [])].map(ms).find((at) => at !== null) ?? null;
+}
+
+// Packages captured before the backend reported stages: the stage is read from their recorded history.
+function historyPkg(slice: Slice, events: HistoryEvent[], now: number): Pkg {
   const pkg = blankPkg(slice, now);
   pkg.outcome = outcomeOf(slice);
   pkg.endAt = pkg.outcome ? endOf(slice, events, now) : null;
@@ -229,10 +300,10 @@ function pkgViewAt(pkg: Pkg, at: number): PkgView {
   };
 }
 
-function stageAt(pkg: Pkg, seg: Seg | undefined, ended: boolean): Pick<PkgView, "stage" | "since" | "failed"> {
-  if (ended) return { stage: "done", since: pkg.endAt!, failed: false };
-  if (!seg) return { stage: "queued", since: pkg.createdAt, failed: false };
-  return { stage: seg.stage, since: seg.from, failed: seg.failed };
+function stageAt(pkg: Pkg, seg: Seg | undefined, ended: boolean): Pick<PkgView, "stage" | "since" | "untimed" | "failed"> {
+  if (ended) return { stage: "done", since: pkg.endAt!, untimed: false, failed: false };
+  if (!seg) return { stage: "queued", since: pkg.createdAt, untimed: false, failed: false };
+  return { stage: seg.stage, since: seg.from, untimed: seg.untimed === true, failed: seg.failed };
 }
 
 export function deployAt(goal: Goal, at: number) {

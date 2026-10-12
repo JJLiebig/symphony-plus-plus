@@ -8,8 +8,9 @@ import { sampleReport } from "./samples";
 
 // What a goal says when asked "is this coming along?". The architect owns the words and the ETA;
 // the ledger only supplies the verdict's facts.
-export type Verdict = "needs_you" | "bump" | "stalled" | "on_track" | "idle" | "settled";
-export type Report = { verdict: Verdict; brief: string; eta: string | null; sample: boolean; bumps: string[] };
+export type Verdict = "needs_you" | "bump" | "stalled" | "on_track" | "idle" | "parked" | "settled";
+// `briefAt` is when the architect wrote the brief; null where the wording is not the architect's.
+export type Report = { verdict: Verdict; brief: string; briefAt: number | null; eta: string | null; sample: boolean; bumps: string[] };
 // A phase is a top-level group. `pkgs` covers everything beneath it; `subs` are its nested groups, flattened in order.
 export type Phase = { id: string; title: string; pkgs: Pkg[]; subs: Array<{ id: string; title: string; pkgs: Pkg[] }> };
 export type PhaseStatus = "done" | "active" | "waiting" | "upcoming";
@@ -30,6 +31,7 @@ export const VERDICT: Record<Verdict, { label: string; text: string; dot: string
   stalled: { label: "Stalled", text: "text-checks", dot: "bg-checks" },
   on_track: { label: "On track", text: "text-merge", dot: "bg-merge" },
   idle: { label: "Quiet", text: "text-faint", dot: "bg-faint" },
+  parked: { label: "Parked", text: "text-faint", dot: "bg-faint" },
   settled: { label: "Done", text: "text-dim", dot: "bg-merge/40" },
 };
 
@@ -83,9 +85,17 @@ export function usePhaseControl(): PhaseControl {
 export function reportFor(view: GoalView, at: number): Report {
   const bumps = [...goalBumps(view, at), ...view.live.flatMap((live) => bumpsFor(live, at))];
   const verdict = verdictFor(view, bumps, at);
-  const sample = sampleReport(view.goal.title, verdict === "on_track");
+  const written = view.goal.report;
+  if (written?.brief) return { verdict, brief: written.brief.text, briefAt: written.brief.at, eta: written.eta?.text ?? null, sample: false, bumps };
 
-  return { verdict, brief: sample?.brief ?? draftBrief(view, bumps, at), eta: sample?.eta ?? null, sample: Boolean(sample), bumps };
+  const sample = sampleReport(view.goal.title, verdict === "on_track");
+  return { verdict, brief: sample?.brief ?? draftBrief(view, bumps, at), briefAt: null, eta: written?.eta?.text ?? sample?.eta ?? null, sample: Boolean(sample), bumps };
+}
+
+// How old the architect's brief is, so a stale one is not read as news.
+export function BriefAge({ at, report }: { at: number; report: Report }) {
+  if (report.briefAt === null) return null;
+  return <span className="ml-2 whitespace-nowrap font-mono text-[11px] text-faint" title="When the architect wrote this">{span(at - report.briefAt)} ago</span>;
 }
 
 // Started, work left, and nothing has moved for a while: nobody is on it.
@@ -95,6 +105,7 @@ function isStalled(view: GoalView, at: number) {
 
 function verdictFor(view: GoalView, bumps: string[], at: number): Verdict {
   if (view.ask) return "needs_you";
+  if (view.goal.report?.parked) return "parked";
   if (isStalled(view, at)) return "stalled";
   if (bumps.length > 0) return "bump";
   if (view.state === "settled") return "settled";
@@ -104,14 +115,14 @@ function verdictFor(view: GoalView, bumps: string[], at: number): Verdict {
 // Road bumps that belong to the goal as a whole rather than to one package.
 function goalBumps(view: GoalView, at: number) {
   const failed = deployAt(view.goal, at).filter((step) => step.state === "failed").map((step) => `${step.env} deploy failed ${span(at - step.at)} ago`);
-  return isStalled(view, at) ? [...failed, `Nothing has moved for ${span(at - view.lastMoveAt)} with ${view.queued.length} queued`] : failed;
+  return isStalled(view, at) && !view.goal.report?.parked ? [...failed, `Nothing has moved for ${span(at - view.lastMoveAt)} with ${view.queued.length} queued`] : failed;
 }
 
 function bumpsFor(live: PkgView, at: number) {
   const checks: Array<[boolean, string]> = [
-    [live.failed, `Checks failing for ${span(at - live.since)}`],
+    [live.failed, live.untimed ? "Checks failing" : `Checks failing for ${span(at - live.since)}`],
     [live.stage === "review" && live.round >= 3, `Review is on round ${live.round}`],
-    [live.stage === "review" && at - live.since > LONG_REVIEW, `In review for ${span(at - live.since)}`],
+    [live.stage === "review" && !live.untimed && at - live.since > LONG_REVIEW, `In review for ${span(at - live.since)}`],
   ];
   return checks.filter(([hit]) => hit).map(([, text]) => `${text}: ${live.pkg.title}`);
 }
@@ -119,6 +130,7 @@ function bumpsFor(live: PkgView, at: number) {
 // Fallback wording from ledger counts, used where no architect brief exists.
 function draftBrief(view: GoalView, bumps: string[], at: number) {
   if (view.ask) return `Waiting on you: ${view.ask.title}`;
+  if (view.goal.report?.parked) return `Parked: ${view.goal.report.parked.text}`;
   const total = view.live.length + view.queued.length + view.done.length;
   if (view.state === "settled") return `All ${total} packages have landed.`;
   if (view.live.length === 0) return `Nothing has moved for ${span(at - view.lastMoveAt)}. ${view.done.length} of ${total} packages have landed.`;

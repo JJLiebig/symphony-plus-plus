@@ -92,7 +92,7 @@ function loadSnapshot(dir: string): Snapshot {
 }
 
 function handleGet(snapshot: Snapshot, route: string, url: URL, req: IncomingMessage, res: ServerResponse, streams: Set<ServerResponse>) {
-  if (route === "/dashboard/events") return openEventStream(req, res, streams);
+  if (route === "/dashboard/events" || route === "/events") return openEventStream(req, res, streams);
 
   const payload = readRoute(snapshot, route, url.searchParams.get("surface"));
   return payload ? sendJson(res, 200, payload) : sendJson(res, 404, { error: { code: "not_found", message: "Not in this snapshot" } });

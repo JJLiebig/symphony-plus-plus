@@ -4,7 +4,7 @@ import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import type { GoalView } from "./model";
 import { Deploy } from "./parts";
-import { DotStrip, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge } from "./report";
+import { BriefAge, DotStrip, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge } from "./report";
 import { SinceChip } from "./since";
 
 // Direction 2: every goal reports in. Words first, dots second, packages only if you ask.
@@ -44,6 +44,7 @@ function GoalReport({ at, view }: { at: number; view: GoalView }) {
       <p className="mt-2 max-w-[72ch] pl-7 text-[15px] leading-relaxed text-ink/90">
         {report.brief}
         {report.eta ? <span className="text-dim"> ETA: {report.eta}.</span> : null}
+        <BriefAge at={at} report={report} />
         {report.sample ? <span className="ml-2 rounded border border-line px-1 font-mono text-[10px] uppercase text-faint">sample wording</span> : null}
       </p>
       <AskLine at={at} className="ml-7 mt-3" view={view} />
