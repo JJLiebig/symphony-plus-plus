@@ -233,16 +233,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
     refute Map.has_key?(tools, "attach_pr")
     assert get_in(tools, ["sync_pr", "inputSchema", "required"]) == ["work_package_id"]
-    assert Map.keys(get_in(tools, ["sync_pr", "inputSchema", "properties"])) |> Enum.sort() == ["work_package_id", "work_request_id"]
+    assert get_in(tools, ["sync_pr", "inputSchema", "additionalProperties"]) == true
     assert full_tools["sync_pr"] == tools["sync_pr"]
-
-    forged =
-      mcp_tool(repo, session, "sync_pr", %{
-        "work_package_id" => package.id,
-        "head_sha" => "caller-supplied-state"
-      })
-
-    assert get_in(forged, ["error", "data", "reason"]) == "unexpected_argument"
 
     other_work_request =
       create_work_request!(repo,
@@ -341,11 +333,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     assert board_package["work_package"]["branch"]["head_sha"] == "current-head"
   end
 
-  test "architect WorkRequest work-package dispatch tool creates safe worker handoff", %{repo: repo} do
+  test "architect dispatch and normal PR handoff need no worker MCP calls", %{repo: repo} do
     {anchor, session, _grant} =
       create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-SLICE-DISPATCH", [
-        "dispatch:work_request"
-      ])
+        "dispatch:work_request", "write:work_request", "read:work_request"
+      ], repo: "nextide/repo")
 
     work_request =
       create_work_request!(repo,
@@ -405,25 +397,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     refute Map.has_key?(payload["worker_grant"], "secret")
     refute Map.has_key?(payload["worker_grant"], "secret_hash")
     refute Map.has_key?(payload, "worker_handoff")
-    assert payload["worker_bootstrap"]["type"] == "ledger_claim"
-    assert_same_ledger_database(payload["worker_bootstrap"]["ledger"], live_database_path, "mode=rwc&cache=shared")
-    assert payload["worker_bootstrap"]["claim"]["tool"] == "claim_local_assignment"
-    assert payload["worker_bootstrap"]["claim"]["arguments"]["work_package_id"] == payload["work_package"]["id"]
-    assert payload["worker_bootstrap"]["claim"]["arguments"]["claimed_by"] == "worker-dispatch-1"
-    assert payload["worker_bootstrap"]["claim"]["required_runtime_arguments"] == []
-
-    assert payload["worker_bootstrap"]["preferred_skill_set"] == [
-             "symphony-plus-plus-mcp:symphony-worker",
-             "symphony-plus-plus-mcp:symphony-work-package"
-           ]
-
-    assert payload["worker_bootstrap"]["required_skills"] == payload["worker_bootstrap"]["preferred_skill_set"]
-
-    assert payload["worker_bootstrap"]["supported_skill_sets"] == [
-             ["symphony-plus-plus-mcp:symphony-worker", "symphony-plus-plus-mcp:symphony-work-package"]
-           ]
-
-    refute Map.has_key?(payload["worker_bootstrap"], "launch_prompt")
+    assignment = payload["worker_bootstrap"]["assignment"]
+    assert assignment["work_package"]["id"] == approved_slice.id
+    assert assignment["work_package"]["allowed_file_globs"] == work_package.allowed_file_globs
+    assert assignment["work_package"]["acceptance_criteria"] == work_package.acceptance_criteria
+    assert assignment["work_package"]["validation_steps"] == work_package.validation_steps
+    assert assignment["parent_work_request"]["id"] == work_request.id
+    refute Map.has_key?(payload["worker_bootstrap"], "claim")
+    assert payload["worker_bootstrap"]["launch_prompt"] =~ "No worker MCP calls"
     refute Map.has_key?(payload["worker_bootstrap"], "prompt")
     refute Map.has_key?(payload["worker_bootstrap"], "legacy_private_handoff")
     refute serialized_response =~ "raw_secret_value"
@@ -440,9 +421,97 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     assert {:ok, worker_grants} = AccessGrantRepository.list_for_work_package(repo, payload["work_package"]["id"])
     assert [%AccessGrant{grant_role: "worker", secret_hash: secret_hash}] = worker_grants
     refute serialized_response =~ secret_hash
+
+    original_client = Application.get_env(:symphony_elixir, :sympp_github_client)
+    Application.put_env(:symphony_elixir, :sympp_github_client, SymphonyElixir.FakeGitHubClient)
+
+    try do
+      head = String.duplicate("a", 40)
+      metadata = SymphonyElixir.GitHubPullRequestFixtures.metadata(412, head, base_branch: anchor.base_branch)
+      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412, metadata)
+      handoff = %{"work_package_id" => approved_slice.id, "url" => "https://github.com/nextide/repo/pull/412", "head_sha" => head}
+
+      mismatch = mcp_tool(repo, session, "sync_pr", %{handoff | "head_sha" => String.duplicate("b", 40)})
+      assert get_in(mismatch, ["error", "code"]) == -32_602
+      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
+
+      assert {:ok, other_owner} = ClaimLeaseService.claim(repo, approved_slice.id,
+        %{"actor_kind" => "agent", "actor_id" => "another-worker"},
+        now: DateTime.add(DateTime.utc_now(:microsecond), -1, :hour), stale_after_ms: 1)
+
+      for ownership <- [:stale, :paused] do
+        if ownership == :paused do
+          assert {:ok, _paused} = ClaimLeaseService.pause(repo, other_owner.id, %{"actor_id" => "operator"}, reason: "Owner paused")
+        end
+
+        refused = mcp_tool(repo, session, "sync_pr", handoff)
+        assert refused["error"]
+        assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
+        assert {:ok, unchanged} = PlanningRepository.get_state(repo, approved_slice.id)
+        refute Enum.any?(unchanged.progress_events, &(&1.payload["source_tool"] == "sync_pr"))
+      end
+
+      assert {:ok, _released} = ClaimLeaseService.release(repo, other_owner.id, reason: "Architect confirmed the owner finished")
+
+      declared = mcp_tool(repo, session, "append_progress", %{
+        "work_package_id" => approved_slice.id,
+        "summary" => "Architect needs an affected-scope decision",
+        "idempotency_key" => "explicit-work-blocker",
+        "payload" => %{"type" => "blocker", "active" => true, "blocker_id" => "decision"}
+      })
+      refute declared["error"]
+
+      waiting = mcp_tool(repo, session, "sync_pr", handoff)
+      assert get_in(waiting, ["result", "structuredContent", "work_package", "status"]) == "ready_for_worker"
+      assert "no_active_blockers" in get_in(waiting, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
+
+      resolved = mcp_tool(repo, session, "resolve_blocker", %{
+        "work_package_id" => approved_slice.id,
+        "blocker_id" => "decision", "resolution" => "Architect resolved the scope decision",
+        "summary" => "Work may finish", "idempotency_key" => "explicit-work-blocker-resolved"
+      })
+      refute resolved["error"]
+
+      assert {:ok, prerequisite} = CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id,
+        work_request_work_package_attrs(id: "WRS-MCP-DISPATCH-PREREQUISITE", base_branch: anchor.base_branch))
+      assert {:ok, _edge} = SymphonyElixir.SymphonyPlusPlus.ProductTree.create_dependency_edge(repo, %{
+        id: "dep_handoff", work_request_id: work_request.id,
+        source_kind: "work_package", source_id: approved_slice.id,
+        target_kind: "work_package", target_id: prerequisite.id,
+        kind: "depends_on", reason: "Architect added a prerequisite after dispatch."
+      })
+      pending_dependency = mcp_tool(repo, session, "sync_pr", handoff)
+      assert "dependencies_unavailable" in get_in(pending_dependency, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
+      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
+
+      completed_dependency = mcp_tool(repo, session, "record_work_package_delivery", %{
+        "work_request_id" => work_request.id, "work_package_id" => prerequisite.id,
+        "outcome" => "completed_no_pr", "idempotency_key" => "handoff-prerequisite-completed",
+        "evidence" => %{"completed_no_pr" => %{"no_pr_evidence" => "Architect accepted the contract investigation findings."}}
+      })
+      refute completed_dependency["error"]
+
+      accepted = mcp_tool(repo, session, "sync_pr", Map.put(handoff, "future_provider_field", true))
+      assert get_in(accepted, ["result", "structuredContent", "work_package", "status"]) == "ready_for_merge"
+      assert repo.get!(ClaimLease, other_owner.id).status == "released"
+      assert {:ok, state} = PlanningRepository.get_state(repo, approved_slice.id)
+      snapshot = state.progress_events |> Enum.filter(&(&1.payload["source_tool"] == "sync_pr")) |> List.last()
+      assert snapshot.payload["check_summary"]["status"] == "unknown"
+      assert snapshot.payload["review_state"]["status"] == "unknown"
+      assert snapshot.payload["head_sha"] == head
+
+      # Readiness records the architect's acceptance; it does not invent native check/review results.
+      SymphonyElixir.FakeGitHubClient.put_response("nextide/repo", 412,
+        SymphonyElixir.GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch))
+      merged = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id})
+      assert get_in(merged, ["result", "structuredContent", "work_package", "status"]) == "merged"
+    after
+      restore_app_env(:sympp_github_client, original_client)
+      SymphonyElixir.FakeGitHubClient.clear()
+    end
   end
 
-  test "architect WorkRequest work-package dispatch rejects removed legacy handoff args", %{repo: repo} do
+  test "architect dispatch ignores unknown request fields", %{repo: repo} do
     {anchor, session, _grant} =
       create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-SLICE-DISPATCH-IGNORED-LEGACY", [
         "dispatch:work_request"
@@ -470,8 +539,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
     assert {:ok, approved_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, work_package.id, "planned")
     assert {:ok, _work_request} = CanonicalWorkPackageFixtures.mark_sliced(repo, work_request.id, "ready_for_slicing")
-    counts_before = {repo.aggregate(WorkPackage, :count), repo.aggregate(AccessGrant, :count)}
-
     response =
       mcp_tool(repo, session, "dispatch_work_package", %{
         "work_request_id" => work_request.id,
@@ -480,9 +547,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         "removed_handoff_arg" => "auto"
       })
 
-    assert get_in(response, ["error", "code"]) == -32_602
-    assert get_in(response, ["error", "data", "reason"]) == "unexpected_argument"
-    assert {repo.aggregate(WorkPackage, :count), repo.aggregate(AccessGrant, :count)} == counts_before
+    assert get_in(response, ["result", "structuredContent", "work_package", "status"]) == "ready_for_worker"
+    refute inspect(response) =~ "removed_handoff_arg"
   end
 
   test "WorkRequest MCP work-package dispatch fails closed for scope and invalid slice cases", %{repo: repo} do
@@ -577,8 +643,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     live_database_payload = get_in(live_database_response, ["result", "structuredContent"])
     assert live_database_payload["work_package"]["status"] == "ready_for_worker"
     refute Map.has_key?(live_database_payload, "worker_handoff")
-    assert live_database_payload["worker_bootstrap"]["claim"]["tool"] == "claim_local_assignment"
-    assert_same_ledger_database(live_database_payload["worker_bootstrap"]["ledger"], live_database, "mode=rwc&cache=shared")
+    assert live_database_payload["worker_bootstrap"]["assignment"]["work_package"]["id"] == approved_live_database_slice.id
     refute inspect(live_database_response) =~ "run_mcp_command"
 
     assert {:ok, blank_database_slice} =
@@ -607,8 +672,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     blank_database_payload = get_in(blank_database_response, ["result", "structuredContent"])
     assert blank_database_payload["work_package"]["status"] == "ready_for_worker"
     refute Map.has_key?(blank_database_payload, "worker_handoff")
-    assert blank_database_payload["worker_bootstrap"]["claim"]["tool"] == "claim_local_assignment"
-    assert_same_ledger_database(blank_database_payload["worker_bootstrap"]["ledger"], live_database)
+    assert blank_database_payload["worker_bootstrap"]["assignment"]["work_package"]["id"] == approved_blank_database_slice.id
     refute inspect(blank_database_response) =~ "run_mcp_command"
 
     delivery_base = "feature/integration-base"

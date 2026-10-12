@@ -18,7 +18,6 @@ defmodule SymphonyElixirWeb.SymppDashboardApi.LocalOperatorActions do
 
   import Ecto.Query, only: [from: 2]
 
-  @local_operator_worker "local-operator-worker"
   @local_operator_actor "local-operator"
   @local_operator_nonmergeable_terminal_package_statuses ["closed", "abandoned"]
   @local_operator_noncloseable_terminal_package_statuses ["merged", "abandoned"]
@@ -446,11 +445,4 @@ defmodule SymphonyElixirWeb.SymppDashboardApi.LocalOperatorActions do
     ]
   end
 
-  @spec dispatch_handoff_opts(module()) :: keyword()
-  def dispatch_handoff_opts(repo) do
-    [
-      database: DashboardRuntime.dashboard_ledger_database(repo),
-      claimed_by: @local_operator_worker
-    ]
-  end
 end

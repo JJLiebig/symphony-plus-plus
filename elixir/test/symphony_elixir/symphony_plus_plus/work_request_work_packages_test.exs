@@ -229,18 +229,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
   end
 
   test "dispatch activates the canonical package in place and leaves its non-terminal contract mutable", %{
-    repo: repo,
-    database_path: database_path
+    repo: repo
   } do
     work_request = create_work_request!(repo)
     package = slice_one!(repo, work_request.id)
     assert :ok = DashboardPubSub.subscribe()
 
     assert {:ok, dispatch} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, package.id,
-               claimed_by: "canonical-worker",
-               database: database_path
-             )
+             WorkPackageDispatch.dispatch(repo, work_request.id, package.id)
 
     assert dispatch.work_package.id == package.id
     assert dispatch.creation.work_package.id == package.id
@@ -275,15 +271,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
     assert persisted.contract_revision == updated.contract_revision
   end
 
-  test "dispatch enforces the effective package policy before activation", %{repo: repo, database_path: database_path} do
+  test "dispatch enforces the effective package policy before activation", %{repo: repo} do
     work_request = create_work_request!(repo)
     package = slice_one!(repo, work_request.id, package_attrs(acceptance_criteria: []))
 
     assert {:error, :missing_acceptance_criteria} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, package.id,
-               claimed_by: "canonical-worker",
-               database: database_path
-             )
+             WorkPackageDispatch.dispatch(repo, work_request.id, package.id)
 
     assert {:ok, persisted} = WorkPackageRepository.get(repo, package.id)
     assert persisted.status == "planned"

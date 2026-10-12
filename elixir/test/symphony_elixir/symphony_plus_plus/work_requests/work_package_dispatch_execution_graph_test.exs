@@ -25,7 +25,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
     :ok
   end
 
-  test "dispatch remains blocked after prerequisite cancellation", %{repo: repo, database_path: database_path} do
+  test "dispatch remains blocked after prerequisite cancellation", %{repo: repo} do
     work_request = work_request!(repo)
 
     assert {:ok, %{work_packages: [prerequisite, dependent]}} =
@@ -44,13 +44,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkPackageDispatchExecut
              })
 
     assert {:error, {:unmet_work_package_dependencies, "wp_dependent", ["wp_prerequisite"]}} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id, database: database_path)
+             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id)
 
     assert repo.get!(WorkPackage, dependent.id).status == "planned"
     assert {:ok, %{status: "skipped"}} = Repository.skip_work_package(repo, work_request.id, prerequisite.id, "planned")
 
     assert {:error, {:unmet_work_package_dependencies, "wp_dependent", ["wp_prerequisite"]}} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id, database: database_path)
+             WorkPackageDispatch.dispatch(repo, work_request.id, dependent.id)
   end
 
   defp work_request!(repo) do

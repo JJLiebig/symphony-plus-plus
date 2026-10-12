@@ -467,7 +467,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
   defp map_get(_value, _key), do: nil
 
   defp worker_completion do
-    %{"completion" => %{"next_owner" => "architect", "next_action" => "return_ready_or_terminal_work_package"}}
+    %{"completion" => %{"next_owner" => "architect", "next_action" => "return_pr_or_evidence"}}
   end
 
   defp worker_dependency(%WorkPackage{} = work_package) do

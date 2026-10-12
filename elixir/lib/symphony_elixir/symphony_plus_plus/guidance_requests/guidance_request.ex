@@ -119,8 +119,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.GuidanceRequest do
   def escalate_changeset(%__MODULE__{} = guidance_request, attrs) do
     guidance_request
     |> cast(normalize_keys(attrs), [:status, :human_info_reason, :recommended_language, :decision_prompt, :blocker_id])
-    |> validate_required([:status, :human_info_reason, :recommended_language, :blocker_id])
-    |> validate_nonblank([:human_info_reason, :recommended_language, :blocker_id])
+    |> validate_required([:status, :human_info_reason, :recommended_language])
+    |> validate_nonblank([:human_info_reason, :recommended_language])
     |> validate_inclusion(:status, @statuses)
     |> normalize_decision_prompt()
     |> validate_decision_prompt()

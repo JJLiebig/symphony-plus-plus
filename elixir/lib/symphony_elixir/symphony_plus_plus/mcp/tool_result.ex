@@ -237,6 +237,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolResult do
       {key,
        compact_status_payload(value, [
          "type",
+         "assignment",
+         "launch_prompt",
          "mode",
          "work_package_id",
          "branch",

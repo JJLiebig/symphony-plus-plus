@@ -292,58 +292,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.GuidanceTools do
              GuidanceRequestService.get_visible_to_architect(repo, guidance_request_id, filters),
            :ok <- authorize_guidance_request_for_session(repo, session, :guidance_request_escalate, guidance_request),
            :ok <- lock_work_package(repo, guidance_request.work_package_id),
-           blocker_id = guidance_request_blocker_id(guidance_request.id),
            {:ok, escalated} <-
              GuidanceRequestService.escalate_human_info_needed(repo, guidance_request.id, %{
                "human_info_reason" => reason,
                "recommended_language" => recommended_language,
-               "decision_prompt" => decision_prompt,
-               "blocker_id" => blocker_id
-             }),
-           {:ok, blocker_event} <-
-             PlanningRepository.append_audit_progress_event_for_work_package(
-               repo,
-               session.assignment,
-               guidance_request.work_package_id,
-               guidance_request_blocker_attrs(escalated, reason, recommended_language, blocker_id)
-             ) do
+               "decision_prompt" => decision_prompt
+             }) do
         {:ok,
          %{
            "guidance_request" => guidance_request_payload(escalated),
-           "blocker" => %{
-             "id" => blocker_id,
-             "active" => true,
-             "progress_event_id" => blocker_event.id,
-             "recommended_language" => recommended_language
-           },
            "scope" => scope,
            "status" => %{"guidance_request_status" => escalated.status}
          }}
       end
     end)
   end
-
-  defp guidance_request_blocker_attrs(%GuidanceRequest{} = guidance_request, reason, recommended_language, blocker_id) do
-    %{
-      "summary" => "Human info needed for guidance request: #{guidance_request.summary}",
-      "body" => "Reason: #{reason}\n\nRecommended language: #{recommended_language}",
-      "status" => "blocked",
-      "idempotency_key" => "guidance_request_human_info_needed:#{guidance_request.id}",
-      "payload" => %{
-        "type" => "blocker",
-        "source_tool" => "report_blocker",
-        "blocker_id" => blocker_id,
-        "active" => true,
-        "guidance_request_id" => guidance_request.id,
-        "guidance_request_status" => guidance_request.status,
-        "human_info_needed" => true,
-        "reason" => reason,
-        "recommended_language" => recommended_language
-      }
-    }
-  end
-
-  defp guidance_request_blocker_id(guidance_request_id), do: "guidance_request:#{guidance_request_id}"
 
   defp scoped_session(_repo, session, arguments) when is_map(arguments) do
     with :ok <- require_worker_assignment(session.assignment) do

@@ -117,7 +117,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Service do
   def answer(repo, id, attrs), do: Repository.answer(repo, id, attrs)
 
   @spec answer_human_info_needed_for_local_operator(Repository.repo(), local_operator_context(), String.t(), map()) ::
-          {:ok, %{guidance_request: GuidanceRequest.t(), blocker_event: term()}} | {:error, error()}
+          {:ok, %{guidance_request: GuidanceRequest.t()}} | {:error, error()}
   def answer_human_info_needed_for_local_operator(repo, :local_operator, id, attrs)
       when is_atom(repo) and is_binary(id) and is_map(attrs) do
     attrs = normalize_keys(attrs)
@@ -135,9 +135,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Service do
                "answer" => answer,
                "answered_by" => @local_operator_actor,
                "answered_at" => DateTime.utc_now(:microsecond)
-             }),
-           {:ok, blocker_event} <- append_local_operator_blocker_resolution(repo, answered) do
-        %{guidance_request: answered, blocker_event: blocker_event}
+             }) do
+        %{guidance_request: answered}
       else
         {:error, reason} -> repo.rollback(reason)
       end
@@ -164,35 +163,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Service do
 
   defp require_local_operator_scope(%GuidanceRequest{work_package_id: work_package_id}, work_package_id), do: :ok
   defp require_local_operator_scope(%GuidanceRequest{}, _work_package_id), do: {:error, :work_package_scope_mismatch}
-
-  defp append_local_operator_blocker_resolution(repo, %GuidanceRequest{} = guidance_request) do
-    PlanningRepository.append_progress_event(repo, local_operator_blocker_resolution_attrs(guidance_request))
-  end
-
-  defp local_operator_blocker_resolution_attrs(%GuidanceRequest{} = guidance_request) do
-    blocker_id = guidance_request.blocker_id || guidance_request_blocker_id(guidance_request.id)
-
-    %{
-      "work_package_id" => guidance_request.work_package_id,
-      "summary" => "Human info answered for guidance request: #{guidance_request.summary}",
-      "body" => "Answered by #{@local_operator_actor}.",
-      "status" => "resolved",
-      "idempotency_key" => "guidance_request_human_info_answered:#{guidance_request.id}",
-      "payload" => %{
-        "type" => "blocker",
-        "source_tool" => "resolve_blocker",
-        "blocker_id" => blocker_id,
-        "active" => false,
-        "guidance_request_id" => guidance_request.id,
-        "guidance_request_status" => guidance_request.status,
-        "human_info_needed" => true,
-        "answered_by" => @local_operator_actor,
-        "resolution" => "Human answer recorded in the local operator cockpit."
-      }
-    }
-  end
-
-  defp guidance_request_blocker_id(guidance_request_id), do: "guidance_request:#{guidance_request_id}"
 
   defp replay_or_create_for_worker(repo, %Assignment{} = assignment, attrs) do
     case replay_existing(repo, attrs) do

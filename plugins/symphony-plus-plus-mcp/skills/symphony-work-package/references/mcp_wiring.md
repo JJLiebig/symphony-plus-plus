@@ -119,13 +119,14 @@ listening backend and cannot follow managed dynamic ports or launch it. Each
 host needs its own initialized session and claim on the intended ledger.
 Do not treat a stateless URL probe as recovered worker authority.
 
-## Worker Claim
+## Optional Worker MCP Claim
 
-Workers start by calling `claim_local_assignment` in a dedicated S++ MCP
+Ordinary workers need no MCP connection or claim. When a worker chooses scoped
+MCP access, authenticate by calling `claim_local_assignment` in a dedicated S++ MCP
 session connected to the same ledger as dispatch. Pass `work_package_id` and,
 when provided, `claimed_by`. Before claim, `get_current_assignment()` succeeds
-with `assignment: null` and a claim or reclaim action. After claim, call
-`get_current_assignment()` and read package context without re-listing tools.
+with `assignment: null` and a claim or reclaim action. Reuse the successful claim
+assignment; recheck only if binding evidence conflicts or the session reconnects.
 The first successful claim atomically activates a `ready_for_worker` package.
 Release changes authorization and scope without changing the advertised tool
 catalog.

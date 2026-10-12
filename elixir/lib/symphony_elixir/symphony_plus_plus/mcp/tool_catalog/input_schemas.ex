@@ -307,10 +307,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_request_id" => current_work_request_id_schema(),
-        "work_package_id" => described_string_schema("Explicit descendant WorkPackage to synchronize through its attached GitHub PR.")
+        "work_package_id" => described_string_schema("Explicit descendant WorkPackage to synchronize through GitHub."),
+        "url" => described_string_schema("PR URL from the normal worker handoff. Supply head_sha with it to reconcile readiness without a worker claim."),
+        "head_sha" => described_string_schema("Expected PR head from the handoff; must match the fetched provider head.")
       },
       ["work_package_id"]
     )
+    |> Map.put("additionalProperties", true)
   end
 
   def architect_tool_input_schema("attach_branch") do
@@ -596,11 +599,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_request_id" => current_work_request_id_schema(),
-        "work_package_id" => string_schema(),
-        "claimed_by" => described_string_schema("Optional claim display name to prefill worker bootstrap metadata.")
+        "work_package_id" => string_schema()
       },
       ["work_package_id"]
     )
+    |> Map.put("additionalProperties", true)
   end
 
   def architect_tool_input_schema("prepare_work_package_worktree") do
