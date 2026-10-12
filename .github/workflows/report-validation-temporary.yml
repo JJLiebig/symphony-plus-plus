@@ -28,7 +28,7 @@ jobs:
           mix deps.get
           mix format lib/symphony_elixir/symphony_plus_plus/work_requests/operator_report.ex lib/symphony_elixir/symphony_plus_plus/planning/progress_event.ex lib/symphony_elixir/symphony_plus_plus/mcp/worker_tools.ex lib/symphony_elixir/symphony_plus_plus/mcp/work_request_payloads.ex lib/symphony_elixir/symphony_plus_plus/dashboard/work_request_cards.ex lib/symphony_elixir/symphony_plus_plus/dashboard/work_request_details.ex test/symphony_elixir/symphony_plus_plus/mcp/worker_tools_02_test.exs
           git diff --binary > ../report-format.patch
-      - uses: actions/upload-artifact@4cec3d8b58ebc0b767b20e39d161457c23e8b6e39
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: report-format
           path: report-format.patch
