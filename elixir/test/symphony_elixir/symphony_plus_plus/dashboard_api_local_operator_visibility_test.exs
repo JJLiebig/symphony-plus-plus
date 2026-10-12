@@ -129,10 +129,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
         refute Map.has_key?(by_id[packages[suffix].id], "session_location")
       end
 
-      packages["CURRENT"] |> Ecto.Changeset.change(status: "merged") |> repo.update!()
-      terminal = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
-      terminal_package = Enum.find(work_request_detail(terminal, request.id)["work_packages"], &(&1["id"] == packages["CURRENT"].id))
-      refute Map.has_key?(terminal_package, "session_location")
+      for status <- ["merged", "closed", "abandoned", "skipped"] do
+        packages["CURRENT"] |> Ecto.Changeset.change(status: status) |> repo.update!()
+        terminal = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+        terminal_package = Enum.find(work_request_detail(terminal, request.id)["work_packages"], &(&1["id"] == packages["CURRENT"].id))
+        refute Map.has_key?(terminal_package, "session_location")
+      end
 
       File.write!(config_path, Jason.encode!(%{"repos" => %{"example-org/widget-service" => %{"area" => ["A", "B", "C", "D"]}}, "machines" => %{"build-desk" => %{"label" => "Build Desk", "kind" => "guessed"}}}))
       invalid = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
