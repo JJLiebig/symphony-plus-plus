@@ -11,6 +11,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   }
 
   alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
+  alias SymphonyElixir.SymphonyPlusPlus.DeploymentObservation
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
@@ -118,6 +119,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
     operator_config = OperatorConfig.load()
 
     case repo.transaction(fn -> hydrated_dashboard_payload(repo, operator_config) end) do
+      {:ok, {:ok, payload}} -> {:ok, DeploymentObservation.enrich(payload, operator_config)}
       {:ok, result} -> result
       {:error, reason} -> {:error, reason}
     end

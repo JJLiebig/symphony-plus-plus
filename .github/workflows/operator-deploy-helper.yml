@@ -1,0 +1,38 @@
+name: operator-deploy-helper
+on:
+  push:
+    branches: [feat/beta-operator-board-deploy]
+permissions:
+  contents: read
+jobs:
+  hosted-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elixir
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: |
+            elixir/deps
+            elixir/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('elixir/mise.toml') }}-${{ hashFiles('elixir/mix.exs') }}-${{ hashFiles('elixir/mix.lock') }}
+      - run: mix deps.get
+      - name: Format owned files
+        run: |
+          mix format lib/symphony_elixir/symphony_plus_plus/deployment_observation.ex lib/symphony_elixir/symphony_plus_plus/github/client.ex lib/symphony_elixir_web/controllers/sympp_dashboard_api/local_operator_dashboard.ex test/symphony_elixir/symphony_plus_plus/deployment_observation_test.exs test/symphony_elixir/symphony_plus_plus/github_gh_cli_client_test.exs
+          git diff --binary > ../hosted-format.patch
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hosted-format
+          path: hosted-format.patch
+      - name: Focused behavior checks
+        run: mix test test/symphony_elixir/symphony_plus_plus/deployment_observation_test.exs test/symphony_elixir/symphony_plus_plus/github_gh_cli_client_test.exs test/symphony_elixir/symphony_plus_plus/dashboard_api_local_operator_visibility_test.exs
+      - name: Static checks
+        run: mix static
