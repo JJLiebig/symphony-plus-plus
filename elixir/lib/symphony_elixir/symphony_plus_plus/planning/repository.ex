@@ -154,7 +154,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
   end
 
   defp stamp_pr_observation(repo, attrs) do
-    payload = Map.get(attrs, "payload")
+    payload = attrs |> Map.get("payload") |> PullRequestProgress.stringify_keys()
 
     if is_map(payload) and payload["type"] == "pr" and payload["source_tool"] in ["attach_pr", "sync_pr"] do
       work_package_id = Map.get(attrs, "work_package_id")
@@ -166,10 +166,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
             events = Enum.reject(events, &MetadataProjection.payload_type?(&1, "branch", "attach_branch"))
             MetadataProjection.metadata(events).pr
 
-          {:error, reason} -> repo.rollback(reason)
+          {:error, reason} ->
+            repo.rollback(reason)
         end
 
-      payload = payload |> PullRequestProgress.stringify_keys() |> PullRequestProgress.stamp_observation(previous, DateTime.utc_now(:microsecond))
+      payload = PullRequestProgress.stamp_observation(payload, previous, DateTime.utc_now(:microsecond))
       Map.put(attrs, "payload", payload)
     else
       attrs
