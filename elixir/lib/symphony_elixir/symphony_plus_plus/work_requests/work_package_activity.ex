@@ -79,7 +79,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
         latest_gate_at: nil,
         reason_codes: []
       },
-      worker_signal: nil
+      worker_signal: nil,
+      current_worker_session: nil
     }
   end
 
@@ -100,8 +101,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
     %{
       blocker_state: blocker_state(progress_events),
       runtime_state: runtime_state(runtime_evidence, grants, agent_runs, claim_leases, progress_events, work_package),
-      worker_signal: worker_signal(worker_grants, worker_runs, worker_leases, worker_runtime_evidence)
+      worker_signal: worker_signal(worker_grants, worker_runs, worker_leases, worker_runtime_evidence),
+      current_worker_session: current_worker_session(worker_runtime_evidence, work_package)
     }
+  end
+
+  defp current_worker_session(evidence, work_package) do
+    unless terminal_package?(work_package) do
+      evidence.active_agent_runs
+      |> Enum.max_by(&{timestamp_sort_value(&1.last_seen_at), &1.id}, fn -> nil end)
+      |> case do
+        %AgentRun{worker_host: host, session_id: session_id} -> %{worker_host: host, session_id: session_id}
+        nil -> nil
+      end
+    end
   end
 
   defp worker_signal(grants, agent_runs, claim_leases, runtime_evidence) do

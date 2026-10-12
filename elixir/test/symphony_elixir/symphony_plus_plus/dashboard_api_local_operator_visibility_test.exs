@@ -9,6 +9,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Comment
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.GuidanceRequest
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Phase
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Artifact
@@ -71,6 +72,86 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
     repo.delete_all(WorkRequest)
     repo.delete_all(OperatorSettings)
     :ok
+  end
+
+  test "operator labels follow repository identity and only current configured worker sessions", %{repo: repo} do
+    config_path = Path.join(System.tmp_dir!(), "operator-board-#{System.unique_integer([:positive])}.json")
+    original_config_path = System.get_env("SYMPP_OPERATOR_CONFIG")
+    System.put_env("SYMPP_OPERATOR_CONFIG", config_path)
+
+    on_exit(fn ->
+      if original_config_path,
+        do: System.put_env("SYMPP_OPERATOR_CONFIG", original_config_path),
+        else: System.delete_env("SYMPP_OPERATOR_CONFIG")
+
+      File.rm(config_path)
+    end)
+
+    config = %{
+      "repos" => %{"example-org/widget-service" => %{"area" => ["Example Company", "Widgets"], "deploy_workflows" => %{"dev" => "deploy-dev.yml"}}},
+      "machines" => %{"build-desk" => %{"label" => "Build Desk", "kind" => "desktop", "future_field" => true}},
+      "future_field" => true
+    }
+
+    File.write!(config_path, Jason.encode!(config))
+    assert OperatorConfig.load()["repos"]["example-org/widget-service"]["deploy_workflows"] == %{"dev" => "deploy-dev.yml"}
+
+    with_local_operator_endpoint(fn ->
+      request = create_work_request!(repo, repo: "https://github.com/Example-Org/Widget-Service.git", status: "sliced")
+      unmapped = create_work_request!(repo, repo: "example-org/unmapped-service", status: "sliced")
+      now = DateTime.utc_now(:microsecond)
+
+      packages =
+        for {suffix, run_attrs} <- [
+              {"CURRENT", %{worker_host: "build-desk", session_id: "session-current"}},
+              {"UNKNOWN", %{worker_host: "unknown-host", session_id: "session-unknown"}},
+              {"NO-HOST", %{worker_host: nil, session_id: "session-no-host"}},
+              {"NO-SESSION", %{worker_host: "build-desk", session_id: nil}},
+              {"STALE", %{worker_host: "build-desk", session_id: "session-stale", last_seen_at: DateTime.add(now, -301, :second)}},
+              {"FINISHED", %{worker_host: "build-desk", session_id: "session-finished", status: "completed", finished_at: now}}
+            ], into: %{} do
+          package = create_dispatched_package!(repo, request, slice_id: "WRS-LABEL-#{suffix}", package_id: "WP-LABEL-#{suffix}", status: "implementing")
+          attrs = Map.merge(%{work_package_id: package.id, status: "running", last_seen_at: now}, run_attrs)
+          attrs |> AgentRun.create_changeset() |> repo.insert!()
+          {suffix, package}
+        end
+
+      payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+      detail = work_request_detail(payload, request.id)
+      card = Enum.find(payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
+      assert detail["work_request"]["area_path"] == ["Example Company", "Widgets"]
+      assert card["area_path"] == detail["work_request"]["area_path"]
+      assert work_request_detail(payload, unmapped.id)["work_request"]["area_path"] == nil
+      by_id = Map.new(detail["work_packages"], &{&1["id"], &1})
+      assert by_id[packages["CURRENT"].id]["session_location"] == %{"label" => "Build Desk", "kind" => "desktop"}
+
+      for suffix <- ["UNKNOWN", "NO-HOST", "NO-SESSION", "STALE", "FINISHED"] do
+        refute Map.has_key?(by_id[packages[suffix].id], "session_location")
+      end
+
+      packages["CURRENT"] |> Ecto.Changeset.change(status: "merged") |> repo.update!()
+      terminal = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+      terminal_package = Enum.find(work_request_detail(terminal, request.id)["work_packages"], &(&1["id"] == packages["CURRENT"].id))
+      refute Map.has_key?(terminal_package, "session_location")
+
+      File.write!(config_path, Jason.encode!(%{"repos" => %{"example-org/widget-service" => %{"area" => ["A", "B", "C", "D"]}}, "machines" => %{"build-desk" => %{"label" => "Build Desk", "kind" => "guessed"}}}))
+      invalid = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+      invalid_detail = work_request_detail(invalid, request.id)
+      assert invalid_detail["work_request"]["area_path"] == nil
+      assert Enum.all?(invalid_detail["work_packages"], &(not Map.has_key?(&1, "session_location")))
+
+      for contents <- ["{invalid", "[]", ~s({"repos":[],"machines":false})] do
+        File.write!(config_path, contents)
+        fallback = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+        assert work_request_detail(fallback, request.id)["work_request"]["area_path"] == nil
+        assert File.read!(config_path) == contents
+      end
+
+      File.rm!(config_path)
+      missing = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+      assert work_request_detail(missing, request.id)["work_request"]["area_path"] == nil
+      refute File.exists?(config_path)
+    end)
   end
 
   test "local operator dashboard hides packages linked only from archived WorkRequests", %{repo: repo} do
