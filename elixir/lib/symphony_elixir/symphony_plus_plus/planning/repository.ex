@@ -154,9 +154,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
   end
 
   defp stamp_pr_observation(repo, attrs) do
-    payload = attrs |> Map.get("payload") |> PullRequestProgress.stringify_keys()
+    payload = Map.get(attrs, "payload")
 
-    if is_map(payload) and payload["type"] == "pr" and payload["source_tool"] in ["attach_pr", "sync_pr"] do
+    if pr_observation_payload?(payload) do
       work_package_id = Map.get(attrs, "work_package_id")
 
       previous =
@@ -170,12 +170,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
             repo.rollback(reason)
         end
 
-      payload = PullRequestProgress.stamp_observation(payload, previous, DateTime.utc_now(:microsecond))
+      payload =
+        payload
+        |> PullRequestProgress.stringify_keys()
+        |> PullRequestProgress.stamp_observation(previous, DateTime.utc_now(:microsecond))
+
       Map.put(attrs, "payload", payload)
     else
       attrs
     end
   end
+
+  defp pr_observation_payload?(%{} = payload) do
+    type = Map.get(payload, "type", Map.get(payload, :type))
+    source_tool = Map.get(payload, "source_tool", Map.get(payload, :source_tool))
+    type == "pr" and source_tool in ["attach_pr", "sync_pr"]
+  end
+
+  defp pr_observation_payload?(_payload), do: false
 
   defp clear_work_request_completion_after_reopening_progress({:ok, %ProgressEvent{} = event}, repo) do
     if reopening_progress_event?(event) do
