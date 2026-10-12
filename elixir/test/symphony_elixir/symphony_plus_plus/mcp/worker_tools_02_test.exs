@@ -3,14 +3,18 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
+  alias SymphonyElixir.SymphonyPlusPlus.Dashboard
+  alias SymphonyElixir.SymphonyPlusPlus.Dashboard.OperationalProjection
   alias SymphonyElixir.SymphonyPlusPlus.MCP.TaskPlanTools
   alias SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog
   alias SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport
+  alias SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard
 
   test "architect reports preserve partial edits, server times and explicit human resolution", %{repo: repo} do
     request = create_work_request!(repo, id: "WR-REPORT", repo: "exampleco/atlas", status: "sliced")
-    {anchor, session, _grant} = create_work_request_handoff_architect_session(repo, request, ArchitectHandoff.capabilities())
+    capabilities = ArchitectHandoff.capabilities()
+    {anchor, session, _grant} = create_work_request_handoff_architect_session(repo, request, capabilities)
 
     assert {:ok, question} =
              WorkRequestRepository.ask_question(repo, request.id, %{
@@ -66,7 +70,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
     assert {:ok, unchanged} = WorkRequestRepository.get(repo, request.id)
     assert unchanged.status == "sliced" and is_nil(unchanged.completed_at)
     assert {:ok, events} = PlanningRepository.list_progress_events(repo, anchor.id)
-    assert SymphonyElixir.SymphonyPlusPlus.Dashboard.OperationalProjection.blockers(events) == []
+    assert OperationalProjection.blockers(events) == []
 
     reopened_id = append_report!(repo, session, anchor, %{"human_escalation" => %{"question" => "Approve the follow-up?"}}, "report-reopened")
     reopened_at = repo.get!(ProgressEvent, reopened_id).created_at |> DateTime.to_iso8601()
@@ -74,19 +78,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
     assert reopened["human_escalation"]["raised_at"] == reopened_at
     assert reopened["human_escalation"]["resolved_at"] == nil
 
-    assert {:ok, hydrated} =
-             SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard.operator_dashboard_hydrated_payload(repo)
+    assert {:ok, hydrated} = LocalOperatorDashboard.operator_dashboard_hydrated_payload(repo)
 
     detail = Enum.find(hydrated.work_request_details, &(&1.work_request.id == request.id))
     assert detail.work_request.operator_report == reopened
     refute Enum.any?(detail.work_packages, &(&1.id == anchor.id))
-    assert {:ok, normal_detail} = SymphonyElixir.SymphonyPlusPlus.Dashboard.work_request_detail(repo, request.id)
+    assert {:ok, normal_detail} = Dashboard.work_request_detail(repo, request.id)
     assert normal_detail.work_request.operator_report == reopened
   end
 
-  test "report writes reject workers, foreign anchors and truncated text while ignoring ordinary progress", %{repo: repo} do
+  test "reports reject forged authors and overlong text; ordinary progress stays separate", %{repo: repo} do
     request = create_work_request!(repo, id: "WR-REPORT-AUTH", repo: "exampleco/atlas", status: "sliced")
-    {anchor, architect, _grant} = create_work_request_handoff_architect_session(repo, request, ArchitectHandoff.capabilities())
+    capabilities = ArchitectHandoff.capabilities()
+    {anchor, architect, _grant} = create_work_request_handoff_architect_session(repo, request, capabilities)
 
     assert {:ok, package} =
              CanonicalWorkPackageFixtures.add_work_package(repo, request.id, WorkPackageFactory.attrs(id: "WP-REPORT-AUTH", repo: request.repo, status: "planning"))
@@ -110,7 +114,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
     assert Map.fetch!(reports, request.id) == nil
 
     append_report!(repo, architect, anchor, %{"brief" => String.duplicate("x", ProgressEvent.payload_string_limit()), "unknown" => "ignored"}, "at-limit")
-    assert String.length(read_operator_report!(repo, architect, request)["brief"]["text"]) == ProgressEvent.payload_string_limit()
+    accepted_text = read_operator_report!(repo, architect, request)["brief"]["text"]
+    assert String.length(accepted_text) == ProgressEvent.payload_string_limit()
 
     assert {:ok, _revoked} = AccessGrantService.revoke(repo, architect.assignment.grant_id)
     response = mcp_tool(repo, architect, "append_progress", %{"work_package_id" => anchor.id, "summary" => "Report", "idempotency_key" => "revoked-report", "payload" => payload})

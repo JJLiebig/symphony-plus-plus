@@ -11,7 +11,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport do
   @fields ["brief", "eta", "parking", "human_escalation"]
   @event_type "architect_operator_report"
 
-  @spec authorized_payload(repo(), Session.t(), map()) :: {:ok, String.t(), map()} | {:error, term()} | {:tool_error, String.t()}
+  @spec authorized_payload(repo(), Session.t(), map()) ::
+          {:ok, String.t(), map()} | {:error, term()} | {:tool_error, String.t()}
   def authorized_payload(repo, %Session{assignment: %{grant_role: "architect"}} = session, arguments) do
     with {:ok, work_request_id} <- CurrentWorkRequest.id_argument(%{}, session),
          {:ok, work_request, _filters, _scope} <-
