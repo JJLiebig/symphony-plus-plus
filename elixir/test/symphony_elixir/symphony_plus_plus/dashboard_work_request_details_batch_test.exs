@@ -145,8 +145,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
     full_bytes = byte_size(Jason.encode!(full))
 
     IO.puts("ELIGIBILITY_BOARD_BUDGET " <> Jason.encode!(%{queries: length(compact_queries), bytes: compact_bytes, full_queries: length(full_queries), full_bytes: full_bytes}))
-    assert length(compact_queries) <= 24
-    assert compact_bytes <= 15_000
+    # Operator reports add one batched read of architect anchor history.
+    assert length(compact_queries) <= 25
+    # Hosted board fixture measured 15,795 bytes before optional report projection.
+    assert compact_bytes <= 16_000
     assert compact_bytes < full_bytes
 
     for item <- canonical.work_packages do
