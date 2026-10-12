@@ -100,8 +100,8 @@ is marked offline, migrated without starting any services, and published only
 after migration succeeds. Stop beta before refreshing it, then use
 `-Action Snapshot -ReplaceSnapshot` to explicitly replace its existing ledger.
 Missing/empty sources, source aliases, active beta runtimes and destinations
-outside the beta home's `ledger` directory are refused. A stopped ledger with
-leftover SQLite sidecars must be closed cleanly before replacement.
+outside the beta home's `ledger` directory are refused. Replacement recovers
+leftover SQLite sidecars only for a marked sandbox, and refuses one still in use.
 
 The snapshot retains goals and recorded PR/review evidence. Complete, archive,
 restore, delete and retention change only the copy. Worktree preparation and

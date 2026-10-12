@@ -5,6 +5,8 @@ from pathlib import Path
 import importlib.util
 import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -45,6 +47,54 @@ class SnapshotTest(unittest.TestCase):
                 with closing(sqlite3.connect(destination)) as copy:
                     self.assertEqual(copy.execute("SELECT migrated FROM goals").fetchall(), [(1,)])
                 self.assertFalse(any(destination.parent.glob(".beta-snapshot-*")))
+
+    def test_force_stopped_sandbox_can_refresh_but_busy_or_failed_refresh_preserves_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.sqlite3"
+            destination = root / "beta.sqlite3"
+            with closing(sqlite3.connect(source)) as live:
+                live.execute("CREATE TABLE goals (title TEXT)")
+                live.execute("INSERT INTO goals VALUES ('Example source goal')")
+                live.commit()
+            source_bytes = source.read_bytes()
+            snapshot.snapshot(source, destination, root, False, lambda _stage: None)
+            writer = subprocess.Popen(
+                [sys.executable, "-c", """
+import sqlite3, sys
+connection = sqlite3.connect(sys.argv[1])
+connection.execute('PRAGMA journal_mode=WAL')
+connection.execute('PRAGMA wal_autocheckpoint=0')
+connection.execute("INSERT INTO goals VALUES ('Example local edit')")
+connection.commit()
+print('ready', flush=True)
+sys.stdin.read()
+""", str(destination)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+            )
+            try:
+                self.assertEqual(writer.stdout.readline().strip(), "ready")
+                with self.assertRaisesRegex(ValueError, "stopped, marked"):
+                    snapshot.snapshot(source, destination, root, True, lambda _stage: self.fail("busy migration ran"))
+            finally:
+                writer.kill()
+                writer.wait(timeout=10)
+                writer.stdin.close()
+                writer.stdout.close()
+            self.assertTrue(Path(str(destination) + "-wal").exists())
+
+            def fail_migration(_stage):
+                raise RuntimeError("migration failed")
+
+            with self.assertRaisesRegex(RuntimeError, "migration failed"):
+                snapshot.snapshot(source, destination, root, True, fail_migration)
+            with closing(snapshot.readonly(destination)) as previous:
+                self.assertEqual(previous.execute("SELECT title FROM goals").fetchall(),
+                                 [("Example source goal",), ("Example local edit",)])
+            snapshot.snapshot(source, destination, root, True, lambda _stage: None)
+            snapshot.verify(destination, offline=True)
+            with closing(snapshot.readonly(destination)) as refreshed:
+                self.assertEqual(refreshed.execute("SELECT title FROM goals").fetchall(), [("Example source goal",)])
+            self.assertEqual(source.read_bytes(), source_bytes)
 
     def test_refused_aliases_and_failed_migration_preserve_both_ledgers(self):
         with tempfile.TemporaryDirectory() as directory:

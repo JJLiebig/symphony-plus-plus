@@ -44,16 +44,32 @@ def validate_destination(source, destination, sandbox_root, replace):
         raise ValueError("Snapshot source and destination must be different files.")
     if destination.exists() and not replace:
         raise ValueError("Sandbox ledger already exists. Use -ReplaceSnapshot to replace it.")
-    # Replacing a database with sidecars can replay an old WAL into the new copy.
-    if any(Path(str(destination) + suffix).exists() for suffix in ("-wal", "-shm", "-journal")):
-        raise ValueError("Sandbox ledger has SQLite sidecars. Stop it cleanly before replacing it.")
     if not source.is_file() or source.stat().st_size == 0:
         raise ValueError("Snapshot source is missing or empty.")
     return source, resolved
 
 
+def close_destination_sidecars(destination, recover):
+    sidecars = [Path(str(destination) + suffix) for suffix in ("-wal", "-shm", "-journal")]
+    if not any(path.exists() for path in sidecars):
+        return
+    message = "Sandbox ledger has SQLite sidecars. Replacement requires a stopped, marked snapshot."
+    try:
+        if not recover or not marked(destination):
+            raise ValueError(message)
+        # Stop force-kills the sandbox. SQLite recovers only its old copy and refuses active WAL owners.
+        with closing(sqlite3.connect(destination.as_uri() + "?mode=rw", uri=True, timeout=0)) as previous:
+            if previous.execute("PRAGMA journal_mode=DELETE").fetchone() != ("delete",):
+                raise ValueError(message)
+    except sqlite3.Error as error:
+        raise ValueError(message) from error
+    if any(path.exists() for path in sidecars):
+        raise ValueError(message)
+
+
 def snapshot(source, destination, sandbox_root, replace, migrate):
     source, destination = validate_destination(source, destination, sandbox_root, replace)
+    close_destination_sidecars(destination, recover=replace)
     destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor, stage = tempfile.mkstemp(prefix=".beta-snapshot-", suffix=".sqlite3", dir=destination.parent)
     os.close(descriptor)
@@ -73,6 +89,7 @@ def snapshot(source, destination, sandbox_root, replace, migrate):
                 raise ValueError("Migrated sandbox ledger failed SQLite integrity_check.")
             target.execute("PRAGMA journal_mode=DELETE")
         validate_destination(source, destination, sandbox_root, replace)
+        close_destination_sidecars(destination, recover=False)
         with stage.open("rb+") as stream:
             os.fsync(stream.fileno())
         if replace:
