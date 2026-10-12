@@ -52,6 +52,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.HttpClient do
 
   def fetch_pull_request(_ref, _opts), do: {:error, :invalid_pr_reference}
 
+  @spec get_json(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_json("repos/" <> _rest = path, opts) do
+    case Req.get("https://api.github.com/" <> path,
+           headers: headers(),
+           receive_timeout: receive_timeout(opts),
+           connect_options: [timeout: receive_timeout(opts)],
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_map(body) -> {:ok, body}
+      _unavailable -> {:error, :request_failed}
+    end
+  end
+
   defp handle_pull_request_response({:ok, %Req.Response{status: status, body: body}}) when status in 200..299 do
     if is_map(body), do: {:ok, Map.put(body, "provider_snapshot_complete", false)}, else: {:error, :invalid_github_response}
   end
@@ -159,6 +172,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
   end
 
   def fetch_pull_request(_ref, _opts), do: {:error, :invalid_pr_reference}
+
+  @spec get_json(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_json("repos/" <> _rest = path, opts) do
+    with {:ok, output} <- run_gh(["api", "--hostname", "github.com", "--method", "GET", path], opts) do
+      decode_json(output)
+    end
+  end
 
   @spec system_cmd(String.t(), [String.t()], keyword()) :: {:ok, String.t()} | {:error, term()}
   def system_cmd(executable, args, opts) when is_binary(executable) and is_list(args) and is_list(opts) do
@@ -341,6 +361,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
       result ->
         result
     end
+  end
+
+  @spec get_json(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_json(path, opts) do
+    if HttpClient.authenticated?(), do: HttpClient.get_json(path, opts), else: GhCliClient.get_json(path, opts)
   end
 
   defp fetch_with_http_fallback(ref, opts, reason) do

@@ -95,6 +95,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
 
     File.write!(config_path, Jason.encode!(config))
     assert OperatorConfig.load()["repos"]["example-org/widget-service"]["deploy_workflows"] == %{"dev" => "deploy-dev.yml"}
+    File.write!(config_path, Jason.encode!(update_in(config, ["repos", "Example-Org/Widget-Service"], &Map.delete(&1, "deploy_workflows"))))
 
     with_local_operator_endpoint(fn ->
       request = create_work_request!(repo, repo: "https://github.com/Example-Org/Widget-Service.git", status: "sliced")
