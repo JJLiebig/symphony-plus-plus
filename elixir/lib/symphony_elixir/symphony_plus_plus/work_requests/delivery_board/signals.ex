@@ -200,7 +200,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
     pr = Map.get(summary, :pr_signal, %{})
     review = Map.get(summary, :review_signal) || %{}
     outcome = delivery && delivery.outcome
-    track = if pr[:status] in ["open", "merged"] or summary[:merge_required] == true, do: "pr", else: "no_pr"
+    track = board_track(summary, pr, outcome)
     {stage, entered_at, source} = board_stage(work_package, pr, review, delivery)
 
     %{
@@ -211,6 +211,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       outcome: outcome,
       delivered: if(outcome, do: outcome in ["pr_merged", "completed_no_pr"], else: pr[:status] == "merged" or work_package.status == "merged")
     }
+  end
+
+  defp board_track(_summary, _pr, "completed_no_pr"), do: "no_pr"
+  defp board_track(_summary, _pr, "pr_merged"), do: "pr"
+
+  defp board_track(summary, pr, _outcome) do
+    if summary[:merge_required] == true or is_integer(pr[:number]) or is_binary(pr[:url]), do: "pr", else: "no_pr"
   end
 
   defp board_stage(_package, _pr, _review, %{outcome: "pr_merged"} = delivery),
@@ -242,7 +249,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
         {"review", review[:round_started_at] || review[:started_at], "recorded_status"}
 
       pr[:status] == "open" and pr[:head_matches] != false ->
-        {"checks", get_in(pr, [:checks, :changed_at]), pr[:source] || "recorded_pr"}
+        {"checks", nil, pr[:source] || "recorded_pr"}
 
       package.status == "ci_waiting" ->
         {"checks", nil, "recorded_status"}
@@ -483,24 +490,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
 
   defp checks(value, changed_at) do
     %{
-      status: value |> first_map_value(["conclusion", "state", "status"]) |> check_status(),
+      status: value |> first_map_value(["conclusion", "state", "status"]) |> PullRequestProgress.check_status(),
       current: integer_value(first_map_value(value, ["current", "completed", "completed_count"])),
       total: integer_value(first_map_value(value, ["total", "total_count", "check_count"])),
       changed_at: changed_at
     }
     |> reject_nil_values()
   end
-
-  defp check_status(value) when is_binary(value) do
-    case value |> String.trim() |> String.downcase() do
-      status when status in ["success", "succeeded", "passed", "passing", "complete", "completed"] -> "passing"
-      status when status in ["failure", "failed", "failing", "error", "cancelled", "timed_out"] -> "failing"
-      status when status in ["pending", "queued", "running", "in_progress", "in progress", "waiting"] -> "pending"
-      _status -> "unavailable"
-    end
-  end
-
-  defp check_status(_value), do: "unavailable"
 
   defp dependency_input_status(work_package_id, unmet_ids, context) do
     activity = get_in(context, [:activity_contexts, work_package_id]) || WorkPackageActivity.empty_context()

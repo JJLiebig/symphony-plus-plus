@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
   alias Ecto.Changeset
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
+  alias SymphonyElixir.SymphonyPlusPlus.Dashboard.MetadataProjection
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Artifact
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Finding
@@ -160,14 +161,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Repository do
       work_package_id = Map.get(attrs, "work_package_id") || Map.get(attrs, :work_package_id)
 
       previous =
-        repo.one(
-          from(event in ProgressEvent,
-            where: event.work_package_id == ^work_package_id and fragment("json_extract(?, '$.type')", event.payload) == "pr",
-            order_by: [desc: event.sequence],
-            limit: 1,
-            select: event.payload
-          )
-        )
+        case list_progress_events(repo, work_package_id) do
+          {:ok, events} -> MetadataProjection.metadata(events).pr
+          {:error, reason} -> repo.rollback(reason)
+        end
 
       payload = payload |> PullRequestProgress.stringify_keys() |> PullRequestProgress.stamp_observation(previous, DateTime.utc_now(:microsecond))
       key = if Map.has_key?(attrs, "payload"), do: "payload", else: :payload

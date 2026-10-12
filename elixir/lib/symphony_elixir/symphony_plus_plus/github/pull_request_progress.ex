@@ -6,16 +6,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress do
 
   @spec stamp_observation(map(), map() | nil, DateTime.t()) :: map()
   def stamp_observation(payload, previous, recorded_at) do
-    same_pr = is_map(previous) and same_pr?(previous, pr_ref(payload))
-    same_head = same_pr and previous["head_sha"] == payload["head_sha"]
+    same_pr = is_map(previous) and same_observed_pr?(previous, payload)
+    same_head = same_pr and PullRequest.head_sha_matches?(previous["head_sha"], payload["head_sha"])
     previous_times = if same_head, do: previous, else: %{}
     observed_at = DateTime.to_iso8601(recorded_at)
-    same_checks = same_head and check_status(previous) == check_status(payload)
+    same_checks = same_head and snapshot_check_status(previous) == snapshot_check_status(payload)
 
     Map.merge(payload, %{
       "head_changed_at" => previous_times["head_changed_at"] || observed_at,
       "checks_changed_at" => if(same_checks, do: previous_times["checks_changed_at"] || observed_at, else: observed_at)
     })
+  end
+
+  defp same_observed_pr?(previous, payload) do
+    previous_ref = pr_ref(previous)
+    current_ref = pr_ref(payload)
+    is_binary(previous_ref.repository) and is_binary(current_ref.repository) and
+      String.downcase(previous_ref.repository) == String.downcase(current_ref.repository) and previous_ref.number == current_ref.number
   end
 
   defp pr_ref(payload) do
@@ -25,10 +32,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress do
     end
   end
 
-  defp check_status(payload) do
-    summary = Map.get(payload, "check_summary") || %{}
-    Map.get(summary, "conclusion") || Map.get(summary, "state") || Map.get(summary, "status")
+  defp snapshot_check_status(%{"check_summary" => %{} = summary}) do
+    check_status(Map.get(summary, "conclusion") || Map.get(summary, "state") || Map.get(summary, "status"))
   end
+
+  defp snapshot_check_status(_payload), do: "unavailable"
+
+  @spec check_status(term()) :: String.t()
+  def check_status(value) when is_binary(value) do
+    case value |> String.trim() |> String.downcase() do
+      status when status in ["success", "succeeded", "passed", "passing", "complete", "completed"] -> "passing"
+      status when status in ["failure", "failed", "failing", "error", "cancelled", "timed_out"] -> "failing"
+      status when status in ["pending", "queued", "running", "in_progress", "in progress", "waiting"] -> "pending"
+      _status -> "unavailable"
+    end
+  end
+
+  def check_status(_value), do: "unavailable"
 
   @spec chronological_events([ProgressEvent.t()]) :: [ProgressEvent.t()]
   def chronological_events(events) when is_list(events) do

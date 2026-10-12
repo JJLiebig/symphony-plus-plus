@@ -29,7 +29,8 @@ runtime observations, or a reporting cadence. Native review observations augment
 this state. A recorded `superseded` or `abandoned` outcome has a null stage and
 `delivered: false`. A legacy lifecycle status may identify a stage without an
 entry time: unrelated package updates never supply that time. Review uses the
-known round/start time; checks use their first-observed status time. These are
+known round/start time. Checks stage entry remains null because a status snapshot
+cannot establish review-to-checks re-entry; read `checks.changed_at` separately. These are
 observations, not reconstructed transition history. Repeated snapshots with the
 same PR/head/check status preserve timestamps; a changed head or PR resets them.
 Existing snapshots acquire these times on their next append. Reads never write
@@ -41,7 +42,7 @@ Example package fragment (invented repository):
 {
   "id": "wp-widget",
   "board_state": {
-    "stage": "checks", "entered_at": "2026-10-01T09:10:00Z",
+    "stage": "checks", "entered_at": null,
     "source": "provider", "track": "pr", "outcome": null, "delivered": false
   },
   "pr_signal": {

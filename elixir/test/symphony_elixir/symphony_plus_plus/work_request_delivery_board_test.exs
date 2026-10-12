@@ -21,6 +21,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
     dispatched_at = ~U[2026-10-01 09:00:00Z]
     package = %WorkPackage{status: "ready_for_worker", dispatched_at: dispatched_at, updated_at: DateTime.add(dispatched_at, 600, :second)}
     summary = %{merge_required: true, pr_signal: %{status: "none"}}
+
     assert %{stage: "build", entered_at: "2026-10-01T09:00:00Z", source: "dispatched", track: "pr", delivered: false} =
              Signals.board_state(package, summary, nil)
 

@@ -12,6 +12,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubPullRequestTest do
     repeated = PullRequestProgress.stamp_observation(payload, first, later_at)
     assert repeated == first
 
+    spelling = %{payload | "repository" => "Example-Org/Widget-Service", "head_sha" => "abcdef0", "check_summary" => %{"conclusion" => "success"}}
+    observed = PullRequestProgress.stamp_observation(spelling, nil, first_at)
+    canonical = %{payload | "head_sha" => "abcdef0123456789abcdef0123456789abcdef0123", "check_summary" => %{"status" => "passing"}}
+    same_result = PullRequestProgress.stamp_observation(canonical, observed, later_at)
+    assert same_result["head_changed_at"] == observed["head_changed_at"]
+    assert same_result["checks_changed_at"] == observed["checks_changed_at"]
+
     passing = PullRequestProgress.stamp_observation(put_in(payload, ["check_summary", "status"], "passing"), first, later_at)
     assert passing["head_changed_at"] == "2026-10-01T09:00:00Z"
     assert passing["checks_changed_at"] == "2026-10-01T09:01:00Z"
