@@ -19,8 +19,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocus do
 
   def focus_location(location, opts) do
     cond do
-      location.machine_id != Keyword.get(opts, :machine_id, machine_id()) -> result(:other_machine)
       location.source != "herdr" -> result(:not_in_herdr)
+      location.machine_id != Keyword.get(opts, :machine_id, machine_id()) -> result(:other_machine)
       true -> focus_herdr(location, Keyword.get(opts, :request, &request/2))
     end
   end

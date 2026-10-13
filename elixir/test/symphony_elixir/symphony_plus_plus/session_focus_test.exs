@@ -18,7 +18,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocusTest do
     opts = [machine_id: "host-a", request: fn _, _ -> flunk("unexpected Herdr probe") end]
     assert SessionFocus.focus_location(nil, opts).reason == "session_gone"
     assert SessionFocus.focus_location(%{location() | machine_id: "host-b"}, opts).reason == "other_machine"
-    assert SessionFocus.focus_location(%{location() | source: "agent"}, opts).reason == "not_in_herdr"
+    assert SessionFocus.focus_location(%{location() | source: "agent", machine_id: nil}, opts).reason == "not_in_herdr"
   end
 
   test "focus follows the uniquely identified current terminal and sends no input" do
