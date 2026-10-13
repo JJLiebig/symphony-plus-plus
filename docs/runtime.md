@@ -61,6 +61,10 @@ URL. See [Operations](operations.md) for the Work board and starting a request.
 
 ## Attach, Close And Recover
 
+For moving an existing factory ledger from main to beta, follow the
+[release and cutover runbook](runbooks/beta-release-cutover.md), including its
+publication gate, stopped-ledger backup, migration effects and rollback.
+
 The first client starts the runtime; clients with matching settings attach.
 Closing one host leaves the other usable. The backend stops after the last
 client detaches. The next session can restart the verified artifact without
