@@ -459,7 +459,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
         [{"mcp-session-id", session_id}]
       )
 
-    assert json_response(note, 200)["result"]
+    assert get_in(json_response(note, 200), ["result", "structuredContent", "comment", "target_id"]) == created_id
     refreshed_creator = SessionLocations.get(Repo, "work_request", created_id)
     assert refreshed_creator.client_id == creator_location.client_id
     assert DateTime.compare(refreshed_creator.last_seen_at, creator_location.last_seen_at) == :gt
