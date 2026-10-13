@@ -237,8 +237,11 @@ After the stopped-ledger backup above and an approved cutover window:
 
 1. Retain the original marketplace registration/configuration and artifacts for
    rollback. In the selected replacement Codex home, explicitly disable/remove
-   its old Symphony++ MCP plugin or manual entry. Remove the old Claude entry
-   only in the project being converted. Setup refuses conflicting entries.
+   its old Symphony++ MCP plugin or manual entry. In the project being converted,
+   remove its old Claude local entry with
+   `claude mcp remove --scope local symphony_plus_plus`; local entries take
+   precedence over the project file and setup cannot detect them. Setup refuses
+   conflicting project entries.
 2. In the intended project, select the recorded `SYMPP_HOME`, `SYMPP_DATABASE`
    and `SYMPP_RUNTIME_FILE`, then run the combined Skills install and setup
    commands in the portable guide. This registers one stable installed launcher

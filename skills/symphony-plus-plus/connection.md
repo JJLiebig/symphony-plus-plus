@@ -26,6 +26,9 @@ ledger and port. Do not commit machine-specific MCP config to shared repositorie
 Repeat setup to repair its own registration. It refuses unrelated entries and
 enabled Symphony++ MCP marketplace registration in the selected Codex home.
 Do not overwrite those blindly or stop healthy sessions to repair one client.
+Claude local entries override project configuration. If this project has an old
+local entry, remove it with `claude mcp remove --scope local symphony_plus_plus`
+before opening a fresh session; setup does not inspect that local store.
 
 Setup prints runtime SHA and install digest. Close this runtime's clients,
 update with `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`,

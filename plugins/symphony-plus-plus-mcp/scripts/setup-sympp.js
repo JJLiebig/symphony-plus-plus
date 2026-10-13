@@ -90,6 +90,7 @@ function main(args) {
   }
   emit("runtime", install.revision);
   emit("install", install.payload_sha256);
+  if (hosts.includes("claude")) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its symphony_plus_plus entry before opening a fresh session here.");
   emit("next", "Open fresh host sessions in this project and verify symphony_plus_plus tools before ledger work.");
 }
 

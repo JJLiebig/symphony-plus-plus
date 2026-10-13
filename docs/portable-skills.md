@@ -37,6 +37,12 @@ and capture `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE`, and any select
 backend port/log directory. Codex keeps 360-second startup and 300-second tool
 timeouts. Do not commit machine-specific MCP paths to a shared repository.
 
+Claude local registration takes precedence over project configuration. If this
+project already has a local `symphony_plus_plus` entry, remove that old entry
+with `claude mcp remove --scope local symphony_plus_plus` before the fresh
+session. Setup checks the project file; it does not inspect Claude's local
+registration store. A new dedicated beta workspace avoids that collision.
+
 Repeated setup is a no-op and repairs owned registrations after relocation.
 Unrelated `symphony_plus_plus` entries and enabled Symphony++ MCP marketplace
 plugins in the selected Codex home are refused. Use a separate home/workspace,

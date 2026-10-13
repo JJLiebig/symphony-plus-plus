@@ -20,6 +20,13 @@ class HostedPowerShell {
       "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(command.ToString())));
     start.UseShellExecute = false;
     start.CreateNoWindow = true;
-    using (var child = Process.Start(start)) { child.WaitForExit(); return child.ExitCode; }
+    start.RedirectStandardOutput = true;
+    start.RedirectStandardError = true;
+    using (var child = Process.Start(start)) {
+      child.OutputDataReceived += (sender, line) => { if (line.Data != null) Console.Out.WriteLine(line.Data); };
+      child.ErrorDataReceived += (sender, line) => { if (line.Data != null) Console.Error.WriteLine(line.Data); };
+      child.BeginOutputReadLine(); child.BeginErrorReadLine();
+      child.WaitForExit(); return child.ExitCode;
+    }
   }
 }

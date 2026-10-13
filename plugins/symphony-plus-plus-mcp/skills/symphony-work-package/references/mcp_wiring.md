@@ -35,6 +35,9 @@ Both hosts share one managed runtime only with the same home/runtime file and
 ledger. Setup refuses conflicting unmanaged registration or an enabled MCP
 marketplace plugin in the selected Codex home. It repairs only its own entry.
 Keep local machine paths out of committed shared configuration.
+Claude local entries override project configuration. If this project has an old
+local entry, remove it with `claude mcp remove --scope local symphony_plus_plus`
+before opening a fresh session; setup does not inspect that local store.
 
 Close this runtime's clients, then update from the same project with
 `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes` and open fresh
