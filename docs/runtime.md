@@ -1,10 +1,8 @@
 # Install And Run Symphony++
 
-Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
-
 The beta package is `0.2.0-beta.2`. These native connections are for Windows
-Codex and Claude Code. [Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
-identify the exact tested build and hosts. Linux/macOS runtime archives do not
+Codex and Claude Code. [Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
+record the build, hosted checks, and native qualification limits. Linux/macOS runtime archives do not
 establish native plugin or host support.
 
 ## Install In A Separate Beta Home
@@ -102,9 +100,9 @@ or stop another healthy host to repair one failed attachment.
 
 New runtime builds use `<SYMPP_HOME>/rt/<platform>/<hash16>/runtime`, with the
 release directly inside that directory. Full artifact hashes and source
-provenance remain verified metadata. This layout requires newly built artifacts
-paired with the updated launcher; existing published archives use the old
-layout. Do not refresh an installed runtime with an unqualified source build.
+provenance remain verified metadata. Beta.2 pairs this flattened archive layout
+with the updated launcher; beta.1 used the old layout. Do not refresh an installed
+runtime with an unqualified source build.
 
 Source validation, manual HTTP connections, beta runtime controls and
 performance checks are [developer operations](development.md), separate from

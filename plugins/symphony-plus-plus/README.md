@@ -1,7 +1,5 @@
 # Symphony++ Codex Plugin
 
-Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
-
 This `0.2.0-beta.2` package is skill-only. It supplies worker, coordinator and
 Solo Session procedures without starting Symphony++ MCP. Ordinary work needs
 no backend when persistence is not requested. Ledger operations, including

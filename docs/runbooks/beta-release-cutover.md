@@ -12,12 +12,13 @@ Read-only release evidence on 13 October 2026:
 | Channel | Package | Published runtime source |
 |---|---|---|
 | Stable | `0.1.10` | `6a3c2486624d391e9818e6ed267675384489b10e` |
-| Beta | `0.2.0-beta.1` | `a49dd6a7ea0ccddbadfcb6af3e7844be08323881` |
+| Beta | `0.2.0-beta.2` | `87d828d528b68e7b35ebb94d307a96b6f2c556ed` |
 
-The beta release is `sympp-v2-beta-20261007`. The next candidate is
-`0.2.0-beta.2`, with proposed unique tag `sympp-v2-beta-2-20261013`. Recheck both
-before use; choose a new unused tag if the date or candidate changes. Never reuse
-the beta.1 tag. The release workflow can overwrite assets on an existing tag.
+The current beta release is `sympp-v2-beta-2-20261013`. The publication examples
+below use that release's identity; it is already published, so do not dispatch
+them again. A future publication needs a new candidate version and unused tag.
+Recheck both before use. The release workflow can overwrite assets on an existing
+tag.
 
 Before freezing a build, confirm all of the following:
 
@@ -98,7 +99,8 @@ if ($windows.Count -ne 1) { throw 'Expected exactly one Windows artifact.' }
 $archive = Join-Path $releaseEvidence "sympp-runtime-$buildSha-windows-x64.zip"
 $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualHash -ne $windows[0].archive.sha256) { throw 'Archive hash mismatch.' }
-Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $releaseEvidence 'contents')
+# Optional: expand into a short evidence path, or inspect ZIP entry bytes directly.
+# Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $releaseEvidence 'contents')
 ```
 
 Retain the run URL, tag target, asset hashes and this inspection record:
@@ -141,11 +143,11 @@ contract fingerprint. Do not pin the installed cache to `$buildSha` or rebuild
 only to make these two SHAs equal. See
 [artifact selection](../../plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-artifact-manifest.ps1).
 
-The current beta source already has a different contract from the beta.1 artifact.
-Until publication and pointer promotion finish, upgrading from the moving beta
-branch may fail artifact selection. Keep existing installations running and do
-not advertise the candidate as installable during this window. A pointer to an
-unpublished URL would add another failure and is unnecessary.
+During any future publication, the moving beta source can have a different
+contract from the previous artifact. Until publication and pointer promotion
+finish, upgrading may fail artifact selection. Keep existing installations
+running and do not advertise the candidate as installable during this window.
+A pointer to an unpublished URL would add another failure and is unnecessary.
 
 ### Release notes
 
