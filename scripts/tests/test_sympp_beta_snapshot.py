@@ -177,8 +177,12 @@ class InstalledSnapshotTest(unittest.TestCase):
             )
 
             def run(arguments, **kwargs):
-                return subprocess.run(["pwsh", "-NoProfile", "-File", *map(str, arguments)],
-                                      env=env, capture_output=True, text=True, timeout=600, **kwargs)
+                result = subprocess.run(["pwsh", "-NoProfile", "-File", *map(str, arguments)],
+                                        env=env, capture_output=True, text=True, timeout=600, **kwargs)
+                if result.returncode:
+                    for log in (viewer_home / "logs").glob("*.log"):
+                        result.stderr += f"\n{log.name}:\n{log.read_text(errors='replace')}"
+                return result
 
             seeded = run([eval_script])
             self.assertEqual(seeded.returncode, 0, seeded.stdout + seeded.stderr)

@@ -1,3 +1,16 @@
+function Normalize-McpContractFingerprint([string]$Fingerprint) {
+  if ([string]::IsNullOrWhiteSpace($Fingerprint)) {
+    return $null
+  }
+
+  $fingerprint = $Fingerprint.Trim().ToLowerInvariant()
+  if ($fingerprint -match "^[0-9a-f]{64}$") {
+    return $fingerprint
+  }
+
+  return $null
+}
+
 $ErrorActionPreference = "Stop"
 
 function Get-JsonPropertyValue($Object, [string[]]$Names) {
