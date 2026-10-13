@@ -7,6 +7,22 @@ on:
       - main
 
 jobs:
+  portable-skills:
+    name: Windows Skills install
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Verify generated bundle and setup behavior
+        run: |
+          node scripts/package-portable-skills.mjs --check
+          node plugins/symphony-plus-plus-mcp/tests/launcher/portable-install-tests.js
+      - name: Install isolated bundles and exercise the published runtime
+        run: node scripts/qualify-portable-skills.mjs --runtime
+      - name: Prove beta branch tracking across Skills update
+        run: node scripts/qualify-portable-skills.mjs https://github.com/JJLiebig/symphony-plus-plus/tree/beta --branch-only
+
   beta-snapshot:
     name: beta snapshot safety
     runs-on: windows-latest
@@ -246,6 +262,7 @@ jobs:
   make-all:
     runs-on: ubuntu-latest
     needs:
+      - portable-skills
       - beta-snapshot
       - single-gates
       - parallel-gates
@@ -254,6 +271,10 @@ jobs:
     steps:
       - name: Verify split gates
         run: |
+          if [ "${{ needs.portable-skills.result }}" != "success" ]; then
+            echo "portable Skills result: ${{ needs.portable-skills.result }}"
+            exit 1
+          fi
           if [ "${{ needs.beta-snapshot.result }}" != "success" ]; then
             echo "beta snapshot result: ${{ needs.beta-snapshot.result }}"
             exit 1

@@ -513,6 +513,8 @@ function Get-McpContractFingerprintFromMarketplaceSource([string]$PluginRoot) {
 }
 
 function Resolve-LocalMcpContractFingerprint([string]$PluginRoot) {
+  $portable = Read-SymppPortableInstall $PluginRoot
+  if ($portable) { return [string]$portable.contract_fingerprint }
   Write-SymppLauncherTrace "contract_fingerprint_resolution"
   $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
   if (Test-SymphonySourceRoot $sourceRoot) {
@@ -959,7 +961,7 @@ function Test-HealthySymppDashboard([string]$DashboardOrigin) {
   $url = $DashboardOrigin.TrimEnd("/") + $BoardPath
   try {
     $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-    return [int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 400 -and [string]$response.Content -match "Symphony\+\+ Dashboard"
+    return [int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 400 -and [string]$response.Content -match "<title>Symphony\+\+( Dashboard)?</title>"
   } catch {
     return $false
   }
@@ -1799,11 +1801,26 @@ function New-ReusedBackendPlan([string]$Status, [string]$Url, $Health, [bool]$Ma
   }
 }
 
+function Assert-SymppPortableBackendOwner($Health, [string]$Url, $RuntimeState, [string]$Contract) {
+  if (-not $script:SymppPortableInstall -or -not $Health.healthy -or $Health.ledger_identity.kind -ne "sqlite") { return }
+  $sameLedger = if ($env:SYMPP_DATABASE) {
+    Test-SymppDatabasePathsMatch ([string]$Health.ledger_identity.display_path) $env:SYMPP_DATABASE $true
+  } else { $Health.ledger_identity.default_home -eq $true }
+  if (-not $sameLedger) { return }
+  $entry = $RuntimeState.backend
+  if (-not (Test-BackendContractMatches $Health $Contract) -or -not $entry.managed -or
+      -not (Test-RuntimeEntryEndpointMatches "backend" $entry $Url) -or
+      -not (Test-ProcessOwnsTcpPort ([int]$entry.pid) (Get-PortFromOrigin $Url))) {
+    throw "This ledger is already served by a different Symphony++ launcher. Use the same SYMPP_HOME and SYMPP_RUNTIME_FILE, or stop all old clients before switching installs. Use a separate ledger for side-by-side beta."
+  }
+}
+
 function Resolve-BackendPlan([int]$PreferredPort, [string]$ConfiguredUrl, $RuntimeState, [int]$PortReleaseTimeoutSec, [string]$ExpectedSourceRevision, [string]$ExpectedContractFingerprint, [bool]$EnforcePreferredPort, [int[]]$AvoidPorts = @()) {
   if (-not [string]::IsNullOrWhiteSpace($ConfiguredUrl)) {
     $url = $ConfiguredUrl.TrimEnd("/")
     Assert-LoopbackHttpOrigin $url "SYMPP_BACKEND_URL"
     $health = Get-SymppBackendHealthWithRetry $url
+    Assert-SymppPortableBackendOwner $health $url $RuntimeState $ExpectedContractFingerprint
     if (-not $health.healthy) {
       throw "SYMPP_BACKEND_URL is not a healthy Symphony++ backend: $url"
     }
@@ -1819,6 +1836,7 @@ function Resolve-BackendPlan([int]$PreferredPort, [string]$ConfiguredUrl, $Runti
   if ($PreferredPort -gt 0) {
     $preferredUrl = "http://127.0.0.1:$PreferredPort"
     $preferredHealth = Get-SymppBackendHealthWithRetry $preferredUrl
+    Assert-SymppPortableBackendOwner $preferredHealth $preferredUrl $RuntimeState $ExpectedContractFingerprint
     $preferredEntry = if ($null -ne $RuntimeState) { $RuntimeState.backend } else { $null }
     if ($preferredHealth.healthy) {
       if (Test-RuntimeEntryExternalOverride $preferredEntry $preferredUrl "backend") {
@@ -1848,6 +1866,7 @@ function Resolve-BackendPlan([int]$PreferredPort, [string]$ConfiguredUrl, $Runti
     if (-not [string]::IsNullOrWhiteSpace($runtimeUrl)) {
       $runtimeUrl = $runtimeUrl.TrimEnd("/")
       $runtimeHealth = Get-SymppBackendHealthWithRetry $runtimeUrl
+      Assert-SymppPortableBackendOwner $runtimeHealth $runtimeUrl $RuntimeState $ExpectedContractFingerprint
       $runtimeManaged = $RuntimeState.backend.managed -eq $true
       $portAllowed = Test-PortSelectionAllowsReuse $PreferredPort $runtimeUrl $EnforcePreferredPort
       if ($runtimeManaged -and $portAllowed -and $runtimeHealth.healthy -and (Test-BackendLaunchCompatible $runtimeHealth $ExpectedContractFingerprint)) {
@@ -1870,6 +1889,7 @@ function Resolve-BackendPlan([int]$PreferredPort, [string]$ConfiguredUrl, $Runti
     if (-not $portRelease.released) {
       if (Test-SymppBackendOwners @($portRelease.owners)) {
         $busyHealth = Get-SymppBackendHealthWithRetry "http://127.0.0.1:$PreferredPort" 6 750
+        Assert-SymppPortableBackendOwner $busyHealth "http://127.0.0.1:$PreferredPort" $RuntimeState $ExpectedContractFingerprint
         if ($busyHealth.healthy -and (Test-BackendLaunchCompatible $busyHealth $ExpectedContractFingerprint)) {
           Write-CompatibleSourceMismatchDiagnostic "http://127.0.0.1:$PreferredPort" $busyHealth $ExpectedSourceRevision
           return New-ReusedBackendPlan "external_loopback" "http://127.0.0.1:$PreferredPort" $busyHealth $false $null
@@ -2358,7 +2378,7 @@ function Resolve-SymppLauncherRuntimeInputs([string]$PluginRoot, [string]$Bridge
 function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) {
   if (-not (Test-SymppWindowsPlatform) -or $env:SYMPP_REPO_ROOT -or
       (Get-EnvMode "SYMPP_MCP_BRIDGE_MODE" "http" @("http", "direct_stdio")) -ne "http" -or
-      -not (Test-SymppInstalledMarketplacePluginRoot $PluginRoot)) { return $false }
+      -not (Test-SymppInstalledPluginRoot $PluginRoot)) { return $false }
   foreach ($name in @("SYMPP_AUTOSTART_SERVERS", "SYMPP_AUTOSTART_BACKEND", "SYMPP_AUTOSTART_FRONTEND")) {
     if (Test-EnvDisabled $name) { return $false }
   }
@@ -2387,7 +2407,7 @@ function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) 
       (Get-EnvInteger "SYMPP_DASHBOARD_PORT" $DefaultDashboardPort 0 65535) `
       (-not [string]::IsNullOrWhiteSpace($env:SYMPP_BACKEND_PORT)) (-not [string]::IsNullOrWhiteSpace($env:SYMPP_DASHBOARD_PORT)) `
       $env:SYMPP_BACKEND_URL $env:SYMPP_DASHBOARD_ORIGIN
-    $identity = Resolve-SymppInstalledMarketplaceIdentity $PluginRoot -ReadOnly
+    $identity = Resolve-SymppInstalledIdentity $PluginRoot -ReadOnly
     if ($null -eq $identity -or [string]$state.publication.generation_key -cne [string]$identity.generation_key -or
         -not (Test-SymppPublicationControlsMatch $state.publication.controls $controls) -or
         [string]$state.plugin_root -ine $PluginRoot -or
@@ -2417,6 +2437,7 @@ function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) 
       Write-RuntimeState $RuntimeFile $state
     }
     Write-SymppLauncherTrace "backend_start_begin"
+    Assert-SymppPortableLedgerAvailable $PluginRoot
     $launch = Start-Backend $plan $null $elixirDir "direct" $null $null (Resolve-LogDir) $timeout $identity.contract_fingerprint $artifact $true $onStarted
     Write-SymppLauncherTrace "backend_start_end"
     if (-not (Test-HealthySymppDashboard $plan.url) -or -not (Test-SymppDashboardMcpProxyMatches $plan.url $identity.contract_fingerprint)) {
@@ -2469,6 +2490,10 @@ if ($CleanupPreparedRuntime) {
 }
 
 $pluginRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$script:SymppPortableInstall = Read-SymppPortableInstall $pluginRoot
+if ($script:SymppPortableInstall -and -not $ValidateOnly -and -not $PrepareRuntimeOnly) {
+  throw "Start the Symphony++ skill through scripts/start-sympp-mcp.cmd."
+}
 Write-SymppLauncherTrace "powershell_config_begin"
 $runtimeFile = Resolve-RuntimeFile
 $bridgeMode = Get-EnvMode "SYMPP_MCP_BRIDGE_MODE" "http" @("http", "direct_stdio")
@@ -2485,7 +2510,7 @@ if (-not $ValidateOnly -and -not $PrepareRuntimeOnly -and $bridgeMode -eq "http"
 }
 
 $installedHttpCold = -not $ValidateOnly -and $bridgeMode -eq "http" -and
-  [string]::IsNullOrWhiteSpace($env:SYMPP_REPO_ROOT) -and (Test-SymppInstalledMarketplacePluginRoot $pluginRoot)
+  [string]::IsNullOrWhiteSpace($env:SYMPP_REPO_ROOT) -and (Test-SymppInstalledPluginRoot $pluginRoot)
 $installedIdentity = $null
 $runtimeInputs = if ($installedHttpCold) { $null } else { Resolve-SymppLauncherRuntimeInputs $pluginRoot $bridgeMode ([bool]$ValidateOnly) }
 $expectedContractFingerprint = if ($installedHttpCold) { $null } else { [string]$runtimeInputs.expected_contract_fingerprint }
@@ -2628,13 +2653,13 @@ if ($installedHttpCold) {
     $leadership = Enter-SymppColdLeadership $runtimeFile $pluginRoot $installedIdentity $publicationControls $coldStartDeadline $requireColdRepair
     if ($leadership.leader) {
       $startupLock = $leadership.lock
-      $installedIdentity = Resolve-SymppInstalledMarketplaceIdentity $pluginRoot
+      $installedIdentity = Resolve-SymppInstalledIdentity $pluginRoot
       $expectedContractFingerprint = [string]$installedIdentity.contract_fingerprint
       $expectedSourceRevision = [string]$installedIdentity.revision
       break
     }
     if ($PrepareRuntimeOnly) {
-      $installedIdentity = Resolve-SymppInstalledMarketplaceIdentity $pluginRoot -ReadOnly
+      $installedIdentity = Resolve-SymppInstalledIdentity $pluginRoot -ReadOnly
       if (Test-SymppPublishedRuntimeReadyLocally (Read-RuntimeState $runtimeFile) $pluginRoot $installedIdentity $publicationControls) { exit 0 }
       $requireColdRepair = $true
       continue
@@ -2704,6 +2729,7 @@ try {
     throw "Backend autostart is disabled and no reusable Symphony++ backend was found at $($backendPlan.url)."
   }
   if ($backendPlan.should_start) {
+    Assert-SymppPortableLedgerAvailable $pluginRoot
     if ($installedHttpCold) {
       $startingState = [pscustomobject]@{
         generated_at = [DateTimeOffset]::UtcNow.ToString("o"); plugin_root = $pluginRoot; runtime_mode = "pending"; runtime_kind = "pending"

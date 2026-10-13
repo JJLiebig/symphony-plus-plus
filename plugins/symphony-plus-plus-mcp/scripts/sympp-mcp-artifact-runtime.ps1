@@ -10,6 +10,7 @@ function Test-EnvEnabled([string]$Name) {
 }
 
 function Test-SourceCheckoutLaunch([string]$PluginRoot) {
+  if (Read-SymppPortableInstall $PluginRoot) { return $false }
   $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
   return Test-SymphonySourceRoot $sourceCandidate
 }

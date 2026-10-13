@@ -39,6 +39,8 @@ function Get-JsonFirstPathValue($Object, [string[][]]$Paths) {
 }
 
 function Get-SymppPluginVersion([string]$PluginRoot) {
+  $portable = Read-SymppPortableInstall $PluginRoot
+  if ($portable) { return [string]$portable.version }
   $manifestPath = Join-Path $PluginRoot ".codex-plugin/plugin.json"
   if (-not (Test-Path -LiteralPath $manifestPath)) {
     return $null
@@ -56,6 +58,8 @@ function Get-SymppPluginVersion([string]$PluginRoot) {
 }
 
 function Get-SymppPluginName([string]$PluginRoot) {
+  $portable = Read-SymppPortableInstall $PluginRoot
+  if ($portable) { return [string]$portable.name }
   $manifestPath = Join-Path $PluginRoot ".codex-plugin/plugin.json"
   if (-not (Test-Path -LiteralPath $manifestPath)) {
     return $null
@@ -73,6 +77,8 @@ function Get-SymppPluginName([string]$PluginRoot) {
 }
 
 function Resolve-ExpectedSourceRevision([string]$PluginRoot) {
+  $portable = Read-SymppPortableInstall $PluginRoot
+  if ($portable) { return [string]$portable.revision }
   $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
   if (Test-SymphonySourceRoot $sourceCandidate) {
     return Resolve-SymppSourceRevision $sourceCandidate $PluginRoot
