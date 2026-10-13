@@ -42,8 +42,14 @@ application version, not the plugin release version; do not change it for this.
 Record the final 40-character beta build SHA only after these merges. It is not
 known in this preparation guide. Freeze beta through publication and pointer
 promotion: do not fold another backend, launcher or UI change into that window.
-Record required check runs and their tested commits; passing constituent PR
-checks is not evidence of a test run on the final merged SHA.
+Record the final PR's green hosted check runs and actual tested checkout commit
+(including its synthetic merge commit when CI checks out one). Before freezing,
+prove its tree equals the final beta tree with `git diff --exit-code
+<tested-checkout-sha> <frozen-beta-sha> --`. If the trees differ, take the changed
+tree through a reviewed, tested PR before freezing. `make-all.yml` runs on PRs
+and main pushes, not beta pushes or manual dispatch. This is tested-tree reuse,
+not a claim that the final merged SHA ran the full suite. The release build and
+smokes below run against the exact frozen runtime SHA.
 
 ## Publish from the frozen SHA
 
@@ -306,8 +312,10 @@ migrations. This source audit did not inspect the live database or its applied
 migration table, so it cannot assert which rows will change.
 
 The archive-setting migration is irreversible through `down`. Retention is a
-separate effect: finished requests become eligible after 3 days; never-started
-requests become eligible after 30 days from creation or explicit restore, and
+separate effect: finished requests use their stored archive setting, with 3 days
+as the new default. Existing custom values other than 14 remain, and the existing
+ten-visible-completed cap can archive sooner. Never-started requests become
+eligible after 30 days from creation or explicit restore, and
 their archive reason excludes them from automatic deletion. Existing archived
 completed requests remain subject to deletion using the stored retention window
 (`solo_session_delete_after_days`, default 30 days). Solo-session cleanup and
