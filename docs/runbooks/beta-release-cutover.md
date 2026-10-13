@@ -252,10 +252,12 @@ After the stopped-ledger backup above and an approved cutover window:
    against the same stopped ledger: older launchers do not honor portable ledger
    ownership receipts. A detected live old owner is refused.
 
-For future Skills upgrades, close clients, save `skills-lock.json`, run
+For future Skills upgrades, close clients, back up the installed skill directory
+and `skills-lock.json` using the [portable guide](../portable-skills.md), run
 `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`, and reopen
 sessions. If install location changes, repeat setup to repair its owned entry.
-Rollback re-adds the previous Skills-capable full commit SHA. This first Skills
+Rollback re-adds that local bundle or an independently recorded previous
+Skills-capable full commit SHA; the lock does not record resolved commits. This first Skills
 release has no earlier Skills-capable release, so restore the paired original
 marketplace/configuration/artifact backup for its rollback. Restore the stopped
 ledger and sidecars too when migrations or retention require it.

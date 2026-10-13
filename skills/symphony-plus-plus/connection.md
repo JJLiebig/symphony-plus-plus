@@ -1,7 +1,7 @@
 # MCP Connection
 
 This skill includes the Windows x64 launcher, bridge, contract identity and
-published runtime pointer. Git, Node.js 18+, PowerShell 7 and the selected host
+published runtime pointer. Git, Node.js 22.20+, PowerShell 7 and the selected host
 must be available. No Codex marketplace or source checkout is required.
 
 From the project that will use Symphony++, run:
@@ -30,8 +30,9 @@ Do not overwrite those blindly or stop healthy sessions to repair one client.
 Setup prints runtime SHA and install digest. Close this runtime's clients,
 update with `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`,
 and open fresh sessions. Re-run setup after relocation or changed configuration.
-Rollback re-adds the previous Skills-capable installation commit and selects
-its pointer; ledger rollback may require a stopped backup. A raw ledger copy
+Before updating, back up the installed skill directory and project lock.
+Rollback re-adds that bundle or a known previous Skills-capable commit and
+selects its pointer; ledger rollback may require a stopped backup. A raw ledger copy
 is not a safe MCP sandbox.
 
 The [connection procedure](references/symphony-work-package/references/mcp_wiring.md)

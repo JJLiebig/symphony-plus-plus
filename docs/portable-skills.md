@@ -1,7 +1,7 @@
 # Portable Skills Installation
 
 On Windows x64, install Symphony++ for Claude Code, Codex, or both with the
-[Skills CLI](https://github.com/vercel-labs/skills). You need Git, Node.js 18+
+[Skills CLI](https://github.com/vercel-labs/skills). You need Git, Node.js 22.20+
 with npm/npx, PowerShell 7, and the selected host on PATH. No Elixir toolchain,
 Codex marketplace, developer checkout, or Codex cache is required. Native
 Linux, macOS and Windows ARM host setup is not supported by this route.
@@ -115,10 +115,14 @@ installations retain their marketplace upgrade path.
 
 ## Update, rollback, and removal
 
-Close clients using this installation, retain selected host profiles, and run
-from the same workspace:
+Close clients using this installation and retain selected host profiles. Save
+the current installed bundle outside the workspace before updating:
 
 ```powershell
+$previousBundle = Join-Path $env:USERPROFILE 'sympp-previous-install'
+New-Item -ItemType Directory -Path $previousBundle -ErrorAction Stop | Out-Null
+Copy-Item -LiteralPath .agents/skills/symphony-plus-plus -Destination $previousBundle -Recurse
+Copy-Item -LiteralPath skills-lock.json -Destination $previousBundle
 npx --yes skills@1.7.0 update symphony-plus-plus --project --yes
 ```
 
@@ -127,17 +131,17 @@ After relocating the workspace or changing copy/link layout, repeat setup with
 the same runtime selections to repair its absolute path. Re-add `/tree/beta`
 to force a payload refresh.
 
-Rollback selects a previous **Skills-capable installation commit**, not merely
-the runtime build tag (older tags contain procedures only):
+Rollback selects the saved installation bytes:
 
 ```powershell
-$previousInstall = '<full-previous-install-commit-sha>'
-npx --yes skills@1.7.0 add "https://github.com/JJLiebig/symphony-plus-plus/tree/$previousInstall" --agent codex claude-code --skill symphony-plus-plus --yes
+npx --yes skills@1.7.0 add "$previousBundle/symphony-plus-plus" --agent codex claude-code --skill symphony-plus-plus --yes
 node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host both
 ```
 
-Save the prior commit from `skills-lock.json` before upgrading. A pinned SHA
-stays pinned on update; re-add `/tree/beta` to follow beta again. The previous
+The lock records branch and content hash, not a resolved Git commit. If you
+separately recorded a known Skills-capable commit, `/tree/<full-sha>` also
+selects that version. A local backup or pinned SHA does not follow beta on
+update; re-add `/tree/beta` to follow beta again. The previous
 bundle selects its previous runtime pointer but cannot undo migrations or
 retention. Restore a stopped ledger backup when the cutover runbook requires
 it. This initial Skills release has no earlier Skills-capable release: retain
@@ -160,6 +164,8 @@ downloads the verified runtime archive.
 Windows CI installs isolated bundles through Skills 1.7.0, checks configuration
 preservation/repair, and exercises the published artifact with real MCP,
 shared attachment, shutdown, restart and conflicting owners. A `/tree/beta`
-installation checks update keeps beta. Authenticated host sessions, desktop
-focus, workstation behavior and populated factory migration remain manual
-qualification.
+installation checks update keeps beta. GitHub's elevated Windows desktop uses
+a test-only process creation fixture with unchanged installed launcher files
+and the real published backend. Desktop user/token/job behavior, authenticated
+host sessions, focus, workstation behavior and populated factory migration
+remain manual qualification.

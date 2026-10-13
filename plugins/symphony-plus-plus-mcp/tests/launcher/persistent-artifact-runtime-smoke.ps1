@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ArtifactManifest, [string]$SkillsInstall)
+param([string]$ArtifactManifest, [string]$SkillsInstall, [switch]$HostedProcessCreation)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
@@ -194,6 +194,15 @@ try {
       TEMP = Join-Path $tempRoot "tmp"; TMP = Join-Path $tempRoot "tmp"
     }
     $command = Join-Path $installedRoot "scripts/start-sympp-mcp.cmd"
+    if ($HostedProcessCreation) {
+      $shim = Join-Path $tempRoot "hosted-powershell.exe"
+      $compiler = Join-Path $env:WINDIR "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+      & $compiler /nologo /target:exe "/out:$shim" (Join-Path $PSScriptRoot "hosted-powershell.cs")
+      if ($LASTEXITCODE -ne 0) { throw "Hosted PowerShell fixture compilation failed." }
+      $environment.SYMPP_POWERSHELL = $shim
+      $environment.SYMPP_TEST_REAL_POWERSHELL = (Get-Command pwsh -ErrorAction Stop).Source
+      $environment.SYMPP_TEST_BACKEND_PRELOAD = Join-Path $PSScriptRoot "hosted-backend-preload.ps1"
+    }
     $cmd = (Get-Command cmd.exe -ErrorAction Stop).Source
     $assertLedger = {
       param($activeState, $sessionId)
@@ -213,6 +222,13 @@ try {
         $foreign.SYMPP_HOME = Join-Path $tempRoot "other-home"
         $foreign.SYMPP_RUNTIME_FILE = Join-Path $tempRoot "other-home/runtime.json"
         $foreign.SYMPP_BACKEND_PORT = [string](New-IsolatedPort @($backendPort))
+        $isolated = $foreign.Clone()
+        $isolated.SYMPP_DATABASE = Join-Path $tempRoot "database/second ledger.sqlite3"
+        $independent = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $isolated
+        Wait-ManagedRuntimeStopped $independent.backend_pid $independent.backend_port
+        if ($independent.backend_pid -eq $activeState.backend.pid) { throw "Separate ledger attached to the original runtime." }
+        $script:backendProcessId = [int]$activeState.backend.pid
+        $script:backendStartTicks = (Get-Process -Id $script:backendProcessId).StartTime.ToUniversalTime().Ticks
         foreach ($expectedError in @("already owned by another", "already in use")) {
           if ($expectedError -eq "already in use") {
             # An older launcher has no portable receipt; its real SQLite handle must still exclude a new owner.
@@ -236,7 +252,7 @@ try {
     if (-not ($trace -match "backend_recovery_leader")) { throw "Second wave did not exercise backend recovery." }
     if (-not (Test-Path -LiteralPath $database -PathType Leaf)) { throw "Explicit packaged database was not created." }
     if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
-    [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = $true; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true } | ConvertTo-Json -Compress
+    [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = $true; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true; hosted_process_creation_seam = [bool]$HostedProcessCreation; native_desktop_qualified = -not $HostedProcessCreation } | ConvertTo-Json -Compress
     return
   }
   $sourceEnvironment = @{

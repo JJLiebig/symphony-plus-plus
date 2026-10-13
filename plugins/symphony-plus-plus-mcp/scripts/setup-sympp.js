@@ -17,23 +17,27 @@ function hostInstalled(host) {
 const begin = "# BEGIN Symphony++ Skills MCP";
 const end = "# END Symphony++ Skills MCP";
 
-function codexConfig(config, registration) {
+function codexConfig(config, registration, servers = [], plugins = []) {
   const owned = /^# BEGIN Symphony\+\+ Skills MCP\r?\n[\s\S]*?^# END Symphony\+\+ Skills MCP\r?\n?/m;
   const previous = config.match(owned);
   const remaining = config.replace(owned, "");
-  if (/^\s*(?:\[\s*mcp_servers\s*\.\s*(?:symphony_plus_plus|"symphony_plus_plus"|'symphony_plus_plus')\s*(?:\]|\.)|mcp_servers\s*=)/m.test(remaining)) {
+  if (!previous && servers.some(server => server.name === name)) {
     throw new Error("Codex already has an unmanaged MCP registration. Use a separate CODEX_HOME, or explicitly remove symphony_plus_plus before setup.");
   }
-  for (const section of remaining.split(/(?=^\[)/m)) {
-    if (/^\[plugins\.[^\]\r\n]*symphony-plus-plus-mcp[^\]\r\n]*\]/i.test(section) && !/^\s*enabled\s*=\s*false\s*(?:#.*)?$/m.test(section)) {
-      throw new Error("This Codex home enables the Symphony++ MCP marketplace plugin. Use a separate CODEX_HOME, or disable that plugin before setup.");
-    }
-  }
+  if (plugins.some(plugin => plugin.name === "symphony-plus-plus-mcp" && plugin.enabled)) throw new Error("This Codex home enables the Symphony++ MCP marketplace plugin. Use a separate CODEX_HOME, or disable that plugin before setup.");
+  if (/^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*=/m.test(remaining)) throw new Error("This Codex configuration uses an inline MCP table that setup cannot safely extend. Use a separate CODEX_HOME with standard server tables.");
   const lines = [begin, `[mcp_servers.${name}]`, `command = ${JSON.stringify(registration.command)}`,
     `args = ${JSON.stringify(registration.args)}`, "startup_timeout_sec = 360", "tool_timeout_sec = 300", "",
     `[mcp_servers.${name}.env]`, ...Object.entries(registration.env).map(([key, value]) => `${key} = ${JSON.stringify(value)}`), end, ""];
   const block = lines.join("\n");
   return previous ? config.replace(owned, block) : config.trimEnd() + (config.trim() ? "\n\n" : "") + block;
+}
+
+function codexRead(command) {
+  // Ask the host to parse its own configuration, including inline/dotted TOML.
+  const result = spawnSync(command, { encoding: "utf8", windowsHide: true, shell: true });
+  if (result.error || result.status !== 0) throw new Error("Codex could not read its selected configuration. Check CODEX_HOME and retry setup.");
+  return JSON.parse(result.stdout);
 }
 
 function claudeConfig(config, registration) {
@@ -71,7 +75,11 @@ function main(args) {
   const plans = hosts.map(host => {
     const file = host === "codex" ? path.join(path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")), "config.toml") : path.join(process.cwd(), ".mcp.json");
     const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    return { host, file, before, after: host === "codex" ? codexConfig(before, registration) : claudeConfig(before, registration) };
+    const servers = host === "codex" ? codexRead("codex mcp list --json") : [];
+    // Filtering the local marketplace avoids querying Codex's remote catalog.
+    const plugins = host === "codex" ? codexRead("codex plugin list --marketplace symphony-plus-plus --json").installed : [];
+    if (!Array.isArray(servers) || !Array.isArray(plugins)) throw new Error("Codex returned an unsupported configuration response. Update Codex and retry setup.");
+    return { host, file, before, after: host === "codex" ? codexConfig(before, registration, servers, plugins) : claudeConfig(before, registration) };
   });
   for (const plan of plans) {
     if (plan.before !== plan.after) {

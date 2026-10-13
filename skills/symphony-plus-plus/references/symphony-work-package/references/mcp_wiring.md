@@ -7,7 +7,7 @@ availability are separate facts.
 ## Windows Skills CLI Installation
 
 The portable `symphony-plus-plus` skill includes the same launcher and published
-runtime pointer as the MCP package. Git, Node.js 18+, PowerShell 7 and the selected
+runtime pointer as the MCP package. Git, Node.js 22.20+, PowerShell 7 and the selected
 host are required on Windows x64. No marketplace clone or Codex cache is needed.
 Native Linux/macOS and Windows ARM setup are unsupported.
 
@@ -39,8 +39,10 @@ Keep local machine paths out of committed shared configuration.
 Close this runtime's clients, then update from the same project with
 `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes` and open fresh
 sessions. Skills 1.7.0 retains the beta branch. The stable install path preserves
-registration; repeat setup after relocating the installation. Rollback re-adds
-the previous Skills-capable commit using `/tree/<full-sha>` and repeats setup.
+registration; repeat setup after relocating the installation. Before updating,
+back up the installed skill directory and project lock. Rollback re-adds that
+local bundle or a known previous Skills-capable commit using `/tree/<full-sha>`
+and repeats setup. The lock does not record a resolved installation commit.
 Older runtime tags contain procedures only. Ledger migrations and retention
 need their own stopped-backup rollback. Setup prints the selected runtime build
 and payload digest; changing launcher/procedures does not require a new runtime.

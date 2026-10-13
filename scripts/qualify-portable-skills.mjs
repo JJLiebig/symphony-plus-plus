@@ -59,6 +59,10 @@ for (const agent of ['codex', 'claude-code']) {
 
   // Local installs have no remote update identity; qualify that on a Git URL.
   const remote = source !== repo;
+  if (branchOnly) {
+    const lock = JSON.parse(await readFile(join(cwd, 'skills-lock.json'), 'utf8'));
+    assert.equal(lock.skills['symphony-plus-plus'].ref, 'beta', 'Skills must select the /tree/beta branch on install');
+  }
   const update = remote ? cli(cwd, ['update', 'symphony-plus-plus', '--project', '--yes']) : '';
   if (remote) assert.doesNotMatch(update, /No installed skills found|Failed to|Cannot update|cannot be updated/i);
   if (branchOnly) {
@@ -71,7 +75,7 @@ for (const agent of ['codex', 'claude-code']) {
   cli(cwd, install);
   assert.deepEqual(await files(installed), expected);
   if (process.argv.includes('--runtime') && agent === 'claude-code') {
-    const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', installed], { cwd, env, encoding: 'utf8', timeout: 900000 });
+    const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', installed, ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], { cwd, env, encoding: 'utf8', timeout: 900000 });
     assert.equal(smoke.status, 0, `${smoke.stdout}\n${smoke.stderr}`);
     console.log(smoke.stdout.trim());
   }
