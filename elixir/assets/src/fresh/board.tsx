@@ -3,8 +3,8 @@ import { Check } from "lucide-react";
 import { GoalActions } from "./actions";
 import { areaLabel } from "./areas";
 import { deployAt, span, type GoalView } from "./model";
-import { Deploy, locate, Shelf } from "./parts";
-import { GoalTitle, reportFor, type Verdict } from "./report";
+import { Deploy, Shelf } from "./parts";
+import { FindArchitect, GoalTitle, reportFor, type Verdict } from "./report";
 
 const DAY = 24 * 3600e3;
 const DORMANT_AFTER = 14 * DAY;
@@ -88,9 +88,7 @@ export function AskLine({ at, className, view }: { at: number; className?: strin
       <span className="shrink-0 font-semibold text-you">Architect asks</span>
       <span className="min-w-0 flex-1 text-ink">{view.ask.title}</span>
       <span className="shrink-0 font-mono text-xs text-dim">{span(at - view.ask.from)} ago</span>
-      <button className="shrink-0 rounded px-1.5 py-0.5 text-xs text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate(`${view.goal.title} · architect`)}>
-        Find the architect
-      </button>
+      <FindArchitect goal={view.goal} />
     </p>
   );
 }

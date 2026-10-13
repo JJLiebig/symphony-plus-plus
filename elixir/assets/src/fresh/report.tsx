@@ -405,35 +405,54 @@ const MACHINES: Array<{ name: string; kind: string; icon: LucideIcon }> = [
 const KIND: Record<string, { kind: string; icon: LucideIcon }> = { desktop: { kind: "Desktop", icon: Monitor }, laptop: { kind: "Laptop", icon: Laptop }, server: { kind: "Server", icon: Server } };
 
 // The machine is the operator's label where the backend has one. The Herdr space, tab and pane are a stand-in.
-function sessionPlace(view: PkgView) {
-  const hash = [...view.pkg.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  const known = view.pkg.location;
-  return {
-    machine: known ? { name: known.label, ...(KIND[known.kind] ?? { kind: "Machine", icon: Monitor }) } : MACHINES[hash % MACHINES.length],
-    space: ((view.pkg.area ?? []).at(-1) ?? "work").split(/[ &]/)[0].toLowerCase(),
-    tab: (view.pkg.goalTitle ?? "").split(/\s+/).slice(0, 2).join(" ").toLowerCase(),
-    pane: `pane ${(hash % 4) + 1}`,
-  };
+function standInPlace(id: string, area: string[], goalTitle: string) {
+  const hash = [...id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const space = (area.at(-1) ?? "work").split(/[ &]/)[0].toLowerCase();
+  const tab = goalTitle.split(/\s+/).slice(0, 2).join(" ").toLowerCase();
+  return { machine: MACHINES[hash % MACHINES.length], where: `${space} › ${tab} › pane ${(hash % 4) + 1}` };
+}
+
+// Where a session lives. It opens on hover and on keyboard focus of the `group` button it sits in.
+function PlaceCard({ rows }: { rows: string[][] }) {
+  return (
+    <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-72 rounded border border-line bg-bg p-2.5 text-left text-xs font-normal shadow-xl group-hover:block group-focus-visible:block">
+      {rows.map(([label, value]) => (
+        <span key={label} className="flex justify-between gap-3 py-0.5">
+          <span className="shrink-0 text-faint">{label}</span>
+          <span className="truncate text-ink">{value}</span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 // Where the session is: only the machine icon on the line, the full address on hover.
 export function Session({ view }: { view: PkgView }) {
   if (!view.actor && !view.pkg.location) return <span />;
-  const place = sessionPlace(view);
-  const address = view.actor ? `${place.space} › ${place.tab} › ${place.pane}` : "";
-  const rows = [[place.machine.kind, place.machine.name], ...(view.actor ? [["Where", address], ["Thread", view.actor]] : [])];
+  const standIn = standInPlace(view.pkg.id, view.pkg.area ?? [], view.pkg.goalTitle ?? "");
+  const known = view.pkg.location;
+  const machine = known ? { name: known.label, ...(KIND[known.kind] ?? { kind: "Machine", icon: Monitor }) } : standIn.machine;
+  const address = view.actor ? standIn.where : "";
+  const rows = [[machine.kind, machine.name], ...(view.actor ? [["Where", address], ["Thread", view.actor]] : [])];
 
   return (
-    <button aria-label={`Session on ${place.machine.name}`} className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate([place.machine.name, address].filter(Boolean).join(" › "))}>
-      <place.machine.icon className="size-3.5" />
-      <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-72 rounded border border-line bg-bg p-2.5 text-left text-xs shadow-xl group-hover:block group-focus-visible:block">
-        {rows.map(([label, value]) => (
-          <span key={label} className="flex justify-between gap-3 py-0.5">
-            <span className="shrink-0 text-faint">{label}</span>
-            <span className="truncate text-ink">{value}</span>
-          </span>
-        ))}
-      </span>
+    <button aria-label={`Session on ${machine.name}`} className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate([machine.name, address].filter(Boolean).join(" › "))}>
+      <machine.icon className="size-3.5" />
+      <PlaceCard rows={rows} />
+    </button>
+  );
+}
+
+// The way to the architect's session, with the same card as a package's session.
+// The address is a stand-in on sample goals: the backend does not report where an architect's session is yet.
+export function FindArchitect({ goal }: { goal: Goal }) {
+  const place = goal.mock ? standInPlace(goal.id, goal.area, goal.title) : null;
+
+  return (
+    <button className="group relative flex shrink-0 items-center gap-1.5 self-center rounded px-1.5 py-0.5 text-xs text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate(place ? `${place.machine.name} › ${place.where}` : `${goal.title} · architect`)}>
+      {place ? <place.machine.icon className="size-3.5" /> : null}
+      Find the architect
+      {place ? <PlaceCard rows={[[place.machine.kind, place.machine.name], ["Where", place.where]]} /> : null}
     </button>
   );
 }
