@@ -12,6 +12,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
   @herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id session socket_path native_session_id native_session_agent)
   @public_herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id)
   @assignment_tools ToolCatalog.worker_tools() ++ ToolCatalog.architect_tools() ++ ToolCatalog.session_claim_tools()
+  @local_operator_tools ToolCatalog.local_operator_tools()
 
   @spec observe(term(), term(), Server.t()) :: Server.t()
   def observe(payload, response, server) do
@@ -88,8 +89,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
   defp location_binding(%{"params" => %{"name" => name}} = payload, response, server) when name in @assignment_tools,
     do: HerdrBinding.response_binding(payload, response, server)
 
-  defp location_binding(payload, response, server),
-    do: HerdrBinding.response_binding(payload, response, %{server | session: nil})
+  defp location_binding(%{"params" => %{"name" => name, "arguments" => %{"work_request_id" => id}}}, _response, _server)
+       when name in @local_operator_tools,
+       do: %{"role" => "coordinator", "work_request_id" => id}
+
+  defp location_binding(_payload, _response, _server), do: nil
 
   defp target(%{"role" => "worker", "work_package_id" => id}, _payload, _repo, _client_id) when is_binary(id),
     do: {"work_package", id, "worker"}
