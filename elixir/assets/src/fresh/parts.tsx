@@ -65,7 +65,13 @@ export function locate(actor: string) {
 }
 
 // Goals that ask for nothing stay out of the way: one line, opened on demand.
-export function Shelf({ at, hint, label, views }: { at: number; hint?: string; label: string; views: GoalView[] }) {
+function shelfCount(view: GoalView) {
+  const total = view.done.length + view.queued.length + view.live.length;
+  return total === 0 ? "not sliced" : `${view.done.length}/${total} done`;
+}
+
+// `age` says what the time on each row means, for example "idle" or "done".
+export function Shelf({ age, at, hint, label, views }: { age: string; at: number; hint?: string; label: string; views: GoalView[] }) {
   if (views.length === 0) return null;
 
   return (
@@ -80,7 +86,7 @@ export function Shelf({ at, hint, label, views }: { at: number; hint?: string; l
             <span className="shrink-0 truncate">{view.goal.title}</span>
             <span className="min-w-0 flex-1 truncate text-faint">{view.goal.report?.parked?.text}</span>
             <span className="shrink-0 font-mono text-xs text-faint">
-              {view.done.length}/{view.done.length + view.queued.length + view.live.length} · {span(at - view.lastMoveAt)}
+              {shelfCount(view)} · {age} {span(at - (view.goal.report?.parked?.at ?? view.lastMoveAt))}
             </span>
             <GoalActions goal={view.goal} moving={view.live.length} />
           </li>

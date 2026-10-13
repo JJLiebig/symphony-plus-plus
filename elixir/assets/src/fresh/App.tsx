@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { ReloadContext } from "./actions";
-import { areaLabel, setAreas, type AreaRule } from "./areas";
+import { setAreas, type AreaRule } from "./areas";
 import { Briefing } from "./briefing";
 import { mockGoals } from "./mock";
-import { buildGoals, liveCountAt, span, viewAt, type Goal, type GoalView, type HistoryEvent, type Hydrated } from "./model";
+import { buildGoals, liveCountAt, viewAt, type Goal, type HistoryEvent, type Hydrated } from "./model";
 import { focusGoal, smoothly } from "./motion";
 import { Outline } from "./outline";
 import { Phases } from "./phases";
 import { DensityContext, type Density } from "./report";
 import { setSamples, type SampleRule } from "./samples";
 import { changesBetween, SinceContext, SinceLine } from "./since";
+import { Asks, Status, useTabSignal } from "./status";
 
 const DIRECTIONS = [
   { key: "outline", label: "Outline", hint: "Goals that open themselves", view: Outline, width: "max-w-[1280px]" },
@@ -29,7 +31,6 @@ const STEP_MS = 15 * 60 * 1000;
 const AWAY_MS = 3 * 3600e3;
 const SEEN_KEY = "sympp.board.seenAt";
 const REREAD_MS = 60e3;
-const NEEDED_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='12' fill='%23ff7a45'/%3E%3C/svg%3E";
 
 // `replayable` is true on a snapshot, which carries recorded history; a backend only knows the present.
 type Loaded = { goals: Goal[]; now: number; busiest: number; samples: number[]; replayable: boolean };
@@ -65,6 +66,11 @@ export function App() {
     rememberVisit(at);
     smoothly(() => setSeenAt(at));
   };
+  // An ask can sit in an area that is filtered out, so the filter is lifted before jumping to its goal.
+  const goToGoal = (goalId: string) => {
+    flushSync(() => setArea(null));
+    focusGoal(goalId);
+  };
   const views = useMemo(() => (data ? viewAt(data.goals, at) : []), [at, data]);
   const changes = useMemo(() => changesBetween(data ? viewAt(data.goals, since) : [], views, since, at), [at, data, since, views]);
   const areas = useMemo(() => [...new Set(views.filter((view) => view.state !== "settled").map((view) => view.goal.area[0]))], [views]);
@@ -80,7 +86,7 @@ export function App() {
       <header className="pin-top sticky top-0 z-20 border-b border-line bg-bg/95 px-8 backdrop-blur">
         <div className="flex h-12 items-center gap-6">
           <span className="text-sm font-semibold tracking-tight">S++</span>
-          <nav className="flex gap-1">
+          <nav className="flex shrink-0 gap-1">
             {DIRECTIONS.map((entry, index) => (
               <button key={entry.key} className={`rounded px-2.5 py-1 text-xs ${index === direction ? "bg-ink text-bg" : "text-dim hover:text-ink"}`} title={entry.hint} type="button" onClick={() => smoothly(() => setDirection(index))}>
                 <span className="mr-1.5 font-mono opacity-60">{index + 1}</span>
@@ -88,14 +94,14 @@ export function App() {
               </button>
             ))}
           </nav>
-          <nav className="flex gap-1 text-xs">
+          <nav className="flex min-w-0 gap-1 overflow-hidden whitespace-nowrap text-xs">
             {[null, ...areas].map((name) => (
               <button key={name ?? "all"} className={`rounded px-2 py-1 ${name === area ? "bg-line text-ink" : "text-dim hover:text-ink"}`} type="button" onClick={() => smoothly(() => setArea(name))}>
                 {name ?? "Everything"}
               </button>
             ))}
           </nav>
-          <nav className="flex items-center gap-1 text-xs">
+          <nav className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-xs">
             <span className="mr-1 text-faint">Show</span>
             {DENSITIES.map((entry) => (
               <button key={entry.key} className={`rounded px-2 py-1 ${entry.key === density ? "bg-line text-ink" : "text-dim hover:text-ink"}`} title={entry.hint} type="button" onClick={() => smoothly(() => setDensity(entry.key))}>
@@ -103,16 +109,16 @@ export function App() {
               </button>
             ))}
           </nav>
-          {data.replayable ? (
-            <button className={`ml-auto rounded px-2 py-1 font-mono text-[11px] hover:bg-line ${at >= data.now ? "text-merge" : "text-checks"}`} title="Show or hide the replay bar" type="button" onClick={() => setReplay(!replay)}>
-              {at >= data.now ? "Live" : `Replay · ${stamp(at)}`}
-            </button>
-          ) : (
-            <span className="ml-auto px-2 py-1 font-mono text-[11px] text-merge" title={`Read ${stamp(data.now)}`}>Live</span>
-          )}
-          <Legend />
+          <span className="ml-auto flex shrink-0 items-center gap-4">
+            {data.replayable ? (
+              <button className={`whitespace-nowrap rounded px-2 py-1 font-mono text-[11px] hover:bg-line ${at >= data.now ? "text-faint" : "text-checks"}`} title={`Show or hide the replay bar. Showing ${stamp(at)}`} type="button" onClick={() => setReplay(!replay)}>
+                Replay
+              </button>
+            ) : null}
+            <Status views={views} />
+          </span>
         </div>
-        <NeedsYou at={at} views={shown} />
+        <Asks at={at} views={views} onPick={goToGoal} />
       </header>
       <main className="px-8 py-6">
         <SinceLine at={at} changes={changes} since={since} width={DIRECTIONS[direction].width} onSeen={markSeen} />
@@ -212,43 +218,6 @@ function stamp(at: number) {
   return new Date(at).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-// The first thing on screen answers the first question: am I needed? Each ask takes you to its goal.
-function NeedsYou({ at, views }: { at: number; views: GoalView[] }) {
-  const asks = views.filter((view) => view.ask);
-  const moving = views.reduce((sum, view) => sum + view.live.length, 0);
-  const summary = `${moving} moving across ${views.filter((view) => view.state === "live").length} goals`;
-
-  if (asks.length === 0) {
-    return <p className="flex h-[52px] items-center gap-3 text-sm text-dim"><span className="size-2 rounded-full bg-merge" />You are not needed. {summary}.</p>;
-  }
-  return (
-    <div className="flex h-[52px] items-center gap-3 text-sm">
-      <span className="size-2 shrink-0 animate-pulse rounded-full bg-you" />
-      <span className="shrink-0 font-semibold text-you">You are needed in {asks.length}</span>
-      <span className="flex min-w-0 gap-1">
-        {asks.map((view) => (
-          <button key={view.goal.id} className="min-w-0 truncate rounded px-2 py-1 text-left text-dim hover:bg-line hover:text-ink" title="Take me to this goal" type="button" onClick={() => focusGoal(view.goal.id)}>
-            <span className="text-ink">{areaLabel(view.goal.area.slice(-1))}</span>: {view.ask!.title} <span className="text-faint">({span(at - view.ask!.from)})</span>
-          </button>
-        ))}
-      </span>
-      <span className="ml-auto shrink-0 text-xs text-faint">{summary}</span>
-    </div>
-  );
-}
-
-function Legend() {
-  return (
-    <span className="flex items-center gap-3 font-mono text-[11px] text-dim">
-      <span className="text-build">Build</span>
-      <span className="text-checks">Checks</span>
-      <span className="text-review">Review</span>
-      <span className="text-merge">Merge</span>
-      <span className="text-you">You</span>
-    </span>
-  );
-}
-
 // A sketch tool, not part of the product: move through the ledger's history to watch the board change.
 function Scrubber({ at, data, onChange }: { at: number; data: Loaded; onChange: (at: number) => void }) {
   const start = data.now - REPLAY_DAYS * 24 * 3600e3;
@@ -273,17 +242,6 @@ function Scrubber({ at, data, onChange }: { at: number; data: Loaded; onChange: 
       </div>
     </footer>
   );
-}
-
-// Readable from a background tab: the count in the title and an orange dot as the icon.
-function useTabSignal(needed: number) {
-  useEffect(() => {
-    document.title = needed > 0 ? `(${needed}) Symphony++` : "Symphony++";
-    const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!icon) return;
-    icon.type = needed > 0 ? "image/svg+xml" : "image/png";
-    icon.href = needed > 0 ? NEEDED_ICON : "/splusplus-logo.png";
-  }, [needed]);
 }
 
 function useShortcuts(setDirection: (index: number) => void, setLocated: (actor: string | null) => void) {

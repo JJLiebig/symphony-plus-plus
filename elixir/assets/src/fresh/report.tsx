@@ -134,8 +134,9 @@ function draftBrief(view: GoalView, bumps: string[], at: number) {
   const total = view.live.length + view.queued.length + view.done.length;
   if (view.state === "settled") return `All ${total} packages have landed.`;
   if (view.live.length === 0) return `Nothing has moved for ${span(at - view.lastMoveAt)}. ${view.done.length} of ${total} packages have landed.`;
-  const bumpy = bumps.length > 0 ? ` ${bumps.length} road ${bumps.length === 1 ? "bump" : "bumps"}.` : "";
-  return `${view.live.length} of ${total} packages are moving. ${view.done.length} have landed.${bumpy}`;
+  // A road bump is the news; the counts are on the same line already.
+  if (bumps.length > 0) return bumps.length === 1 ? `${bumps[0]}.` : `${bumps[0]}, and ${bumps.length - 1} more.`;
+  return `${view.live.length} of ${total} packages are moving. ${view.done.length} have landed.`;
 }
 
 // Phases exist only where the architect grouped the work. Nothing is invented for ungrouped goals.
