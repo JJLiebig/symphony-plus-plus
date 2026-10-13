@@ -72,10 +72,6 @@ function CurrentStep({ at, view }: { at: number; view: PkgView }) {
   );
 }
 
-export function locate(actor: string) {
-  window.dispatchEvent(new CustomEvent("fresh:locate", { detail: actor }));
-}
-
 // Goals that ask for nothing stay out of the way: one line, opened on demand.
 function shelfCount(view: GoalView) {
   const total = view.done.length + view.queued.length + view.live.length;

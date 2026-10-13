@@ -45,7 +45,7 @@ export function App() {
   const [at, setAt] = useState(0);
   const [seenAt, setSeenAt] = useState<number | null>(rememberedVisit);
   const [replay, setReplay] = useState(false);
-  const [located, setLocated] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const shownNow = useRef<number | null>(null);
   // The first read opens on the busiest moment; later reads keep the board live unless it is replaying.
@@ -68,7 +68,7 @@ export function App() {
   useChangeSignal(read);
   // A snapshot never changes, so it is read once. Anything else is reread, also while the first read has yet to succeed.
   useReread(data?.replayable !== true, read);
-  useShortcuts(setDirection, setLocated);
+  useShortcuts(setDirection, setNote);
 
   const since = lastLookAt(seenAt, at, data?.replayable !== false);
   const markSeen = () => {
@@ -144,7 +144,7 @@ export function App() {
         </ReloadContext.Provider>
       </main>
       {replay ? <Scrubber at={at} data={data} onChange={setAt} /> : null}
-      {located ? <p className="fixed bottom-24 left-1/2 z-30 -translate-x-1/2 rounded bg-ink px-3 py-2 text-sm text-bg">Would jump to the Herdr pane running “{located}”.</p> : null}
+      {note ? <p className="fixed bottom-24 left-1/2 z-30 max-w-xl -translate-x-1/2 rounded bg-ink px-3 py-2 text-sm text-bg" role="status">{note}</p> : null}
     </div>
   );
 }
@@ -264,23 +264,23 @@ function Scrubber({ at, data, onChange }: { at: number; data: Loaded; onChange: 
   );
 }
 
-function useShortcuts(setDirection: (index: number) => void, setLocated: (actor: string | null) => void) {
+function useShortcuts(setDirection: (index: number) => void, setNote: (note: string | null) => void) {
   useEffect(() => {
     let timer = 0;
     const onKey = (event: KeyboardEvent) => {
       const index = ["1", "2", "3"].indexOf(event.key);
       if (index >= 0 && !(event.target instanceof HTMLInputElement)) smoothly(() => setDirection(index));
     };
-    const onLocate = (event: Event) => {
-      setLocated((event as CustomEvent<string>).detail);
+    const onSay = (event: Event) => {
+      setNote((event as CustomEvent<string>).detail);
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => setLocated(null), 2500);
+      timer = window.setTimeout(() => setNote(null), 6000);
     };
     window.addEventListener("keydown", onKey);
-    window.addEventListener("fresh:locate", onLocate);
+    window.addEventListener("fresh:say", onSay);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("fresh:locate", onLocate);
+      window.removeEventListener("fresh:say", onSay);
     };
-  }, [setDirection, setLocated]);
+  }, [setDirection, setNote]);
 }

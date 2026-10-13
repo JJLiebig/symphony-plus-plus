@@ -5,7 +5,8 @@ import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import type { GoalView } from "./model";
 import { Deploy } from "./parts";
-import { BriefAge, DotStrip, FindArchitect, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge } from "./report";
+import { BriefAge, DotStrip, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge } from "./report";
+import { FindArchitect } from "./session";
 import { SinceChip } from "./since";
 
 // Direction 2: every goal reports in. Words first, dots second, packages only if you ask.
@@ -43,7 +44,7 @@ function GoalReport({ at, view }: { at: number; view: GoalView }) {
             <VerdictBadge verdict={report.verdict} />
           </span>
         </button>
-        <FindArchitect compact className="ml-2 mt-5" goal={view.goal} />
+        <FindArchitect compact at={at} className="ml-2 mt-5" goal={view.goal} />
         <GoalActions className="mt-5" goal={view.goal} moving={view.live.length} />
       </div>
       <p className="mt-2 max-w-[72ch] pl-7 text-[15px] leading-relaxed text-ink/90">

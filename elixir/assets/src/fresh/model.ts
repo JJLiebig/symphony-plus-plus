@@ -25,10 +25,11 @@ export type Pkg = {
   prUrl: string | null;
   rounds: number[];
   actors: Array<{ at: number; id: string }>;
-  location: Machine | null;
+  location: Place | null;
 };
-// The machine a running session is on, as the operator labelled it. Absent when the machine is not labelled.
-export type Machine = { label: string; kind: string };
+// Where a session was last seen: its machine, its place in Herdr or the agent's own words for where it is.
+// A last known address, not proof that the session still runs. `sample` marks a made-up one.
+export type Place = { machine: string | null; kind: string | null; herdr: string | null; said: string | null; role: string | null; seenAt: number | null; sample?: boolean };
 
 export type Ask = { from: number; to: number; title: string };
 // Something the architect wrote, and when.
@@ -40,7 +41,7 @@ export type Group = { id: string; title: string; parentId: string | null };
 // "waiting" means nothing has been deployed or started yet.
 export type DeployStep = { env: "Dev" | "Prod"; state: "ok" | "failed" | "pending" | "waiting"; at: number | null };
 // `deploy` is present only for goals whose repository has its deploy workflows tagged.
-export type Goal = { id: string; title: string; area: string[]; repo: string; baseBranch: string | null; defaultBranch: string | null; createdAt: number; closedAt: number | null; pkgs: Pkg[]; asks: Ask[]; groups: Group[]; report?: ArchitectReport; mock?: boolean; deploy?: DeployStep[] };
+export type Goal = { id: string; title: string; area: string[]; repo: string; baseBranch: string | null; defaultBranch: string | null; createdAt: number; closedAt: number | null; pkgs: Pkg[]; asks: Ask[]; groups: Group[]; architect?: Place | null; report?: ArchitectReport; mock?: boolean; deploy?: DeployStep[] };
 
 export type PkgView = { pkg: Pkg; stage: Stage; since: number; untimed: boolean; failed: boolean; round: number; actor: string | null };
 export type GoalView = { goal: Goal; live: PkgView[]; queued: Pkg[]; done: Pkg[]; ask: Ask | null; state: "live" | "resting" | "settled"; lastMoveAt: number };
@@ -60,7 +61,15 @@ type Slice = {
   board_state?: BoardState | null;
   pr_signal?: { number?: number | null; url?: string | null; created_at?: string | null; head_changed_at?: string | null; checks?: { status?: string | null; changed_at?: string | null } | null } | null;
   review_signal?: { mode?: string | null; round?: number | null; started_at?: string | null; round_started_at?: string | null } | null;
-  session_location?: { label?: string | null; kind?: string | null } | null;
+  session_location?: SessionLocation | null;
+};
+type SessionLocation = {
+  label?: string | null;
+  kind?: string | null;
+  role?: string | null;
+  description?: string | null;
+  last_seen_at?: string | null;
+  herdr?: { workspace_id?: string | null; workspace_label?: string | null; tab_id?: string | null; tab_label?: string | null; pane_id?: string | null } | null;
 };
 type Observed = { status?: string | null; at?: string | null };
 type Deployments = Record<string, { dev?: Observed | null; prod?: Observed | null } | null>;
@@ -73,7 +82,7 @@ type OperatorReport = {
   human_escalation?: { question?: string | null; raised_at?: string | null; resolved_at?: string | null } | null;
 };
 type Detail = {
-  work_request: { id: string; title?: string | null; repo?: string | null; repo_display?: string | null; base_branch?: string | null; inserted_at?: string | null; completed_at?: string | null; status?: string | null; operator_report?: OperatorReport | null; area_path?: string[] | null; default_branch?: string | null; deployments?: Deployments | null };
+  work_request: { id: string; title?: string | null; repo?: string | null; repo_display?: string | null; base_branch?: string | null; inserted_at?: string | null; completed_at?: string | null; status?: string | null; operator_report?: OperatorReport | null; architect_session_location?: SessionLocation | null; area_path?: string[] | null; default_branch?: string | null; deployments?: Deployments | null };
   work_packages?: Slice[];
   product_tree?: { nodes?: Array<{ id: string; title?: string | null; position?: number; parent_id?: string | null }> } | null;
 };
@@ -112,6 +121,7 @@ function buildGoal(detail: Detail, history: Record<string, HistoryEvent[]>, now:
     closedAt: ms(request.completed_at),
     pkgs: (detail.work_packages ?? []).map((slice) => ({ ...buildPkg(slice, history[slice.work_package_id || slice.id] ?? [], now), goalTitle: title, area })),
     asks: asksOf(request.operator_report?.human_escalation, now),
+    architect: placeOf(request.architect_session_location),
     report: reportOf(request.operator_report, now),
     groups: [...(detail.product_tree?.nodes ?? [])].sort((left, right) => (left.position ?? 0) - (right.position ?? 0)).map((node) => ({ id: node.id, title: node.title || "Untitled", parentId: node.parent_id ?? null })),
   };
@@ -147,6 +157,17 @@ function stepOf(env: DeployStep["env"], seen: Observed): DeployStep {
   return { env, state: at === null ? "waiting" : "pending", at };
 }
 
+// Workspace and tab by the names Herdr gave them. Without names, the pane's id is all there is to show.
+function placeOf(seen: SessionLocation | null | undefined): Place | null {
+  if (!seen) return null;
+  const place = { machine: seen.label ?? null, kind: seen.kind ?? null, herdr: herdrPlace(seen.herdr ?? {}), said: seen.description ?? null, role: seen.role ?? null, seenAt: ms(seen.last_seen_at) };
+  return place.machine || place.herdr || place.said ? place : null;
+}
+
+function herdrPlace(herdr: NonNullable<SessionLocation["herdr"]>) {
+  return [herdr.workspace_label, herdr.tab_label].filter(Boolean).join(" › ") || herdr.pane_id || null;
+}
+
 function reportOf(report: OperatorReport | null | undefined, now: number): ArchitectReport | undefined {
   if (!report) return undefined;
   const note = (text?: string | null, at?: string | null): Note | null => (text ? { text, at: ms(at) ?? now } : null);
@@ -173,7 +194,7 @@ function blankPkg(slice: Slice, now: number): Pkg {
     prUrl: null,
     rounds: [],
     actors: [],
-    location: slice.session_location?.label ? { label: slice.session_location.label, kind: slice.session_location.kind ?? "" } : null,
+    location: placeOf(slice.session_location),
   };
 }
 

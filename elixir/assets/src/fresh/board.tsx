@@ -4,7 +4,8 @@ import { GoalActions } from "./actions";
 import { areaLabel } from "./areas";
 import { deployAt, span, type GoalView } from "./model";
 import { Deploy, Shelf } from "./parts";
-import { FindArchitect, GoalTitle, reportFor, type Verdict } from "./report";
+import { GoalTitle, reportFor, type Verdict } from "./report";
+import { FindArchitect } from "./session";
 
 const DAY = 24 * 3600e3;
 const DORMANT_AFTER = 14 * DAY;
@@ -88,7 +89,7 @@ export function AskLine({ at, className, view }: { at: number; className?: strin
       <span className="shrink-0 font-semibold text-you">Architect asks</span>
       <span className="min-w-0 flex-1 text-ink">{view.ask.title}</span>
       <span className="shrink-0 font-mono text-xs text-dim">{span(at - view.ask.from)} ago</span>
-      <FindArchitect goal={view.goal} />
+      <FindArchitect at={at} goal={view.goal} />
     </p>
   );
 }

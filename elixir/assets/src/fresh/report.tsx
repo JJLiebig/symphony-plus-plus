@@ -1,10 +1,11 @@
-import { Check, Circle, Laptop, Monitor, Server, type LucideIcon } from "lucide-react";
+import { Check, Circle, type LucideIcon } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 
 import { deployAt, span, type Goal, type GoalView, type Pkg, type PkgView, type Stage } from "./model";
 import { GLOW, NUDGE, smoothly, useFlash } from "./motion";
-import { locate, Pip, Track } from "./parts";
+import { Pip, Track } from "./parts";
 import { sampleReport } from "./samples";
+import { Session } from "./session";
 
 // What a goal says when asked "is this coming along?". The architect owns the words and the ETA;
 // the ledger only supplies the verdict's facts.
@@ -376,7 +377,7 @@ export function PkgLine({ at, view }: { at: number; view: PkgView }) {
       <span className="truncate text-sm">{view.pkg.title}</span>
       <span className="font-mono text-[11px] text-faint">{view.stage === "review" && view.pkg.reviewMode ? `${view.pkg.reviewMode} review` : ""}</span>
       <Track at={at} view={view} />
-      <Session view={view} />
+      <Session at={at} view={view} />
     </div>
   );
 }
@@ -391,77 +392,5 @@ function RestLine({ label, pkg }: { label: string; pkg: Pkg }) {
       <span className={`font-mono text-xs ${queued ? "text-faint" : "text-merge/70"}`}>{label}</span>
       <span />
     </div>
-  );
-}
-
-const MACHINES: Array<{ name: string; kind: string; icon: LucideIcon }> = [
-  { name: "desktop-1", kind: "Desktop", icon: Monitor },
-  { name: "desktop-1", kind: "Desktop", icon: Monitor },
-  { name: "desktop-1", kind: "Desktop", icon: Monitor },
-  { name: "laptop-1", kind: "Laptop", icon: Laptop },
-  { name: "vps-1", kind: "Server", icon: Server },
-];
-
-const KIND: Record<string, { kind: string; icon: LucideIcon }> = { desktop: { kind: "Desktop", icon: Monitor }, laptop: { kind: "Laptop", icon: Laptop }, server: { kind: "Server", icon: Server } };
-
-// The machine is the operator's label where the backend has one. The Herdr space, tab and pane are a stand-in.
-function standInPlace(id: string, area: string[], goalTitle: string) {
-  const hash = [...id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  const space = (area.at(-1) ?? "work").split(/[ &]/)[0].toLowerCase();
-  const tab = goalTitle.split(/\s+/).slice(0, 2).join(" ").toLowerCase();
-  return { machine: MACHINES[hash % MACHINES.length], where: `${space} › ${tab} › pane ${(hash % 4) + 1}` };
-}
-
-// Where a session lives. It opens on hover and on keyboard focus of the `group` button it sits in.
-function PlaceCard({ rows }: { rows: string[][] }) {
-  return (
-    <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-72 rounded border border-line bg-bg p-2.5 text-left text-xs font-normal shadow-xl group-hover:block group-focus-visible:block">
-      {rows.map(([label, value]) => (
-        <span key={label} className="flex justify-between gap-3 py-0.5">
-          <span className="shrink-0 text-faint">{label}</span>
-          <span className="truncate text-ink">{value}</span>
-        </span>
-      ))}
-    </span>
-  );
-}
-
-// Where the session is: only the machine icon on the line, the full address on hover.
-export function Session({ view }: { view: PkgView }) {
-  if (!view.actor && !view.pkg.location) return <span />;
-  const standIn = standInPlace(view.pkg.id, view.pkg.area ?? [], view.pkg.goalTitle ?? "");
-  const known = view.pkg.location;
-  const machine = known ? { name: known.label, ...(KIND[known.kind] ?? { kind: "Machine", icon: Monitor }) } : standIn.machine;
-  const address = view.actor ? standIn.where : "";
-  const rows = [[machine.kind, machine.name], ...(view.actor ? [["Where", address], ["Thread", view.actor]] : [])];
-
-  return (
-    <button aria-label={`Session on ${machine.name}`} className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate([machine.name, address].filter(Boolean).join(" › "))}>
-      <machine.icon className="size-3.5" />
-      <PlaceCard rows={rows} />
-    </button>
-  );
-}
-
-// Sketch only: a goal with recorded sessions gets a stand-in address for its architect, as its packages do.
-// The backend does not report where an architect's session is yet, so a board on real data has none.
-function architectPlace(goal: Goal) {
-  const sketched = goal.mock || goal.pkgs.some((pkg) => pkg.actors.length > 0);
-  return sketched ? standInPlace(`${goal.id}:architect`, goal.area, goal.title) : null;
-}
-
-// The way to the architect's session, with the same card as a package's session. On a goal's header it is
-// only the machine icon, and leaves a gap while the address is unknown; on an ask it is spelled out.
-export function FindArchitect({ className = "", compact, goal }: { className?: string; compact?: boolean; goal: Goal }) {
-  const place = architectPlace(goal);
-  if (compact && !place) return <span className={`size-6 shrink-0 ${className}`} />;
-  const shape = compact ? "size-6 justify-center" : "gap-1.5 self-center px-1.5 py-0.5";
-
-  return (
-    <button aria-label={`Architect's session for ${goal.title}`} className={`group relative flex shrink-0 items-center rounded text-xs text-dim hover:bg-line hover:text-ink ${shape} ${className}`} type="button" onClick={() => locate(place ? `${place.machine.name} › ${place.where}` : `${goal.title} · architect`)}>
-      {place ? <place.machine.icon className="size-3.5" /> : null}
-      {compact ? null : "Find the architect"}
-      {place ? <PlaceCard rows={[[place.machine.kind, place.machine.name], ["Where", place.where], ["Thread", "architect"]]} /> : null}
-    </button>
   );
 }

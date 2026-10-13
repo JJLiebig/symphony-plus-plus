@@ -148,6 +148,8 @@ const MUTATIONS: Array<[RegExp, Mutation]> = [
 
 async function handlePost(snapshot: Snapshot, route: string, req: IncomingMessage, res: ServerResponse, notify: () => void) {
   const body = await readBody(req);
+  // Like the offline sandbox, a snapshot has no running sessions to bring to the front.
+  if (route.endsWith("/focus")) return sendJson(res, 403, { error: "A snapshot has no running sessions to open." });
   const mutation = MUTATIONS.find(([pattern]) => pattern.test(route));
   if (!mutation) return sendJson(res, 200, { ok: true, simulated: true, refresh: { dashboard: false } });
 

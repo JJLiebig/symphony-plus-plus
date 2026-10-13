@@ -5,7 +5,8 @@ import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import type { GoalView } from "./model";
 import { Deploy } from "./parts";
-import { BriefAge, DotStrip, FindArchitect, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge, wantsAttention } from "./report";
+import { BriefAge, DotStrip, GoalPackages, GoalTitle, reportFor, useGoalLevel, VerdictBadge, wantsAttention } from "./report";
+import { FindArchitect } from "./session";
 import { SinceChip } from "./since";
 
 // Direction 1: the old dropdown, alive. Goals that want attention come first; the rest are filed by area.
@@ -78,7 +79,7 @@ function GoalRow({ at, tagged, view }: { at: number; tagged?: boolean; view: Goa
             </span>
           </span>
         </button>
-        <FindArchitect compact className="mt-2" goal={view.goal} />
+        <FindArchitect compact at={at} className="mt-2" goal={view.goal} />
         <GoalActions className="mt-2" goal={view.goal} moving={view.live.length} />
       </div>
       <AskLine at={at} className="mb-3 ml-7 mr-2" view={view} />
