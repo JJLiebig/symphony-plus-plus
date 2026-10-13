@@ -164,9 +164,10 @@ class InstalledSnapshotTest(unittest.TestCase):
                        RELEASE_TMP=str(root / "release tmp"))
             Path(env["RELEASE_TMP"]).mkdir()
             eval_script = root / "seed.ps1"
-            eval_script.write_text("& $env:SYMPP_TEST_RELEASE eval $env:SYMPP_TEST_EXPRESSION\nexit $LASTEXITCODE\n")
+            eval_script.write_text("& $env:SYMPP_TEST_RELEASE eval 'Code.eval_file(System.get_env(~s(SYMPP_TEST_EXPRESSION_FILE)))'\nexit $LASTEXITCODE\n")
             env["SYMPP_TEST_RELEASE"] = str(artifact / "bin" / "symphony_elixir.bat")
-            env["SYMPP_TEST_EXPRESSION"] = (
+            env["SYMPP_TEST_EXPRESSION_FILE"] = str(root / "seed.exs")
+            Path(env["SYMPP_TEST_EXPRESSION_FILE"]).write_text(
                 "{:ok, _} = Application.ensure_all_started(:ecto_sql); "
                 "alias SymphonyElixir.SymphonyPlusPlus.Repo; "
                 "{:ok, repo} = Repo.start_link(Repo.child_options(database: System.fetch_env!(~s(SYMPP_DATABASE)))); "

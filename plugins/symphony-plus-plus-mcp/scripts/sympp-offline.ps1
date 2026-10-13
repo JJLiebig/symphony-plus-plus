@@ -74,6 +74,7 @@ try {
     SYMPP_OPERATOR_CONFIG = Join-Path $offlineHome "operator-board.json"
     SYMPP_LOGS_ROOT = $logRoot; SYMPP_LOG_DIR = $logRoot
     TEMP = $temporaryRoot; TMP = $temporaryRoot; TMPDIR = $temporaryRoot; RELEASE_TMP = $temporaryRoot
+    SYMPP_OFFLINE_EVAL = Join-Path $temporaryRoot "offline-eval.exs"
   }
   foreach ($name in $isolated.Keys) { $environment[$name] = $isolated[$name] }
   foreach ($name in $environment.Keys) {
@@ -92,6 +93,8 @@ try {
   $runtime = $prepared.runtime
   $release = Join-Path $runtime.root "bin/symphony_elixir.bat"
   $verify = ':ok = SymphonyElixir.SymphonyPlusPlus.OfflineSandbox.verify!(System.fetch_env!(~s(SYMPP_DATABASE)))'
+  # Keep Elixir's ! and other cmd.exe metacharacters out of the release batch command.
+  $evaluateFile = 'Code.eval_file(System.get_env(~s(SYMPP_OFFLINE_EVAL)))'
 
   switch ($Action) {
     "Snapshot" {
@@ -105,11 +108,15 @@ try {
     }
     "Migrate" {
       $expression = $verify + '; {:ok, _} = Application.ensure_all_started(:ecto_sql); alias SymphonyElixir.SymphonyPlusPlus.Repo; {:ok, repo} = Repo.start_link(Repo.child_options(database: System.fetch_env!(~s(SYMPP_DATABASE)))); try do :ok = SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository.migrate(Repo) after GenServer.stop(repo) end'
-      & $release eval $expression *> (Join-Path $logRoot "migration.log")
+      [IO.File]::WriteAllText($env:SYMPP_OFFLINE_EVAL, $expression)
+      try { & $release eval $evaluateFile *> (Join-Path $logRoot "migration.log") }
+      finally { Remove-Item -LiteralPath $env:SYMPP_OFFLINE_EVAL -Force }
       if ($LASTEXITCODE -ne 0) { throw "Staged snapshot migration failed. See logs/migration.log in the offline home." }
     }
     "View" {
-      & $release eval $verify *> (Join-Path $logRoot "verify.log")
+      [IO.File]::WriteAllText($env:SYMPP_OFFLINE_EVAL, $verify)
+      try { & $release eval $evaluateFile *> (Join-Path $logRoot "verify.log") }
+      finally { Remove-Item -LiteralPath $env:SYMPP_OFFLINE_EVAL -Force }
       if ($LASTEXITCODE -ne 0) { throw "View requires a marked snapshot. Run -Action Snapshot first; see logs/verify.log for details." }
       Write-Output "board: $(("http://127.0.0.1:$Port/sympp/board") | ConvertTo-Json -Compress)"
       Write-Output "stop: Press Ctrl+C in this terminal before refreshing the snapshot."
