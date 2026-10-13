@@ -148,7 +148,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
 
   @spec delete_for_targets(module(), String.t(), [String.t()]) :: :ok
   def delete_for_targets(repo, target_kind, target_ids) do
-    repo.delete_all(from(location in Location, where: location.target_kind == ^target_kind and location.target_id in ^target_ids))
+    from(location in Location, where: location.target_kind == ^target_kind and location.target_id in ^target_ids)
+    |> repo.delete_all()
+
     :ok
   end
 

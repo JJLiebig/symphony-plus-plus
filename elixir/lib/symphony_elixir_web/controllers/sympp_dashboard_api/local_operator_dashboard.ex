@@ -149,7 +149,11 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
       work_packages =
         Enum.map(detail.work_packages, &put_session_location(&1, context.operator_config, projection_context))
 
-      work_request = detail.work_request |> put_area_path(context) |> put_work_request_location(context, projection_context)
+      work_request =
+        detail.work_request
+        |> put_area_path(context)
+        |> put_work_request_location(context, projection_context)
+
       %{detail | work_request: work_request, work_packages: work_packages}
     end)
   end

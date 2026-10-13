@@ -57,6 +57,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
 
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -181,7 +182,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     HandleStateStore.cleanup_default_handle_states()
     server = HandleStateStore.restore(payload, server)
     {response, updated_server} = handle_state(payload, server)
-    updated_server = SymphonyElixir.SymphonyPlusPlus.SessionLocations.observe(payload, response, updated_server)
+    updated_server = SessionLocations.observe(payload, response, updated_server)
     updated_server = HandleStateStore.persist(payload, response, server, updated_server)
     {response, updated_server}
   end
