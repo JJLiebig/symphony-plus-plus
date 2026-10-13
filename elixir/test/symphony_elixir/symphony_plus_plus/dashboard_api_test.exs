@@ -3148,6 +3148,50 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
+  test "local operator configures never-started archives and restores without completing", %{repo: repo} do
+    with_local_operator_endpoint(fn ->
+      request = create_work_request!(repo, id: "WR-UNSTARTED-OPERATOR", repo: "example-org/retention")
+      repo.update!(Ecto.Changeset.change(request, inserted_at: DateTime.add(DateTime.utc_now(:microsecond), -20, :day)))
+
+      run_operator_retention(repo)
+      initial = local_operator_dashboard_payload()
+      assert initial["settings"]["work_request_never_started_archive_after_days"] == 30
+      assert Enum.any?(initial["work_requests"]["work_requests"], &(&1["id"] == request.id))
+
+      configured =
+        local_operator_conn()
+        |> post("/api/v1/sympp/operator/settings", %{"work_request_never_started_archive_after_days" => 10})
+        |> json_response(200)
+
+      assert configured["settings"]["work_request_never_started_archive_after_days"] == 10
+      archived = local_operator_dashboard_payload()
+      refute Enum.any?(archived["work_requests"]["work_requests"], &(&1["id"] == request.id))
+
+      assert [%{"id" => "WR-UNSTARTED-OPERATOR", "archive_reason" => "never_started", "completed_at" => nil}] =
+               archived["archived_work_requests"]["work_requests"]
+
+      assert get_in(hd(archived["archived_work_requests"]["work_requests"]), ["operational_state", "key"]) == "archived"
+
+      detail =
+        local_operator_conn()
+        |> get("/api/v1/sympp/operator/work-requests/#{request.id}")
+        |> json_response(200)
+
+      assert get_in(detail, ["work_request", "archive_reason"]) == "never_started"
+      assert get_in(detail, ["work_request", "completed_at"]) == nil
+
+      restored =
+        local_operator_conn()
+        |> post("/api/v1/sympp/operator/work-requests/#{request.id}/restore", %{})
+        |> json_response(200)
+
+      assert get_in(restored, ["work_request", "completed_at"]) == nil
+      assert get_in(restored, ["work_request", "archived_at"]) == nil
+      assert {:ok, %{archived_ids: []}} = WorkRequestService.retention_pass(repo, never_started_archive_after_days: 10)
+      assert Enum.any?(local_operator_dashboard_payload()["work_requests"]["work_requests"], &(&1["id"] == request.id))
+    end)
+  end
+
   test "local operator retention archives and deletes Solo Sessions", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       assert {:ok, _settings} =

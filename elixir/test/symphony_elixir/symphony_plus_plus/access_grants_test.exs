@@ -1248,7 +1248,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
           base_branch: "main"
         )
 
-      insert_work_request!(Repo, "wr-grant-scope-backfill", work_package.repo, work_package.base_branch)
+      insert_work_request!(Repo, "wr-grant-scope-backfill", work_package.repo, work_package.base_branch, load: false)
       insert_legacy_slice!(Repo, "wrs-grant-scope-backfill", "wr-grant-scope-backfill", work_package.id, work_package.base_branch)
 
       foreign_work_package =
@@ -1259,7 +1259,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
           base_branch: work_package.base_branch
         )
 
-      insert_work_request!(Repo, "wr-grant-scope-foreign-branch", work_package.repo, "feature/other")
+      insert_work_request!(Repo, "wr-grant-scope-foreign-branch", work_package.repo, "feature/other", load: false)
       insert_legacy_slice!(Repo, "wrs-grant-scope-foreign-branch", "wr-grant-scope-foreign-branch", foreign_work_package.id, "feature/other")
 
       Repo.query!(
@@ -1465,7 +1465,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
     refute log =~ minted.work_key.secret
   end
 
-  defp insert_work_request!(repo, id, repo_name, base_branch) do
+  defp insert_work_request!(repo, id, repo_name, base_branch, opts \\ []) do
     now = DateTime.utc_now(:microsecond)
 
     repo.query!(
@@ -1490,7 +1490,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
       ]
     )
 
-    repo.get!(WorkRequest, id)
+    if Keyword.get(opts, :load, true), do: repo.get!(WorkRequest, id)
   end
 
   defp create_handoff_anchor!(repo, work_request_id) do

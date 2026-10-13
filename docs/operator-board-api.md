@@ -87,9 +87,52 @@ On upgrade, the normal ledger migrations convert stored archive settings of
 `14` again after upgrading to retain it. The migration cannot safely reverse
 that data conversion. No manual database edit is required. Already overdue
 completed goals qualify on the next retention pass. The same setting also
-controls hiding terminal packages without a parent goal. Archived goals retain
-their history until deletion; the existing deletion setting
-`solo_session_delete_after_days` also governs archived goals (default 30 days).
+controls hiding terminal packages without a parent goal. Completed archived goals
+retain their history until deletion; the existing deletion setting
+`solo_session_delete_after_days` also governs those archives (default 30 days).
+
+## Never-started goal retention
+
+`settings.work_request_never_started_archive_after_days` defaults to `30` elapsed
+days, configurable from 1 to 3650. A goal qualifies when it has no recorded package
+dispatch or delivery, including historical evidence. Claimed architect anchors,
+worker claims, runs and legacy execution states also protect started goals even
+when their packages are dormant or no longer dispatched. An unclaimed planning
+anchor or merely planned package does not count as execution.
+
+Age starts at goal creation; edits do not reset it. At the exact threshold the
+next successful retention pass archives the goal with `archive_reason:
+"never_started"`, leaving `completed_at` null and its status unchanged. It leaves
+the board and appears in `archived_work_requests`; its archive card operational state
+is `archived` / `Archived`, rather than completed. Restore clears the archive and
+starts a fresh full threshold window from restoration. Increasing the setting
+does not automatically restore an existing never-started archive.
+
+This rule neither queues worktree cleanup nor deletes ledger history. Archives
+with this reason are excluded from subsequent automatic archived-goal deletion,
+so they remain restorable indefinitely. Explicit operator deletion retains its
+existing destructive behavior. Finished-goal retention, the ten-visible-completed
+limit, and the existing deletion threshold are unchanged.
+
+The migration adds the setting without changing existing settings. On the first
+successful pass, existing unfinished goals at least 30 days old with no persisted
+execution evidence qualify; newer or previously started goals stay visible.
+No production ledger was inspected to establish an actual qualifying count.
+
+Change the setting through the local operator API (replace the base URL with
+the running dashboard's origin):
+
+```powershell
+$origin = "http://127.0.0.1:4000"
+Invoke-RestMethod -Method Post -Uri "$origin/api/v1/sympp/operator/settings" `
+  -Headers @{Origin = $origin} -ContentType "application/json" `
+  -Body '{"work_request_never_started_archive_after_days":45}'
+```
+
+Saving settings forces an immediate pass; otherwise the background cadence is
+30 minutes. Dashboard reads remain read-only. No new UI control is included.
+
+## Operator actions
 
 These existing POST routes require local operator authorization:
 
@@ -98,7 +141,7 @@ These existing POST routes require local operator authorization:
 | `/state` with `{"state":"completed"}` | Operator override; no delivery or inactive-worker precondition. Marks the goal complete, clears its archive state and open questions, clears package attention and queues terminal package worktree cleanup. Does not stop workers or merge PRs. Confirm the override when work is still running. |
 | `/archive` | Requires completion after refreshing current evidence; otherwise returns `not_completed`. Hides the goal and queues terminal package worktree cleanup. History remains. |
 | `/delete` | Requires only that the goal exists; archive and completion are **not** backend prerequisites. Permanently removes the goal and dependent ledger history/comments/grant scopes and queues linked worktree cleanup, including nonterminal packages. Confirm deletion and finish or stop active work first; it is not a safe unconditional one-click action. |
-| `/restore` | Requires an existing goal. Refreshes completion, clears archive state and, for a still-completed archived goal, resets `completed_at` to give it a new retention window. Does not restore deleted worktrees or undo queued cleanup. |
+| `/restore` | Requires an existing goal. Clears archive state. A never-started archive gets a new threshold window without completion; a still-completed archive resets `completed_at`. Does not restore deleted worktrees or undo queued cleanup. |
 
 Worktree cleanup runs asynchronously and defers active or paused workers while
 their package records exist. Deleting those records removes that activity check,

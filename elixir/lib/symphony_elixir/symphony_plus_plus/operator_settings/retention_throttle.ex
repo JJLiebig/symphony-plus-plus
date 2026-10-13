@@ -76,7 +76,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorSettings.RetentionThrottle do
   defp monotonic_ms, do: System.monotonic_time(:millisecond)
 
   defp cache_key(repo, %Settings{} = settings) do
-    {__MODULE__, repo_key(repo), {settings.work_request_archive_after_days, settings.solo_session_delete_after_days}}
+    archive_days = settings.work_request_archive_after_days
+    never_started_days = settings.work_request_never_started_archive_after_days
+    {__MODULE__, repo_key(repo), {archive_days, never_started_days, settings.solo_session_delete_after_days}}
   end
 
   defp repo_key(repo) do
