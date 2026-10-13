@@ -443,16 +443,25 @@ export function Session({ view }: { view: PkgView }) {
   );
 }
 
-// The way to the architect's session, with the same card as a package's session.
-// The address is a stand-in on sample goals: the backend does not report where an architect's session is yet.
-export function FindArchitect({ goal }: { goal: Goal }) {
-  const place = goal.mock ? standInPlace(goal.id, goal.area, goal.title) : null;
+// Sketch only: a goal with recorded sessions gets a stand-in address for its architect, as its packages do.
+// The backend does not report where an architect's session is yet, so a board on real data has none.
+function architectPlace(goal: Goal) {
+  const sketched = goal.mock || goal.pkgs.some((pkg) => pkg.actors.length > 0);
+  return sketched ? standInPlace(`${goal.id}:architect`, goal.area, goal.title) : null;
+}
+
+// The way to the architect's session, with the same card as a package's session. On a goal's header it is
+// only the machine icon, and leaves a gap while the address is unknown; on an ask it is spelled out.
+export function FindArchitect({ className = "", compact, goal }: { className?: string; compact?: boolean; goal: Goal }) {
+  const place = architectPlace(goal);
+  if (compact && !place) return <span className={`size-6 shrink-0 ${className}`} />;
+  const shape = compact ? "size-6 justify-center" : "gap-1.5 self-center px-1.5 py-0.5";
 
   return (
-    <button className="group relative flex shrink-0 items-center gap-1.5 self-center rounded px-1.5 py-0.5 text-xs text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate(place ? `${place.machine.name} › ${place.where}` : `${goal.title} · architect`)}>
+    <button aria-label={`Architect's session for ${goal.title}`} className={`group relative flex shrink-0 items-center rounded text-xs text-dim hover:bg-line hover:text-ink ${shape} ${className}`} type="button" onClick={() => locate(place ? `${place.machine.name} › ${place.where}` : `${goal.title} · architect`)}>
       {place ? <place.machine.icon className="size-3.5" /> : null}
-      Find the architect
-      {place ? <PlaceCard rows={[[place.machine.kind, place.machine.name], ["Where", place.where]]} /> : null}
+      {compact ? null : "Find the architect"}
+      {place ? <PlaceCard rows={[[place.machine.kind, place.machine.name], ["Where", place.where], ["Thread", "architect"]]} /> : null}
     </button>
   );
 }

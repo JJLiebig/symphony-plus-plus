@@ -62,7 +62,7 @@ function Landed({ at, views }: { at: number; views: GoalView[] }) {
       <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">Landed · last 24 hours</h2>
       <ul className="divide-y divide-line border-y border-line">
         {views.map((view) => (
-          <li key={view.goal.id} className="flex items-center gap-3 py-2 pr-2 text-sm">
+          <li key={view.goal.id} className="flex items-center gap-3 py-2 pr-2 text-sm" data-goal={view.goal.id}>
             <Check className="size-4 shrink-0 text-merge" />
             <span className="max-w-[40%] shrink-0 truncate font-medium">
               <GoalTitle goal={view.goal} />

@@ -38,11 +38,22 @@ export function Track({ at, view }: { at: number; view: PkgView }) {
         return (
           <li key={step.label} className="flex items-center gap-1.5">
             {index > 0 ? <span className={index <= position ? "text-dim" : "text-faint"}>─</span> : null}
-            {current ? <CurrentStep at={at} view={view} /> : <span className={index < position ? "text-dim" : "text-faint"}>{step.label}</span>}
+            {current ? <CurrentStep at={at} view={view} /> : <StepLabel reached={index < position} step={step} view={view} />}
           </li>
         );
       })}
     </ol>
+  );
+}
+
+// A step the package is not on. The PR step opens the PR once there is one.
+function StepLabel({ reached, step, view }: { reached: boolean; step: { label: string; stage: Stage | "pr" }; view: PkgView }) {
+  const tone = reached ? "text-dim" : "text-faint";
+  if (step.stage !== "pr" || !view.pkg.prUrl) return <span className={tone}>{step.label}</span>;
+  return (
+    <a className={`underline decoration-dotted underline-offset-2 hover:text-ink ${tone}`} href={view.pkg.prUrl} rel="noreferrer" target="_blank" title={view.pkg.prNumber ? `Open PR #${view.pkg.prNumber}` : "Open the PR"}>
+      {step.label}
+    </a>
   );
 }
 
@@ -88,7 +99,7 @@ export function Shelf({ age, at, cleanup, hint, label, views }: { age: string; a
       ) : null}
       <ul className="mt-2 max-w-[900px] space-y-1">
         {views.map((view) => (
-          <li key={view.goal.id} className="flex items-center justify-between gap-4">
+          <li key={view.goal.id} className="flex items-center justify-between gap-4" data-goal={view.goal.id}>
             <span className="min-w-0 truncate">{view.goal.title}</span>
             <span className="shrink-0 text-[11px] uppercase tracking-[0.12em] text-faint" title={view.goal.repo}>{areaLabel(view.goal.area)}</span>
             <span className="min-w-0 flex-1 truncate text-faint">{view.goal.report?.parked?.text}</span>

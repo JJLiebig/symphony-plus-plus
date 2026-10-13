@@ -5,7 +5,7 @@ import { areaLabel } from "./areas";
 import { AskLine, lanesOf, Rest } from "./board";
 import { deployAt, type Goal, type GoalView } from "./model";
 import { Deploy, deployLabel, Pip } from "./parts";
-import { BriefAge, DotStrip, GoalPackages, GoalTitle, phaseStates, reportFor, useGoalLevel, usePhaseControl, VerdictBadge, type PhaseState } from "./report";
+import { BriefAge, DotStrip, FindArchitect, GoalPackages, GoalTitle, phaseStates, reportFor, useGoalLevel, usePhaseControl, VerdictBadge, type PhaseState } from "./report";
 import { SinceChip } from "./since";
 
 // Direction 3: a goal the architect grouped becomes a route of its phases. Ungrouped goals stay a plain line of dots.
@@ -49,7 +49,8 @@ function GoalRoute({ at, view }: { at: number; view: GoalView }) {
           <SinceChip goalId={view.goal.id} />
           <VerdictBadge verdict={report.verdict} />
         </button>
-        <GoalActions className="ml-2" goal={view.goal} moving={view.live.length} />
+        <FindArchitect compact className="ml-2" goal={view.goal} />
+        <GoalActions goal={view.goal} moving={view.live.length} />
       </div>
       <p className="mt-1 pl-7 text-sm text-dim">
         {report.brief}

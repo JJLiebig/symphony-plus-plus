@@ -134,7 +134,7 @@ export function App() {
         <Asks at={at} views={views} onPick={goToGoal} />
       </header>
       <main className="px-8 py-6">
-        <SinceLine at={at} changes={changes} since={since} width={current.width} onSeen={markSeen} />
+        <SinceLine at={at} changes={changes} since={since} width={current.width} onPick={goToGoal} onSeen={markSeen} />
         <ReloadContext.Provider value={read}>
           <SinceContext.Provider value={changes.notes}>
             <DensityContext.Provider value={density}>

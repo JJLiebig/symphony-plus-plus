@@ -50,10 +50,12 @@ export function useFlash<T extends HTMLElement>(value: string, frames: Keyframe[
   return ref;
 }
 
-// Bring one goal under the header and light it up.
+// Bring one goal under the header and light it up. A goal on a closed shelf opens its shelf first.
 export function focusGoal(id: string) {
   const node = document.querySelector<HTMLElement>(`[data-goal="${CSS.escape(id)}"]`);
   if (!node) return;
+  const shelf = node.closest("details");
+  if (shelf) shelf.open = true;
   node.scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "start" });
   node.animate(SPOTLIGHT, { duration: 2600, easing: "ease-out" });
 }
