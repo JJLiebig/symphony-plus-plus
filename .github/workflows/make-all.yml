@@ -18,8 +18,19 @@ jobs:
         run: |
           node scripts/package-portable-skills.mjs --check
           node plugins/symphony-plus-plus-mcp/tests/launcher/portable-install-tests.js
+      - name: Install native configuration hosts
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'codex.zip'
+          Invoke-WebRequest 'https://github.com/JJLiebig/codex/releases/download/codex-plus-plus-v0.160.1-fork.2/codex-plus-plus-0.160.1-fork.2-x86_64-pc-windows-msvc.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'b94586943af5eaea75c6a8ac912e5f47f757e96faebd0585357bb403356960b9') { throw 'Codex archive checksum mismatch' }
+          $bin = Join-Path $env:RUNNER_TEMP 'native-hosts'
+          Expand-Archive $archive $bin
+          (Get-ChildItem $bin -Recurse -Filter codex.exe | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+          npm install --global @anthropic-ai/claude-code@2.1.292
+          if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
       - name: Install isolated bundles and exercise the published runtime
-        run: node scripts/qualify-portable-skills.mjs --runtime
+        run: node scripts/qualify-portable-skills.mjs --runtime --diagnose-registration
       - name: Prove beta branch tracking across Skills update
         run: node scripts/qualify-portable-skills.mjs https://github.com/JJLiebig/symphony-plus-plus/tree/beta --branch-only
 
