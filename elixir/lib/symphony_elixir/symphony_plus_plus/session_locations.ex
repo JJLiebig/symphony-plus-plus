@@ -26,7 +26,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
   end
 
   defp do_observe(%{"method" => "tools/call", "params" => params} = payload, %{"result" => result} = response, server)
-      when is_map(params) and is_map(result) do
+       when is_map(params) and is_map(result) do
     if result["isError"] != true do
       case metadata(params, server) do
         metadata when is_map(metadata) ->
@@ -49,7 +49,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
          {target_kind, target_id, role} <- target(binding, payload, server.config.repo, client_id) do
       repo = server.config.repo
       existing = repo.get_by(Location, target_kind: target_kind, target_id: target_id, role: role)
-      description = description(payload, existing, client_id)
+      description = metadata["description"] || if(existing && existing.client_id == client_id, do: existing.description)
       herdr = herdr_location(metadata["herdr"])
 
       location = %Location{
@@ -96,9 +96,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
   defp target(_binding, _payload, _repo, _client_id), do: nil
 
   defp metadata(params, server) do
-    case params["_meta"] do
-      %{"sympp_session_location" => metadata} when is_map(metadata) -> metadata
-      _missing -> server.client_location || described_metadata(params, server)
+    metadata =
+      case params["_meta"] do
+        %{"sympp_session_location" => metadata} when is_map(metadata) -> metadata
+        _missing -> server.client_location || described_metadata(params, server)
+      end
+
+    if is_map(metadata) do
+      previous = server.client_location
+
+      description =
+        text(get_in(params, ["arguments", "session_description"])) ||
+          if(previous && previous["client_id"] == metadata["client_id"], do: previous["description"])
+
+      Map.put(metadata, "description", description)
     end
   end
 
@@ -107,11 +118,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
       client_id = :crypto.hash(:sha256, :erlang.term_to_binary(server.state_key)) |> Base.encode16(case: :lower)
       %{"client_id" => client_id}
     end
-  end
-
-  defp description(payload, existing, client_id) do
-    text(get_in(payload, ["params", "arguments", "session_description"])) ||
-      if(existing && existing.client_id == client_id, do: existing.description)
   end
 
   defp herdr_location(metadata) when is_map(metadata) do

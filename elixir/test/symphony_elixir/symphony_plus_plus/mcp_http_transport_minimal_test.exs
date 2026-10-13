@@ -21,6 +21,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Repo
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations.Location
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.Repository, as: SoloSessionRepository
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.SoloSession
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.SoloSessionEntry
@@ -45,6 +47,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     reset_server_response_state()
     HTTPStateStore.reset!()
 
+    config.repo.delete_all(Location)
     config.repo.delete_all(SoloSessionEntry)
     config.repo.delete_all(SoloSession)
     config.repo.delete_all(OperatorSettings)
@@ -243,7 +246,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
              HTTPTransport.handle(
                trusted_config,
                [
-                 tool_call_request("batch-local-claim", "claim_local_assignment", local_assignment_claim_args(work_package)),
+                 tool_call_request(
+                   "batch-local-claim",
+                   "claim_local_assignment",
+                   Map.put(local_assignment_claim_args(work_package), "session_description", "Terminal window: widget implementation")
+                 ),
                  tools_list_request("batch-local-tools")
                ],
                client_key: "batch-local-client",
@@ -256,6 +263,33 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert Enum.any?(batch.response, fn response ->
              get_in(response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
            end)
+
+    location = SessionLocations.get(Repo, "work_package", work_package.id)
+    assert location.description == "Terminal window: widget implementation"
+
+    assert {:ok, failed_batch} =
+             HTTPTransport.handle(
+               trusted_config,
+               [tool_call_request("batch-location-failed", "not_a_tool", %{"session_description" => "Wrong window"})],
+               client_key: "batch-local-client",
+               state_key: init.state_key
+             )
+
+    assert [%{"error" => _error}] = failed_batch.response
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
+
+    assert {:ok, refreshed_batch} =
+             HTTPTransport.handle(
+               trusted_config,
+               [get_current_assignment_request()],
+               client_key: "batch-local-client",
+               state_key: init.state_key
+             )
+
+    assert [%{"result" => _result}] = refreshed_batch.response
+    refreshed = SessionLocations.get(Repo, "work_package", work_package.id)
+    assert refreshed.description == location.description
+    assert DateTime.compare(refreshed.last_seen_at, location.last_seen_at) == :gt
 
     HTTPStateStore.reset!()
     reset_server_response_state()

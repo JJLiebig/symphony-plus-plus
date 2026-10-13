@@ -420,6 +420,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
 
   defp batch_server_state_changed?(%__MODULE__{} = server, %__MODULE__{} = updated_server) do
     server.initialized != updated_server.initialized or
+      server.client_location != updated_server.client_location or
       server.session != updated_server.session or
       server.session_refresh_required != updated_server.session_refresh_required or
       server.stale_assignment_role != updated_server.stale_assignment_role
@@ -1618,7 +1619,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp initialize_request?(%{"jsonrpc" => "2.0", "method" => "initialize"}), do: true
   defp initialize_request?(_payload), do: false
 
-  defp handle_batch_item(payload, %__MODULE__{} = server) when is_map(payload), do: handle_state(payload, server)
+  defp handle_batch_item(payload, %__MODULE__{} = server) when is_map(payload) do
+    {response, updated_server} = handle_state(payload, server)
+    {response, SessionLocations.observe(payload, response, updated_server)}
+  end
 
   defp handle_batch_item(_payload, %__MODULE__{} = server) do
     {Response.error(nil, -32_600, "Invalid Request", %{"reason" => "request_must_be_object"}), server}
