@@ -45,6 +45,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Service, as: PlanningService
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport
 
   @tools [
     "read_context",
@@ -139,6 +140,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
   end
 
   def call("append_finding", %Config{} = config, session, arguments), do: append_finding_tool(config.repo, session, arguments)
+
+  def call("append_progress", %Config{} = config, session, %{"payload" => %{"type" => "architect_operator_report"}} = arguments) do
+    with {:ok, session} <- Auth.require_session(session, config.repo),
+         {:ok, work_package_id, payload} <- OperatorReport.authorized_payload(config.repo, session, arguments) do
+      arguments = Map.put(arguments, "payload", %{})
+      append_progress_for_package(config.repo, session, work_package_id, arguments, "append_progress", payload)
+    else
+      {:tool_error, reason} -> invalid_params_error("append_progress", reason)
+      {:error, reason} -> worker_error(reason, "append_progress")
+    end
+  end
 
   def call("append_progress", %Config{} = config, %Session{assignment: %{grant_role: "architect"}} = session, arguments) do
     case architect_package_scope(config.repo, session, arguments, :progress_append, "append_progress") do

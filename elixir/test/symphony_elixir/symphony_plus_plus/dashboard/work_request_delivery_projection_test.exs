@@ -221,13 +221,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDeliveryProjectio
     assert get_in(slices_by_id, ["WRS-DASH-NO-PR", "operational_state", "key"]) == "completed_no_pr"
     assert get_in(slices_by_id, ["WRS-DASH-RECORDED-MERGED", "delivery", "outcome"]) == "pr_merged"
 
-    assert get_in(slices_by_id, ["WRS-DASH-RECORDED-MERGED", "work_package", "pr_signal"]) == %{
+    assert %{
              "status" => "merged",
              "url" => "https://github.com/nextide/symphony-plus-plus/pull/904",
              "number" => 904,
              "repository" => "nextide/symphony-plus-plus",
              "checks" => %{"status" => "passing", "current" => 2, "total" => 2}
-           }
+           } = get_in(slices_by_id, ["WRS-DASH-RECORDED-MERGED", "work_package", "pr_signal"])
 
     assert get_in(slices_by_id, ["WRS-DASH-RECORDED-MERGED", "work_package", "pr", "merge_state"]) == %{
              "merged" => true,

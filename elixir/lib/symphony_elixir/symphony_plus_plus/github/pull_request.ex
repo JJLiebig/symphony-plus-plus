@@ -96,10 +96,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest do
          "review_state" => Redactor.redact(review_state),
          "merge_state" => Redactor.redact(merge_state),
          "merged_at" => metadata_merged_at(metadata),
+         "created_at" => clean_string(Map.get(metadata, "created_at") || Map.get(metadata, "createdAt")),
+         "updated_at" => clean_string(Map.get(metadata, "updated_at") || Map.get(metadata, "updatedAt")),
          "merge_commit_sha" => metadata_merge_commit_sha(metadata),
          "observed_at" => clean_string(Map.get(metadata, "observed_at")),
          "provider_reference" => clean_provider_reference(Map.get(metadata, "provider_reference"))
-       }}
+       }
+       |> Map.reject(fn {key, value} -> key in ["created_at", "updated_at"] and is_nil(value) end)}
     end
   end
 

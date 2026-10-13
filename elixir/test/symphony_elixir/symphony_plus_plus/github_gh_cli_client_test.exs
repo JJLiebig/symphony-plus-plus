@@ -27,7 +27,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
           %{"status" => "COMPLETED", "conclusion" => "SUCCESS"},
           %{"__typename" => "StatusContext", "state" => "SUCCESS"}
         ],
-        "reviewDecision" => "APPROVED"
+        "reviewDecision" => "APPROVED",
+        "createdAt" => "2026-10-01T09:00:00Z",
+        "updatedAt" => "2026-10-02T09:00:00Z"
       })
 
     FakeGhCli.put_response("nextide/repo", 22, response)
@@ -49,6 +51,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
     assert payload["review_state"] == %{"status" => "approved"}
     assert payload["merge_state"] == %{"merged" => true, "status" => "merged"}
     assert payload["provider_reference"] == "PR_provider_22"
+    assert payload["created_at"] == "2026-10-01T09:00:00Z"
+    assert payload["updated_at"] == "2026-10-02T09:00:00Z"
 
     assert [
              %{
@@ -59,7 +63,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
            ] = FakeGhCli.commands()
 
     assert fields ==
-             "id,number,url,headRefName,headRefOid,baseRefName,baseRefOid,changedFiles,files,statusCheckRollup,reviewDecision,state,isDraft,mergeable,mergeStateStatus,mergedAt,mergeCommit"
+             "id,number,url,headRefName,headRefOid,baseRefName,baseRefOid,changedFiles,files,statusCheckRollup,reviewDecision,state,isDraft,mergeable,mergeStateStatus,createdAt,updatedAt,mergedAt,mergeCommit"
   end
 
   test "rejects a truncated gh file list as an incomplete provider snapshot" do
@@ -158,5 +162,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubGhCliClientTest do
 
     FakeGhCli.authenticate(:unavailable)
     assert GhCliClient.auth_status(command_runner: &FakeGhCli.run/3) == {:error, :gh_unavailable}
+  end
+
+  test "read-only REST observations use the command runner and sanitize provider failures" do
+    path = "repos/acme-labs/compass/actions/workflows/deploy-dev.yml/runs?per_page=100&page=2"
+
+    runner = fn "gh", ["api", "--hostname", "github.com", "--method", "GET", ^path], [timeout: 120] ->
+      {:ok, ~s({"total_count":0,"workflow_runs":[],"additional_field":true})}
+    end
+
+    assert {:ok, %{"workflow_runs" => [], "additional_field" => true}} = GhCliClient.get_json(path, command_runner: runner, timeout: 120)
+
+    runner = fn _, _, _ -> {:error, {1, "HTTP 403 private provider diagnostics"}} end
+    assert {:error, :gh_unauthorized} = GhCliClient.get_json(path, command_runner: runner)
+
+    runner = fn _, _, _ -> {:ok, "not JSON"} end
+    assert {:error, :invalid_github_response} = GhCliClient.get_json(path, command_runner: runner)
   end
 end

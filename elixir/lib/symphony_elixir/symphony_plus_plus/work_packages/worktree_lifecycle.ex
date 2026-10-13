@@ -3,6 +3,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
 
   alias SymphonyElixir.PathSafety
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
@@ -51,6 +52,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
           | :invalid_branch
           | :invalid_target_repo_root
           | :invalid_worktree_path
+          | :offline_sandbox
           | :recorded_worktree_missing
           | {:stale_existing_branch, map()}
           | :unsafe_worktree_path
@@ -67,7 +69,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   @spec prepare(repo(), String.t(), map(), keyword()) :: {:ok, lifecycle_result()} | {:error, error()}
   def prepare(repo, work_package_id, attrs, opts \\ [])
       when is_atom(repo) and is_binary(work_package_id) and is_map(attrs) and is_list(opts) do
-    with {:ok, %WorkPackage{} = work_package} <- Repository.get(repo, work_package_id),
+    with :ok <- OfflineSandbox.require_online(),
+         {:ok, %WorkPackage{} = work_package} <- Repository.get(repo, work_package_id),
          {:ok, target_repo_root} <- target_repo_root(attrs),
          {:ok, requested_base_branch} <- ref_name(attrs, "base_branch", :invalid_base_branch, target_repo_root, opts),
          base_branch = BaseBranch.canonicalize(requested_base_branch),
@@ -85,7 +88,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   @spec cleanup(repo(), String.t(), keyword()) :: {:ok, lifecycle_result()} | {:error, error()}
   def cleanup(repo, work_package_id, opts \\ [])
       when is_atom(repo) and is_binary(work_package_id) and is_list(opts) do
-    with {:ok, %WorkPackage{} = work_package} <- Repository.get(repo, work_package_id) do
+    with :ok <- OfflineSandbox.require_online(),
+         {:ok, %WorkPackage{} = work_package} <- Repository.get(repo, work_package_id) do
       cleanup_recorded_worktree(repo, work_package, opts)
     end
   end
@@ -94,7 +98,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   @spec cleanup_obligation(WorkPackage.t(), keyword()) :: {:ok, map()} | {:error, error()}
   def cleanup_obligation(%WorkPackage{worktree_path: worktree_path} = work_package, opts)
       when is_binary(worktree_path) and is_list(opts) do
-    with {:ok, root} <- worktree_root(opts),
+    with :ok <- OfflineSandbox.require_online(),
+         {:ok, root} <- worktree_root(opts),
          {:ok, worktree_path} <- canonicalize(worktree_path),
          :ok <- require_inside_root(worktree_path, root),
          {:ok, target_repo_root} <- cleanup_obligation_target_root(work_package, worktree_path) do
@@ -111,6 +116,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   @doc false
   @spec cleanup_obligation(repo(), map(), keyword()) :: {:ok, lifecycle_result()} | {:error, error()}
   def cleanup_obligation(repo, obligation, opts) when is_atom(repo) and is_map(obligation) and is_list(opts) do
+    with :ok <- OfflineSandbox.require_online() do
+      cleanup_detached_obligation(repo, obligation, opts)
+    end
+  end
+
+  defp cleanup_detached_obligation(repo, obligation, opts) do
     work_package = %WorkPackage{
       id: Map.fetch!(obligation, :work_package_id),
       worktree_path: Map.fetch!(obligation, :worktree_path),
@@ -125,7 +136,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   @spec validate_cleanup(repo(), String.t(), keyword()) :: {:ok, lifecycle_result()} | {:error, error()}
   def validate_cleanup(repo, work_package_id, opts \\ [])
       when is_atom(repo) and is_binary(work_package_id) and is_list(opts) do
-    with {:ok, %WorkPackage{} = work_package} <- Repository.get(repo, work_package_id) do
+    with :ok <- OfflineSandbox.require_online(),
+         {:ok, %WorkPackage{} = work_package} <- Repository.get(repo, work_package_id) do
       validate_recorded_worktree_cleanup(work_package, opts)
     end
   end

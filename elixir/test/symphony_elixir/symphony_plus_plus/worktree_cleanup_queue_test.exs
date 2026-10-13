@@ -99,6 +99,34 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     refute File.exists?(package.worktree_path)
   end
 
+  test "never-started archive, refresh and later retention leave a prepared worktree and history intact", %{repo: repo} do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-never-started-cleanup")
+    codex_home = use_codex_home!(fixture.root)
+    {request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-NEVER-CLEANUP", "fix/never-started")
+    repo.update!(Ecto.Changeset.change(package, status: "skipped"))
+    now = DateTime.utc_now(:microsecond)
+    repo.update!(Ecto.Changeset.change(request, inserted_at: DateTime.add(now, -90, :day)))
+
+    assert {:ok, %{archived_ids: [id]}} = WorkRequestService.retention_pass(repo, now: now, delete_after_days: 1)
+    assert id == request.id
+    assert {:ok, archived} = WorkRequestService.refresh_completion(repo, id)
+    assert archived.completed_at == nil
+    assert archived.archive_reason == "never_started"
+
+    assert {:ok, %{deleted_ids: []}} = WorkRequestService.retention_pass(repo, now: DateTime.add(now, 100, :day), delete_after_days: 1)
+    assert repo.get!(WorkRequest, id).archive_reason == "never_started"
+    assert repo.get!(WorkPackage, package.id).worktree_path == package.worktree_path
+    assert repo.all(Entry) == []
+    assert :ok = WorktreeCleanupQueue.reconcile(repo, codex_home: codex_home)
+    assert File.dir?(package.worktree_path)
+
+    assert {:ok, restored} = WorkRequestService.restore(repo, id)
+    assert restored.completed_at == nil
+    assert restored.archived_at == nil
+    assert repo.all(Entry) == []
+    assert File.dir?(package.worktree_path)
+  end
+
   test "active packages do not create cleanup obligations", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-active")
     codex_home = use_codex_home!(fixture.root)
@@ -139,6 +167,43 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
                failure,
                codex_home: codex_home
              )
+  end
+
+  test "offline operator actions and retention never touch copied worktree paths or queued obligations", %{repo: repo} do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-offline-cleanup")
+    codex_home = use_codex_home!(fixture.root)
+    {request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-OFFLINE", "fix/offline")
+    repo.update!(Ecto.Changeset.change(package, status: "merged"))
+    assert :ok = WorktreeCleanupQueue.enqueue_terminal(repo, %{package | status: "merged"}, codex_home: codex_home)
+    [obligation] = repo.all(Entry)
+    before = File.ls!(package.worktree_path)
+    previous = System.get_env("SYMPP_OFFLINE_SANDBOX")
+    System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
+
+    try do
+      assert {:ok, _completed} = WorkRequestService.force_complete(repo, request.id)
+      assert {:ok, _archived} = WorkRequestService.archive(repo, request.id)
+      assert {:ok, _restored} = WorkRequestService.restore(repo, request.id)
+      assert {:ok, _archived} = WorkRequestService.archive(repo, request.id)
+
+      archived = repo.get!(WorkRequest, request.id)
+      repo.update!(Ecto.Changeset.change(archived, archived_at: DateTime.add(DateTime.utc_now(:microsecond), -90, :day)))
+      assert {:ok, %{deleted_count: 1}} = WorkRequestService.retention_pass(repo, delete_after_days: 30)
+      assert repo.get(WorkRequest, request.id) == nil
+      assert repo.get(WorkPackage, package.id) == nil
+      assert :ok = WorktreeCleanupQueue.enqueue_for_deletion(repo, [package], codex_home: codex_home)
+      assert :ok = WorktreeCleanupQueue.reconcile(repo, codex_home: codex_home)
+      assert repo.all(Entry) == [obligation]
+      assert File.ls!(package.worktree_path) == before
+
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.prepare(repo, "missing", %{}, [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.cleanup(repo, "missing", [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.validate_cleanup(repo, "missing", [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.cleanup_obligation(package, [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.cleanup_obligation(repo, obligation, [])
+    after
+      if previous, do: System.put_env("SYMPP_OFFLINE_SANDBOX", previous), else: System.delete_env("SYMPP_OFFLINE_SANDBOX")
+    end
   end
 
   defp prepared_linked_package!(repo, repo_root, codex_home, request_id, branch) do

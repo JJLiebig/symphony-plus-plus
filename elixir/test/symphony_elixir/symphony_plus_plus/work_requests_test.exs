@@ -19,6 +19,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution
@@ -498,16 +499,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert still_archived.archived_at == archived.archived_at
   end
 
-  test "retention archives completed work requests after fourteen days and preserves history", %{repo: repo} do
+  test "retention archives at exactly seventy-two hours and preserves unfinished goals and history", %{repo: repo} do
     now = utc_usec(~U[2026-05-23 12:00:00Z])
-    old_completed_at = utc_usec(~U[2026-05-09 12:00:00Z])
-    recent_completed_at = utc_usec(~U[2026-05-20 12:00:00Z])
+    old_completed_at = utc_usec(~U[2026-05-20 12:00:00Z])
+    recent_completed_at = DateTime.add(old_completed_at, 1, :microsecond)
 
     old_request = completed_delivered_request!(repo, "WR-RETENTION-OLD", old_completed_at)
     recent_request = completed_delivered_request!(repo, "WR-RETENTION-RECENT", recent_completed_at)
+    assert {:ok, unfinished} = Repository.create(repo, attrs(id: "WR-RETENTION-UNFINISHED"))
 
     assert {:ok, _decision} =
              Repository.record_decision(repo, old_request.id, decision_attrs(id: "WRD-RETENTION-OLD"))
+
+    assert {:ok, before_boundary} = Service.retention_pass(repo, now: DateTime.add(now, -1, :microsecond))
+    assert before_boundary.archived_ids == []
 
     assert {:ok, summary} = Service.retention_pass(repo, now: now)
     assert summary.archived_ids == [old_request.id]
@@ -520,20 +525,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert {:ok, [_slice]} = Repository.list_work_packages(repo, old_request.id)
     assert {:ok, [_decision]} = Repository.list_decisions(repo, old_request.id)
 
-    assert {:ok, [^recent_request]} = Repository.list(repo)
+    assert {:ok, ^unfinished} = Repository.get(repo, unfinished.id)
+    assert {:ok, [^recent_request, ^unfinished]} = Repository.list(repo)
     assert {:ok, all_requests} = Repository.list(repo, %{include_archived: true})
-    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id]
+    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id, unfinished.id]
 
     assert {:ok, all_requests} = Repository.list(repo, %{"include_archived" => "true"})
-    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id]
+    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id, unfinished.id]
 
     assert {:ok, all_requests} = Repository.list(repo, include_archived: true)
-    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id]
+    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id, unfinished.id]
   end
 
   test "retention emits no writes when no WorkRequest is eligible", %{repo: repo} do
     now = utc_usec(~U[2026-05-23 12:00:00Z])
-    recent_completed_at = DateTime.add(now, -24 * 60 * 60, :second)
+    recent_completed_at = now |> DateTime.add(-72 * 60 * 60, :second) |> DateTime.add(1, :microsecond)
 
     assert {:ok, _draft} = Repository.create(repo, attrs(id: "WR-RETENTION-INELIGIBLE-DRAFT"))
     completed_delivered_request!(repo, "WR-RETENTION-INELIGIBLE-RECENT", recent_completed_at)
@@ -545,16 +551,109 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert Enum.filter(queries, &Regex.match?(~r/^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i, &1)) == []
   end
 
+  test "never-started retention uses the exact age boundary and a fresh restore window", %{repo: repo} do
+    now = DateTime.utc_now(:microsecond)
+    assert {:ok, request} = Repository.create(repo, attrs(id: "WR-NEVER-STARTED", repo: "example-org/retention"))
+    old = repo.update!(Ecto.Changeset.change(request, inserted_at: DateTime.add(now, -30, :day)))
+    assert {:ok, _edited} = Repository.update(repo, old.id, %{title: "Recent edit does not reset retention"})
+
+    assert {:ok, %{archived_ids: []}} = Service.retention_pass(repo, now: DateTime.add(now, -1, :microsecond))
+    assert {:ok, %{archived_ids: [id]}} = Service.retention_pass(repo, now: now)
+    assert id == request.id
+    assert {:ok, archived} = Repository.get(repo, id)
+    assert archived.archive_reason == "never_started"
+    assert archived.completed_at == nil
+    assert archived.status == request.status
+    assert archived.archived_at == now
+    assert {:ok, ^archived} = Service.refresh_completion(repo, id)
+    assert {:ok, []} = Repository.list(repo)
+
+    assert {:ok, restored} = Service.restore(repo, id)
+    assert restored.completed_at == nil
+    assert restored.archived_at == nil
+    assert restored.inserted_at == old.inserted_at
+    assert %DateTime{} = restored.never_started_restored_at
+    next_boundary = DateTime.add(restored.never_started_restored_at, 30, :day)
+    assert {:ok, %{archived_ids: []}} = Service.retention_pass(repo, now: DateTime.add(next_boundary, -1, :microsecond))
+    assert {:ok, %{archived_ids: [^id]}} = Service.retention_pass(repo, now: next_boundary)
+  end
+
+  test "never-started retention preserves dormant execution history and includes unclaimed plans", %{repo: repo} do
+    now = DateTime.utc_now(:microsecond)
+
+    requests =
+      Map.new([:dispatched, :legacy, :delivered, :grant, :run, :lease, :architect_claimed, :architect_run, :architect_unclaimed, :planned], fn evidence ->
+        assert {:ok, request} = Repository.create(repo, attrs(id: "WR-HISTORY-#{evidence}", repo: "example-org/retention"))
+        request = repo.update!(Ecto.Changeset.change(request, inserted_at: DateTime.add(now, -90, :day)))
+
+        package =
+          if evidence in [:architect_claimed, :architect_run, :architect_unclaimed] do
+            assert {:ok, anchor} =
+                     WorkPackageRepository.create(repo, %{
+                       id: ArchitectHandoff.anchor_id_for_work_request(request),
+                       kind: "delegation",
+                       status: "planning",
+                       title: "Plan retained goal",
+                       repo: request.repo,
+                       base_branch: request.base_branch,
+                       acceptance_criteria: ["Plan the goal."]
+                     })
+
+            anchor
+          else
+            assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WP-HISTORY-#{evidence}"))
+            package
+          end
+
+        case evidence do
+          :dispatched ->
+            repo.update!(Ecto.Changeset.change(package, dispatched_at: now))
+
+          :legacy ->
+            repo.update!(Ecto.Changeset.change(package, status: "ready_for_worker"))
+
+          :delivered ->
+            insert_delivery!(repo, package, %{outcome: "abandoned", abandoned_rationale: "Historical attempt was abandoned."})
+
+          kind when kind in [:grant, :architect_claimed] ->
+            role = if kind == :architect_claimed, do: "architect", else: "worker"
+            grant = insert_claimed_activity_grant!(repo, package, role, "historical-worker")
+            repo.update!(Ecto.Changeset.change(grant, revoked_at: now))
+
+          kind when kind in [:run, :architect_run] ->
+            assert {:ok, run} = AgentRunRepository.start_run(repo, %{work_package_id: package.id, status: "running", attempt: 1})
+            assert {:ok, _finished} = AgentRunRepository.mark_completed(repo, run.id, "Historical worker finished.")
+
+          :lease ->
+            assert {:ok, lease} = ClaimLeaseService.claim(repo, package.id, activity_actor("historical-lease"), stale_after_ms: 60_000)
+            assert {:ok, _released} = ClaimLeaseService.release(repo, lease.id, reason: "Historical worker finished.")
+
+          _unstarted ->
+            :ok
+        end
+
+        {evidence, request}
+      end)
+
+    assert {:ok, summary} = Service.retention_pass(repo, now: now, delete_after_days: 1)
+    assert MapSet.new(summary.archived_ids) == MapSet.new([requests.architect_unclaimed.id, requests.planned.id])
+
+    for {evidence, request} <- Map.drop(requests, [:architect_unclaimed, :planned]) do
+      assert {:ok, unchanged} = Repository.get(repo, request.id)
+      assert unchanged.archived_at == nil, "#{evidence} must remain visible"
+    end
+  end
+
   test "retention accepts a custom archive day cutoff", %{repo: repo} do
     now = utc_usec(~U[2026-05-23 12:00:00Z])
     completed_at = utc_usec(~U[2026-05-20 12:00:00Z])
     request = completed_delivered_request!(repo, "WR-RETENTION-CUSTOM-CUTOFF", completed_at)
 
-    assert {:ok, default_summary} = Service.retention_pass(repo, now: now)
-    assert default_summary.archived_ids == []
+    assert {:ok, custom_summary} = Service.retention_pass(repo, now: now, archive_after_days: 4)
+    assert custom_summary.archived_ids == []
 
-    assert {:ok, custom_summary} = Service.retention_pass(repo, now: now, archive_after_days: 2)
-    assert custom_summary.archived_ids == [request.id]
+    assert {:ok, default_summary} = Service.retention_pass(repo, now: now)
+    assert default_summary.archived_ids == [request.id]
     assert {:ok, auto_archived} = Repository.get(repo, request.id)
     assert auto_archived.archive_reason == "age"
 
@@ -661,7 +760,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     release_request =
       completed_delivered_request!(repo, "WR-RETENTION-CAP-RELEASE", release_completed_at, base_branch: "release/1.0")
 
-    assert {:ok, summary} = Service.retention_pass(repo, now: now)
+    assert {:ok, summary} = Service.retention_pass(repo, now: now, archive_after_days: 14)
     assert summary.archived_ids == ["WR-RETENTION-CAP-1", "WR-RETENTION-CAP-2"]
     assert summary.archived_count == 2
     assert {:ok, first_overflow} = Repository.get(repo, "WR-RETENTION-CAP-1")
@@ -670,7 +769,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert {:ok, visible_requests} = Repository.list(repo)
     expected_requests = Enum.drop(completed_requests, 2) ++ [release_request]
     assert Enum.map(visible_requests, & &1.id) == Enum.map(expected_requests, & &1.id)
-    assert {:ok, second_summary} = Service.retention_pass(repo, now: now)
+    assert {:ok, second_summary} = Service.retention_pass(repo, now: now, archive_after_days: 14)
     assert second_summary.archived_ids == []
     assert {:ok, first_overflow_after_second_pass} = Repository.get(repo, "WR-RETENTION-CAP-1")
     assert first_overflow_after_second_pass.archived_at == first_overflow.archived_at

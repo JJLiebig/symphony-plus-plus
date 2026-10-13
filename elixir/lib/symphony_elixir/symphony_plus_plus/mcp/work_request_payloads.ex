@@ -9,6 +9,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
@@ -152,12 +153,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     with {:ok, questions} <- WorkRequestService.list_questions(repo, work_request.id),
          {:ok, decisions} <- WorkRequestService.list_decisions(repo, work_request.id),
          {:ok, work_packages} <- WorkRequestService.list_work_packages(repo, work_request.id),
-         {:ok, slice_visibility} <- DeliveryBoard.work_package_visibility(repo, work_request.id, work_packages) do
+         {:ok, slice_visibility} <- DeliveryBoard.work_package_visibility(repo, work_request.id, work_packages),
+         {:ok, operator_reports} <- OperatorReport.load_many(repo, [work_request]) do
       visible_work_packages = Map.fetch!(slice_visibility, :visible_work_packages)
 
       {:ok,
        %{
-         "work_request" => work_request(work_request),
+         "work_request" => Map.put(work_request(work_request), "operator_report", Map.fetch!(operator_reports, work_request.id)),
          "clarification_questions" => Enum.map(questions, &clarification_question/1),
          "decision_log_entries" => Enum.map(decisions, &decision_log_entry/1),
          "work_packages" => Enum.map(visible_work_packages, &work_package/1),

@@ -10,6 +10,8 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
     WorkRequestCards
   }
 
+  alias SymphonyElixir.SymphonyPlusPlus.DeploymentObservation
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
@@ -29,9 +31,11 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec operator_dashboard_payload(module()) :: {:ok, map()} | {:error, term()}
   def operator_dashboard_payload(repo) do
+    operator_config = OperatorConfig.load()
+
     with {:ok, context} <- operator_dashboard_context(repo),
          {:ok, work_requests} <- WorkRequestRepository.list(repo) do
-      priority_dashboard_payload(repo, context, work_requests)
+      priority_dashboard_payload(repo, Map.put(context, :operator_config, operator_config), work_requests)
     end
   end
 
@@ -48,7 +52,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
        context
        |> base_payload()
        |> Map.merge(%{
-         work_requests: %{work_requests: cards, total_count: length(cards)},
+         work_requests: %{work_requests: Enum.map(cards, &put_area_path(&1, context)), total_count: length(cards)},
          deferred: %{dashboard_sections: true}
        })}
     end
@@ -56,10 +60,12 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec operator_dashboard_deferred_payload(module()) :: {:ok, map()} | {:error, term()}
   def operator_dashboard_deferred_payload(repo) do
+    operator_config = OperatorConfig.load()
+
     with {:ok, work_requests} <- WorkRequestRepository.list(repo),
          {:ok, context} <- operator_execution_context(repo, work_requests),
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context) do
-      execution_dashboard_payload(repo, context, work_requests, projection_context)
+      execution_dashboard_payload(repo, Map.put(context, :operator_config, operator_config), work_requests, projection_context)
     end
   end
 
@@ -81,7 +87,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
          generated_at: DateTime.utc_now(:microsecond) |> DateTime.to_iso8601(),
          active_blocking_edges: execution_signals.active_blocking_edges,
          work_packages: execution_signals.work_packages,
-         work_request_details: work_request_details,
+         work_request_details: operator_board_labels(work_request_details, context, projection_context),
          guidance_requests: guidance_requests,
          deferred: %{dashboard_sections: false}
        }}
@@ -110,20 +116,43 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec operator_dashboard_hydrated_payload(module()) :: {:ok, map()} | {:error, term()}
   def operator_dashboard_hydrated_payload(repo) do
-    case repo.transaction(fn -> hydrated_dashboard_payload(repo) end) do
+    operator_config = OperatorConfig.load()
+
+    case repo.transaction(fn -> hydrated_dashboard_payload(repo, operator_config) end) do
+      {:ok, {:ok, payload}} -> {:ok, DeploymentObservation.enrich(payload, operator_config)}
       {:ok, result} -> result
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp hydrated_dashboard_payload(repo) do
+  defp hydrated_dashboard_payload(repo, operator_config) do
     with {:ok, work_requests} <- WorkRequestRepository.list(repo),
          {:ok, context} <- operator_execution_context(repo, work_requests),
+         context = Map.put(context, :operator_config, operator_config),
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context),
          {:ok, base} <- priority_dashboard_payload(repo, context, work_requests, projection_context),
          {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
       {:ok, Map.merge(base, active)}
     end
+  end
+
+  defp put_area_path(work_request, context) do
+    Map.put(work_request, :area_path, OperatorConfig.area_path(context.operator_config, work_request))
+  end
+
+  defp operator_board_labels(details, context, projection_context) do
+    Enum.map(details, fn detail ->
+      work_packages =
+        Enum.map(detail.work_packages, &put_session_location(&1, context.operator_config, projection_context))
+
+      %{detail | work_request: put_area_path(detail.work_request, context), work_packages: work_packages}
+    end)
+  end
+
+  defp put_session_location(work_package, operator_config, projection_context) do
+    session = get_in(projection_context, [:work_package_contexts, work_package.id, :current_worker_session])
+    location = OperatorConfig.session_location(operator_config, session)
+    if location, do: Map.put(work_package, :session_location, location), else: work_package
   end
 
   defp operator_projection_context(repo, work_requests, context) do
@@ -565,6 +594,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   def operator_settings_attrs(params) do
     %{}
     |> put_settings_param(params, "work_request_archive_after_days")
+    |> put_settings_param(params, "work_request_never_started_archive_after_days")
     |> put_settings_param(params, "solo_session_delete_after_days")
     |> put_settings_param(params, "open_dashboard_on_boot")
     |> put_settings_param(params, "capture_failed_mcp_calls")
@@ -590,6 +620,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   def operator_settings_payload(%OperatorSettings{} = settings) do
     %{
       work_request_archive_after_days: settings.work_request_archive_after_days,
+      work_request_never_started_archive_after_days: settings.work_request_never_started_archive_after_days,
       solo_session_delete_after_days: settings.solo_session_delete_after_days,
       open_dashboard_on_boot: settings.open_dashboard_on_boot,
       capture_failed_mcp_calls: settings.capture_failed_mcp_calls,

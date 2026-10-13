@@ -1036,11 +1036,13 @@ function New-SymppPublicationControls([int]$BackendPort, [int]$DashboardPort, [b
     backend_url = if ([string]::IsNullOrWhiteSpace($BackendUrl)) { $null } else { $BackendUrl.TrimEnd("/") }
     dashboard_origin = if ([string]::IsNullOrWhiteSpace($DashboardOrigin)) { $null } else { $DashboardOrigin.TrimEnd("/") }
     database = Resolve-SymppDatabasePath $env:SYMPP_DATABASE
+    offline_sandbox = $env:SYMPP_OFFLINE_SANDBOX -eq "1"
   }
 }
 
 function Test-SymppPublicationControlsMatch($Recorded, $Expected) {
   if ($null -eq $Recorded -or $null -eq $Expected) { return $false }
+  if ([bool]$Recorded.offline_sandbox -ne [bool]$Expected.offline_sandbox) { return $false }
   foreach ($name in @("backend_port", "dashboard_port", "backend_port_explicit", "dashboard_port_explicit", "backend_url", "dashboard_origin")) {
     if ([string]$Recorded.$name -ne [string]$Expected.$name) { return $false }
   }

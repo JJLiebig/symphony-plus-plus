@@ -1308,7 +1308,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert %{rows: [["ok"]]} = Repo.query!("PRAGMA quick_check")
       assert {:ok, _fixture_payload} = LocalOperatorDashboard.operator_dashboard_hydrated_payload(Repo)
       assert {:ok, fixture_deferred_payload} = LocalOperatorDashboard.operator_dashboard_deferred_payload(Repo)
-      assert byte_size(Jason.encode!(fixture_deferred_payload)) <= 203_000
+      # Hosted fixture measured 215,413 bytes after additive package observations; batching is unchanged.
+      assert byte_size(Jason.encode!(fixture_deferred_payload)) <= 217_000
       refute Map.has_key?(fixture_deferred_payload, :board)
 
       expected_signal_keys =
@@ -2303,6 +2304,96 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
+  test "hydrated board exposes dispatch and stable forward PR observations", %{repo: repo} do
+    with_local_operator_endpoint(fn ->
+      assert {:ok, request} =
+               WorkRequestRepository.create(repo, %{
+                 title: "Widget delivery",
+                 repo: "example-org/widget-service",
+                 base_branch: "beta",
+                 work_type: "feature",
+                 human_description: "Deliver widget support.",
+                 desired_dispatch_shape: "single_package",
+                 status: "ready_for_slicing"
+               })
+
+      assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "WP-WIDGET-BOARD", repo: "example-org/widget-service", base_branch: "beta"))
+      package |> Ecto.Changeset.change(dispatched_at: ~U[2026-10-01 09:00:00.000000Z]) |> repo.update!()
+
+      fetch = fn ->
+        payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+        detail = Enum.find(payload["work_request_details"], &(&1["work_request"]["id"] == request.id))
+        Enum.find(detail["work_packages"], &(&1["id"] == package.id))
+      end
+
+      assert %{"stage" => "build", "entered_at" => "2026-10-01T09:00:00.000000Z"} = fetch.()["board_state"]
+
+      snapshot = %{
+        "type" => "pr",
+        "source_tool" => "attach_pr",
+        "repository" => "example-org/widget-service",
+        "number" => 42,
+        "url" => "https://github.com/example-org/widget-service/pull/42",
+        "head_sha" => "head-a",
+        "created_at" => "2026-10-01T09:05:00Z",
+        "check_summary" => %{"status" => "pending"}
+      }
+
+      append = fn payload, offset ->
+        attrs = %{work_package_id: package.id, summary: "Observed widget PR", status: "pr_synced", payload: payload, created_at: DateTime.add(~U[2026-10-01 09:10:00Z], offset, :second)}
+        assert {:ok, event} = PlanningRepository.append_progress_event(repo, attrs)
+        event
+      end
+
+      first = append.(snapshot, 0)
+      assert %{"stage" => "checks", "entered_at" => nil} = fetch.()["board_state"]
+      assert fetch.()["pr_signal"]["checks"]["changed_at"] == first.payload["checks_changed_at"]
+      assert fetch.()["pr_signal"]["created_at"] == "2026-10-01T09:05:00Z"
+
+      assert {:ok, _backfill} =
+               PlanningRepository.append_progress_event(repo, %{
+                 work_package_id: package.id,
+                 summary: "Earlier widget attachment",
+                 status: "pr_attached",
+                 payload: Map.delete(snapshot, "check_summary"),
+                 created_at: ~U[2025-10-01 09:00:00Z]
+               })
+
+      repeated = append.(Map.put(snapshot, "source_tool", "sync_pr"), 2)
+      assert repeated.payload["checks_changed_at"] == first.payload["checks_changed_at"]
+      assert fetch.()["board_state"]["entered_at"] == nil
+
+      next_head = append.(snapshot |> Map.put("source_tool", "sync_pr") |> Map.put("head_sha", "head-b"), 3)
+      assert next_head.payload["head_changed_at"] != first.payload["head_changed_at"]
+      assert fetch.()["pr_signal"]["head_sha"] == "head-b"
+      assert fetch.()["pr_signal"]["checks"]["changed_at"] == next_head.payload["checks_changed_at"]
+
+      append.(%{"type" => "branch", "source_tool" => "attach_branch", "branch" => "feat/widget", "head_sha" => "head-a"}, 4)
+      returning = append.(Map.put(snapshot, "source_tool", "sync_pr"), 5)
+      assert returning.payload["head_changed_at"] != first.payload["head_changed_at"]
+      assert returning.payload["head_changed_at"] != next_head.payload["head_changed_at"]
+      assert returning.payload["checks_changed_at"] != next_head.payload["checks_changed_at"]
+      assert fetch.()["pr_signal"]["head_changed_at"] == returning.payload["head_changed_at"]
+
+      passing_snapshot = snapshot |> Map.put("source_tool", "sync_pr") |> Map.put("check_summary", %{"status" => "passing"})
+      passing = append.(passing_snapshot, 7)
+      append.(snapshot, 6)
+      stable = append.(passing_snapshot, 8)
+      assert stable.payload["checks_changed_at"] == passing.payload["checks_changed_at"]
+      assert stable.payload["head_changed_at"] == returning.payload["head_changed_at"]
+      assert fetch.()["pr_signal"]["checks"]["changed_at"] == passing.payload["checks_changed_at"]
+
+      assert {:ok, current_request} = WorkRequestRepository.get(repo, request.id)
+      assert current_request.completed_at == nil
+    end)
+  end
+
+  test "operator notification stream rejects cross-origin requests and unsupported methods" do
+    conn = local_operator_conn() |> put_req_header("origin", "https://example.invalid")
+    assert json_response(get(conn, "/api/v1/sympp/operator/events"), 401)["error"]["code"] == "unauthorized"
+    assert json_response(post(local_operator_conn(), "/api/v1/sympp/operator/events", %{}), 405)["error"]["code"] == "method_not_allowed"
+  end
+
   test "local operator config returns runtime paths" do
     with_local_operator_endpoint(fn ->
       payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/config"), 200)
@@ -3000,17 +3091,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
   test "local operator can tune archive cutoff and restore archived WorkRequests", %{repo: repo} do
     with_local_operator_endpoint(fn ->
-      completed_at = DateTime.add(DateTime.utc_now(:microsecond), -2 * 24 * 60 * 60, :second)
+      completed_at = DateTime.add(DateTime.utc_now(:microsecond), -4 * 24 * 60 * 60, :second)
       request = create_completed_delivered_work_request!(repo, "WR-LOCAL-ARCHIVE-SETTINGS", completed_at)
 
+      run_operator_retention(repo)
       dashboard_payload = local_operator_dashboard_payload()
 
-      assert dashboard_payload["settings"]["work_request_archive_after_days"] == 14
+      assert dashboard_payload["settings"]["work_request_archive_after_days"] == 3
       assert dashboard_payload["settings"]["solo_session_delete_after_days"] == 30
       assert dashboard_payload["settings"]["open_dashboard_on_boot"] == true
       assert dashboard_payload["settings"]["capture_failed_mcp_calls"] == false
-      assert Enum.any?(dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
-      assert dashboard_payload["archived_work_requests"]["work_requests"] == []
+      refute Enum.any?(dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
+      assert [%{"id" => "WR-LOCAL-ARCHIVE-SETTINGS"}] = dashboard_payload["archived_work_requests"]["work_requests"]
+
+      local_operator_conn()
+      |> post("/api/v1/sympp/operator/settings", %{"work_request_archive_after_days" => 7})
+      |> json_response(200)
+
+      relaxed_dashboard_payload = local_operator_dashboard_payload()
+      assert Enum.any?(relaxed_dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
+      assert relaxed_dashboard_payload["archived_work_requests"]["work_requests"] == []
 
       archive_payload =
         local_operator_conn()
@@ -3045,6 +3145,50 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       assert Enum.any?(restored_dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
       refute Enum.any?(restored_dashboard_payload["archived_work_requests"]["work_requests"], &(&1["id"] == request.id))
+    end)
+  end
+
+  test "local operator configures never-started archives and restores without completing", %{repo: repo} do
+    with_local_operator_endpoint(fn ->
+      request = create_work_request!(repo, id: "WR-UNSTARTED-OPERATOR", repo: "example-org/retention")
+      repo.update!(Ecto.Changeset.change(request, inserted_at: DateTime.add(DateTime.utc_now(:microsecond), -20, :day)))
+
+      run_operator_retention(repo)
+      initial = local_operator_dashboard_payload()
+      assert initial["settings"]["work_request_never_started_archive_after_days"] == 30
+      assert Enum.any?(initial["work_requests"]["work_requests"], &(&1["id"] == request.id))
+
+      configured =
+        local_operator_conn()
+        |> post("/api/v1/sympp/operator/settings", %{"work_request_never_started_archive_after_days" => 10})
+        |> json_response(200)
+
+      assert configured["settings"]["work_request_never_started_archive_after_days"] == 10
+      archived = local_operator_dashboard_payload()
+      refute Enum.any?(archived["work_requests"]["work_requests"], &(&1["id"] == request.id))
+
+      assert [%{"id" => "WR-UNSTARTED-OPERATOR", "archive_reason" => "never_started", "completed_at" => nil}] =
+               archived["archived_work_requests"]["work_requests"]
+
+      assert get_in(hd(archived["archived_work_requests"]["work_requests"]), ["operational_state", "key"]) == "archived"
+
+      detail =
+        local_operator_conn()
+        |> get("/api/v1/sympp/operator/work-requests/#{request.id}")
+        |> json_response(200)
+
+      assert get_in(detail, ["work_request", "archive_reason"]) == "never_started"
+      assert get_in(detail, ["work_request", "completed_at"]) == nil
+
+      restored =
+        local_operator_conn()
+        |> post("/api/v1/sympp/operator/work-requests/#{request.id}/restore", %{})
+        |> json_response(200)
+
+      assert get_in(restored, ["work_request", "completed_at"]) == nil
+      assert get_in(restored, ["work_request", "archived_at"]) == nil
+      assert {:ok, %{archived_ids: []}} = WorkRequestService.retention_pass(repo, never_started_archive_after_days: 10)
+      assert Enum.any?(local_operator_dashboard_payload()["work_requests"]["work_requests"], &(&1["id"] == request.id))
     end)
   end
 

@@ -73,24 +73,61 @@ See [Runtime](runtime.md) for installed artifact ownership and repair.
 
 ## Isolated Source Beta
 
-Source runtime validation is separate from installed beta use. From the stable
-checkout, the existing helper creates or updates its adjacent beta worktree:
+Source runtime validation is separate from installed beta use. Use the script
+from the beta checkout containing this change. Explicit checkout paths support
+an already registered beta worktree without changing the main checkout:
 
 ```powershell
-pwsh -NoProfile -File .\scripts\sympp-beta.ps1 -Action Setup
-pwsh -NoProfile -File .\scripts\sympp-beta.ps1 -Action Codex
+$betaScript = 'C:\Code\.worktrees\symphony-plus-plus\beta\scripts\sympp-beta.ps1'
+$betaPaths = @{
+  RepoRoot = 'C:\Code\symphony-plus-plus'
+  BetaWorktree = 'C:\Code\.worktrees\symphony-plus-plus\beta'
+}
+& $betaScript -Action Setup @betaPaths
+& $betaScript -Action Snapshot @betaPaths
+& $betaScript -Action Start @betaPaths
 ```
 
 Use `Start`, `Restart`, `Status`, `Stop` or `Validate` for that source
 runtime. Control actions do not update Git. `Setup` synchronizes beta and
-refuses conflicting tracked changes/local commits. Resume an existing thread
-with `-Action Codex -ResumeSessionId <thread-id>`.
+refuses conflicting tracked changes/local commits. Open
+`http://127.0.0.1:20001/sympp/board` after starting.
+
+`Snapshot` requires Python 3 and the source runtime's Elixir toolchain. It reads
+the normal live ledger through SQLite's online backup API while the live factory
+keeps running. `-SourceDatabase <path>` selects another source. The staged copy
+is marked offline, migrated without starting any services, and published only
+after migration succeeds. Stop beta before refreshing it, then use
+`-Action Snapshot -ReplaceSnapshot` to explicitly replace its existing ledger.
+Missing/empty sources, source aliases, active beta runtimes and destinations
+outside the beta home's `ledger` directory are refused. Replacement recovers
+leftover SQLite sidecars only for a marked sandbox, and refuses one still in use.
+
+The snapshot retains goals and recorded PR/review evidence. Complete, archive,
+restore, delete and retention change only the copy. Worktree preparation and
+cleanup, agent handoffs/dispatch, MCP, provider synchronization, repository and
+review probes, Herdr updates and automatic browser opening are disabled. Source
+builds and runtime files remain in the beta checkout/home; temporary files and
+operator configuration are isolated too. `Codex` is unavailable on an offline
+copy because it has no agent access.
+
+The durable marker refuses startup without offline mode in marker-aware
+versions, including `-LiveLedger`. Keep the snapshot away from older runtimes,
+which cannot recognize this protection. It still contains the source ledger's
+private data and credentials; keep it local and do not upload it.
+
+Conversion uses the same versioned migrations as ordinary startup; no separate
+data rewrite is needed. A future live cutover must use the original live ledger
+after stopping its old runtime, with a backup and verified installed runtime.
+Never promote the exercised sandbox back to live. Both the snapshot change and
+the archive-setting migration must be on beta before copying if existing stored
+14-day settings should convert during this migration pass.
 
 The helper isolates ports, home, build output and sandbox database. It keeps
-the normal Codex home for source sessions. `Package` uses a separate developer
+the normal Codex home for explicitly selected live source sessions. `Package` uses a separate developer
 Codex home; it is not marketplace-installed qualification. Do not use
-`-LiveLedger` for destructive validation. Inspect script help before selecting
-a copied ledger or changing the lane.
+`-LiveLedger` for destructive validation. Live source sessions can use
+`-Action Codex -LiveLedger`, optionally with `-ResumeSessionId <thread-id>`.
 
 Only explicit developer validation uses `SYMPP_REPO_ROOT`. Installed sessions
 must resolve from their own marketplace/cache. Never refresh the normal cache

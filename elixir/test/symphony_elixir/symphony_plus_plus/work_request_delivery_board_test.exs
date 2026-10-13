@@ -17,6 +17,31 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
+  test "board stages use delivery and native evidence without worker reporting" do
+    dispatched_at = ~U[2026-10-01 09:00:00Z]
+    package = %WorkPackage{status: "ready_for_worker", dispatched_at: dispatched_at, updated_at: DateTime.add(dispatched_at, 600, :second)}
+    summary = %{merge_required: true, pr_signal: %{status: "none"}}
+
+    assert %{stage: "build", entered_at: "2026-10-01T09:00:00Z", source: "dispatched", track: "pr", delivered: false} =
+             Signals.board_state(package, summary, nil)
+
+    assert %{stage: "merge", entered_at: nil} = Signals.board_state(%{package | status: "ready_for_merge"}, summary, nil)
+    assert %{stage: "build", track: "no_pr"} = Signals.board_state(package, %{summary | merge_required: false}, nil)
+
+    reviewing = Map.put(summary, :review_signal, %{status: "in_progress", round_started_at: "2026-10-01T09:05:00Z"})
+    reviewing_state = Signals.board_state(package, reviewing, nil)
+    assert %{stage: "review", entered_at: "2026-10-01T09:05:00Z", source: "provider"} = reviewing_state
+
+    done = %WorkPackageDelivery{outcome: "completed_no_pr", recorded_at: DateTime.add(dispatched_at, 600, :second)}
+    done_state = Signals.board_state(package, %{summary | merge_required: false}, done)
+    assert %{stage: "done", delivered: true, outcome: "completed_no_pr"} = done_state
+
+    for outcome <- ["superseded", "abandoned"] do
+      state = Signals.board_state(package, summary, %{done | outcome: outcome})
+      assert %{stage: nil, delivered: false, outcome: ^outcome} = state
+    end
+  end
+
   defmodule MissingProductTreeRepo do
     def all(_query), do: raise(%Exqlite.Error{message: "no such table: sympp_product_tree_nodes"})
   end
@@ -834,7 +859,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryBoardTest do
     assert %{status: "open", number: 42, current_head_sha: "0123456", head_matches: true} =
              packages[join.id].pr_signal
 
-    assert packages[join.id].pr_signal.checks == %{status: "failing", current: 1, total: 3}
+    assert %{status: "failing", current: 1, total: 3, changed_at: changed_at} = packages[join.id].pr_signal.checks
+    assert {:ok, _, _} = DateTime.from_iso8601(changed_at)
 
     assert %{type: "review-suite", status: "pending", current: 1, total: 2, step: "analysis"} =
              packages[join.id].review_signal

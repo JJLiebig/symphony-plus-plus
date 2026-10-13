@@ -16,6 +16,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent do
   @primary_key {:id, :string, autogenerate: false}
   @foreign_key_type :string
 
+  @spec payload_string_limit() :: pos_integer()
+  def payload_string_limit, do: @payload_string_limit
+
   @type t :: %__MODULE__{
           id: String.t() | nil,
           work_package_id: String.t() | nil,
