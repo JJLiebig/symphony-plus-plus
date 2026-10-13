@@ -2,6 +2,7 @@
 .ask-pro/
 generated/
 scratch/
+.e2e/
 
 # Local environment and secret files.
 .env

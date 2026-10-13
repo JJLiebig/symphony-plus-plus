@@ -27,7 +27,10 @@ This directory contains the Elixir agent orchestration service that polls Linear
 
 ## Tests and Validation
 
-Run targeted tests while iterating, then run full gates before handoff.
+Follow [testing guidance](../docs/testing.md). Native acceptance runs against
+candidate source in hosted CI. Preserve existing gates until their owning
+journeys replace them. On restricted workstations, do not execute the validation
+commands below; use GitHub-hosted checks and retain their exact revisions.
 
 ```bash
 make all
