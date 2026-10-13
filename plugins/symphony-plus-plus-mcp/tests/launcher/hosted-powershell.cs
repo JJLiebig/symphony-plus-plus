@@ -28,7 +28,10 @@ class HostedPowerShell {
       child.BeginOutputReadLine(); child.BeginErrorReadLine();
       // The fixture backend inherits runner handles. Wait for preparation exit,
       // not EOF on streams still held by that long-lived backend.
-      child.WaitForExit(Int32.MaxValue); return child.ExitCode;
+      child.WaitForExit(Int32.MaxValue);
+      // Failed preparation has no surviving backend; retain its complete error.
+      if (child.ExitCode != 0) child.WaitForExit();
+      return child.ExitCode;
     }
   }
 }
