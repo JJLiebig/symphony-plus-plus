@@ -107,3 +107,55 @@ test('questions, human escalation and review waits preserve explicit package blo
   expect(report.human_escalation.question).toBe('Should the optional detail ship?');
   expect(report.human_escalation.resolved_at).toBeTruthy();
 });
+
+test('human choice submission rejects unknown or empty redirects and preserves the selected answer', async ({ factory }) => {
+  const architect = await factory.client();
+  const id = await architect.request('Structured human choices', 'human_info_needed');
+  const prompt = {
+    tl_dr: 'Choose the bounded path.', details: 'The operator decides the product outcome.',
+    options: [{ id: 'continue', label: 'Continue', answer: 'Continue with the bounded path.' }],
+  };
+  const ask = async (decision_prompt?: object) => (await architect.call('ask_question', {
+    work_request_id: id, category: 'scope', question: 'Which path should ship?', why_needed: 'Record the human choice.',
+    ...(decision_prompt ? { decision_prompt } : {}),
+  })).clarification_question.id;
+  const question = await ask(prompt);
+  const path = `/api/v1/sympp/operator/work-requests/${id}/questions/${question}/answer`;
+  for (const invalid of [
+    { answer_choice: 'unknown' }, { answer_choice: '__custom_redirect__' }, { answer: 'Stale autofilled answer.' },
+  ]) {
+    const rejected = await architect.operator(path, invalid);
+    expect(rejected.status).toBe(422);
+    const current = await architect.call('read_work_request', { work_request_id: id });
+    expect(current.clarification_questions[0].status).toBe('open');
+    expect(current.decision_log_entries).toEqual([]);
+  }
+  expect((await architect.operator(path, {
+    answer_choice: 'continue', answer_note: 'Keep the detail deferred.', answer: 'Stale autofilled answer.',
+  })).status).toBe(200);
+  const read = await architect.call('read_work_request', { work_request_id: id });
+  expect(read.clarification_questions[0].answer).toBe('Continue with the bounded path. Keep the detail deferred.');
+  expect(read.clarification_questions[0].answered_by).toBe('local-operator');
+
+  const cases = [
+    { prompt, input: { answer_choice: '__custom_redirect__', answer_note: 'Use a smaller path.' }, answer: 'Use a smaller path.' },
+    { prompt: { ...prompt, custom_redirect_label: 'Choose a different path' }, input: { answer_choice: '__custom_redirect__', answer_note: 'Use the scoped alternative.' }, answer: 'Use the scoped alternative.' },
+    { prompt: { ...prompt, options: [{ id: 'redirect', label: 'Internal redirect', answer: 'Use the structured redirect option.' }] }, input: { answer_choice: 'redirect' }, answer: 'Use the structured redirect option.' },
+    { prompt: undefined, input: { answer_choice: 'narrow', answer_note: 'Keep it scoped.' }, answer: 'Narrow the scope before continuing. Keep it scoped.' },
+  ];
+  for (const choice of cases) {
+    const q = await ask(choice.prompt);
+    const endpoint = `/api/v1/sympp/operator/work-requests/${id}/questions/${q}/answer`;
+    if (!choice.prompt) expect((await architect.operator(endpoint, { answer_choice: 'redirect' })).status).toBe(422);
+    expect((await architect.operator(endpoint, choice.input)).status).toBe(200);
+    const result = await architect.call('read_work_request', { work_request_id: id });
+    expect(result.clarification_questions.find((entry: any) => entry.id === q).answer).toBe(choice.answer);
+    expect(result.work_request.status).toBe('human_info_needed');
+  }
+  const closed = await ask();
+  await architect.call('close_question', { work_request_id: id, question_id: closed });
+  await architect.reject('answer_question', { work_request_id: id, question_id: closed, answer: 'Too late.' }, 'already_closed');
+  const final = await architect.call('read_work_request', { work_request_id: id });
+  expect(final.clarification_questions.find((entry: any) => entry.id === closed).answer).toBe(null);
+  expect(final.decision_log_entries).toEqual([]);
+});

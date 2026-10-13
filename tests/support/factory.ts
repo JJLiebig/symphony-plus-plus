@@ -70,6 +70,14 @@ export class Client {
     return response.error.data;
   }
 
+  async operator(path: string, args: object) {
+    const response = await fetch(new URL(path, this.endpoint), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(args), signal: AbortSignal.timeout(30_000),
+    });
+    return { status: response.status, body: await response.json() };
+  }
+
   async request(title: string, status = 'ready_for_slicing') {
     const created = await this.call('create_work_request', {
       repo: 'example/service', base_branch: 'beta', title,

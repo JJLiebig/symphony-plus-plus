@@ -36,10 +36,22 @@ test('a clarified request becomes a revised plan and ordinary worker assignment'
   const plan = await architect.call('read_task_plan', { work_package_id: wp });
   const task = await architect.call('update_task_plan', {
     work_package_id: wp, expected_version: plan.version,
-    nodes: [{ title: 'Implement agreed behavior', status: 'pending' }],
+    nodes: [{ title: 'Implement agreed behavior', status: 'pending' }, { title: 'Deferred detail', status: 'skipped' }],
   });
-  expect(task.plan_nodes).toHaveLength(1);
+  expect(task.plan_nodes).toHaveLength(2);
   expect((await architect.call('read_task_plan', { work_package_id: wp })).text).toContain('Implement agreed behavior');
+  const completed = await architect.call('update_task_plan', {
+    work_package_id: wp, expected_version: task.version,
+    nodes: [{ id: task.plan_nodes[0].id, status: 'done' }],
+  });
+  await architect.reject('update_task_plan', {
+    work_package_id: wp, expected_version: task.version,
+    nodes: [{ id: task.plan_nodes[0].id, status: 'pending' }],
+  }, 'stale_plan_version');
+  const reread = await architect.call('read_task_plan', { work_package_id: wp });
+  expect(reread.version).toBe(completed.version);
+  expect(reread.text).toContain('[x]');
+  expect(reread.text).toContain('Deferred detail');
 
   const dispatched = await architect.call('dispatch_work_package', { work_package_id: wp });
   expect(dispatched.work_package.id).toBe(wp);
