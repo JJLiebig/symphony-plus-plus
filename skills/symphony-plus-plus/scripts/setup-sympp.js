@@ -18,7 +18,7 @@ const begin = "# BEGIN Symphony++ Skills MCP";
 const end = "# END Symphony++ Skills MCP";
 
 function codexConfig(config, registration) {
-  const owned = new RegExp(`^${begin}\\r?\\n[\\s\\S]*?^${end}\\r?\\n?`, "m");
+  const owned = /^# BEGIN Symphony\+\+ Skills MCP\r?\n[\s\S]*?^# END Symphony\+\+ Skills MCP\r?\n?/m;
   const previous = config.match(owned);
   const remaining = config.replace(owned, "");
   if (/^\s*(?:\[\s*mcp_servers\s*\.\s*(?:symphony_plus_plus|"symphony_plus_plus"|'symphony_plus_plus')\s*(?:\]|\.)|mcp_servers\s*=)/m.test(remaining)) {
