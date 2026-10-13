@@ -30,6 +30,7 @@ documents do not remain in the active documentation tree.
 - Review trust boundaries: [Security](security.md)
 - Develop and validate changes: [Development](development.md)
 - Install, connect, upgrade or recover: [Runtime](runtime.md)
+- Publish a beta and move an existing factory: [Release and cutover](runbooks/beta-release-cutover.md)
 - Install portable Codex/Claude procedures: [Portable skills](portable-skills.md)
 - Repair delivery state: [Delivery recovery](runbooks/delivery-recovery.md)
 - Respond to a permission or secret incident:
