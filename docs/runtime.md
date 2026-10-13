@@ -1,6 +1,8 @@
 # Install And Run Symphony++
 
-The beta package is `0.2.0-beta.1`. These native connections are for Windows
+Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
+
+The beta package is `0.2.0-beta.2`. These native connections are for Windows
 Codex and Claude Code. [Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
 identify the exact tested build and hosts. Linux/macOS runtime archives do not
 establish native plugin or host support.
@@ -34,7 +36,7 @@ For Claude Code, install the [portable procedures](portable-skills.md), then
 register the same installed bridge from the intended project:
 
 ```powershell
-$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0-beta.1/scripts/start-sympp-mcp.cmd'
+$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0-beta.2/scripts/start-sympp-mcp.cmd'
 claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
 claude
 ```

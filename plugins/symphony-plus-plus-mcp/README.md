@@ -1,6 +1,8 @@
 # Symphony++ MCP Companion
 
-This `0.2.0-beta.1` package supplies MCP procedures and the Windows
+Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
+
+This `0.2.0-beta.2` package supplies MCP procedures and the Windows
 command-backed bridge for dedicated Codex and Claude Code sessions. Its first
 client starts the packaged backend/dashboard; clients with matching settings
 share it. The backend closes after the last client detaches.

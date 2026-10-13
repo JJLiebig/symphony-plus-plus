@@ -1,5 +1,7 @@
 # Symphony++
 
+Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
+
 Symphony++ is a local planning and delivery cockpit for coding agents. Its
 ledger, MCP tools, and dashboard connect WorkRequests, bounded WorkPackages,
 decisions, blockers, and GitHub delivery evidence.
@@ -20,7 +22,7 @@ duplicate status/review reporting are optional.
 Windows beta installation and connection for Codex or Claude Code:
 
 Follow [Install and run](docs/runtime.md) to select separate beta homes and a
-ledger, install `0.2.0-beta.1`, connect either host and open the board.
+ledger, install `0.2.0-beta.2`, connect either host and open the board.
 [Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
 identify the exact tested build and hosts.
 
