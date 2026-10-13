@@ -80,9 +80,14 @@ test('invalid batches are atomic and secondary delivery preserves repository and
   const invalid = { ...secondary };
   delete invalid.base_branch;
   await architect.reject('slice_work_request', { work_packages: [contract('Valid prefix'), invalid] }, 'work_package_delivery_scope_out_of_scope');
-  await architect.reject('slice_work_request', {
-    work_packages: [contract('Valid prefix'), { title: 'Missing goal and acceptance' }],
-  }, 'invalid_work_packages');
+  for (const required of ['title', 'goal', 'acceptance_criteria']) {
+    const incomplete: Record<string, unknown> = contract('One omitted requirement');
+    delete incomplete[required];
+    await architect.reject('slice_work_request', {
+      work_packages: [contract('Valid prefix'), incomplete],
+    }, 'invalid_work_packages');
+    expect((await architect.call('read_work_request', { work_request_id: id })).work_packages).toEqual([]);
+  }
   await architect.reject('slice_work_request', {
     work_packages: [contract('Foreign branch', { repo: 'example/client', base_branch: 'foreign' })],
   }, 'work_package_delivery_scope_out_of_scope');
@@ -103,7 +108,8 @@ test('invalid batches are atomic and secondary delivery preserves repository and
 test('groups organize scope while the effective dependency graph prevents premature or cyclic dispatch', async ({ factory }) => {
   const architect = await factory.client();
   const id = await architect.request('Grouped plan');
-  const parent = (await architect.call('upsert_group', { title: 'Prerequisites' })).group.id;
+  const survivingParent = (await architect.call('upsert_group', { title: 'Surviving capability' })).group.id;
+  const parent = (await architect.call('upsert_group', { title: 'Prerequisites', parent_group_id: survivingParent })).group.id;
   const child = (await architect.call('upsert_group', { title: 'Nested prerequisites', parent_group_id: parent })).group.id;
   const dependentGroup = (await architect.call('upsert_group', { title: 'Consumers' })).group.id;
   const sliced = await architect.call('slice_work_request', {
@@ -137,16 +143,24 @@ test('groups organize scope while the effective dependency graph prevents premat
   await architect.call('update_work_package', {
     work_package_id: client, expected_contract_revision: 1, patch: { group_id: null },
   });
+  const beforeDelete = await architect.call('read_work_request', { work_request_id: id });
+  const documentationRevision = beforeDelete.work_packages.find((wp: any) => wp.id === documentation).contract_revision;
   await architect.call('delete_group', { group_id: parent });
   const tree = (await architect.call('read_plan', { work_request_id: id, view: 'groups_with_work_packages' })).product_tree;
   expect(tree.groups.some((group: any) => group.id === parent)).toBe(false);
-  expect(tree.groups.find((group: any) => group.id === child).parent_group_id).toBe(null);
+  expect(tree.groups.find((group: any) => group.id === child).parent_group_id).toBe(survivingParent);
   expect(tree.groups.find((group: any) => group.id === child).work_package_ids).toContain(api);
+  expect(tree.groups.find((group: any) => group.id === survivingParent).work_package_ids).toContain(documentation);
   expect(tree.root_work_package_ids).toContain(client);
-  expect(tree.root_work_package_ids).toContain(documentation);
   expect(tree.dependency_intents.some((edge: any) => edge.id === dependency)).toBe(false);
   expect(tree.execution_graph.effective_edges).toEqual([]);
   // Deleting organization never deletes a package or fabricates delivery.
-  expect((await architect.call('read_work_request', { work_request_id: id })).work_packages).toHaveLength(4);
+  const afterDelete = await architect.call('read_work_request', { work_request_id: id });
+  expect(afterDelete.work_packages).toHaveLength(4);
+  expect(afterDelete.work_packages.find((wp: any) => wp.id === documentation).contract_revision).toBe(documentationRevision + 1);
+  await architect.reject('update_work_package', {
+    work_package_id: documentation, expected_contract_revision: documentationRevision,
+    patch: { title: 'Stale ownership edit' },
+  }, 'contract_revision_conflict');
   expect((await architect.call('dispatch_work_package', { work_package_id: client })).work_package.id).toBe(client);
 });
