@@ -15,7 +15,6 @@ jobs:
       E2E_OAUTH_CREDENTIALS: '{}'
       E2E_TELEMETRY_DISABLED: '1'
       DO_NOT_TRACK: '1'
-      MIX_HOME: ${{ runner.temp }}/sympp-acceptance-mix
     steps:
       - name: Checkout candidate combined tree
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -40,6 +39,7 @@ jobs:
           git rev-parse HEAD > .e2e/checkout-sha.txt
           git show -s --format='%H %P' HEAD > .e2e/checkout-parents.txt
           echo "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "MIX_HOME=$RUNNER_TEMP/sympp-acceptance-mix" >> "$GITHUB_ENV"
           printf 'head=%s\nbase=%s\nrun=%s\n' "$HEAD_SHA" "$BASE_SHA" "$GITHUB_RUN_ID" > .e2e/inputs.txt
       - name: Retain dependency lock
         if: ${{ always() }}
@@ -53,6 +53,7 @@ jobs:
         working-directory: elixir
         run: |
           mix local.hex --force
+          mix local.rebar --force
           mix deps.get
           mix compile --warnings-as-errors
       - name: Prove native bootstrap and health isolation
