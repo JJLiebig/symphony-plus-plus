@@ -64,6 +64,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     def query(_sql, _params, _opts), do: {:ok, %{rows: [[1]]}}
   end
 
+  defmodule LocationBusyRepo do
+    def get_by(_schema, _filters), do: raise("database busy")
+  end
+
+  test "optional location storage cannot turn a successful tool call into a retry" do
+    server = %Server{config: Config.default(repo: LocationBusyRepo), session: claimed_session()}
+    payload = tool_call_request("location-busy", "get_current_assignment", %{}) |> with_location("busy-client", "build-desk", %{})
+    response = %{"result" => %{"structuredContent" => %{}}}
+    assert SessionLocations.observe(payload, response, server) == server
+  end
+
   setup_all do
     database_path = WorkPackageFactory.database_path()
     endpoint_config = Application.get_env(:symphony_elixir, Endpoint, [])

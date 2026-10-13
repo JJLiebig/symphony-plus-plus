@@ -13,11 +13,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
   @public_herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id)
 
   @spec observe(term(), term(), Server.t()) :: Server.t()
-  def observe(%{"method" => "initialize", "params" => params}, %{"result" => _result}, server) when is_map(params) do
+  def observe(payload, response, server) do
+    do_observe(payload, response, server)
+  rescue
+    _error -> server
+  catch
+    :exit, _reason -> server
+  end
+
+  defp do_observe(%{"method" => "initialize", "params" => params}, %{"result" => _result}, server) when is_map(params) do
     %{server | client_location: metadata(params, server)}
   end
 
-  def observe(%{"method" => "tools/call", "params" => params} = payload, %{"result" => result} = response, server)
+  defp do_observe(%{"method" => "tools/call", "params" => params} = payload, %{"result" => result} = response, server)
       when is_map(params) and is_map(result) do
     if result["isError"] != true do
       case metadata(params, server) do
@@ -32,7 +40,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
     end
   end
 
-  def observe(_payload, _response, server), do: server
+  defp do_observe(_payload, _response, server), do: server
 
   defp observe_location(payload, response, server, metadata) do
     with client_id when is_binary(client_id) <- text(metadata["client_id"]),
