@@ -12,12 +12,12 @@ test('all dependency endpoint combinations dispatch only after canonical deliver
   const request = await architect.request('Dependency delivery');
   const groups = [];
   for (const title of ['Sources', 'Middle', 'Consumers']) groups.push((await architect.call('upsert_group', { title })).group.id);
-  const [a, b, c, d, e, direct, next, consumer, successor, final] = (await architect.call('slice_work_request', {
+  const [a, b, c, d, e, direct, next, consumer, successor, final, cancelled] = (await architect.call('slice_work_request', {
     work_packages: [
       contract('Source one', { group_id: groups[0] }), contract('Source two', { group_id: groups[0] }),
       contract('Middle one', { group_id: groups[1] }), contract('Middle two', { group_id: groups[1] }),
       contract('Group consumer', { group_id: groups[2] }), contract('Direct prerequisite'), contract('Direct dependent'),
-      contract('Source group consumer'), contract('Replacement attempt'), contract('Final replacement'),
+      contract('Source group consumer'), contract('Replacement attempt'), contract('Final replacement'), contract('Cancelled scope'),
     ],
   })).work_package_ids;
   for (const [dependent, prerequisite] of [
@@ -27,10 +27,15 @@ test('all dependency endpoint combinations dispatch only after canonical deliver
   expect((await graph(architect, request)).effective_edges.map((edge: any) => [edge.prerequisite_work_package_id, edge.dependent_work_package_id]).sort())
     .toEqual([[direct, next], [a, consumer], [b, consumer], [next, c], [next, d], [c, e], [d, e]].sort());
   await architect.reject('dispatch_work_package', { work_package_id: next }, 'unmet_work_package_dependencies');
-  await architect.call('skip_work_package', { work_package_id: direct, current_status: 'planned' });
+  const cancellation = (await architect.call('upsert_dependency', { dependent: endpoint(next), prerequisite: endpoint(cancelled), reason: 'Initially required scope.' })).dependency.id;
+  await architect.call('skip_work_package', { work_package_id: cancelled, current_status: 'planned' });
   await architect.reject('dispatch_work_package', { work_package_id: next }, 'unmet_work_package_dependencies');
+  expect((await row(architect, request, cancelled)).raw_status).toBe('skipped');
+  await architect.call('delete_dependency', { dependency_id: cancellation });
   // Retiring scope is not completion; only the delivered end of the chain satisfies it.
+  await architect.call('append_progress', { work_package_id: direct, summary: 'This attempt is blocked.', idempotency_key: 'superseded-blocker', payload: { type: 'blocker', active: true, blocker_id: 'old-attempt' } });
   await close(architect, direct, 'superseded', { successor_work_package_id: successor, superseded_reason: 'A replacement owns the same scope.' });
+  expect((await row(architect, request, direct)).work_package.blocker_state['active?']).toBe(false);
   await close(architect, successor, 'superseded', { successor_work_package_id: final, superseded_reason: 'The final attempt owns the same scope.' });
   await architect.reject('dispatch_work_package', { work_package_id: next }, 'unmet_work_package_dependencies');
   expect((await row(architect, request, direct)).successor.work_package_id).toBe(successor);
@@ -51,8 +56,8 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   const architect = await factory.client();
   const request = await architect.request('Exact candidate ordering');
   const group = (await architect.call('upsert_group', { title: 'Consumers' })).group.id;
-  const [backend, ui, peer] = (await architect.call('slice_work_request', {
-    work_packages: [contract('Backend'), contract('Consumer', { group_id: group }), contract('Peer', { group_id: group })],
+  const [backend, ui, peer, late] = (await architect.call('slice_work_request', {
+    work_packages: [contract('Backend'), contract('Consumer', { group_id: group }), contract('Peer', { group_id: group }), contract('Late consumer', { group_id: group })],
   })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: backend });
   provider.set(201, pr(201, head('a')));
@@ -63,6 +68,8 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   await architect.reject('dispatch_work_package', { work_package_id: ui }, 'unmet_work_package_dependencies');
   const overlap = (await graph(architect, request)).effective_edges.find((edge: any) => edge.dependent_work_package_id === ui);
   expect(overlap.constraints).toHaveLength(2);
+  await architect.call('upsert_dependency', { dependency_id: ordinary, dependent: endpoint(ui), prerequisite: endpoint(backend), candidate_head_sha: head('b'), reason: 'Conflicting candidate qualification.' });
+  await architect.reject('dispatch_work_package', { work_package_id: ui }, 'unmet_work_package_dependencies');
   await architect.call('delete_dependency', { dependency_id: ordinary });
   const dispatch = await architect.call('dispatch_work_package', { work_package_id: ui });
   const selection = dispatch.worker_bootstrap.assignment.dependency_selections[0].constraints[0];
@@ -75,10 +82,10 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   await architect.reject('upsert_dependency', { dependent: endpoint(ui), prerequisite: endpoint(group, 'group'), candidate_head_sha: head('a'), reason: 'A group cannot identify one candidate head.' }, 'invalid_dependency');
 
   // A branch repair is a real current-head change; old candidate evidence cannot win.
-  await architect.call('attach_branch', { work_package_id: backend, branch: 'feature/delivery-201', head_sha: head('b'), idempotency_key: 'backend-changed' });
+  await architect.call('attach_branch', { work_package_id: backend, branch: 'feature/delivery-201', head_sha: head('b') });
   await architect.reject('dispatch_work_package', { work_package_id: peer }, 'unmet_work_package_dependencies');
   expect((await graph(architect, request)).effective_edges[0].constraints[0].candidate_state).toBe('stale_head');
-  await architect.call('attach_branch', { work_package_id: backend, branch: 'feature/delivery-201', head_sha: head('a'), idempotency_key: 'backend-restored' });
+  await architect.call('attach_branch', { work_package_id: backend, branch: 'feature/delivery-201', head_sha: head('a') });
   expect((await architect.call('dispatch_work_package', { work_package_id: peer })).work_package.id).toBe(peer);
   provider.set(202, pr(202, head('c')));
   const staleInputs = await sync(architect, ui, 202, head('c'));
@@ -100,7 +107,12 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   provider.set(201, pr(201, head('a'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('e') } }));
   await architect.call('sync_pr', { work_package_id: backend });
   expect((await row(architect, request, ui)).merge_eligibility.eligible).toBe(true);
-  await architect.call('attach_branch', { work_package_id: ui, branch: 'feature/delivery-202', head_sha: head('d'), idempotency_key: 'ui-changed' });
+  const deliveredPin = { dependent: endpoint(late), prerequisite: endpoint(backend), candidate_head_sha: head('b'), reason: 'Delivery cannot excuse a mismatched pin.' };
+  const wrongPin = (await architect.call('upsert_dependency', deliveredPin)).dependency.id;
+  await architect.reject('dispatch_work_package', { work_package_id: late }, 'unmet_work_package_dependencies');
+  await architect.call('upsert_dependency', { ...deliveredPin, dependency_id: wrongPin, candidate_head_sha: head('a') });
+  expect((await architect.call('dispatch_work_package', { work_package_id: late })).work_package.id).toBe(late);
+  await architect.call('attach_branch', { work_package_id: ui, branch: 'feature/delivery-202', head_sha: head('d') });
   expect((await row(architect, request, ui)).merge_eligibility.reason_codes).toContain('dependency_inputs_stale');
   // A ready contract edit withdraws readiness and increments its optimistic revision.
   const updated = await architect.call('update_work_package', { work_package_id: ui, expected_contract_revision: 1, patch: { title: 'Revised consumer contract' } });
@@ -135,33 +147,40 @@ test('clearing a candidate and expanding to a group requires fresh qualification
     });
     if (prerequisite === a) expect((await row(architect, request, ui)).merge_eligibility.reason_codes).toContain('dependency_inputs_stale');
   }
-  await sync(architect, ui, 203, head('c'));
-  expect((await graph(architect, request)).effective_edges.every((edge: any) => edge.constraints.every((entry: any) => entry.input_current))).toBe(true);
+  expect((await sync(architect, ui, 203, head('c'))).pr_sync.readiness_reasons).toEqual([]);
   expect((await row(architect, request, ui)).merge_eligibility.eligible).toBe(true);
 });
 
 test('out-of-order external merge remains truthful through dry-run, apply and later prerequisite delivery', async ({ delivery: { factory, provider } }) => {
   const architect = await factory.client();
   const request = await architect.request('External merge order');
-  const [backend, ui] = (await architect.call('slice_work_request', { work_packages: [contract('Prerequisite'), contract('Dependent')] })).work_package_ids;
+  const [backend, ui, replay] = (await architect.call('slice_work_request', { work_packages: [contract('Prerequisite'), contract('Dependent'), contract('Manual action replay')] })).work_package_ids;
   // Dispatch happened before the architect discovered the dependency.
-  await architect.call('dispatch_work_package', { work_package_id: ui });
-  await architect.call('upsert_dependency', { dependent: endpoint(ui), prerequisite: endpoint(backend), reason: 'Prerequisite must deliver first.' });
-  provider.set(204, pr(204, head('d')));
-  expect((await sync(architect, ui, 204, head('d'))).pr_sync.readiness_reasons).toContain('dependencies_unavailable');
-  expect((await row(architect, request, ui)).merge_eligibility.eligible).toBe(false);
   const mergeTime = new Date().toISOString();
-  provider.set(204, pr(204, head('d'), { state: 'MERGED', mergedAt: mergeTime, mergeCommit: { oid: head('f') } }));
-  await sync(architect, ui, 204, head('d'));
-  const dry = await architect.call('reconcile_work_request', { work_request_id: request });
-  expect(dry.reconciliation.proposed_count).toBe(1);
+  for (const [wp, number] of [[ui, 204], [replay, 205]] as const) {
+    await architect.call('dispatch_work_package', { work_package_id: wp });
+    await architect.call('upsert_dependency', { dependent: endpoint(wp), prerequisite: endpoint(backend), reason: 'Prerequisite must deliver first.' });
+    await architect.call('append_progress', { work_package_id: wp, summary: 'External merge bypassed this blocker.', idempotency_key: `block-${wp}`, payload: { type: 'blocker', active: true, blocker_id: 'merge-order' } });
+    provider.set(number, pr(number, head('d')));
+    expect((await sync(architect, wp, number, head('d'))).pr_sync.readiness_reasons).toContain('dependencies_unavailable');
+    expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(false);
+    provider.set(number, pr(number, head('d'), { state: 'MERGED', mergedAt: mergeTime, mergeCommit: { oid: head('f') } }));
+    await sync(architect, wp, number, head('d'));
+  }
+  const dry = await architect.call('reconcile_work_request', { work_request_id: request, recorded_by: 'acceptance-architect' });
+  expect(dry.reconciliation.proposed_count).toBe(2);
   expect(dry.reconciliation.applied_count).toBe(0);
   expect((await row(architect, request, ui)).delivery_outcome).toBeNull();
+  const action = dry.reconciliation.results.find((result: any) => result.action?.work_package_id === replay).action;
+  expect(action.recorded_by).toBe('acceptance-architect');
+  expect((await architect.call('record_work_package_delivery', action)).work_package_delivery.outcome).toBe('pr_merged');
+  expect((await row(architect, request, replay)).work_package.blocker_state['active?']).toBe(false);
   const applied = await architect.call('reconcile_work_request', { work_request_id: request, apply: true });
   expect(applied.reconciliation.applied_count).toBe(1);
   const merged = await row(architect, request, ui);
   expect(merged.raw_status).toBe('merged');
   expect(merged.delivery_outcome).toBe('pr_merged');
+  expect(merged.work_package.blocker_state['active?']).toBe(false);
   expect(merged.attention_reason_codes).toContain('delivery_order_violation');
   expect(Date.parse(merged.delivery.pr_merged_at)).toBe(Date.parse(mergeTime));
   expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
