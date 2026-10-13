@@ -103,7 +103,7 @@ anchor or merely planned package does not count as execution.
 Age starts at goal creation; edits do not reset it. At the exact threshold the
 next successful retention pass archives the goal with `archive_reason:
 "never_started"`, leaving `completed_at` null and its status unchanged. It leaves
-the board and appears in `archived_work_requests`; its detail operational state
+the board and appears in `archived_work_requests`; its archive card operational state
 is `archived` / `Archived`, rather than completed. Restore clears the archive and
 starts a fresh full threshold window from restoration. Increasing the setting
 does not automatically restore an existing never-started archive.
