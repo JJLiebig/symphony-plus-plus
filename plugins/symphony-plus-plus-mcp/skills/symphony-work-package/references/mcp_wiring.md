@@ -1,5 +1,7 @@
 # Symphony++ MCP Connection
 
+Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
+
 Configure MCP before the model session starts. Skills supply procedures; the
 host loads tools. Skill visibility, host configuration and actual session tool
 availability are separate facts.
@@ -35,7 +37,7 @@ For Claude Code, install the portable procedures separately, then register
 the same installed bridge from the intended project:
 
 ```powershell
-$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0-beta.1/scripts/start-sympp-mcp.cmd'
+$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0-beta.2/scripts/start-sympp-mcp.cmd'
 claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
 ```
 

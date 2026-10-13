@@ -24,9 +24,9 @@ Before freezing a build, confirm all of the following:
 - The executable-smoke fixture fix from #717 is present on beta by content.
 - Board wayfinding and the packaged-board swap have both merged. The served
   `priv/static/index.html` must be the new board; #731 and #732 must be ancestors.
-- This preparation PR and the version preparation below have merged, with their
-  required hosted checks and fast reviews complete. Old-dashboard deletion is
-  independent and is not a release prerequisite.
+- The preparation, old-dashboard removal (#735), and version preparation below
+  have merged, with their required hosted checks and fast reviews complete.
+  The approved beta.2 freeze includes the finished board cleanup.
 - The operator has explicitly authorized publication. No tag, release dispatch,
   runtime start, plugin refresh or live-ledger operation belongs to preparation.
 
