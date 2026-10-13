@@ -281,6 +281,12 @@ try {
       $claude = (Get-Content (Join-Path $tempRoot '.mcp.json') -Raw | ConvertFrom-Json).mcpServers.symphony_plus_plus
       Write-Host ("Generated Codex registration: " + ($registration | ConvertTo-Json -Depth 10 -Compress))
       Write-Host ("Generated Claude registration: " + ($claude | ConvertTo-Json -Depth 10 -Compress))
+      if ($DiagnoseRegistration) {
+        # Ordinary native argv serialization, matching the host boundary. Keep
+        # the process exit/stderr separately from Codex's MCP handshake result.
+        [void](Read-IsolatedCommand $claude.command @($claude.args) $environment)
+        Write-Host "After emitted command: runtime_home_exists=$(Test-Path -LiteralPath $environment.SYMPP_HOME)"
+      }
       $native = Read-CodexMcpStatus $codex $environment
       if (-not $native.tools.sympp_health) { throw 'Native Codex failed to initialize the generated registration and discover sympp_health.' }
       $cmd = $claude.command
