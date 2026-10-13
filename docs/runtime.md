@@ -22,7 +22,7 @@ factory to keep running. Never use the factory ledger for an empty-ledger trial.
 
 Update with `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`
 and fresh sessions. Repeat setup after relocating the installation. Rollback
-selects the previous Skills-capable install commit, which selects its artifact
+re-adds a saved bundle or previous Skills-capable commit, selecting its artifact
 pointer; database rollback remains a separate stopped-backup operation.
 
 For populated records, the [installed offline viewer](portable-skills.md#copy-convert-and-view-an-offline-ledger)

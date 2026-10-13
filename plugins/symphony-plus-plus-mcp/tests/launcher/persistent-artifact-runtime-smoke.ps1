@@ -50,10 +50,14 @@ function Start-IsolatedProcess([string]$FilePath, [string[]]$Arguments, [hashtab
 }
 
 function Invoke-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment) {
-  $process = Start-IsolatedProcess $FilePath $Arguments $Environment $false
+  $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit(900000)) { $process.Kill($true); throw "Timed out: $FilePath" }
-    if ($process.ExitCode -ne 0) { throw "$FilePath exited $($process.ExitCode)." }
+    $details = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+    if ($process.ExitCode -ne 0) { throw "$FilePath exited $($process.ExitCode). $details" }
+    Write-Host $details
   } finally {
     if (-not $process.HasExited) { $process.Kill($true) }
     $process.Dispose()
