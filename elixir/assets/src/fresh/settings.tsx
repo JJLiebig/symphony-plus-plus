@@ -57,54 +57,65 @@ function Panel({ settings, onSaved }: { settings: Settings; onSaved: () => void 
   const [draft, setDraft] = useState<Draft>({});
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  // After a save the draft stays until the board has read the new settings, so the fields never jump back.
-  const [saved, setSaved] = useState(false);
-  const changed = Object.entries(draft).filter(([key, value]) => value !== settings[key as Key]);
-  const set = (key: Key, value: number | boolean) => {
-    setSaved(false);
-    setDraft({ ...draft, [key]: value });
-  };
+  // What the last save answered. It stands in for `settings` only until the board has read them again,
+  // so the fields neither jump back after a save nor hide a later change made elsewhere.
+  const [answer, setAnswer] = useState<{ settings: Settings; over: Settings } | null>(null);
+  const saved = answer?.over === settings;
+  const current = saved ? answer.settings : settings;
+  const changed = Object.entries(draft).filter(([key, value]) => value !== current[key as Key]);
+  const set = (key: Key, value: number | boolean) => setDraft({ ...draft, [key]: value });
 
   const save = async () => {
+    const sent = Object.fromEntries(changed);
     setBusy(true);
     setFailure(null);
-    const response = await fetch(api("/settings"), { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(changed)) }).catch(() => null);
+    const response = await fetch(api("/settings"), { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(sent) }).catch(() => null);
     setBusy(false);
-    if (response?.ok) {
-      setSaved(true);
-      return onSaved();
+    if (!response?.ok) {
+      // The backend's own wording names its internal fields, so the board says it in its words.
+      return setFailure(response?.status === 422 ? "The backend did not accept one of these values." : "Could not save the settings.");
     }
-    // The backend's own wording names its internal fields, so the board says it in its words.
-    setFailure(response?.status === 422 ? "The backend did not accept one of these values." : "Could not save the settings.");
+    const payload = (await response.json().catch(() => null)) as { settings?: Settings } | null;
+    setAnswer({ settings: payload?.settings ?? { ...current, ...sent }, over: settings });
+    setDraft({});
+    onSaved();
   };
 
   return (
     <div className="absolute left-0 top-full z-30 mt-2 w-[26rem] rounded border border-line bg-bg p-4 text-sm font-normal shadow-xl">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">Leaving the board</p>
-      {DAYS.filter(([key]) => typeof settings[key] === "number").map(([key, label]) => (
-        <label key={key} className="mt-2 flex items-center justify-between gap-3">
-          <span className="text-ink">{label}</span>
-          <span className="flex shrink-0 items-center gap-1.5 text-dim">
-            <DaysInput value={(draft[key] ?? settings[key]) as number} onChange={(value) => set(key, value)} />
-            days
-          </span>
-        </label>
-      ))}
-      <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">This machine</p>
-      {SWITCHES.filter(([key]) => typeof settings[key] === "boolean").map(([key, label]) => (
-        <label key={key} className="mt-2 flex items-center gap-2.5 text-ink">
-          <input checked={(draft[key] ?? settings[key]) as boolean} className="size-3.5 accent-current" type="checkbox" onChange={(event) => set(key, event.target.checked)} />
-          {label}
-        </label>
-      ))}
-      {changed.length > 0 && saved ? <p className="mt-4 border-t border-line pt-3 text-xs text-merge">Saved.</p> : null}
-      {changed.length > 0 && !saved ? (
-        <div className="mt-4 flex items-center gap-3 border-t border-line pt-3">
-          <p className="min-w-0 flex-1 text-xs text-dim">{failure ? <span className="text-fail">{failure}</span> : "Applies when saved: anything already past a new limit goes right away."}</p>
-          <button className="rounded px-2 py-1 text-xs text-dim hover:bg-line hover:text-ink" type="button" onClick={() => setDraft({})}>Reset</button>
-          <button className="rounded bg-ink px-2.5 py-1 text-xs font-medium text-bg disabled:opacity-40" disabled={busy || !changed.every(([, value]) => isValid(value))} type="button" onClick={() => void save()}>Save</button>
-        </div>
-      ) : null}
+      {/* Nothing can be edited while a save is on its way, so what was sent is what the fields show. */}
+      <fieldset disabled={busy}>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">Leaving the board</p>
+        {DAYS.filter(([key]) => typeof current[key] === "number").map(([key, label]) => (
+          <label key={key} className="mt-2 flex items-center justify-between gap-3">
+            <span className="text-ink">{label}</span>
+            <span className="flex shrink-0 items-center gap-1.5 text-dim">
+              <DaysInput value={(draft[key] ?? current[key]) as number} onChange={(value) => set(key, value)} />
+              days
+            </span>
+          </label>
+        ))}
+        <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">This machine</p>
+        {SWITCHES.filter(([key]) => typeof current[key] === "boolean").map(([key, label]) => (
+          <label key={key} className="mt-2 flex items-center gap-2.5 text-ink">
+            <input checked={(draft[key] ?? current[key]) as boolean} className="size-3.5 accent-current" type="checkbox" onChange={(event) => set(key, event.target.checked)} />
+            {label}
+          </label>
+        ))}
+        <Footer busy={busy} changed={changed} failure={failure} saved={saved} onReset={() => setDraft({})} onSave={() => void save()} />
+      </fieldset>
+    </div>
+  );
+}
+
+function Footer({ busy, changed, failure, saved, onReset, onSave }: { busy: boolean; changed: Array<[string, number | boolean]>; failure: string | null; saved: boolean; onReset: () => void; onSave: () => void }) {
+  if (changed.length === 0) return saved ? <p className="mt-4 border-t border-line pt-3 text-xs text-merge">Saved.</p> : null;
+
+  return (
+    <div className="mt-4 flex items-center gap-3 border-t border-line pt-3">
+      <p className="min-w-0 flex-1 text-xs text-dim">{failure ? <span className="text-fail">{failure}</span> : "Applies when saved: anything already past a new limit goes right away."}</p>
+      <button className="rounded px-2 py-1 text-xs text-dim hover:bg-line hover:text-ink" type="button" onClick={onReset}>Reset</button>
+      <button className="rounded bg-ink px-2.5 py-1 text-xs font-medium text-bg disabled:opacity-40" disabled={busy || !changed.every(([, value]) => isValid(value))} type="button" onClick={onSave}>Save</button>
     </div>
   );
 }
