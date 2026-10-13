@@ -268,6 +268,17 @@ try {
       $environment.SYMPP_POWERSHELL = $shim
       $environment.SYMPP_TEST_REAL_POWERSHELL = (Get-Command pwsh -ErrorAction Stop).Source
       $environment.SYMPP_TEST_BACKEND_PRELOAD = Join-Path $PSScriptRoot "hosted-backend-preload.ps1"
+      if ($SkillsInstall) {
+        # Exercise native basename lookup, including cold start and cleanup.
+        # The project copy fails if the bridge searches the workspace first.
+        $trustedBin = Join-Path $tempRoot 'trusted-bin'
+        New-Item -ItemType Directory -Path $trustedBin | Out-Null
+        Copy-Item $shim (Join-Path $trustedBin 'pwsh.exe')
+        Copy-Item $shim (Join-Path $tempRoot 'pwsh.exe')
+        New-Item -ItemType File -Path (Join-Path $tempRoot 'untrusted-project') | Out-Null
+        $environment.PATH = "$trustedBin;$env:PATH"
+        $environment.SYMPP_POWERSHELL = 'pwsh.exe'
+      }
     }
     $cmd = (Get-Command cmd.exe -ErrorAction Stop).Source
     $commandArgs = @("/d", "/c", "call `"$command`"")
