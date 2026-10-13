@@ -232,17 +232,18 @@ function followNow(current: number, before: number, now: number) {
 }
 
 // The backend only says that something changed; the board then reads everything again.
+// This stream is also how the backend knows a board is open, so that it does not open another one.
 function useChangeSignal(read: () => void) {
   useEffect(() => {
-    const stream = new EventSource(api("/events"));
+    const stream = new EventSource(api("/dashboard/events"));
     let connected = false;
-    // "ready" also arrives after a reconnect, when changes may have been missed.
-    const onReady = () => {
+    // The stream also opens after a reconnect, when changes may have been missed.
+    const onOpen = () => {
       if (connected) read();
       connected = true;
     };
-    stream.addEventListener("ready", onReady);
-    stream.addEventListener("invalidated", read);
+    stream.addEventListener("open", onOpen);
+    stream.addEventListener("dashboard_changed", read);
     return () => stream.close();
   }, [read]);
 }
