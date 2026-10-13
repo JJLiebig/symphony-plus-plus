@@ -74,6 +74,14 @@ for (const agent of ['codex', 'claude-code']) {
   await writeFile(join(installed, 'connection.md'), 'stale qualification payload\n');
   cli(cwd, install);
   assert.deepEqual(await files(installed), expected);
+  const backup = join(root, `previous-${agent}`);
+  await mkdir(backup);
+  const copied = spawnSync('pwsh', ['-NoProfile', '-Command', 'Copy-Item -LiteralPath $env:SYMPP_TEST_INSTALL -Destination $env:SYMPP_TEST_BACKUP -Recurse'], { env: { ...env, SYMPP_TEST_INSTALL: installed, SYMPP_TEST_BACKUP: backup }, encoding: 'utf8' });
+  assert.equal(copied.status, 0, copied.stderr);
+  await writeFile(join(installed, 'connection.md'), 'changed after backup\n');
+  cli(cwd, ['add', join(backup, 'symphony-plus-plus'), '--agent', agent, '--skill', 'symphony-plus-plus', '--yes']);
+  assert.deepEqual(await files(installed), expected, 're-add of the saved local bundle must restore the previous payload');
+  cli(cwd, install);
   if (process.argv.includes('--runtime') && agent === 'claude-code') {
     const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', await realpath(installed), ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], { cwd, env, encoding: 'utf8', timeout: 900000 });
     assert.equal(smoke.status, 0, `${smoke.stdout}\n${smoke.stderr}`);

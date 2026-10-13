@@ -26,9 +26,9 @@ node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
 
 Omitting `--host` registers installed Codex and Claude Code detected on PATH.
 `--host both` requires both. The qualified CLI version recognizes `/tree/beta`
-and retains that ref in `skills-lock.json` across updates. Project installs use
-`.agents/skills/symphony-plus-plus`; Claude's `.claude/skills/symphony-plus-plus`
-normally links there. `--copy` also works.
+and retains that ref in `skills-lock.json` across updates. Codex uses
+`.agents/skills/symphony-plus-plus`; Claude uses `.claude/skills/symphony-plus-plus`.
+Shared installations may link to one canonical directory. `--copy` also works.
 
 Setup writes the selected `CODEX_HOME/config.toml` (default `~/.codex`) and
 Claude's project `.mcp.json`, preserving unrelated settings. It does not write
@@ -127,6 +127,7 @@ the current installed bundle outside the workspace before updating:
 ```powershell
 $previousBundle = Join-Path $env:USERPROFILE 'sympp-previous-install'
 New-Item -ItemType Directory -Path $previousBundle -ErrorAction Stop | Out-Null
+# For Claude-only, use .claude/skills/symphony-plus-plus as the source.
 Copy-Item -LiteralPath .agents/skills/symphony-plus-plus -Destination $previousBundle -Recurse
 Copy-Item -LiteralPath skills-lock.json -Destination $previousBundle
 npx --yes skills@1.7.0 update symphony-plus-plus --project --yes
