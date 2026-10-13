@@ -7,12 +7,13 @@ import { setAreas, type AreaRule } from "./areas";
 import { lanesOf } from "./board";
 import { Briefing } from "./briefing";
 import { mockGoals } from "./mock";
-import { buildGoals, liveCountAt, viewAt, type Goal, type HistoryEvent, type Hydrated } from "./model";
+import { buildGoals, liveCountAt, viewAt, type Goal, type HistoryEvent, type Hydrated, type Settings } from "./model";
 import { focusGoal, smoothly } from "./motion";
 import { Outline } from "./outline";
 import { Phases } from "./phases";
 import { DensityContext, type Density } from "./report";
 import { setSamples, type SampleRule } from "./samples";
+import { BoardMenu } from "./settings";
 import { changesBetween, SinceContext, SinceLine } from "./since";
 import { Asks, Status, useTabSignal } from "./status";
 
@@ -35,7 +36,7 @@ const SEEN_KEY = "sympp.board.seenAt";
 const REREAD_MS = 60e3;
 
 // `replayable` is true on a snapshot, which carries recorded history; a backend only knows the present.
-type Loaded = { goals: Goal[]; now: number; busiest: number; samples: number[]; replayable: boolean };
+type Loaded = { goals: Goal[]; now: number; busiest: number; samples: number[]; replayable: boolean; settings: Settings };
 
 export function App() {
   const [data, setData] = useState<Loaded | null>(null);
@@ -98,7 +99,7 @@ export function App() {
     <div className={`min-h-screen ${replay ? "pb-28" : "pb-10"}`}>
       <header className="pin-top sticky top-0 z-20 border-b border-line bg-bg/95 px-8 backdrop-blur">
         <div className="flex h-12 items-center gap-6">
-          <span className="text-sm font-semibold tracking-tight">S++</span>
+          <BoardMenu settings={data.settings} onSaved={read} />
           <nav className="flex shrink-0 gap-1">
             {directions.map((entry, index) => (
               <button key={entry.key} className={`rounded px-2.5 py-1 text-xs ${entry.key === current.key ? "bg-ink text-bg" : "text-dim hover:text-ink"}`} title={entry.hint} type="button" onClick={() => smoothly(() => setDirection(index))}>
@@ -171,14 +172,15 @@ async function load(): Promise<Loaded> {
   setSamples(local?.samples ?? []);
   const { goals: real, now } = buildGoals(hydrated, history ?? {});
   // Against a backend there is no history to replay and nothing is invented: the board shows the present.
-  if (!history) return { goals: real, now, busiest: now, samples: [], replayable: false };
+  const settings = hydrated.settings ?? {};
+  if (!history) return { goals: real, now, busiest: now, samples: [], replayable: false, settings };
 
   const start = now - REPLAY_DAYS * 24 * 3600e3;
   const sample = (goals: Goal[]) => Array.from({ length: (now - start) / STEP_MS + 1 }, (_unused, index) => liveCountAt(goals, start + index * STEP_MS));
   const realSamples = sample(real);
   const busiest = start + realSamples.indexOf(Math.max(...realSamples)) * STEP_MS;
   const goals = [...real, ...mockGoals(busiest, now)];
-  return { goals, now, busiest, samples: sample(goals), replayable: true };
+  return { goals, now, busiest, samples: sample(goals), replayable: true, settings };
 }
 
 // A refused or failed read is an error, not an empty ledger.
