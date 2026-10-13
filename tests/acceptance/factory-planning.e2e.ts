@@ -73,7 +73,9 @@ test('a clarified request becomes a revised plan and ordinary worker assignment'
 
 test('invalid batches are atomic and secondary delivery preserves repository and branch boundaries', async ({ factory }) => {
   const architect = await factory.client();
-  const id = await architect.request('Repository scope');
+  const id = await architect.request('Repository scope', 'draft');
+  await architect.reject('slice_work_request', { work_packages: [contract('Premature draft')] }, 'work_request_not_authorable');
+  await architect.call('set_work_request_status', { work_request_id: id, current_status: 'draft', next_status: 'ready_for_slicing' });
   const secondary = contract('Secondary implementation', { repo: 'example/client', base_branch: 'integration' });
   const invalid = { ...secondary };
   delete invalid.base_branch;

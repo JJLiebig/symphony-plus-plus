@@ -72,7 +72,7 @@ export class Client {
 
   async operator(path: string, args: object) {
     const response = await fetch(new URL(path, this.endpoint), {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: { 'content-type': 'application/json', origin: new URL(this.endpoint).origin },
       body: JSON.stringify(args), signal: AbortSignal.timeout(30_000),
     });
     return { status: response.status, body: await response.json() };
