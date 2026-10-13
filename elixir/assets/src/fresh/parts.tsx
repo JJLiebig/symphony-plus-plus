@@ -1,4 +1,4 @@
-import { GoalActions } from "./actions";
+import { GoalActions, ShelfCleanup } from "./actions";
 import { areaLabel } from "./areas";
 import { deployAt, span, type DeployStep, type Goal, type GoalView, type PkgView, type Stage } from "./model";
 import { POP, useFlash } from "./motion";
@@ -72,7 +72,7 @@ function shelfCount(view: GoalView) {
 }
 
 // `age` says what the time on each row means, for example "idle" or "done".
-export function Shelf({ age, at, hint, label, views }: { age: string; at: number; hint?: string; label: string; views: GoalView[] }) {
+export function Shelf({ age, at, cleanup, hint, label, views }: { age: string; at: number; cleanup?: boolean; hint?: string; label: string; views: GoalView[] }) {
   if (views.length === 0) return null;
 
   return (
@@ -81,6 +81,11 @@ export function Shelf({ age, at, hint, label, views }: { age: string; at: number
         {label} · {views.length}
         {hint ? <span className="ml-2 font-normal normal-case tracking-normal">{hint}</span> : null}
       </summary>
+      {cleanup ? (
+        <div className="mt-2 flex max-w-[900px] justify-end">
+          <ShelfCleanup at={at} views={views} />
+        </div>
+      ) : null}
       <ul className="mt-2 max-w-[900px] space-y-1">
         {views.map((view) => (
           <li key={view.goal.id} className="flex items-center justify-between gap-4">

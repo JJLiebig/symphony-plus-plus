@@ -46,9 +46,9 @@ export function Rest({ at, lanes }: { at: number; lanes: Lanes }) {
     <>
       <Landed at={at} views={lanes.landed} />
       <Shelf age="parked" at={at} hint="set aside by the architect" label="Parked" views={lanes.parked} />
-      <Shelf age="idle" at={at} hint="started, then nothing for two weeks or more" label="Dormant" views={lanes.dormant} />
-      <Shelf age="waiting" at={at} hint="no package has been picked up" label="Not started" views={lanes.backlog} />
-      <Shelf age="done" at={at} hint="finished more than a day ago" label="Settled" views={lanes.settled} />
+      <Shelf cleanup age="idle" at={at} hint="started, then nothing for two weeks or more" label="Dormant" views={lanes.dormant} />
+      <Shelf cleanup age="waiting" at={at} hint="no package has been picked up" label="Not started" views={lanes.backlog} />
+      <Shelf cleanup age="done" at={at} hint="finished more than a day ago" label="Settled" views={lanes.settled} />
     </>
   );
 }

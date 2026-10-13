@@ -1,11 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { areaLabel } from "./areas";
 import { span, type GoalView } from "./model";
-
-const LOGO = "/splusplus-logo.png";
-const ICON = 64;
-const YOU = "#ff7a45";
 
 // The first question, answered in one corner: am I needed? The dot sits at the edge and the tab icon repeats it.
 export function Status({ views }: { views: GoalView[] }) {
@@ -42,55 +38,9 @@ export function Asks({ at, onPick, views }: { at: number; onPick: (goalId: strin
 
 // Readable from a background tab: the count in the title, and a small orange dot on the icon while needed.
 export function useTabSignal(needed: number) {
-  const logo = useLogo();
-
   useEffect(() => {
     document.title = needed > 0 ? `(${needed}) Symphony++` : "Symphony++";
     const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (icon && logo) icon.href = tabIcon(logo, needed > 0);
-  }, [logo, needed]);
-}
-
-function useLogo() {
-  const [logo, setLogo] = useState<HTMLImageElement | null>(null);
-
-  useEffect(() => {
-    const image = new Image();
-    image.onload = () => setLogo(image);
-    image.src = LOGO;
-  }, []);
-  return logo;
-}
-
-// The logo on a rounded tile, cropped a little so the mark fills the tab icon.
-function tabIcon(logo: HTMLImageElement, needed: boolean) {
-  const canvas = document.createElement("canvas");
-  canvas.width = ICON;
-  canvas.height = ICON;
-  const pen = canvas.getContext("2d");
-  if (!pen) return LOGO;
-
-  const crop = logo.naturalWidth * 0.06;
-  pen.save();
-  pen.beginPath();
-  pen.roundRect(0, 0, ICON, ICON, ICON * 0.24);
-  pen.clip();
-  pen.drawImage(logo, crop, crop, logo.naturalWidth - 2 * crop, logo.naturalHeight - 2 * crop, 0, 0, ICON, ICON);
-  pen.restore();
-  if (needed) drawDot(pen);
-  return canvas.toDataURL("image/png");
-}
-
-// A dot in the corner with a clear ring around it, so it reads on any tab colour.
-function drawDot(pen: CanvasRenderingContext2D) {
-  const center = ICON - 12;
-  pen.globalCompositeOperation = "destination-out";
-  pen.beginPath();
-  pen.arc(center, center, 15, 0, Math.PI * 2);
-  pen.fill();
-  pen.globalCompositeOperation = "source-over";
-  pen.fillStyle = YOU;
-  pen.beginPath();
-  pen.arc(center, center, 11, 0, Math.PI * 2);
-  pen.fill();
+    if (icon) icon.href = needed > 0 ? "/board-icon-needed.png" : "/board-icon.png";
+  }, [needed]);
 }

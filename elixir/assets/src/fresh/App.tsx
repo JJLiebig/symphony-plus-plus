@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 
 import { ReloadContext } from "./actions";
 import { setAreas, type AreaRule } from "./areas";
+import { lanesOf } from "./board";
 import { Briefing } from "./briefing";
 import { mockGoals } from "./mock";
 import { buildGoals, liveCountAt, viewAt, type Goal, type HistoryEvent, type Hydrated } from "./model";
@@ -75,7 +76,11 @@ export function App() {
   const changes = useMemo(() => changesBetween(data ? viewAt(data.goals, since) : [], views, since, at), [at, data, since, views]);
   const areas = useMemo(() => [...new Set(views.filter((view) => view.state !== "settled").map((view) => view.goal.area[0]))], [views]);
   const shown = area ? views.filter((view) => view.goal.area[0] === area) : views;
-  const View = DIRECTIONS[direction].view;
+  // Phases has nothing to add until a goal on the board is grouped, so it is offered only then.
+  const grouped = useMemo(() => lanesOf(views, at).main.some((view) => view.goal.groups.length > 0), [at, views]);
+  const directions = DIRECTIONS.filter((entry) => entry.key !== "phases" || grouped);
+  const current = directions[direction] ?? directions[0];
+  const View = current.view;
   useTabSignal(views.filter((view) => view.ask).length);
 
   if (failure) return <p className="p-10 text-sm text-fail">{failure}</p>;
@@ -87,8 +92,8 @@ export function App() {
         <div className="flex h-12 items-center gap-6">
           <span className="text-sm font-semibold tracking-tight">S++</span>
           <nav className="flex shrink-0 gap-1">
-            {DIRECTIONS.map((entry, index) => (
-              <button key={entry.key} className={`rounded px-2.5 py-1 text-xs ${index === direction ? "bg-ink text-bg" : "text-dim hover:text-ink"}`} title={entry.hint} type="button" onClick={() => smoothly(() => setDirection(index))}>
+            {directions.map((entry, index) => (
+              <button key={entry.key} className={`rounded px-2.5 py-1 text-xs ${entry.key === current.key ? "bg-ink text-bg" : "text-dim hover:text-ink"}`} title={entry.hint} type="button" onClick={() => smoothly(() => setDirection(index))}>
                 <span className="mr-1.5 font-mono opacity-60">{index + 1}</span>
                 {entry.label}
               </button>
@@ -121,7 +126,7 @@ export function App() {
         <Asks at={at} views={views} onPick={goToGoal} />
       </header>
       <main className="px-8 py-6">
-        <SinceLine at={at} changes={changes} since={since} width={DIRECTIONS[direction].width} onSeen={markSeen} />
+        <SinceLine at={at} changes={changes} since={since} width={current.width} onSeen={markSeen} />
         <ReloadContext.Provider value={read}>
           <SinceContext.Provider value={changes.notes}>
             <DensityContext.Provider value={density}>
