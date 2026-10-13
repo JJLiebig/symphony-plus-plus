@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { ReloadContext } from "./actions";
+import { api } from "./api";
 import { setAreas, type AreaRule } from "./areas";
 import { lanesOf } from "./board";
 import { Briefing } from "./briefing";
@@ -91,8 +92,7 @@ export function App() {
   const View = current.view;
   useTabSignal(views.filter((view) => view.ask).length);
 
-  if (failure) return <p className="p-10 text-sm text-fail">{failure}</p>;
-  if (!data) return <p className="p-10 text-sm text-dim">Reading the ledger…</p>;
+  if (!data) return <Unread failure={failure} />;
 
   return (
     <div className={`min-h-screen ${replay ? "pb-28" : "pb-10"}`}>
@@ -128,6 +128,7 @@ export function App() {
                 Replay
               </button>
             ) : null}
+            <Lost failure={failure} />
             <Status views={views} />
           </span>
         </div>
@@ -147,6 +148,17 @@ export function App() {
       {note ? <p className="fixed bottom-24 left-1/2 z-30 max-w-xl -translate-x-1/2 rounded bg-ink px-3 py-2 text-sm text-bg" role="status">{note}</p> : null}
     </div>
   );
+}
+
+// A board that has never loaded shows only that it is reading, or why it could not.
+function Unread({ failure }: { failure: string | null }) {
+  return <p className={`p-10 text-sm ${failure ? "text-fail" : "text-dim"}`}>{failure ?? "Reading the ledger…"}</p>;
+}
+
+// A failed read keeps what the board last showed and says so.
+function Lost({ failure }: { failure: string | null }) {
+  if (!failure) return null;
+  return <span className="whitespace-nowrap text-xs text-fail" title={failure}>Connection lost · showing the last read</span>;
 }
 
 async function load(): Promise<Loaded> {
@@ -171,13 +183,14 @@ async function load(): Promise<Loaded> {
 
 // A refused or failed read is an error, not an empty ledger.
 async function ledger(): Promise<Hydrated> {
-  const response = await fetch("/api/v1/sympp/operator/dashboard/hydrated", { headers: { accept: "application/json" } });
+  const response = await fetch(api("/dashboard/hydrated"), { headers: { accept: "application/json" } });
   if (!response.ok) throw new Error(`Could not read the ledger (${response.status})`);
   return (await response.json()) as Hydrated;
 }
 
-// These routes exist on the snapshot server only. A backend answers them with its page, not with data.
+// These routes exist on the snapshot server only, so only a development server is asked.
 async function sketchOnly<T>(path: string): Promise<T | null> {
+  if (!import.meta.env.DEV) return null;
   const response = await fetch(path).catch(() => null);
   if (!response?.ok || !response.headers.get("content-type")?.includes("json")) return null;
   return (await response.json()) as T;
@@ -221,7 +234,7 @@ function followNow(current: number, before: number, now: number) {
 // The backend only says that something changed; the board then reads everything again.
 function useChangeSignal(read: () => void) {
   useEffect(() => {
-    const stream = new EventSource("/api/v1/sympp/operator/events");
+    const stream = new EventSource(api("/events"));
     let connected = false;
     // "ready" also arrives after a reconnect, when changes may have been missed.
     const onReady = () => {

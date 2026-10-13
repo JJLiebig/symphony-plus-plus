@@ -17,23 +17,32 @@ packaged dashboard from the same runtime.
 
 ## Work Board
 
-The default Work overview groups open requests into **Needs attention**,
-**In progress**, **Ready for handoff** and **Waiting**. Recently delivered work
-is collapsed. Choose a repository to narrow the same overview.
+The board lists goals, one per WorkRequest, with the ones that need you first:
+a goal whose architect asks you something, then goals with a road bump or
+stalled work, then goals on track. Parked, dormant, not-started and settled
+goals sit on shelves that open on demand, and recently merged work is listed
+under Landed.
 
-Cards show Owner, Working now, Stage/time, Waiting on and Next. Parallel
-activity names its package. Unknown owners or timing remain unknown; review
-round duration differs from total review time and update freshness.
+Each goal shows a verdict, the architect's brief and ETA, and its packages as
+Done, Now and Up next along Build, PR, Checks, Review and Merge. Outline,
+Briefing and Phases (keys `1` to `3`) show the same goals in different shapes;
+Show sets how much each goal opens. Choose an area to narrow the board.
 
-Open a request for its tree, dependencies, decisions and package details.
-Ready for handoff does not itself mean ready to merge: integration eligibility
-also reflects the selected dependencies and current evidence. Human decisions
-are distinct from architect actions and prerequisite waits. On connection loss,
-the board retains its prior data with a stale notice.
+The header says whether you are needed and names each open question; the tab
+title and icon repeat it. A line under the header sums up what changed since
+you last looked, and each figure on it takes you to the goals behind it.
 
-Start a request from the inline first-run flow or the board's new-request action.
-Choose direct delivery for bounded work or architect-led delivery for work
-that needs clarification and slicing. Preferences live in Settings.
+A session icon on a package or a goal shows where that agent was last seen.
+Click it to bring the session to the front in Herdr; a note says what happened
+or why it could not be opened. See
+[session locations](operator-board-api.md#session-locations).
+
+A goal can be marked done, archived or deleted from its menu, and a shelf can
+be archived in one go. None of these stops a running worker or merges a pull
+request. The board rereads the ledger when it changes and once a minute; if a
+read fails it keeps what it last showed and says the connection is lost.
+
+The board does not create requests. Start one from a trusted local MCP session.
 
 An optional architect report gives the goal a brief, free-text ETA, parking
 reason, and explicit question requiring a human decision. The hydrated dashboard
@@ -43,7 +52,7 @@ returns it at `work_request_details[].work_request.operator_report`;
 `question`, `raised_at`, and `resolved_at`. A missing report/field is absent
 information; a non-null resume/resolution time means that interval is closed.
 Open clarification questions and worker waits do not imply escalation. Reports
-do not change blockers or completion, and the board remains read-only. See the
+do not change blockers or completion. See the
 [architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#guidance)
 for optional milestone updates and resolving answers given in the conversation.
 
@@ -58,7 +67,7 @@ herdr plugin install JJLiebig/symphony-plus-plus --ref beta --yes
 When a Herdr tab contains a bound Symphony++ architect or coordinator, one
 execution inspector opens to its right. It follows that tab's focused bound
 agent and stays compact for a trivial WorkRequest. Larger or branching work
-uses the same frontier projection as the dashboard.
+shows its execution frontier.
 
 - `Up`/`Down` or `k`/`j`: select a WorkPackage.
 - `Enter`: focus the one live Codex pane whose session exactly owns it.
@@ -85,7 +94,7 @@ runtime freshness. Unknown timing and observations remain explicit.
 | Implement one assigned package | `symphony-plus-plus-mcp:symphony-worker` and `symphony-plus-plus-mcp:symphony-work-package` |
 | Clarify and slice a WorkRequest | `symphony-plus-plus-mcp:symphony-architect` |
 | Coordinate ordinary repository work without required persistence | `symphony-plus-plus:symphony-coordinator` |
-| Inspect human progress | Work board and execution graph |
+| Inspect human progress | Work board and Herdr execution inspector |
 
 All agent-facing Symphony++ ledger reads and writes use configured MCP tools.
 Workers and coordinators may operate without a backend when persistence is not
@@ -98,7 +107,7 @@ output.
 
 ## WorkRequest Flow
 
-1. Create a WorkRequest in the dashboard or trusted local MCP session.
+1. Create a WorkRequest in a trusted local MCP session.
 2. Give an architect the returned WorkRequest claim.
 3. Answer material clarification questions.
 4. Let the architect create optional Groups, WorkPackages, and dependencies.
@@ -120,14 +129,12 @@ mix sympp.demo_ledger --database .tmp/demo.sqlite3 --scenario large --force
 mix sympp.cockpit --database .tmp/demo.sqlite3
 ```
 
-Then run the existing browser smoke against the printed cockpit URL:
+Open the printed cockpit URL. The scenarios only seed synthetic local ledger
+data; production dashboard code does not select or depend on them.
 
-```powershell
-node assets/scripts/browser-smoke.mjs --url http://127.0.0.1:19998/sympp/board
-```
-
-The scenarios only seed synthetic local ledger data; production dashboard code
-does not select or depend on them.
+For work on the board itself, `npm run dev:snapshot` in `elixir/assets` serves
+it from a captured ledger snapshot without a backend, with replay and sample
+goals.
 
 ## Runtime Problems
 

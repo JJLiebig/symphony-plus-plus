@@ -1,6 +1,7 @@
 import { MoreHorizontal } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
+import { api } from "./api";
 import type { Goal, GoalView } from "./model";
 
 // Called after an action went through, so the board reads the ledger again.
@@ -30,7 +31,7 @@ function actionsFor(goal: Goal, moving: number): Action[] {
 }
 
 async function run(goalId: string, [path, body]: Step) {
-  const response = await fetch(`/api/v1/sympp/operator/work-requests/${encodeURIComponent(goalId)}/${path}`, {
+  const response = await fetch(api(`/work-requests/${encodeURIComponent(goalId)}/${path}`), {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify(body),
