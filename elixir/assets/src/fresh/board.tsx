@@ -3,8 +3,9 @@ import { Check } from "lucide-react";
 import { GoalActions } from "./actions";
 import { areaLabel } from "./areas";
 import { deployAt, span, type GoalView } from "./model";
-import { Deploy, locate, Shelf } from "./parts";
+import { Deploy, Shelf } from "./parts";
 import { GoalTitle, reportFor, type Verdict } from "./report";
+import { FindArchitect } from "./session";
 
 const DAY = 24 * 3600e3;
 const DORMANT_AFTER = 14 * DAY;
@@ -62,7 +63,7 @@ function Landed({ at, views }: { at: number; views: GoalView[] }) {
       <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">Landed · last 24 hours</h2>
       <ul className="divide-y divide-line border-y border-line">
         {views.map((view) => (
-          <li key={view.goal.id} className="flex items-center gap-3 py-2 pr-2 text-sm">
+          <li key={view.goal.id} className="flex items-center gap-3 py-2 pr-2 text-sm" data-goal={view.goal.id}>
             <Check className="size-4 shrink-0 text-merge" />
             <span className="max-w-[40%] shrink-0 truncate font-medium">
               <GoalTitle goal={view.goal} />
@@ -88,9 +89,7 @@ export function AskLine({ at, className, view }: { at: number; className?: strin
       <span className="shrink-0 font-semibold text-you">Architect asks</span>
       <span className="min-w-0 flex-1 text-ink">{view.ask.title}</span>
       <span className="shrink-0 font-mono text-xs text-dim">{span(at - view.ask.from)} ago</span>
-      <button className="shrink-0 rounded px-1.5 py-0.5 text-xs text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate(`${view.goal.title} · architect`)}>
-        Find the architect
-      </button>
+      <FindArchitect at={at} goal={view.goal} />
     </p>
   );
 }
