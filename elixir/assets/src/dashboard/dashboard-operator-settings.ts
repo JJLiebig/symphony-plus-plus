@@ -20,7 +20,7 @@ export function useDashboardOperatorSettings({
   refreshAfterMutation: RefreshAfterMutation;
 }) {
   const settings = dashboard?.settings;
-  const archiveAfterDays = settings?.work_request_archive_after_days ?? 1;
+  const archiveAfterDays = settings?.work_request_archive_after_days ?? 3;
   const soloSessionDeleteAfterDays = settings?.solo_session_delete_after_days ?? 30;
   const openDashboardOnBoot = settings?.open_dashboard_on_boot ?? true;
   const captureFailedMcpCalls = settings?.capture_failed_mcp_calls ?? false;

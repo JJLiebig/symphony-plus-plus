@@ -25,11 +25,14 @@ const DENSITIES: Array<{ key: Density; label: string; hint: string }> = [
 ];
 const REPLAY_DAYS = 10;
 const STEP_MS = 15 * 60 * 1000;
-// Stand-in for the browser remembering the last visit: the sketch pretends it was three hours ago.
+// A frozen snapshot never changes, so there the sketch pretends the last visit was three hours ago.
 const AWAY_MS = 3 * 3600e3;
+const SEEN_KEY = "sympp.board.seenAt";
+const REREAD_MS = 60e3;
 const NEEDED_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='12' fill='%23ff7a45'/%3E%3C/svg%3E";
 
-type Loaded = { goals: Goal[]; now: number; busiest: number; samples: number[] };
+// `replayable` is true on a snapshot, which carries recorded history; a backend only knows the present.
+type Loaded = { goals: Goal[]; now: number; busiest: number; samples: number[]; replayable: boolean };
 
 export function App() {
   const [data, setData] = useState<Loaded | null>(null);
@@ -38,7 +41,7 @@ export function App() {
   const [area, setArea] = useState<string | null>(null);
   const [density, setDensity] = useState<Density>("active");
   const [at, setAt] = useState(0);
-  const [seenAt, setSeenAt] = useState<number | null>(null);
+  const [seenAt, setSeenAt] = useState<number | null>(rememberedVisit);
   const [replay, setReplay] = useState(false);
   const [located, setLocated] = useState<string | null>(null);
 
@@ -54,9 +57,14 @@ export function App() {
   }, []);
   useEffect(read, [read]);
   useChangeSignal(read);
+  useReread(data?.replayable === false, read);
   useShortcuts(setDirection, setLocated);
 
-  const since = seenAt !== null && seenAt <= at ? seenAt : at - AWAY_MS;
+  const since = lastLookAt(seenAt, at, data?.replayable !== false);
+  const markSeen = () => {
+    rememberVisit(at);
+    smoothly(() => setSeenAt(at));
+  };
   const views = useMemo(() => (data ? viewAt(data.goals, at) : []), [at, data]);
   const changes = useMemo(() => changesBetween(data ? viewAt(data.goals, since) : [], views, since, at), [at, data, since, views]);
   const areas = useMemo(() => [...new Set(views.filter((view) => view.state !== "settled").map((view) => view.goal.area[0]))], [views]);
@@ -95,15 +103,19 @@ export function App() {
               </button>
             ))}
           </nav>
-          <button className={`ml-auto rounded px-2 py-1 font-mono text-[11px] hover:bg-line ${at >= data.now ? "text-merge" : "text-checks"}`} title="Show or hide the replay bar" type="button" onClick={() => setReplay(!replay)}>
-            {at >= data.now ? "Live" : `Replay · ${stamp(at)}`}
-          </button>
+          {data.replayable ? (
+            <button className={`ml-auto rounded px-2 py-1 font-mono text-[11px] hover:bg-line ${at >= data.now ? "text-merge" : "text-checks"}`} title="Show or hide the replay bar" type="button" onClick={() => setReplay(!replay)}>
+              {at >= data.now ? "Live" : `Replay · ${stamp(at)}`}
+            </button>
+          ) : (
+            <span className="ml-auto px-2 py-1 font-mono text-[11px] text-merge" title={`Read ${stamp(data.now)}`}>Live</span>
+          )}
           <Legend />
         </div>
         <NeedsYou at={at} views={shown} />
       </header>
       <main className="px-8 py-6">
-        <SinceLine at={at} changes={changes} since={since} width={DIRECTIONS[direction].width} onSeen={() => smoothly(() => setSeenAt(at))} />
+        <SinceLine at={at} changes={changes} since={since} width={DIRECTIONS[direction].width} onSeen={markSeen} />
         <ReloadContext.Provider value={read}>
           <SinceContext.Provider value={changes.notes}>
             <DensityContext.Provider value={density}>
@@ -121,18 +133,59 @@ export function App() {
 async function load(): Promise<Loaded> {
   const [hydrated, history, local] = await Promise.all([
     fetch("/api/v1/sympp/operator/dashboard/hydrated", { headers: { accept: "application/json" } }).then((response) => response.json() as Promise<Hydrated>),
-    fetch("/__snapshot/history").then((response) => response.json() as Promise<Record<string, HistoryEvent[]>>),
-    fetch("/__snapshot/local").then((response) => response.json() as Promise<{ areas?: AreaRule[]; samples?: SampleRule[] }>),
+    sketchOnly<Record<string, HistoryEvent[]>>("/__snapshot/history"),
+    sketchOnly<{ areas?: AreaRule[]; samples?: SampleRule[] }>("/__snapshot/local"),
   ]);
-  setAreas(local.areas ?? []);
-  setSamples(local.samples ?? []);
-  const { goals: real, now } = buildGoals(hydrated, history);
+  setAreas(local?.areas ?? []);
+  setSamples(local?.samples ?? []);
+  const { goals: real, now } = buildGoals(hydrated, history ?? {});
+  // Against a backend there is no history to replay and nothing is invented: the board shows the present.
+  if (!history) return { goals: real, now, busiest: now, samples: [], replayable: false };
+
   const start = now - REPLAY_DAYS * 24 * 3600e3;
   const sample = (goals: Goal[]) => Array.from({ length: (now - start) / STEP_MS + 1 }, (_unused, index) => liveCountAt(goals, start + index * STEP_MS));
   const realSamples = sample(real);
   const busiest = start + realSamples.indexOf(Math.max(...realSamples)) * STEP_MS;
   const goals = [...real, ...mockGoals(busiest, now)];
-  return { goals, now, busiest, samples: sample(goals) };
+  return { goals, now, busiest, samples: sample(goals), replayable: true };
+}
+
+// These routes exist on the snapshot server only. A backend answers them with its page, not with data.
+async function sketchOnly<T>(path: string): Promise<T | null> {
+  const response = await fetch(path).catch(() => null);
+  if (!response?.ok || !response.headers.get("content-type")?.includes("json")) return null;
+  return (await response.json()) as T;
+}
+
+// The last visit is remembered in this browser only; a private window or cleared data starts over.
+function rememberedVisit(): number | null {
+  try {
+    return Number(window.localStorage.getItem(SEEN_KEY)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberVisit(at: number) {
+  try {
+    window.localStorage.setItem(SEEN_KEY, String(at));
+  } catch {
+    // Without storage the board still works; it only forgets the visit on reload.
+  }
+}
+
+function lastLookAt(seenAt: number | null, at: number, replayable: boolean) {
+  if (seenAt !== null && seenAt <= at) return seenAt;
+  return replayable ? at - AWAY_MS : at;
+}
+
+// Against a backend the board also rereads once a minute, so the time each package has spent keeps moving.
+function useReread(active: boolean, read: () => void) {
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = window.setInterval(read, REREAD_MS);
+    return () => window.clearInterval(timer);
+  }, [active, read]);
 }
 
 function followNow(current: number, before: number, now: number) {
