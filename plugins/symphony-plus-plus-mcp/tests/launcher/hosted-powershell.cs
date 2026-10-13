@@ -2,16 +2,25 @@
 // preloading the existing WindowsBackend class seam in each preparation process.
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 
 class HostedPowerShell {
   static string Literal(string value) { return "'" + value.Replace("'", "''") + "'"; }
   static int Main(string[] args) {
+    if (File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "untrusted-project"))) {
+      Console.Error.WriteLine("Project-local PowerShell shadow was executed.");
+      return 93;
+    }
     int file = Array.FindIndex(args, value => value.Equals("-File", StringComparison.OrdinalIgnoreCase));
     if (file < 0 || file + 1 >= args.Length) return 2;
     var command = new StringBuilder("$ErrorActionPreference = 'Stop'; try { . " + Literal(Environment.GetEnvironmentVariable("SYMPP_TEST_BACKEND_PRELOAD")) + "; & ");
     command.Append(Literal(args[file + 1]));
     for (int i = file + 2; i < args.Length; i++) {
+      if (args[i] == "-CleanupRuntimeKey" && i + 1 < args.Length) {
+        command.Append(" -CleanupRuntimeKey ").Append(Literal(args[++i]));
+        continue;
+      }
       if (args[i] != "-PrepareRuntimeOnly" && args[i] != "-TryPreparedRuntime") return 2;
       command.Append(' ').Append(args[i]);
     }

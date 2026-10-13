@@ -1471,13 +1471,16 @@ async function main() {
   }
   if (process.argv.some((arg) => /^-(Help|ValidateOnly)$/i.test(arg)) || process.env.SYMPP_REPO_ROOT || String(process.env.SYMPP_MCP_BRIDGE_MODE || "http").toLowerCase() !== "http") process.exit(POWERSHELL_FALLBACK);
 
+  const pluginRoot = path.resolve(__dirname, "..");
+  const portable = portableInstall(pluginRoot);
+  if (portable) {
+    if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Symphony++ Skills supports Windows x64 only.");
+    // Preserve the cmd entrypoint's neutral directory for native executable lookup.
+    process.chdir(process.env.SystemRoot);
+  }
   await ensureLivenessProbe();
   const runtimeFile = resolveRuntimeFile();
-  const pluginRoot = path.resolve(__dirname, "..");
-  if (portableInstall(pluginRoot)) {
-    if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Symphony++ Skills supports Windows x64 only.");
-    await claimPortableLedger(runtimeFile);
-  }
+  if (portable) await claimPortableLedger(runtimeFile);
   const runtime = await resolveColdRuntime(runtimeFile, pluginRoot);
   if (!runtime) { trace("cold_start_timeout"); process.exit(COLD_TIMEOUT); }
   const { state, identity } = runtime;

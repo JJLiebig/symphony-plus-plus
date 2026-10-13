@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = process.argv.slice(2).find(arg => !arg.startsWith('--')) || repo;
 const branchOnly = process.argv.includes('--branch-only');
-const root = await mkdtemp(join(tmpdir(), 'sympp-portable-skills-'));
+const root = await mkdtemp(join(tmpdir(), 'sympp portable skills '));
 const npx = resolve(dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
 const env = {
   ...process.env,
