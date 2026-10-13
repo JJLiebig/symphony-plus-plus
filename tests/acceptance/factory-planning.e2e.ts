@@ -73,7 +73,7 @@ test('a clarified request becomes a revised plan and ordinary worker assignment'
 
 test('invalid batches are atomic and secondary delivery preserves repository and branch boundaries', async ({ factory }) => {
   const architect = await factory.client();
-  const id = await architect.request('Repository scope', 'draft');
+  const id = await architect.request('Repository scope', 'draft', 'main');
   await architect.reject('slice_work_request', { work_packages: [contract('Premature draft')] }, 'work_request_not_authorable');
   await architect.call('set_work_request_status', { work_request_id: id, current_status: 'draft', next_status: 'ready_for_slicing' });
   const secondary = contract('Secondary implementation', { repo: 'example/client', base_branch: 'integration' });
@@ -95,14 +95,20 @@ test('invalid batches are atomic and secondary delivery preserves repository and
     await architect.reject('slice_work_request', { work_packages: [contract('Invalid contract', patch)] }, 'invalid_work_packages');
   }
   expect((await architect.call('read_work_request', { work_request_id: id })).work_packages).toEqual([]);
-  const sliced = await architect.call('slice_work_request', { work_packages: [secondary] });
-  const [wp] = sliced.work_package_ids;
+  const normalized = contract('Canonical primary scope', { base_branch: ' refs/remotes/origin/main ' });
+  const sliced = await architect.call('slice_work_request', { work_packages: [secondary, normalized] });
+  const [wp, primary] = sliced.work_package_ids;
   const read = await architect.call('read_work_request', { work_request_id: id });
   expect(read.work_packages[0].repo).toBe('example/client');
   expect(read.work_packages[0].base_branch).toBe('integration');
   const dispatch = await architect.call('dispatch_work_package', { work_package_id: wp });
   expect(dispatch.worker_bootstrap.assignment.work_package.repo).toBe('example/client');
   expect(dispatch.worker_bootstrap.assignment.work_package.base_branch).toBe('integration');
+  expect(read.work_packages.find((wp: any) => wp.id === primary).base_branch).toBe('main');
+  const primaryDispatch = await architect.call('dispatch_work_package', { work_package_id: primary });
+  expect(primaryDispatch.worker_bootstrap.assignment.work_package.base_branch).toBe('main');
+  expect(primaryDispatch.worker_bootstrap.assignment.work_package.goal).toBe('Deliver Canonical primary scope');
+  expect(primaryDispatch.worker_bootstrap.assignment.work_package.engineering_scope).toBe('Deliver Canonical primary scope');
 });
 
 test('groups organize scope while the effective dependency graph prevents premature or cyclic dispatch', async ({ factory }) => {
@@ -113,15 +119,28 @@ test('groups organize scope while the effective dependency graph prevents premat
   const child = (await architect.call('upsert_group', { title: 'Nested prerequisites', parent_group_id: parent })).group.id;
   const dependentGroup = (await architect.call('upsert_group', { title: 'Consumers' })).group.id;
   const sliced = await architect.call('slice_work_request', {
-    work_packages: [contract('API', { group_id: child }), contract('Client', { group_id: dependentGroup }), contract('Independent'), contract('Documentation', { group_id: parent })],
+    work_packages: [contract('API', { group_id: child }), contract('Client', { group_id: dependentGroup }), contract('Independent'), contract('Documentation', { group_id: parent }), contract('Peer API', { group_id: child })],
   });
-  const [api, client, independent, documentation] = sliced.work_package_ids;
+  const [api, client, independent, documentation, peerApi] = sliced.work_package_ids;
+  await architect.call('upsert_dependency', {
+    dependent: { kind: 'group', id: child }, prerequisite: { kind: 'group', id: parent },
+    reason: 'Child implementations require the parent documentation, not themselves or each other.',
+  });
+  const overlap = (await architect.call('read_plan', { work_request_id: id, view: 'groups_with_work_packages' })).product_tree.execution_graph;
+  expect(overlap.effective_edges.map((edge: any) => [edge.prerequisite_work_package_id, edge.dependent_work_package_id]).sort())
+    .toEqual([[documentation, api], [documentation, peerApi]].sort());
+  expect(overlap.cycles).toEqual([]);
+  for (const childPackage of [api, peerApi]) {
+    const blocked = await architect.reject('dispatch_work_package', { work_package_id: childPackage }, 'unmet_work_package_dependencies');
+    expect(blocked.prerequisite_work_package_ids).toEqual([documentation]);
+  }
+  expect((await architect.call('dispatch_work_package', { work_package_id: documentation })).work_package.id).toBe(documentation);
   const dependency = (await architect.call('upsert_dependency', {
     dependent: { kind: 'group', id: dependentGroup }, prerequisite: { kind: 'group', id: parent },
     reason: 'The consumer requires its API.',
   })).dependency.id;
   const unmet = await architect.reject('dispatch_work_package', { work_package_id: client }, 'unmet_work_package_dependencies');
-  expect([...unmet.prerequisite_work_package_ids].sort()).toEqual([api, documentation].sort());
+  expect([...unmet.prerequisite_work_package_ids].sort()).toEqual([api, peerApi, documentation].sort());
   await architect.reject('upsert_dependency', {
     dependent: { kind: 'group', id: parent }, prerequisite: { kind: 'group', id: parent }, reason: 'A group cannot depend on itself.',
   }, 'invalid_dependency');
@@ -156,7 +175,7 @@ test('groups organize scope while the effective dependency graph prevents premat
   expect(tree.execution_graph.effective_edges).toEqual([]);
   // Deleting organization never deletes a package or fabricates delivery.
   const afterDelete = await architect.call('read_work_request', { work_request_id: id });
-  expect(afterDelete.work_packages).toHaveLength(4);
+  expect(afterDelete.work_packages).toHaveLength(5);
   expect(afterDelete.work_packages.find((wp: any) => wp.id === documentation).contract_revision).toBe(documentationRevision + 1);
   await architect.reject('update_work_package', {
     work_package_id: documentation, expected_contract_revision: documentationRevision,

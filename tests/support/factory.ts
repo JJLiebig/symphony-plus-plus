@@ -78,9 +78,9 @@ export class Client {
     return { status: response.status, body: await response.json() };
   }
 
-  async request(title: string, status = 'ready_for_slicing') {
+  async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta') {
     const created = await this.call('create_work_request', {
-      repo: 'example/service', base_branch: 'beta', title,
+      repo: 'example/service', base_branch: baseBranch, title,
       description: 'Synthetic acceptance request; no external work is executed.',
       request_kind: 'feature', status, claimed_by: 'acceptance-architect',
       repo_scopes: [{ repo: 'example/client', base_branch: 'integration' }],
