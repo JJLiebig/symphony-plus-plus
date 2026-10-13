@@ -68,10 +68,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocus do
   defp result(reason), do: %{ok: true, status: "not_focused", reason: Atom.to_string(reason)}
 
   defp machine_id do
-    case :inet.gethostname() do
-      {:ok, hostname} -> hostname |> to_string() |> String.trim() |> String.downcase()
-      _ -> nil
-    end
+    {:ok, hostname} = :inet.gethostname()
+    hostname |> to_string() |> String.trim() |> String.downcase()
   end
 
   defp request(selector, args) do
