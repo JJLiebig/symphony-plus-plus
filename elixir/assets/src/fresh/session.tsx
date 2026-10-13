@@ -108,9 +108,11 @@ export function FindArchitect({ at, className = "", compact, goal }: { at: numbe
   const place = architectPlace(at, goal);
   if (compact && !place) return <span className={`size-6 shrink-0 ${className}`} />;
   const shape = compact ? "size-6 justify-center" : "gap-1.5 self-center px-1.5 py-0.5";
+  // The spoken name starts with the words on the button, where it has words.
+  const name = compact ? `Architect's session for ${goal.title}` : `Find the architect for ${goal.title}`;
 
   return (
-    <button aria-label={`Architect's session for ${goal.title}`} className={`group relative flex shrink-0 items-center rounded text-xs text-dim hover:bg-line hover:text-ink ${shape} ${className}`} type="button" onClick={() => void open(`work-requests/${encodeURIComponent(goal.id)}`, place)}>
+    <button aria-label={name} className={`group relative flex shrink-0 items-center rounded text-xs text-dim hover:bg-line hover:text-ink ${shape} ${className}`} type="button" onClick={() => void open(`work-requests/${encodeURIComponent(goal.id)}`, place)}>
       {place ? <PlaceIcon place={place} /> : null}
       {compact ? null : "Find the architect"}
       {place ? <PlaceCard at={at} place={place} /> : null}
