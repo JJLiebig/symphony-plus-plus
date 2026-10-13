@@ -26,7 +26,9 @@ class HostedPowerShell {
       child.OutputDataReceived += (sender, line) => { if (line.Data != null) Console.Out.WriteLine(line.Data); };
       child.ErrorDataReceived += (sender, line) => { if (line.Data != null) Console.Error.WriteLine(line.Data); };
       child.BeginOutputReadLine(); child.BeginErrorReadLine();
-      child.WaitForExit(); return child.ExitCode;
+      // The fixture backend inherits runner handles. Wait for preparation exit,
+      // not EOF on streams still held by that long-lived backend.
+      child.WaitForExit(Int32.MaxValue); return child.ExitCode;
     }
   }
 }
