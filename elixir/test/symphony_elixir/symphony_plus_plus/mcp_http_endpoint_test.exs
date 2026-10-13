@@ -710,6 +710,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert updated.client_id == location.client_id
     assert updated.description == location.description
     assert DateTime.compare(updated.last_seen_at, location.last_seen_at) == :gt
+
+    second_create =
+      tool_call_request("second-location-create", "create_work_request", %{
+        "repo" => "example-org/widget-service",
+        "base_branch" => "main",
+        "title" => "Another widget goal",
+        "request_kind" => "feature",
+        "description" => "Continue planning in the same session."
+      })
+      |> with_location("coordinator-client", "planning-desk", %{})
+      |> post_json(headers)
+
+    second_id = get_in(json_response(second_create, 200), ["result", "structuredContent", "work_request", "id"])
+    assert SessionLocations.get(Repo, "work_request", second_id).description == location.description
   end
 
   test "POST /mcp rehydrates claimed local worker session after backend state reset" do

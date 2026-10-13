@@ -26,6 +26,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
   alias SymphonyElixir.WorkPackageFactory
 
@@ -225,7 +226,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
       assert renamed_location["machine_id"] == "build-desk"
       assert renamed_location["last_seen_at"] == DateTime.to_iso8601(observed_at)
       assert repo.all(Location) |> Enum.all?(&(&1.last_seen_at == observed_at))
-      assert {:ok, _deleted} = SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service.delete(repo, request.id)
+      assert {:ok, _deleted} = WorkRequestService.delete(repo, request.id)
       assert repo.all(Location) == []
     end)
   end
