@@ -29,6 +29,7 @@ Push-Location .\elixir\assets
 npm test
 npm run quality
 npm run build
+npm run build:herdr
 Pop-Location
 ```
 
@@ -57,7 +58,7 @@ pwsh -NoProfile -File .\scripts\benchmarks\sympp-startup\measure.ps1
 pwsh -NoProfile -File .\scripts\benchmarks\sympp-startup\measure.ps1 -Release
 ```
 
-Dashboard measurements and the realistic focus-board journey live under
+Backend dashboard payload profiling and its deterministic fixture live under
 `scripts/benchmarks/sympp-dashboard/`.
 
 ## Release Discipline

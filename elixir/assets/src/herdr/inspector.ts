@@ -1,6 +1,6 @@
-import { executionFrontierProjection } from "@/dashboard/execution-graph/frontier";
-import { workRequestExecutionGraphModel } from "@/dashboard/execution-graph/adapter";
-import type { WorkRequestDetail as DashboardWorkRequestDetail } from "@/types/dashboard";
+import { executionFrontierProjection } from "./execution-graph/frontier";
+import { workRequestExecutionGraphModel } from "./execution-graph/adapter";
+import type { WorkRequestDetail as DashboardWorkRequestDetail } from "./work-request";
 
 import { bindingForTab, bindingFromPane, bindingKey, exactWorkerPaneId } from "./binding";
 import { HerdrClient, snapshotFromResponse } from "./herdr-client";
