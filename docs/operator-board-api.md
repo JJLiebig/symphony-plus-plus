@@ -291,4 +291,3 @@ Focusing sends no input and does not register a location, refresh its timestamp,
 write ledger/audit state, or publish a dashboard invalidation. The offline beta
 sandbox returns HTTP 403 before any ledger read or Herdr probe. Authorization
 failures retain the operator API's HTTP 401 response.
-||||||| ff25c8f50
