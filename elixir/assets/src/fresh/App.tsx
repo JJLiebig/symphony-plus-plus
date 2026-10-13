@@ -66,7 +66,8 @@ export function App() {
   }, []);
   useEffect(read, [read]);
   useChangeSignal(read);
-  useReread(data?.replayable === false, read);
+  // A snapshot never changes, so it is read once. Anything else is reread, also while the first read has yet to succeed.
+  useReread(data?.replayable !== true, read);
   useShortcuts(setDirection, setLocated);
 
   const since = lastLookAt(seenAt, at, data?.replayable !== false);

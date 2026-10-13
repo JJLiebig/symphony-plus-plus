@@ -200,10 +200,14 @@ function buildPkg(slice: Slice, events: HistoryEvent[], now: number): Pkg {
 
 // A snapshot also carries recorded history. The backend's reading stays the present; the history fills in how the package got there, for the replay.
 function withPast(present: Pkg, past: Pkg): Pkg {
-  const cut = present.segs[0]?.from ?? present.endAt;
+  const [current] = present.segs;
+  const last = past.segs.at(-1);
+  // Where the backend did not see the current stage begin, it begins at the history's last change.
+  const now = current?.untimed && last ? [{ ...current, from: last.from, untimed: last.stage !== current.stage }] : present.segs;
+  const cut = now[0]?.from ?? present.endAt;
   if (cut === null) return present;
   const earlier = past.segs.filter((seg) => seg.from < cut).map((seg) => ({ ...seg, to: Math.min(seg.to, cut) }));
-  return { ...present, segs: [...earlier, ...present.segs], rounds: past.rounds.length > 0 ? past.rounds : present.rounds, actors: past.actors };
+  return { ...present, segs: [...earlier, ...now], rounds: past.rounds.length > 0 ? past.rounds : present.rounds, actors: past.actors };
 }
 
 // The backend's own reading of a package: its stage, when it got there, and whether it ends in a merge.
