@@ -30,10 +30,11 @@ and retains that ref in `skills-lock.json` across updates. Codex uses
 `.agents/skills/symphony-plus-plus`; Claude uses `.claude/skills/symphony-plus-plus`.
 Shared installations may link to one canonical directory. `--copy` also works.
 
-Setup writes the selected `CODEX_HOME/config.toml` (default `~/.codex`) and
-Claude's project `.mcp.json`, preserving unrelated settings. It does not write
-Claude's user configuration. Both entries use one absolute installed launcher
-and capture `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE`, and any selected
+Setup creates the selected `CODEX_HOME` (default `~/.codex`) when needed, then
+writes its `config.toml` and Claude's project `.mcp.json`, preserving unrelated
+settings. It does not write Claude's user configuration. Both entries launch
+the installed Node bridge with the Node executable running setup. They capture
+`SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE`, and any selected
 backend port/log directory. Codex keeps 360-second startup and 300-second tool
 timeouts. Do not commit machine-specific MCP paths to a shared repository.
 

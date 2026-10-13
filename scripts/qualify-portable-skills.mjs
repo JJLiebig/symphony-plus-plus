@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = process.argv.slice(2).find(arg => !arg.startsWith('--')) || repo;
 const branchOnly = process.argv.includes('--branch-only');
-const root = await mkdtemp(join(tmpdir(), 'sympp-portable-skills-'));
+const root = await mkdtemp(join(tmpdir(), 'sympp portable skills '));
 const npx = resolve(dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
 const env = {
   ...process.env,
@@ -83,7 +83,7 @@ for (const agent of ['codex', 'claude-code']) {
   assert.deepEqual(await files(installed), expected, 're-add of the saved local bundle must restore the previous payload');
   cli(cwd, install);
   if (process.argv.includes('--runtime') && agent === 'claude-code') {
-    const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', await realpath(installed), ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : []), ...(process.argv.includes('--diagnose-registration') ? ['-DiagnoseRegistration'] : [])], { cwd, env, encoding: 'utf8', timeout: 900000 });
+    const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', await realpath(installed), ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], { cwd, env, encoding: 'utf8', timeout: 900000 });
     assert.equal(smoke.status, 0, `${smoke.stdout}\n${smoke.stderr}`);
     console.log(smoke.stdout.trim());
   }

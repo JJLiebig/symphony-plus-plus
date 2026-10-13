@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ArtifactManifest, [string]$SkillsInstall, [switch]$HostedProcessCreation, [switch]$DiagnoseRegistration)
+param([string]$ArtifactManifest, [string]$SkillsInstall, [switch]$HostedProcessCreation)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
@@ -78,8 +78,14 @@ function Read-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtabl
 
 function Read-CodexMcpStatus([string]$Codex, [hashtable]$Environment) {
   # The actual native host loads setup's TOML and creates the MCP process.
-  # No model turn, credentials, registration override, or command-line rewriting.
-  $process = Start-IsolatedProcess $Codex @("app-server") $Environment
+  # No model turn, credentials, or command-line rewriting.
+  $arguments = @("app-server")
+  if ($HostedProcessCreation) {
+    # Pass only the existing backend-creation seam through Codex's env allowlist.
+    # The generated MCP command, args and runtime selections stay untouched.
+    $arguments += @("-c", 'mcp_servers.symphony_plus_plus.env_vars=["SYMPP_POWERSHELL","SYMPP_TEST_REAL_POWERSHELL","SYMPP_TEST_BACKEND_PRELOAD","SYMPP_LAUNCHER_TRACE_DIR"]')
+  }
+  $process = Start-IsolatedProcess $Codex $arguments $Environment
   $stderr = $process.StandardError.ReadToEndAsync()
   try {
     foreach ($request in @(
@@ -96,7 +102,7 @@ function Read-CodexMcpStatus([string]$Codex, [hashtable]$Environment) {
       if ($response.error) { throw "Native Codex request failed: $($line.Result)" }
     }
     $server = @($response.result.data | Where-Object name -eq 'symphony_plus_plus')[0]
-    Write-Host ("Native Codex MCP status: " + ($server | ConvertTo-Json -Depth 20 -Compress))
+    Write-Host ("Native Codex MCP status: " + (@{ name = $server.name; server_info = $server.serverInfo; tools_count = @($server.tools.PSObject.Properties).Count; tools_error = $server.toolsError; health_discovered = [bool]$server.tools.'sympp.health' } | ConvertTo-Json -Depth 6 -Compress))
     return $server
   } finally {
     $process.StandardInput.Close()
@@ -130,8 +136,12 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
     }
     Write-Host "MCP initialize and tools/list succeeded."
     if ($SkillsInstall) {
-      $health = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 21; method = "tools/call"; params = @{ name = "sympp_health"; arguments = @{} } }
+      $health = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 21; method = "tools/call"; params = @{ name = "sympp.health"; arguments = @{} } }
       Write-Host ("MCP sympp_health: " + ($health.result | ConvertTo-Json -Depth 16 -Compress))
+      $identity = $health.result.structuredContent
+      $healthPath = ([string]$identity.ledger.identity.display_path).Replace('$HOME', $Environment.USERPROFILE).Replace('/', '\')
+      if ($identity.status -ne 'ok' -or $identity.source.revision -ne $manifest.source_revision -or
+          [IO.Path]::GetFullPath($healthPath) -ine [IO.Path]::GetFullPath($Environment.SYMPP_DATABASE)) { throw 'MCP health did not confirm the selected published runtime and ledger.' }
     }
     if ($CreateMarker) {
       $attached = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 3; method = "tools/call"; params = @{ name = "solo_attach"; arguments = @{ repo = "fixture/packaged-ledger"; base_branch = "beta"; workspace_path = $tempRoot; caller_id = "artifact-smoke"; title = "Disposable persistence marker" } } }
@@ -269,26 +279,27 @@ try {
       $missing = Read-IsolatedCommand $codex @("mcp", "list", "--json") $environment
       if ($missing.exit -eq 0 -or $missing.stderr -notmatch 'does not exist') { throw "Native host did not reproduce the missing-home precondition." }
       $setupResult = Read-IsolatedCommand $node @($setup, "--host", "both") $environment
-      if ($DiagnoseRegistration -and $setupResult.exit -ne 0) {
-        Write-Host 'BASELINE ONLY: create selected home to isolate the second defect after recording setup failure.'
-        New-Item -ItemType Directory -Path $codexHome | Out-Null
-        $setupResult = Read-IsolatedCommand $node @($setup, "--host", "both") $environment
-      }
       if ($setupResult.exit -ne 0) { throw 'Setup failed from a nonexistent selected home.' }
+      $configFile = Join-Path $codexHome 'config.toml'
+      $unrelated = "model = `"example-model`"`n"
+      $saved = $unrelated + (Get-Content -LiteralPath $configFile -Raw)
+      [IO.File]::WriteAllText($configFile, $saved)
+      $claudeFile = Join-Path $tempRoot '.mcp.json'
+      $savedClaude = Get-Content -LiteralPath $claudeFile -Raw
+      $repeated = Read-IsolatedCommand $node @($setup, '--host', 'both') $environment
+      if ($repeated.exit -ne 0 -or (Get-Content $configFile -Raw) -cne $saved -or
+          (Get-Content $claudeFile -Raw) -cne $savedClaude) { throw 'Repeat setup changed unrelated or already managed configuration.' }
       $listed = Read-IsolatedCommand $codex @("mcp", "list", "--json") $environment
       if ($listed.exit -ne 0) { throw 'Native Codex could not read setup registration.' }
       $registration = @(($listed.stdout | ConvertFrom-Json) | Where-Object name -eq 'symphony_plus_plus')[0]
       $claude = (Get-Content (Join-Path $tempRoot '.mcp.json') -Raw | ConvertFrom-Json).mcpServers.symphony_plus_plus
       Write-Host ("Generated Codex registration: " + ($registration | ConvertTo-Json -Depth 10 -Compress))
       Write-Host ("Generated Claude registration: " + ($claude | ConvertTo-Json -Depth 10 -Compress))
-      if ($DiagnoseRegistration) {
-        # Ordinary native argv serialization, matching the host boundary. Keep
-        # the process exit/stderr separately from Codex's MCP handshake result.
-        [void](Read-IsolatedCommand $claude.command @($claude.args) $environment)
-        Write-Host "After emitted command: runtime_home_exists=$(Test-Path -LiteralPath $environment.SYMPP_HOME)"
-      }
+      if ($registration.transport.command -cne $claude.command -or
+          (ConvertTo-Json -InputObject @($registration.transport.args) -Compress) -cne (ConvertTo-Json -InputObject @($claude.args) -Compress)) { throw 'Host registrations selected different commands or arguments.' }
+      if (Test-Path -LiteralPath $database) { throw 'Generated registration qualification requires a fresh ledger.' }
       $native = Read-CodexMcpStatus $codex $environment
-      if (-not $native.tools.sympp_health) { throw 'Native Codex failed to initialize the generated registration and discover sympp_health.' }
+      if (-not $native.tools.'sympp.health') { throw 'Native Codex failed to initialize the generated registration and discover sympp_health.' }
       $cmd = $claude.command
       $commandArgs = @($claude.args)
       foreach ($property in $claude.env.PSObject.Properties) { $environment[$property.Name] = [string]$property.Value }

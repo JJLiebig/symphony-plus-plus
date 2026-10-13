@@ -14,6 +14,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Generate portable bundle
+        run: node scripts/package-portable-skills.mjs
+      - name: Retain generated portable mirror
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portable-skills-mirror
+          path: skills/symphony-plus-plus
+          include-hidden-files: true
       - name: Verify generated bundle and setup behavior
         run: |
           node scripts/package-portable-skills.mjs --check
@@ -30,9 +38,11 @@ jobs:
           npm install --global @anthropic-ai/claude-code@2.1.292
           if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
       - name: Install isolated bundles and exercise the published runtime
-        run: node scripts/qualify-portable-skills.mjs --runtime --diagnose-registration
+        run: node scripts/qualify-portable-skills.mjs --runtime
       - name: Prove beta branch tracking across Skills update
         run: node scripts/qualify-portable-skills.mjs https://github.com/JJLiebig/symphony-plus-plus/tree/beta --branch-only
+      - name: Require committed generated mirror
+        run: git diff --exit-code -- skills/symphony-plus-plus
 
   beta-snapshot:
     name: beta snapshot safety
