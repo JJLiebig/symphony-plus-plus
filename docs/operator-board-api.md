@@ -135,7 +135,8 @@ Invoke-RestMethod -Method Post -Uri "$origin/api/v1/sympp/operator/settings" `
 ```
 
 Saving settings forces an immediate pass; otherwise the background cadence is
-30 minutes. Dashboard reads remain read-only. No new UI control is included.
+30 minutes. Dashboard reads remain read-only. The board's settings menu saves
+through this route.
 
 ## Operator actions
 

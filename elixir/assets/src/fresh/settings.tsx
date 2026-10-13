@@ -74,8 +74,8 @@ function Panel({ settings, onSaved }: { settings: Settings; onSaved: () => void 
       setSaved(true);
       return onSaved();
     }
-    const payload = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
-    setFailure(payload?.error?.message || "Could not save the settings.");
+    // The backend's own wording names its internal fields, so the board says it in its words.
+    setFailure(response?.status === 422 ? "The backend did not accept one of these values." : "Could not save the settings.");
   };
 
   return (

@@ -42,6 +42,11 @@ be archived in one go. None of these stops a running worker or merges a pull
 request. The board rereads the ledger when it changes and once a minute; if a
 read fails it keeps what it last showed and says the connection is lost.
 
+The `S++` mark opens the settings: after how many days finished and
+never-started goals are archived, when archived goals are deleted for good, and
+two switches for this machine. Nothing changes until it is saved; a shorter
+limit then applies at once.
+
 The board does not create requests. Start one from a trusted local MCP session.
 
 An optional architect report gives the goal a brief, free-text ETA, parking
