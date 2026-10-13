@@ -73,8 +73,8 @@ session for that route; portable installation does not modify the plugin cache.
 The bundle contains 11 Markdown files: one dispatcher, one connection guide,
 five procedures and four references. It includes no runtime, source tree,
 plugin cache or credentials. Local links resolve within the bundle.
-[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
-record the tested host/platform scope; procedure installation alone does not
+[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
+record the qualification limits; procedure installation alone does not
 prove a runtime connection.
 
 Marketplace MCP procedures remain authoritative. After editing them, regenerate

@@ -1,7 +1,5 @@
 # Symphony++ MCP Connection
 
-Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
-
 Configure MCP before the model session starts. Skills supply procedures; the
 host loads tools. Skill visibility, host configuration and actual session tool
 availability are separate facts.
@@ -47,9 +45,9 @@ checkout or working directory. If a later upgrade changes the package version,
 register the new installed path before reopening Claude.
 
 The beta pointer is
-`https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-20261007/sympp-runtime-artifacts-beta.json`.
-[Release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
-identify exact tested builds/hosts. Linux/macOS archives do not establish
+`https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json`.
+[Release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
+record the build, hosted checks, and native qualification limits. Linux/macOS archives do not establish
 native host or plugin support.
 
 ## Shared Runtime And Recovery

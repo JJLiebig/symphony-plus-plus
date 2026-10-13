@@ -1,7 +1,5 @@
 # Symphony++ MCP Companion
 
-Publication of `0.2.0-beta.2` is pending. Do not upgrade until the runtime pointer is promoted.
-
 This `0.2.0-beta.2` package supplies MCP procedures and the Windows
 command-backed bridge for dedicated Codex and Claude Code sessions. Its first
 client starts the packaged backend/dashboard; clients with matching settings
@@ -18,10 +16,10 @@ The package includes:
 - The `.mcp.json` stdio bridge configuration loaded by Codex.
 - Solo Session, worker, coordinator, WorkPackage and architect procedures.
 - The existing Windows launcher used by both hosts.
-- The [beta runtime pointer](https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-20261007/sympp-runtime-artifacts-beta.json).
+- The [beta runtime pointer](https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json).
 
-[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
-record the exact tested build and hosts. Linux/macOS archives do not establish
+[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
+record the build, hosted checks, and native qualification limits. Linux/macOS archives do not establish
 native host support.
 
 ## Package Boundary
