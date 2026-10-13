@@ -17,6 +17,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
   alias SymphonyElixir.SymphonyPlusPlus.Planning.PlanNode
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Repo
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations.Location
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.SoloSession
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.SoloSessionEntry
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
@@ -25,6 +26,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
   alias SymphonyElixir.WorkPackageFactory
 
@@ -53,6 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
 
   setup %{repo: repo} do
     repo.delete_all(OperatorAudit)
+    repo.delete_all(Location)
     repo.delete_all(AgentRun)
     repo.delete_all(Artifact)
     repo.delete_all(ProgressEvent)
@@ -159,6 +162,72 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
       missing = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
       assert work_request_detail(missing, request.id)["work_request"]["area_path"] == nil
       refute File.exists?(config_path)
+    end)
+  end
+
+  test "hydrated locations discover machines, allow renames, and hide private addresses", %{repo: repo} do
+    with_local_operator_endpoint(fn ->
+      request = create_work_request!(repo, repo: "example-org/widget-service", status: "sliced")
+      package = create_dispatched_package!(repo, request, slice_id: "WRS-LOCATION", package_id: "WP-LOCATION", status: "implementing")
+      observed_at = ~U[2026-10-01 09:00:00.000000Z]
+
+      for {kind, id, role} <- [{"work_request", request.id, "coordinator"}, {"work_request", request.id, "architect"}, {"work_package", package.id, "worker"}] do
+        repo.insert!(%Location{
+          id: Ecto.UUID.generate(),
+          target_kind: kind,
+          target_id: id,
+          role: role,
+          client_id: "private-client",
+          machine_id: "build-desk",
+          machine_label: "Build-Desk",
+          source: "herdr",
+          last_seen_at: observed_at,
+          herdr: %{
+            "workspace_id" => "w1",
+            "workspace_label" => "Widget Service",
+            "tab_id" => "w1:t2",
+            "tab_label" => "Implementation",
+            "pane_id" => "w1:p3",
+            "socket_path" => "private-selector",
+            "session" => "private-session",
+            "native_session_id" => "private-native-id",
+            "future_secret" => "not-public"
+          }
+        })
+      end
+
+      config_path = Path.join(System.tmp_dir!(), "operator-location-#{System.unique_integer([:positive])}.json")
+      original = System.get_env("SYMPP_OPERATOR_CONFIG")
+      System.put_env("SYMPP_OPERATOR_CONFIG", config_path)
+
+      on_exit(fn ->
+        if original, do: System.put_env("SYMPP_OPERATOR_CONFIG", original), else: System.delete_env("SYMPP_OPERATOR_CONFIG")
+        File.rm(config_path)
+      end)
+
+      payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+      detail = work_request_detail(payload, request.id)
+      architect = detail["work_request"]["architect_session_location"]
+      worker = Enum.find(detail["work_packages"], &(&1["id"] == package.id))["session_location"]
+      card = Enum.find(payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
+      assert architect["role"] == "architect"
+      assert card["architect_session_location"] == architect
+      assert worker["role"] == "worker"
+      assert worker["label"] == "Build-Desk"
+      assert worker["kind"] == nil
+      assert worker["herdr"]["workspace_label"] == "Widget Service"
+      refute inspect(payload) =~ "private-"
+      refute inspect(payload) =~ "future_secret"
+
+      File.write!(config_path, Jason.encode!(%{"machines" => %{"build-desk" => %{"label" => "Workshop", "kind" => "desktop"}}}))
+      renamed = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+      renamed_location = work_request_detail(renamed, request.id)["work_request"]["architect_session_location"]
+      assert renamed_location["label"] == "Workshop"
+      assert renamed_location["machine_id"] == "build-desk"
+      assert renamed_location["last_seen_at"] == DateTime.to_iso8601(observed_at)
+      assert repo.all(Location) |> Enum.all?(&(&1.last_seen_at == observed_at))
+      assert {:ok, _deleted} = WorkRequestService.delete(repo, request.id)
+      assert repo.all(Location) == []
     end)
   end
 

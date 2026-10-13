@@ -8,6 +8,7 @@ const os = require("os");
 const path = require("path");
 const readline = require("readline");
 const { spawn, spawnSync } = require("child_process");
+const sessionLocation = require("./sympp-session-location.js").createReporter();
 
 const WARM_MISS = 42;
 const POWERSHELL_FALLBACK = 43;
@@ -42,7 +43,7 @@ const HERDR_METADATA_SOURCE = "symphony-plus-plus";
 const HERDR_METADATA_COMMAND_TIMEOUT_MS = 5000;
 const HERDR_METADATA_TTL_MS = 150000;
 const HERDR_METADATA_REFRESH_MS = 60000;
-const HERDR_METADATA_TOKENS = ["sympp_role", "sympp_work_request_id", "sympp_work_package_id", "sympp_show_inspector", "sympp_endpoint"];
+const HERDR_METADATA_TOKENS = ["sympp_role", "sympp_work_request_id", "sympp_work_package_id", "sympp_show_inspector", "sympp_endpoint", "sympp_session_location_id"];
 const HERDR_INSPECTOR_PLUGIN = "symphony-plus-plus.execution-inspector";
 
 function trace(event, fields) {
@@ -172,6 +173,7 @@ function herdrMetadataArgs(binding, backend) {
     sympp_work_package_id: binding.work_package_id,
     sympp_show_inspector: String(binding.show_inspector === true),
     sympp_endpoint: trimOrigin(backend),
+    sympp_session_location_id: sessionLocation.clientId,
   };
   const args = ["--ttl-ms", String(HERDR_METADATA_TTL_MS)];
   for (const name of HERDR_METADATA_TOKENS) {
@@ -785,6 +787,7 @@ function responseLines(response) {
 }
 
 async function mcpPost(url, body, sessionId, protocol, timeoutMs) {
+  body = await sessionLocation.attach(body);
   const headers = { Accept: "application/json, text/event-stream", "Content-Type": "application/json" };
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   if (protocol) headers["MCP-Protocol-Version"] = protocol;

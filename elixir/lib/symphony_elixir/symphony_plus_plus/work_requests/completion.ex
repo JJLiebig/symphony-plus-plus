@@ -5,6 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
@@ -656,7 +657,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
 
   defp delete_work_request_dependents(repo, work_request_ids, work_package_ids) do
     with :ok <- preserve_archived_work_package_hides(repo, work_package_ids),
-         :ok <- delete_archived_comments(repo, work_request_ids, work_package_ids) do
+         :ok <- delete_archived_comments(repo, work_request_ids, work_package_ids),
+         :ok <- SessionLocations.delete_for_targets(repo, "work_request", work_request_ids),
+         :ok <- SessionLocations.delete_for_targets(repo, "work_package", work_package_ids) do
       delete_archived_grant_scopes(repo, work_request_ids, work_package_ids)
     end
   end

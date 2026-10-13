@@ -57,6 +57,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
 
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -91,6 +92,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     :state_key,
     :state_key_version,
     :stale_architect_claim,
+    :client_location,
     batch_claim_pending: false,
     local_daemon_trusted: false,
     state_key_explicit: false,
@@ -105,6 +107,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
           state_key: term(),
           state_key_version: integer() | nil,
           stale_architect_claim: map() | nil,
+          client_location: map() | nil,
           batch_claim_pending: boolean(),
           local_daemon_trusted: boolean(),
           state_key_explicit: boolean(),
@@ -179,6 +182,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     HandleStateStore.cleanup_default_handle_states()
     server = HandleStateStore.restore(payload, server)
     {response, updated_server} = handle_state(payload, server)
+    updated_server = SessionLocations.observe(payload, response, updated_server)
     updated_server = HandleStateStore.persist(payload, response, server, updated_server)
     {response, updated_server}
   end
@@ -417,6 +421,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
 
   defp batch_server_state_changed?(%__MODULE__{} = server, %__MODULE__{} = updated_server) do
     server.initialized != updated_server.initialized or
+      server.client_location != updated_server.client_location or
       server.session != updated_server.session or
       server.session_refresh_required != updated_server.session_refresh_required or
       server.stale_assignment_role != updated_server.stale_assignment_role
@@ -1615,7 +1620,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp initialize_request?(%{"jsonrpc" => "2.0", "method" => "initialize"}), do: true
   defp initialize_request?(_payload), do: false
 
-  defp handle_batch_item(payload, %__MODULE__{} = server) when is_map(payload), do: handle_state(payload, server)
+  defp handle_batch_item(payload, %__MODULE__{} = server) when is_map(payload) do
+    {response, updated_server} = handle_state(payload, server)
+    {response, SessionLocations.observe(payload, response, updated_server)}
+  end
 
   defp handle_batch_item(_payload, %__MODULE__{} = server) do
     {Response.error(nil, -32_600, "Invalid Request", %{"reason" => "request_must_be_object"}), server}

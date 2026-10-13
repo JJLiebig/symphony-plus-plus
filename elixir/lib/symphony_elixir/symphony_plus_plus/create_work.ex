@@ -16,6 +16,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CreateWork do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Policies.Templates
   alias SymphonyElixir.SymphonyPlusPlus.ReviewRequirement
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
 
@@ -200,6 +201,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CreateWork do
       delete_by_work_package_id(repo, Finding, work_package_id)
       delete_by_work_package_id(repo, PlanNode, work_package_id)
       delete_by_work_package_id(repo, AccessGrant, work_package_id)
+      SessionLocations.delete_for_targets(repo, "work_package", [work_package_id])
 
       repo.delete_all(from(work_package in WorkPackage, where: work_package.id == ^work_package_id))
       :ok

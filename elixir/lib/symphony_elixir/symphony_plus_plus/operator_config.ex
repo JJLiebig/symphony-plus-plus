@@ -44,6 +44,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorConfig do
 
   def session_location(_config, _session), do: nil
 
+  @spec machine(map(), String.t() | nil, String.t() | nil) :: map()
+  def machine(config, machine_id, fallback_label) do
+    configured =
+      case entry(config, "machines", machine_id) do
+        value when is_map(value) -> value
+        _other -> %{}
+      end
+
+    label = Map.get(configured, "label")
+    kind = Map.get(configured, "kind")
+
+    %{
+      label: if(filled_string?(label), do: label, else: fallback_label || machine_id || "Unknown machine"),
+      kind: if(kind in ["desktop", "laptop", "server"], do: kind)
+    }
+  end
+
   defp config_path do
     System.get_env("SYMPP_OPERATOR_CONFIG") ||
       Path.join(System.get_env("SYMPP_HOME") || Path.expand("~/.agents/splusplus"), "operator-board.json")

@@ -37,6 +37,12 @@ payloads, claim secrets, or secret-bearing commands.
 
 ## Context Format
 
+The client bridge reports location automatically inside Herdr. Outside Herdr,
+optionally include `session_description` on an existing `read_work_request`,
+`claim_local_architect_assignment`, or `get_current_assignment` call, for example
+`"Terminal window: widget planning"`. Use words the operator can recognize;
+omit secrets and private connection details. Do not add a registration step.
+
 TOON is presentation only. Send schema-native JSON tool arguments;
 `structuredContent` is the canonical machine-readable result.
 

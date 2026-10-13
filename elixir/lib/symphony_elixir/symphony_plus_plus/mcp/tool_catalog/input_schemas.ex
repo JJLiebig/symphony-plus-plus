@@ -33,7 +33,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         "claimed_by" => string_schema(),
         "creator_kind" => string_enum_schema(WorkRequest.creator_kinds()),
         "creator_name" => string_schema(),
-        "created_via" => string_schema()
+        "created_via" => string_schema(),
+        "session_description" => session_description_schema()
       },
       ["repo", "base_branch", "title", "request_kind", "description"]
     )
@@ -91,6 +92,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         "base_branch" => string_schema(),
         "phase_id" => string_schema(),
         "caller_id" => string_schema(),
+        "session_description" => session_description_schema(),
         "claimed_by" => string_schema()
       },
       ["work_request_id"]
@@ -107,13 +109,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_package_id" => string_schema(),
+        "session_description" => session_description_schema(),
         "claimed_by" => string_schema()
       },
       ["work_package_id"]
     )
   end
 
-  def worker_tool_input_schema(name) when name in ["get_current_assignment", "read_context", "read_task_plan"] do
+  def worker_tool_input_schema("get_current_assignment") do
+    schema(%{"session_description" => session_description_schema()}, [])
+  end
+
+  def worker_tool_input_schema(name) when name in ["read_context", "read_task_plan"] do
     schema(%{}, [])
   end
 
@@ -269,7 +276,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     )
   end
 
-  def architect_tool_input_schema("read_work_request"), do: schema(%{"work_request_id" => string_schema()}, ["work_request_id"])
+  def architect_tool_input_schema("read_work_request") do
+    schema(%{"work_request_id" => string_schema(), "session_description" => session_description_schema()}, ["work_request_id"])
+  end
 
   def architect_tool_input_schema("read_plan") do
     schema(
@@ -1015,5 +1024,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         }
       }
     }
+  end
+
+  defp session_description_schema do
+    described_string_schema("Optional human-readable place to find this session outside Herdr, such as Terminal window: widget work.")
   end
 end
