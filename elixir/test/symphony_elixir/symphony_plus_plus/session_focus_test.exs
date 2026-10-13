@@ -3,6 +3,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocusTest do
 
   alias SymphonyElixir.SymphonyPlusPlus.SessionFocus
 
+  defmodule DeletedTargetRepo do
+    def get(_schema, _id), do: nil
+    def all(_query), do: raise("must not use a dangling location")
+  end
+
+  test "a deleted target cannot focus a surviving or late location observation" do
+    for kind <- ["work_package", "work_request"] do
+      assert SessionFocus.focus(DeletedTargetRepo, kind, "deleted").reason == "session_gone"
+    end
+  end
+
   test "missing, remote and described sessions are normal outcomes without probing Herdr" do
     opts = [machine_id: "host-a", request: fn _, _ -> flunk("unexpected Herdr probe") end]
     assert SessionFocus.focus_location(nil, opts).reason == "session_gone"

@@ -2,10 +2,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocus do
   @moduledoc false
 
   alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
+  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
   @spec focus(module(), String.t(), String.t()) :: map()
   def focus(repo, target_kind, target_id) do
-    focus_location(SessionLocations.get(repo, target_kind, target_id))
+    schema = if target_kind == "work_package", do: WorkPackage, else: WorkRequest
+    location = if repo.get(schema, target_id), do: SessionLocations.get(repo, target_kind, target_id)
+    focus_location(location)
   end
 
   @doc false
