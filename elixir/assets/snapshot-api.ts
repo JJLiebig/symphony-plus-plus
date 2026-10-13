@@ -89,7 +89,10 @@ function packageHistory(dir: string): Json {
 
 function loadSnapshot(dir: string): Snapshot {
   const read = (file: string) => JSON.parse(readFileSync(path.join(dir, file), "utf8")) as Json;
-  return { dir, manifest: read("manifest.json"), hydrated: read("dashboard.hydrated.json"), archived: read("dashboard.archived.json"), solo: read("dashboard.solo.json") };
+  const hydrated = read("dashboard.hydrated.json");
+  // A snapshot captured from an older backend lacks the newer setting; the sketch shows it at its default.
+  hydrated.settings = { work_request_never_started_archive_after_days: 30, ...hydrated.settings };
+  return { dir, manifest: read("manifest.json"), hydrated, archived: read("dashboard.archived.json"), solo: read("dashboard.solo.json") };
 }
 
 function handleGet(snapshot: Snapshot, route: string, url: URL, req: IncomingMessage, res: ServerResponse, streams: Set<ServerResponse>) {
@@ -138,6 +141,7 @@ function openEventStream(req: IncomingMessage, res: ServerResponse, streams: Set
 }
 
 const MUTATIONS: Array<[RegExp, Mutation]> = [
+  [/^\/settings$/, changeSettings],
   [/^\/work-requests\/([^/]+)\/state$/, changeRequestState],
   [/^\/work-requests\/([^/]+)\/archive$/, archiveRequest],
   [/^\/work-requests\/([^/]+)\/delete$/, deleteRequest],
@@ -157,6 +161,12 @@ async function handlePost(snapshot: Snapshot, route: string, req: IncomingMessag
   const payload = mutation[1](snapshot, decodeURIComponent(match[1]), { ...body, question_id: match[2] && decodeURIComponent(match[2]) });
   sendJson(res, 200, { ok: true, simulated: true, refresh: { dashboard: true }, ...payload });
   notify();
+}
+
+function changeSettings(snapshot: Snapshot, _id: string, body: Json) {
+  const changes = pick(body, ["work_request_archive_after_days", "work_request_never_started_archive_after_days", "solo_session_delete_after_days", "open_dashboard_on_boot", "capture_failed_mcp_calls"]);
+  snapshot.hydrated.settings = { ...snapshot.hydrated.settings, ...changes };
+  return { settings: snapshot.hydrated.settings };
 }
 
 // The snapshot's clock stands at its capture time, so a goal marked done is done as of then.

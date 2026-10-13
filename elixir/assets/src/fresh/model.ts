@@ -86,7 +86,15 @@ type Detail = {
   work_packages?: Slice[];
   product_tree?: { nodes?: Array<{ id: string; title?: string | null; position?: number; parent_id?: string | null }> } | null;
 };
-export type Hydrated = { generated_at?: string; work_request_details?: Detail[] };
+// What the operator can change. A backend that lacks a setting leaves it out.
+export type Settings = {
+  work_request_archive_after_days?: number;
+  work_request_never_started_archive_after_days?: number;
+  solo_session_delete_after_days?: number;
+  open_dashboard_on_boot?: boolean;
+  capture_failed_mcp_calls?: boolean;
+};
+export type Hydrated = { generated_at?: string; settings?: Settings | null; work_request_details?: Detail[] };
 type Timed = { event: HistoryEvent; at: number };
 
 const OUTCOMES: Record<string, Outcome> = { pr_merged: "merged", completed_no_pr: "finished", superseded: "dropped", abandoned: "dropped" };
