@@ -27,6 +27,10 @@
 
 ## Worker Prompt Conventions
 
+- Read [testing guidance](docs/testing.md) before changing tests. Define independent
+  acceptance outcomes first; retain unique process/storage/security boundaries
+  until their owning journey proves them. Keep conversion inventories in PR evidence.
+
 - Keep worker prompts short and outcome-first: state the package goal, success criteria, constraints, available evidence, and required final output.
 - For tool-heavy work, use brief preambles before tool calls so the operator can see the next step and why it matters.
 - Include explicit dependency checks, missing-evidence behavior, validation loops, stopping conditions, and safety checks before external side effects.

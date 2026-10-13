@@ -1,0 +1,13 @@
+{
+  "name": "symphony-plus-plus-acceptance",
+  "private": true,
+  "scripts": {
+    "test:e2e": "e2e run --target api"
+  },
+  "engines": {
+    "node": ">=24.8.0"
+  },
+  "devDependencies": {
+    "e2e": "0.18.0"
+  }
+}

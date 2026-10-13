@@ -14,6 +14,10 @@ Pop-Location
 
 ## Main Gate
 
+See [Testing](testing.md) for native candidate acceptance, hosted evidence, and
+the workstation runtime execution restriction. The commands below apply only
+where executable validation is authorized.
+
 Run the repository gate from the root:
 
 ```powershell

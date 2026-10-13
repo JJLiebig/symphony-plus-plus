@@ -7,6 +7,70 @@ on:
       - main
 
 jobs:
+  native-acceptance:
+    name: native acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      E2E_OAUTH_CREDENTIALS: '{}'
+      E2E_TELEMETRY_DISABLED: '1'
+      DO_NOT_TRACK: '1'
+    steps:
+      - name: Checkout candidate combined tree
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Set up candidate toolchain
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - name: Select native tool binaries before isolating runtime homes
+        working-directory: elixir
+        run: |
+          echo "$(mise where node)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where erlang)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where elixir)/bin" >> "$GITHUB_PATH"
+      - name: Record candidate identity
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p .e2e
+          git rev-parse HEAD > .e2e/checkout-sha.txt
+          git show -s --format='%H %P' HEAD > .e2e/checkout-parents.txt
+          echo "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "MIX_HOME=$RUNNER_TEMP/sympp-acceptance-mix" >> "$GITHUB_ENV"
+          echo "MIX_ARCHIVES=$RUNNER_TEMP/sympp-acceptance-mix/archives" >> "$GITHUB_ENV"
+          printf 'head=%s\nbase=%s\nrun=%s\n' "$HEAD_SHA" "$BASE_SHA" "$GITHUB_RUN_ID" > .e2e/inputs.txt
+      - name: Retain dependency lock
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acceptance-dependency-lock
+          path: package-lock.json
+      - name: Install locked acceptance dependencies
+        run: npm ci --ignore-scripts
+      - name: Build candidate source
+        working-directory: elixir
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          mix compile --warnings-as-errors
+      - name: Prove native bootstrap and health isolation
+        run: |
+          start=$SECONDS
+          npm run test:e2e
+          echo "$((SECONDS-start))" > .e2e/acceptance-wall-seconds.txt
+          node scripts/acceptance/check-report.mjs
+      - name: Retain acceptance evidence including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-acceptance-evidence
+          path: .e2e
+          include-hidden-files: true
+
   portable-skills:
     name: Windows Skills install
     runs-on: windows-latest
@@ -153,6 +217,13 @@ jobs:
           SLOW_TEST_PARTITIONS: ${{ matrix.partitions }}
           MIX_TEST_PARTITION: ${{ matrix.partition }}
 
+      - name: Retain static and test gate evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gate-${{ matrix.target }}-${{ matrix.partition || 'single' }}
+          path: elixir/_build/make-logs
+
   parallel-gates:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -243,6 +314,13 @@ jobs:
               GATE_RUN_ID: ${{ matrix.gate_id }}-${{ matrix.partition_2 }}
               ELIXIR_ERL_OPTIONS: "+S 2:2"
 
+      - name: Retain partition test evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gate-${{ matrix.gate_id }}
+          path: elixir/_p/${{ matrix.gate_id }}/l
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -283,6 +361,7 @@ jobs:
   make-all:
     runs-on: ubuntu-latest
     needs:
+      - native-acceptance
       - portable-skills
       - beta-snapshot
       - single-gates
@@ -292,6 +371,10 @@ jobs:
     steps:
       - name: Verify split gates
         run: |
+          if [ "${{ needs.native-acceptance.result }}" != "success" ]; then
+            echo "native acceptance result: ${{ needs.native-acceptance.result }}"
+            exit 1
+          fi
           if [ "${{ needs.portable-skills.result }}" != "success" ]; then
             echo "portable Skills result: ${{ needs.portable-skills.result }}"
             exit 1
