@@ -216,9 +216,13 @@ capture. No agent action is required inside Herdr.
 Outside Herdr, add the optional `session_description` string to an existing
 `create_work_request`, `claim_local_architect_assignment`,
 `claim_local_assignment`, `read_work_request`, or `get_current_assignment`
-call. It is retained for that client. A new client starts a new observation;
-provide its description again. No dedicated registration or worker MCP ceremony
-is required. Direct clients can provide the same private transport metadata at
+call. It is retained for that client. A description does not claim ownership of
+an existing goal. The coordinator fallback requires the goal to have been
+created by that same client; a fresh bridge cannot adopt it by reading the goal
+or supplying a description. Architect and worker locations resume through
+their normal assignment claim, with a description supplied again for the new
+client. No dedicated registration or worker MCP ceremony is required.
+Direct clients can provide the same private transport metadata at
 `params._meta.sympp_session_location`; the packaged bridge fills it automatically.
 Descriptions without bridge metadata still work, with an unknown machine.
 
