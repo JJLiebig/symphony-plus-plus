@@ -1,0 +1,67 @@
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "tailwindcss";
+
+/* One accent means "you are needed". Everything else is a stage colour or grey. */
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --color-bg: #0b0c0f;
+  --color-panel: #121419;
+  --color-line: #22252d;
+  --color-ink: #ececf1;
+  --color-dim: #9092a0;
+  --color-faint: #50535f;
+  --color-build: #6ea8fe;
+  --color-checks: #e5b454;
+  --color-review: #b794f6;
+  --color-merge: #7bd88f;
+  --color-you: #ff7a45;
+  --color-fail: #ff5c6c;
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  color-scheme: dark;
+  font-family: var(--font-sans);
+  scrollbar-gutter: stable;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+input[type="range"] {
+  accent-color: var(--color-ink);
+}
+
+button {
+  transition: color 120ms, background-color 120ms, border-color 120ms;
+}
+
+/* A goal jumped to from the header lands just below it. */
+[data-goal] {
+  scroll-margin-top: 116px;
+}
+
+/* Opening, closing and reordering glide: each goal moves to its new place and its box grows like an accordion. */
+.pin-top {
+  view-transition-name: pin-top;
+}
+
+.pin-bottom {
+  view-transition-name: pin-bottom;
+}
+
+::view-transition-group(*) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  overflow: clip;
+}
+
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 180ms;
+}

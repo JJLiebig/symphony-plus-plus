@@ -13,5 +13,5 @@
     "target": "ES2023",
     "useDefineForClassFields": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "snapshot-api.ts"]
 }
