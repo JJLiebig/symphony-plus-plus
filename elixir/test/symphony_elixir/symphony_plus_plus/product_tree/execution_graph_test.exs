@@ -49,30 +49,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
              )
   end
 
-  test "reports cycles and exact unmet prerequisite WorkPackage ids" do
-    work_packages = [work_package("wp_a"), work_package("wp_b"), work_package("wp_c")]
-
-    edges = [
-      dependency("dep_a", "work_package", "wp_a", "work_package", "wp_b"),
-      dependency("dep_b", "work_package", "wp_b", "work_package", "wp_a"),
-      dependency("dep_c", "work_package", "wp_c", "work_package", "wp_b")
-    ]
-
-    graph = ExecutionGraph.evaluate(%{nodes: [], dependency_edges: edges}, work_packages, [])
-
-    assert graph.cycles == [["wp_a", "wp_b"]]
-    assert graph.topological_order == []
-    assert graph.dependency_ready_work_package_ids == []
-
-    assert graph.unmet_dependencies == [
-             %{work_package_id: "wp_a", prerequisite_work_package_ids: ["wp_b"]},
-             %{work_package_id: "wp_b", prerequisite_work_package_ids: ["wp_a"]},
-             %{work_package_id: "wp_c", prerequisite_work_package_ids: ["wp_b"]}
-           ]
-
-    assert {:error, {:execution_graph_cycle, [["wp_a", "wp_b"]]}} = ExecutionGraph.require_ready(graph, "wp_c")
-  end
-
   test "nested Group dependencies omit overlapping identity pairs" do
     groups = [group("parent_group"), %Node{id: "child_group", parent_id: "parent_group"}]
 

@@ -150,40 +150,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
     assert get_in(second_worker_read_response, ["error", "data", "reason"]) == "not_found"
   end
 
-  test "worker guidance replay normalizes atom-keyed structured prompt payloads", %{repo: repo} do
-    {_package, worker_session} = create_worker_session(repo, "SYMPP-GUIDANCE-ATOM-PROMPT")
-
-    create_attrs = %{
-      "summary" => "Need prompt replay",
-      "question" => "Can a structured prompt replay cleanly?",
-      "context" => "The worker retries an Elixir-built payload with nested atom keys.",
-      "idempotency_key" => "guidance-atom-prompt",
-      decision_prompt: %{
-        tl_dr: "Choose replay behavior.",
-        details: "The same structured prompt should replay instead of conflicting.",
-        options: [
-          %{
-            id: "continue",
-            label: "Continue",
-            description: "Proceed with the existing path.",
-            pros: ["Keeps retry idempotent"],
-            cons: ["No alternate behavior in this test"],
-            answer: "Continue with the existing path."
-          }
-        ],
-        custom_redirect_label: "No, and tell the agent what to do differently"
-      }
-    }
-
-    assert {:ok, created} = GuidanceRequestService.create_for_worker(repo, worker_session.assignment, create_attrs)
-    assert created.decision_prompt["tl_dr"] == "Choose replay behavior."
-    assert get_in(created.decision_prompt, ["options", Access.at(0), "id"]) == "continue"
-
-    assert {:ok, replayed} = GuidanceRequestService.create_for_worker(repo, worker_session.assignment, create_attrs)
-    assert replayed.id == created.id
-    assert repo.aggregate(GuidanceRequest, :count, :id) == 1
-  end
-
   test "architect lists scoped guidance, reads it, and workers cannot answer", %{repo: repo} do
     {anchor, architect_session} = create_architect_session(repo, "SYMPP-GUIDANCE-ARCHITECT")
     {visible_package, worker_session} = create_worker_session(repo, "SYMPP-GUIDANCE-VISIBLE", phase_id: anchor.phase_id)

@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { test as base } from 'e2e';
 
@@ -18,10 +18,10 @@ export class Candidate {
   private pending = new Map<number, { resolve: (response: any) => void; reject: (error: Error) => void }>();
   private log;
 
-  constructor(root: string, name: string, transport: 'stdio' | 'http' = 'stdio') {
+  constructor(root: string, name: string, private transport: 'stdio' | 'http' = 'stdio') {
     this.home = join(root, name);
     this.database = join(this.home, 'ledger.sqlite3');
-    this.log = createWriteStream(resolve('.e2e', `${name}.log`));
+    this.log = createWriteStream(resolve('.e2e', `${basename(root)}-${name}.log`));
     const args = transport === 'stdio'
       ? ['sympp.mcp', '--database', this.database, '--repo-root', resolve('.')]
       : ['sympp.cockpit', '--database', this.database, '--port', '0', '--no-open-dashboard',
@@ -88,7 +88,8 @@ export class Candidate {
       return;
     }
     const exited = once(this.process, 'exit');
-    this.process.stdin.end();
+    if (this.transport === 'http') this.process.kill('SIGTERM');
+    else this.process.stdin.end();
     const timer = setTimeout(() => this.process.kill('SIGKILL'), 5_000);
     try { await exited; } finally { clearTimeout(timer); this.log.end(); }
   }
