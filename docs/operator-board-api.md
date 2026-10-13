@@ -146,3 +146,95 @@ These existing POST routes require local operator authorization:
 Worktree cleanup runs asynchronously and defers active or paused workers while
 their package records exist. Deleting those records removes that activity check,
 so deletion must not be treated as a way to stop a running worker.
+
+## Session locations
+
+The hydrated response adds `architect_session_location` to both
+`work_requests.work_requests[]` and `work_request_details[].work_request`.
+`work_request_details[].work_packages[].session_location` keeps its existing
+machine `label` and `kind` meanings and gains the fields below for observed
+MCP sessions. Fields are absent when there is no observation or existing
+configured worker-session label. Existing configured labels remain supported.
+
+| Field | Meaning |
+| --- | --- |
+| `machine_id` | Client hostname, trimmed and lowercased; independent of the display label. |
+| `label` | `machines[machine_id].label`, otherwise the client hostname. |
+| `kind` | Configured `desktop`, `laptop`, or `server`; `null` when unknown. |
+| `role` | `architect`, `coordinator`, or `worker`. |
+| `source` | `herdr`, `agent` (human description), or `machine` (hostname only). |
+| `description` | Optional human-readable location supplied by the agent. |
+| `last_seen_at` | UTC time of the latest successful scoped MCP tool call reporting this session. |
+| `herdr` | Workspace, tab and pane ids, with workspace/tab labels when obtainable; empty outside Herdr. |
+
+A claimed architect's observation takes precedence over a coordinator fallback.
+The fallback is established only by the client that creates the WorkRequest;
+later successful calls scoped to that same WorkRequest refresh it. Reading
+somebody else's goal does not adopt its location. Worker locations come from
+the authenticated package assignment. Locations are last known addresses, even
+after a session ends: neither a recent timestamp nor a retained address proves
+liveness. No arbitrary live/stale threshold is applied. Dashboard reads never
+advance `last_seen_at`.
+
+Example hydrated response fragment (invented names):
+
+```json
+{
+  "work_request_details": [{
+    "work_request": {
+      "id": "wr-widget",
+      "architect_session_location": {
+        "machine_id": "planning-desk", "label": "Planning Desk", "kind": null,
+        "role": "architect", "source": "agent",
+        "description": "Terminal window: widget planning",
+        "last_seen_at": "2026-10-13T09:00:00.000000Z", "herdr": {}
+      }
+    },
+    "work_packages": [{
+      "id": "wp-widget",
+      "session_location": {
+        "machine_id": "build-desk", "label": "Workshop", "kind": "desktop",
+        "role": "worker", "source": "herdr", "description": null,
+        "last_seen_at": "2026-10-13T09:01:00.000000Z",
+        "herdr": {"workspace_id": "w1", "workspace_label": "Widget Service",
+                  "tab_id": "w1:t2", "tab_label": "Implementation", "pane_id": "w1:p3"}
+      }
+    }]
+  }]
+}
+```
+
+The per-client Node bridge and PowerShell fallback capture `HERDR_ENV=1`,
+`HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, and `HERDR_PANE_ID` from their own launch
+environment. This works for any MCP client using the packaged launcher,
+including architect, coordinator, and worker sessions. The shared backend's
+environment is never used to identify the caller. A best-effort read-only
+`herdr api snapshot` supplies labels and native session identity, refreshed at
+most once a minute with a one-second timeout. Missing labels do not prevent
+capture. No agent action is required inside Herdr.
+
+Outside Herdr, add the optional `session_description` string to an existing
+`create_work_request`, `claim_local_architect_assignment`,
+`claim_local_assignment`, `read_work_request`, or `get_current_assignment`
+call. It is retained for that client. A new client starts a new observation;
+provide its description again. No dedicated registration or worker MCP ceremony
+is required. Direct clients can provide the same private transport metadata at
+`params._meta.sympp_session_location`; the packaged bridge fills it automatically.
+Descriptions without bridge metadata still work, with an unknown machine.
+
+Machines need no registry entry: the first location is enough to display one.
+Rename a machine through the existing `operator-board.json` map, for example
+`"machines":{"build-desk":{"label":"Workshop","kind":"desktop"}}`.
+The next dashboard read applies the rename to existing observations without
+re-registration. Hostname changes create a different machine id; identical
+hostnames on different machines cannot be distinguished by this best-effort id.
+Herdr session selectors, socket paths, native session identities and client
+identifiers are private persistence fields and never appear in this response.
+
+Both backend and client bridge must contain this change. Merging into `beta`
+alone does not upgrade installed artifacts or already running bridges. After a
+build containing the change is published, use the normal marketplace-backed
+plugin upgrade and start a fresh MCP connection/session. Do not refresh an
+installed cache from a developer checkout. Existing agents begin reporting on
+their next successful scoped call through the updated bridge; historical
+addresses cannot be reconstructed. No release or cache upgrade is part of this PR.

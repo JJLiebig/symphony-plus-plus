@@ -461,7 +461,10 @@ $script:SymppHerdrMetadataSource = "symphony-plus-plus"
 $script:SymppHerdrMetadataCommandTimeoutMs = 5000
 $script:SymppHerdrMetadataTtlMs = 150000
 $script:SymppHerdrMetadataRefreshMs = 60000
-$script:SymppHerdrMetadataTokens = @("sympp_role", "sympp_work_request_id", "sympp_work_package_id", "sympp_show_inspector", "sympp_endpoint")
+$script:SymppHerdrMetadataTokens = @("sympp_role", "sympp_work_request_id", "sympp_work_package_id", "sympp_show_inspector", "sympp_endpoint", "sympp_session_location_id")
+$script:SymppSessionLocationId = [Guid]::NewGuid().ToString()
+$script:SymppSessionLocation = $null
+$script:SymppSessionLocationRefreshAt = 0
 $script:SymppHerdrBinding = $null
 $script:SymppHerdrBackend = $null
 $script:SymppHerdrMetadataOwned = $false
@@ -479,6 +482,82 @@ $script:SymppHerdrInspectorInflightRevision = 0
 
 function Test-SymppHerdrAvailable {
   return $env:HERDR_ENV -eq "1" -and -not [string]::IsNullOrWhiteSpace($env:HERDR_PANE_ID)
+}
+
+function Get-SymppSessionLocation {
+  if ($null -eq $script:SymppSessionLocation) {
+    $hostname = [Environment]::MachineName
+    $script:SymppSessionLocation = @{
+      client_id = $script:SymppSessionLocationId
+      machine_id = $hostname.Trim().ToLowerInvariant()
+      machine_label = $hostname
+    }
+    if (Test-SymppHerdrAvailable) {
+      $script:SymppSessionLocation.herdr = @{
+        workspace_id = $env:HERDR_WORKSPACE_ID; tab_id = $env:HERDR_TAB_ID; pane_id = $env:HERDR_PANE_ID
+        session = $env:HERDR_SESSION; socket_path = $env:HERDR_SOCKET_PATH
+        native_session_id = $env:CODEX_THREAD_ID
+        native_session_agent = if ($env:CODEX_THREAD_ID) { "codex" } else { $null }
+      }
+    }
+  }
+  $location = $script:SymppSessionLocation
+  if ($location.herdr -and (Get-McpNowMs) -ge $script:SymppSessionLocationRefreshAt) {
+    $script:SymppSessionLocationRefreshAt = (Get-McpNowMs) + 60000
+    $process = $null
+    try {
+      $herdrPath = if ($env:HERDR_BIN_PATH) { $env:HERDR_BIN_PATH } else { (Get-Command herdr -ErrorAction Stop).Source }
+      $command = Get-StartProcessCommand $herdrPath @("api", "snapshot")
+      $startInfo = [Diagnostics.ProcessStartInfo]::new()
+      $startInfo.FileName = $command.file
+      $startInfo.Arguments = Join-ProcessArgumentList @($command.args)
+      $startInfo.UseShellExecute = $false
+      $startInfo.CreateNoWindow = $true
+      $startInfo.RedirectStandardOutput = $true
+      $startInfo.RedirectStandardError = $true
+      $process = [Diagnostics.Process]::new()
+      $process.StartInfo = $startInfo
+      [void]$process.Start()
+      $output = $process.StandardOutput.ReadToEndAsync()
+      [void]$process.StandardError.ReadToEndAsync()
+      if ($process.WaitForExit(1000) -and $process.ExitCode -eq 0) {
+        $snapshot = ($output.GetAwaiter().GetResult() | ConvertFrom-Json).result.snapshot
+        $pane = @($snapshot.panes | Where-Object { $_.tokens.sympp_session_location_id -eq $location.client_id } | Select-Object -First 1)
+        if (-not $pane.Count) { $pane = @($snapshot.panes | Where-Object { $_.pane_id -eq $location.herdr.pane_id } | Select-Object -First 1) }
+        if ($pane.Count) {
+          $pane = $pane[0]
+          $location.herdr.workspace_id = $pane.workspace_id
+          $location.herdr.tab_id = $pane.tab_id
+          $location.herdr.pane_id = $pane.pane_id
+          $location.herdr.workspace_label = ($snapshot.workspaces | Where-Object { $_.workspace_id -eq $pane.workspace_id } | Select-Object -First 1).label
+          $location.herdr.tab_label = ($snapshot.tabs | Where-Object { $_.tab_id -eq $pane.tab_id } | Select-Object -First 1).label
+          if (-not $location.herdr.native_session_id -and $pane.agent_session.kind -eq "session_id") {
+            $location.herdr.native_session_id = $pane.agent_session.value
+            $location.herdr.native_session_agent = $pane.agent_session.agent
+          }
+        }
+      }
+    } catch {
+      # Labels are optional; keep the address from this client's environment.
+    } finally {
+      if ($process) {
+        try { if (-not $process.HasExited) { $process.Kill() } } catch {}
+        $process.Dispose()
+      }
+    }
+  }
+  return $location
+}
+
+function Add-SymppSessionLocation([string]$Body) {
+  try {
+    $payload = $Body | ConvertFrom-Json
+    if ($payload.method -notin @("initialize", "tools/call")) { return $Body }
+    if (-not $payload.params) { $payload | Add-Member -NotePropertyName params -NotePropertyValue ([pscustomobject]@{}) -Force }
+    if (-not $payload.params._meta) { $payload.params | Add-Member -NotePropertyName _meta -NotePropertyValue ([pscustomobject]@{}) -Force }
+    $payload.params._meta | Add-Member -NotePropertyName sympp_session_location -NotePropertyValue (Get-SymppSessionLocation) -Force
+    return ($payload | ConvertTo-Json -Depth 100 -Compress)
+  } catch { return $Body }
 }
 
 function Stop-SymppHerdrMetadataProcess {
@@ -627,6 +706,7 @@ function Publish-SymppHerdrBinding([bool]$Force = $false) {
     sympp_work_package_id = [string]$script:SymppHerdrBinding.work_package_id
     sympp_show_inspector = if ($script:SymppHerdrBinding.show_inspector -eq $true) { "true" } else { "false" }
     sympp_endpoint = $script:SymppHerdrBackend
+    sympp_session_location_id = $script:SymppSessionLocationId
   }
   $arguments = @("--ttl-ms", [string]$script:SymppHerdrMetadataTtlMs)
   foreach ($name in $script:SymppHerdrMetadataTokens) {
