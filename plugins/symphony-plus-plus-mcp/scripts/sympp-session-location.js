@@ -32,8 +32,8 @@ function withSnapshot(location, response) {
   return { ...location, herdr: { ...location.herdr,
     workspace_id: pane.workspace_id, workspace_label: workspace && workspace.label,
     tab_id: pane.tab_id, tab_label: tab && tab.label, pane_id: pane.pane_id,
-    native_session_id: location.herdr.native_session_id || (pane.agent_session?.kind === "session_id" ? pane.agent_session.value : undefined),
-    native_session_agent: location.herdr.native_session_agent || (pane.agent_session?.kind === "session_id" ? pane.agent_session.agent : undefined),
+    native_session_id: location.herdr.native_session_id || (pane.agent_session?.kind === "id" ? pane.agent_session.value : undefined),
+    native_session_agent: location.herdr.native_session_agent || (pane.agent_session?.kind === "id" ? pane.agent_session.agent : undefined),
   } };
 }
 

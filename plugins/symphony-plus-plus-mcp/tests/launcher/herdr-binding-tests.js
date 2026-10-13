@@ -28,14 +28,14 @@ assert.equal(forwarded.params._meta.another, true);
 assert.deepEqual(forwarded.params.arguments, {});
 assert.equal(forwarded.params._meta.sympp_session_location.client_id, "client-a");
 const labeled = withSnapshot(first, { result: { snapshot: {
-  panes: [{ pane_id: "w1:p3", workspace_id: "w1", tab_id: "w1:t2", agent_session: { agent: "claude", kind: "session_id", value: "native-a" } }],
+  panes: [{ pane_id: "w1:p3", workspace_id: "w1", tab_id: "w1:t2", agent_session: { agent: "claude", kind: "id", value: "native-a" } }],
   workspaces: [{ workspace_id: "w1", label: "Widget Service" }], tabs: [{ tab_id: "w1:t2", label: "Implementation" }],
 } } });
 assert.equal(labeled.herdr.workspace_label, "Widget Service");
 assert.equal(labeled.herdr.tab_label, "Implementation");
 assert.equal(labeled.herdr.native_session_id, "native-a");
 const reused = withSnapshot(labeled, { result: { snapshot: {
-  panes: [{ pane_id: "w1:p3", workspace_id: "w1", tab_id: "w1:t2", agent_session: { agent: "codex", kind: "session_id", value: "unrelated-session" } }],
+  panes: [{ pane_id: "w1:p3", workspace_id: "w1", tab_id: "w1:t2", agent_session: { agent: "codex", kind: "id", value: "unrelated-session" } }],
 } } });
 assert.equal(reused.herdr.native_session_id, "native-a");
 

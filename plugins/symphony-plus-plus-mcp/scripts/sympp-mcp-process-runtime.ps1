@@ -531,7 +531,7 @@ function Get-SymppSessionLocation {
           $location.herdr.pane_id = $pane.pane_id
           $location.herdr.workspace_label = ($snapshot.workspaces | Where-Object { $_.workspace_id -eq $pane.workspace_id } | Select-Object -First 1).label
           $location.herdr.tab_label = ($snapshot.tabs | Where-Object { $_.tab_id -eq $pane.tab_id } | Select-Object -First 1).label
-          if (-not $location.herdr.native_session_id -and $pane.agent_session.kind -eq "session_id") {
+          if (-not $location.herdr.native_session_id -and $pane.agent_session.kind -eq "id") {
             $location.herdr.native_session_id = $pane.agent_session.value
             $location.herdr.native_session_agent = $pane.agent_session.agent
           }
