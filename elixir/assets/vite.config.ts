@@ -1,14 +1,11 @@
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { defineConfig, type ProxyOptions } from "vite";
 
 import { snapshotApi } from "./snapshot-api";
 
 const apiOrigin = process.env.SYMPP_API_ORIGIN || "http://127.0.0.1:19998";
-const boardPath = "/sympp/board";
-const freshPath = "/fresh.html";
 const snapshotDashboardPort = 20011;
 const operatorProxy: Record<string, string | ProxyOptions> = {
   "/api": localOperatorProxy(),
@@ -20,21 +17,6 @@ const operatorProxy: Record<string, string | ProxyOptions> = {
 function parseDashboardPort(value: string | undefined, fallback: number) {
   const port = Number(value);
   return Number.isInteger(port) && port > 0 ? port : fallback;
-}
-
-function redirectRoot(target: string) {
-  return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    const url = new URL(req.url || "/", "http://spp.localhost");
-
-    if (url.pathname === "/") {
-      res.statusCode = 302;
-      res.setHeader("Location", `${target}${url.search}`);
-      res.end();
-      return;
-    }
-
-    next();
-  };
 }
 
 function localOperatorProxy(): ProxyOptions {
@@ -58,23 +40,9 @@ function manualChunks(id: string) {
 export default defineConfig(({ mode }) => {
   const snapshot = mode === "snapshot";
   const dashboardPort = parseDashboardPort(process.env.SYMPP_DASHBOARD_PORT, snapshot ? snapshotDashboardPort : 19999);
-  const redirect = redirectRoot(snapshot ? freshPath : boardPath);
 
   return {
-    plugins: [
-      {
-        name: "sympp-board-root-redirect",
-        configureServer(server) {
-          server.middlewares.use(redirect);
-        },
-        configurePreviewServer(server) {
-          server.middlewares.use(redirect);
-        },
-      },
-      ...(snapshot ? [snapshotApi()] : []),
-      tailwindcss(),
-      react(),
-    ],
+    plugins: [...(snapshot ? [snapshotApi()] : []), tailwindcss(), react()],
     server: {
       host: "127.0.0.1",
       port: dashboardPort,

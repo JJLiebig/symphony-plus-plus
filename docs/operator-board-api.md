@@ -70,6 +70,11 @@ register a dashboard opener or mutate business state. The existing
 are hints, not durable history; compare saved client-side timestamps and heads
 for best-effort "since last looked" indicators.
 
+The packaged board subscribes to `GET /api/v1/sympp/operator/dashboard/events`
+instead. That stream emits `dashboard_changed` after the same changes and
+registers the open board, so the backend does not open a second one when a
+client attaches.
+
 ## Finished goal retention and operator actions
 
 `settings.work_request_archive_after_days` stays an integer day setting, now

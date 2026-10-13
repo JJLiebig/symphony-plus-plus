@@ -1,5 +1,8 @@
 import { useEffect } from "react";
 
+import { asset } from "./api";
+import iconNeeded from "./board-icon-needed.png";
+import iconQuiet from "./board-icon.png";
 import { span, type GoalView } from "./model";
 
 // The first question, answered in one corner: am I needed? The dot sits at the edge and the tab icon repeats it.
@@ -41,6 +44,6 @@ export function useTabSignal(needed: number) {
   useEffect(() => {
     document.title = needed > 0 ? `(${needed}) Symphony++` : "Symphony++";
     const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (icon) icon.href = needed > 0 ? "/board-icon-needed.png" : "/board-icon.png";
+    if (icon) icon.href = asset(needed > 0 ? iconNeeded : iconQuiet);
   }, [needed]);
 }

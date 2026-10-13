@@ -1,5 +1,6 @@
 import { Laptop, Monitor, Server, SquareTerminal, type LucideIcon } from "lucide-react";
 
+import { api } from "./api";
 import { span, type Goal, type PkgView, type Place } from "./model";
 
 const KIND: Record<string, { kind: string; icon: LucideIcon }> = { desktop: { kind: "Desktop", icon: Monitor }, laptop: { kind: "Laptop", icon: Laptop }, server: { kind: "Server", icon: Server } };
@@ -47,7 +48,7 @@ function sampleNote(place: Place) {
 async function open(path: string, place: Place | null) {
   if (place?.sample) return say(sampleNote(place));
   say("Looking for the session…");
-  const response = await fetch(`/api/v1/sympp/operator/${path}/focus`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: "{}" }).catch(() => null);
+  const response = await fetch(api(`/${path}/focus`), { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: "{}" }).catch(() => null);
   const answer = ((await response?.json().catch(() => null)) ?? {}) as Answer;
   if (!response?.ok) return say((typeof answer.error === "string" ? answer.error : answer.error?.message) || "Could not reach the backend to open that session.");
   say(answer.status === "focused" ? `Herdr is now on ${place ? addressOf(place) : "that session"}.` : whyNot(answer.reason, place));
