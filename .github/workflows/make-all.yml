@@ -24,6 +24,12 @@ jobs:
           install: true
           cache: true
           working_directory: elixir
+      - name: Select native tool binaries before isolating runtime homes
+        working-directory: elixir
+        run: |
+          echo "$(mise where node)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where erlang)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where elixir)/bin" >> "$GITHUB_PATH"
       - name: Record candidate identity
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -34,9 +40,6 @@ jobs:
           git show -s --format='%H %P' HEAD > .e2e/checkout-parents.txt
           echo "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           printf 'head=%s\nbase=%s\nrun=%s\n' "$HEAD_SHA" "$BASE_SHA" "$GITHUB_RUN_ID" > .e2e/inputs.txt
-      - name: Generate initial age-qualified lock
-        if: ${{ hashFiles('package-lock.json') == '' }}
-        run: npm install --package-lock-only --ignore-scripts --before=2026-10-06T00:00:00Z
       - name: Retain dependency lock
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -55,6 +58,7 @@ jobs:
           start=$SECONDS
           npm run test:e2e
           echo "$((SECONDS-start))" > .e2e/acceptance-wall-seconds.txt
+          node scripts/acceptance/check-report.mjs
       - name: Retain acceptance evidence including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
