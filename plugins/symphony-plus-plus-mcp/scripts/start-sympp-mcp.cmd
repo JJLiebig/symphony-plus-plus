@@ -2,6 +2,8 @@
 setlocal
 cd /d "%SystemRoot%" || exit /b 1
 
+if exist "%~dp0..\.sympp-install.json" goto :run_portable
+
 if /I "%SYMPP_NODE_BRIDGE%"=="0" goto :run_pwsh
 set "SYMPP_NODE="
 for %%I in (node.exe) do set "SYMPP_NODE=%%~$PATH:I"
@@ -28,6 +30,15 @@ exit /b %bridge_exit%
 :run_pwsh
 call :find_powershell
 "%SYMPP_POWERSHELL%" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0start-sympp-mcp.ps1" %*
+exit /b %ERRORLEVEL%
+
+:run_portable
+where node.exe >nul 2>nul
+if errorlevel 1 (
+  >&2 echo Symphony++ Skills requires Node.js 18 or newer on PATH.
+  exit /b 1
+)
+node.exe "%~dp0start-sympp-mcp-bridge.js" %*
 exit /b %ERRORLEVEL%
 
 :find_powershell

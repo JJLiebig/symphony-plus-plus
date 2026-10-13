@@ -1,91 +1,165 @@
 # Portable Skills Installation
 
-Install Symphony++ procedures for Codex or Claude Code with the
-[Skills CLI](https://github.com/vercel-labs/skills). Node.js, npm/npx and Git
-must be available. This route is alongside the Codex marketplace; it does not
-install, configure, or start the Symphony++ backend.
+On Windows x64, install Symphony++ for Claude Code, Codex, or both with the
+[Skills CLI](https://github.com/vercel-labs/skills). You need Git, Node.js 18+
+with npm/npx, PowerShell 7, and the selected host on PATH. No Elixir toolchain,
+Codex marketplace, developer checkout, or Codex cache is required. Native
+Linux, macOS and Windows ARM host setup is not supported by this route.
 
-From the intended project directory:
+## Install and connect
 
-```sh
-npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta
+From the project that will use Symphony++, choose one pair:
+
+```powershell
+# Claude Code only
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent claude-code --skill symphony-plus-plus --yes
+node .claude/skills/symphony-plus-plus/scripts/setup-sympp.js --host claude
+
+# Codex only
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex --skill symphony-plus-plus --yes
+node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host codex
+
+# Both hosts
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex claude-code --skill symphony-plus-plus --yes
+node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
 ```
 
-The repository exposes one portable skill, `symphony-plus-plus`. For an
-explicit, non-interactive host selection:
+Omitting `--host` registers installed Codex and Claude Code detected on PATH.
+`--host both` requires both. The qualified CLI version recognizes `/tree/beta`
+and retains that ref in `skills-lock.json` across updates. Project installs use
+`.agents/skills/symphony-plus-plus`; Claude's `.claude/skills/symphony-plus-plus`
+normally links there. `--copy` also works.
 
-```sh
-npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex --skill symphony-plus-plus --yes
-npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent claude-code --skill symphony-plus-plus --yes
+Setup writes the selected `CODEX_HOME/config.toml` (default `~/.codex`) and
+Claude's project `.mcp.json`, preserving unrelated settings. It does not write
+Claude's user configuration. Both entries use one absolute installed launcher
+and capture `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE`, and any selected
+backend port/log directory. Codex keeps 360-second startup and 300-second tool
+timeouts. Do not commit machine-specific MCP paths to a shared repository.
+
+Repeated setup is a no-op and repairs owned registrations after relocation.
+Unrelated `symphony_plus_plus` entries and enabled Symphony++ MCP marketplace
+plugins in the selected Codex home are refused. Use a separate home/workspace,
+or explicitly disable/remove the old registration after closing its sessions.
+Setup does not disable plugins or stop runtimes.
+
+Open **fresh host sessions** in this project, follow host approval prompts,
+and verify `symphony_plus_plus` tools before ledger work. Setup cannot add tools
+to an already-open model session. An agent following the installed skill may
+run setup when MCP is missing, then report that a fresh session is required.
+
+## Side-by-side beta and an empty dogfood ledger
+
+Use a dedicated workspace and fresh paths. Existing main factory sessions may
+remain running because these select a different ledger and runtime state:
+
+```powershell
+$betaWorkspace = Join-Path $env:USERPROFILE 'sympp-beta-dogfood'
+New-Item -ItemType Directory -Path $betaWorkspace -ErrorAction Stop | Out-Null
+Set-Location -LiteralPath $betaWorkspace
+$env:CODEX_HOME = Join-Path $betaWorkspace '.codex-beta'
+$env:CLAUDE_CONFIG_DIR = Join-Path $betaWorkspace '.claude-beta'
+$env:SYMPP_HOME = Join-Path $betaWorkspace '.sympp-beta'
+$env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'empty.sqlite3'
+$env:SYMPP_RUNTIME_FILE = Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json'
+$env:SYMPP_BACKEND_PORT = '21345'
+$env:SYMPP_OPEN_DASHBOARD = '0'
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex claude-code --skill symphony-plus-plus --yes
+node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host both
+codex
 ```
 
-These are project installs. Codex uses `.agents/skills/symphony-plus-plus`;
-Claude Code uses `.claude/skills/symphony-plus-plus`, normally linked to the
-shared project `.agents/skills` directory. Add `--copy` when a standalone copy
-is preferred. The examples use project scope. Avoid installing the portable
-bundle and equivalent marketplace procedures in the same host unless both
-entrypoints are intended.
+The first session creates an empty ledger. In another terminal, select the
+same workspace and isolated Claude profile:
 
-Inspect discovery and installed host selections:
-
-```sh
-npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --list
-npx skills list --agent codex
-npx skills list --agent claude-code
+```powershell
+$betaWorkspace = Join-Path $env:USERPROFILE 'sympp-beta-dogfood'
+Set-Location -LiteralPath $betaWorkspace
+$env:CLAUDE_CONFIG_DIR = Join-Path $betaWorkspace '.claude-beta'
+claude
 ```
 
-Update or remove the project installation from that project directory:
+Use normal host sign-in; do not copy credentials. Claude's MCP registration is
+project scoped; `CLAUDE_CONFIG_DIR` additionally selects its separate settings
+and authentication profile. For one host, use its install/setup pair above.
+Setup captures runtime paths, so the second terminal needs only its selected
+host profile and project. Read `frontend.url` from the runtime file to open the
+board; the preferred port can fall back to another available port.
 
-```sh
-npx skills update symphony-plus-plus --project
-npx skills remove symphony-plus-plus --yes
+An empty ledger supports real agent dogfooding. A copied live ledger is an
+**offline viewer only**: follow [offline sandbox rules](development.md#isolated-source-beta).
+Never point MCP at a raw copy, clear its offline marker, or promote it to live.
+The existing snapshot helper still requires the developer checkout/toolchain;
+packaged snapshot/view support is separate work.
+
+## Runtime identity, sharing, and conflicts
+
+This bundle selects beta.2 build `87d828d528b68e7b35ebb94d307a96b6f2c556ed` through
+its [published artifact pointer](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013).
+Setup prints the runtime build and bundled payload digest. Procedures and
+launcher can change while the runtime build stays the same.
+
+Both hosts must share the same Symphony++ home, runtime file and ledger to
+share a managed runtime. Startup locks serialize startup and client leases
+keep it alive until the last client closes. Portable startup records live
+ownership beside the ledger and refuses a different live home even on another
+port. A foreign same-ledger listener is refused unless shared managed ownership
+is proven. A new Windows backend also refuses an already-open ledger.
+Independent ledgers remain independent.
+
+Older marketplace launchers do not participate in the new ownership receipt.
+Do not start an old launcher and a portable launcher concurrently against the
+same stopped ledger. Close every old client before changing distribution; see
+the [cutover runbook](runbooks/beta-release-cutover.md). Existing marketplace
+installations retain their marketplace upgrade path.
+
+## Update, rollback, and removal
+
+Close clients using this installation, retain selected host profiles, and run
+from the same workspace:
+
+```powershell
+npx --yes skills@1.7.0 update symphony-plus-plus --project --yes
 ```
 
-Removal without `--agent` removes the bundle and all its host links. To detach
-one host while keeping the shared payload, add `--agent codex` or
-`--agent claude-code`.
+Open fresh sessions. The stable project skill path keeps registration valid.
+After relocating the workspace or changing copy/link layout, repeat setup with
+the same runtime selections to repair its absolute path. Re-add `/tree/beta`
+to force a payload refresh.
 
-To refresh the installed payload even when its source revision is unchanged,
-repeat its targeted `add` command. Keep the same installation mode
-(`--copy`, if used) when refreshing. Use the same beta source when refreshing.
+Rollback selects a previous **Skills-capable installation commit**, not merely
+the runtime build tag (older tags contain procedures only):
 
-## Procedures And MCP
-
-Invoke `$symphony-plus-plus` in Codex or `/symphony-plus-plus` in Claude Code.
-The [entrypoint](../skills/symphony-plus-plus/SKILL.md) routes to complete local
-procedures for architect, coordinator, worker, WorkPackage, and Solo work.
-Ordinary coordination and implementation need no backend when persistence is
-not requested. Ledger operations require `symphony_plus_plus` MCP tools in the
-actual agent session, with the intended ledger and assignment.
-
-Follow the packaged [connection guide](../skills/symphony-plus-plus/connection.md)
-for Windows Codex/Claude connection through the installed MCP companion. Shell
-startup and diagnostic tools remain supported. Business CLI commands, direct
-SQLite access, and private state files are not agent ledger fallbacks.
-Skill discovery does not prove MCP availability.
-
-The existing [Codex marketplace installation](../README.md#install) retains its
-skill-only and MCP companion packages. Use marketplace upgrade and a fresh
-session for that route; portable installation does not modify the plugin cache.
-
-## Distribution And Maintenance
-
-The bundle contains 11 Markdown files: one dispatcher, one connection guide,
-five procedures and four references. It includes no runtime, source tree,
-plugin cache or credentials. Local links resolve within the bundle.
-[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
-record the qualification limits; procedure installation alone does not
-prove a runtime connection.
-
-Marketplace MCP procedures remain authoritative. After editing them, regenerate
-the portable references and check the distribution:
-
-```sh
-node scripts/package-portable-skills.mjs
-node scripts/package-portable-skills.mjs --check
+```powershell
+$previousInstall = '<full-previous-install-commit-sha>'
+npx --yes skills@1.7.0 add "https://github.com/JJLiebig/symphony-plus-plus/tree/$previousInstall" --agent codex claude-code --skill symphony-plus-plus --yes
+node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host both
 ```
 
-The script only rewrites frontmatter, entrypoint filenames, and skill invocation
-links. It does not maintain a second host-specific workflow. The owning package
-test checks that the committed payload matches its source and that every local
-Markdown link stays inside the bundle and resolves.
+Save the prior commit from `skills-lock.json` before upgrading. A pinned SHA
+stays pinned on update; re-add `/tree/beta` to follow beta again. The previous
+bundle selects its previous runtime pointer but cannot undo migrations or
+retention. Restore a stopped ledger backup when the cutover runbook requires
+it. This initial Skills release has no earlier Skills-capable release: retain
+the original marketplace installation and stopped-ledger backup for the first
+cutover's rollback.
+
+Before `npx --yes skills@1.7.0 remove symphony-plus-plus --yes`, close clients and
+remove its MCP registration from each host. Removing skill files does not
+remove host configuration.
+
+## Maintenance and proof
+
+Canonical procedures and launcher files remain under
+`plugins/symphony-plus-plus-mcp`. `node scripts/package-portable-skills.mjs`
+mirrors them and generates install identity; `--check` detects drift. Pointer
+promotion updates both its URL and published `source_revision`. The bundle
+contains procedures, setup/launcher support and metadata; first startup
+downloads the verified runtime archive.
+
+Windows CI installs isolated bundles through Skills 1.7.0, checks configuration
+preservation/repair, and exercises the published artifact with real MCP,
+shared attachment, shutdown, restart and conflicting owners. A `/tree/beta`
+installation checks update keeps beta. Authenticated host sessions, desktop
+focus, workstation behavior and populated factory migration remain manual
+qualification.

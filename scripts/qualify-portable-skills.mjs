@@ -6,7 +6,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const source = process.argv[2] || repo;
+const source = process.argv.slice(2).find(arg => !arg.startsWith('--')) || repo;
+const branchOnly = process.argv.includes('--branch-only');
 const root = await mkdtemp(join(tmpdir(), 'sympp-portable-skills-'));
 const npx = resolve(dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
 const env = {
@@ -43,7 +44,6 @@ async function files(directory, prefix = '') {
 }
 
 const expected = await files(join(repo, 'skills/symphony-plus-plus'));
-assert.equal(expected.size, 11);
 for (const agent of ['codex', 'claude-code']) {
   const cwd = join(root, agent);
   await mkdir(cwd);
@@ -53,7 +53,7 @@ for (const agent of ['codex', 'claude-code']) {
   const install = ['add', source, '--agent', agent, '--skill', 'symphony-plus-plus', '--yes'];
   cli(cwd, install);
   const installed = join(cwd, agent === 'codex' ? '.agents' : '.claude', 'skills/symphony-plus-plus');
-  assert.deepEqual(await files(installed), expected);
+  if (!branchOnly) assert.deepEqual(await files(installed), expected);
   const listed = JSON.parse(cli(cwd, ['list', '--agent', agent, '--json']));
   assert.match(JSON.stringify(listed), /symphony-plus-plus/);
 
@@ -61,9 +61,20 @@ for (const agent of ['codex', 'claude-code']) {
   const remote = source !== repo;
   const update = remote ? cli(cwd, ['update', 'symphony-plus-plus', '--project', '--yes']) : '';
   if (remote) assert.doesNotMatch(update, /No installed skills found|Failed to|Cannot update|cannot be updated/i);
+  if (branchOnly) {
+    const lock = JSON.parse(await readFile(join(cwd, 'skills-lock.json'), 'utf8'));
+    assert.equal(lock.skills['symphony-plus-plus'].ref, 'beta', 'Skills update must retain the /tree/beta source');
+    console.log(`${agent}: /tree/beta install and tracked update retained beta.`);
+    continue;
+  }
   await writeFile(join(installed, 'connection.md'), 'stale qualification payload\n');
   cli(cwd, install);
   assert.deepEqual(await files(installed), expected);
+  if (process.argv.includes('--runtime') && agent === 'claude-code') {
+    const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', installed], { cwd, env, encoding: 'utf8', timeout: 900000 });
+    assert.equal(smoke.status, 0, `${smoke.stdout}\n${smoke.stderr}`);
+    console.log(smoke.stdout.trim());
+  }
   cli(cwd, [...install, '--copy']);
   assert.deepEqual(await files(installed), expected);
   cli(cwd, ['remove', 'symphony-plus-plus', '--agent', agent, '--yes']);

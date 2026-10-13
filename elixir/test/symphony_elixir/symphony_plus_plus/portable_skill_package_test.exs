@@ -13,11 +13,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PortableSkillPackageTest do
 
     assert status == 0, output
     files = Path.wildcard(Path.join(@bundle, "**/*")) |> Enum.filter(&File.regular?/1)
-    assert length(files) == 11
-    assert Enum.all?(files, &(Path.extname(&1) == ".md"))
     assert Path.wildcard(Path.join(@bundle, "**/SKILL.md")) == [Path.join(@bundle, "SKILL.md")]
 
-    for file <- files,
+    for file <- Enum.filter(files, &(Path.extname(&1) == ".md")),
         [_, target] <- Regex.scan(~r/\[[^\]]*\]\(([^)]+)\)/, File.read!(file)),
         not String.starts_with?(target, ["https://", "http://", "#"]) do
       path = target |> String.split("#") |> hd()

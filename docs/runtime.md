@@ -5,7 +5,27 @@ Codex and Claude Code. [Beta release notes](https://github.com/JJLiebig/symphony
 record the build, hosted checks, and native qualification limits. Linux/macOS runtime archives do not
 establish native plugin or host support.
 
-## Install In A Separate Beta Home
+## Install With Skills CLI
+
+The [portable installation guide](portable-skills.md) has exact Claude-only,
+Codex-only and combined install commands, plus an isolated empty-ledger dogfood
+recipe. `npx --yes skills@1.7.0 add .../tree/beta` installs the procedures and
+launcher; one `node <installed-skill>/scripts/setup-sympp.js` command registers
+detected hosts. It selects the published beta.2 build
+`87d828d528b68e7b35ebb94d307a96b6f2c556ed`, with no marketplace or source checkout.
+
+This route uses `CODEX_HOME` only for Codex configuration. Claude uses the project
+`.mcp.json`. Setup captures shared home, explicit ledger and runtime-file paths,
+so fresh terminals use the intended runtime. Open fresh host sessions after
+setup. Separate beta profiles, home, ledger and port allow the existing main
+factory to keep running. Never use the factory ledger for an empty-ledger trial.
+
+Update with `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`
+and fresh sessions. Repeat setup after relocating the installation. Rollback
+selects the previous Skills-capable install commit, which selects its artifact
+pointer; database rollback remains a separate stopped-backup operation.
+
+## Marketplace Alternative In A Separate Beta Home
 
 Use PowerShell with Git, Node.js, PowerShell 7 and Codex available. Choose
 separate beta paths so your stable installation and ledger remain independent:

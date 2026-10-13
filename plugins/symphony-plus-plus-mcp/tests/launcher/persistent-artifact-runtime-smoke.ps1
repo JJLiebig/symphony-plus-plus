@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ArtifactManifest)
+param([string]$ArtifactManifest, [string]$SkillsInstall)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
@@ -30,7 +30,7 @@ function Start-IsolatedProcess([string]$FilePath, [string[]]$Arguments, [hashtab
   } else {
     foreach ($argument in $Arguments) { [void]$psi.ArgumentList.Add($argument) }
   }
-  $psi.WorkingDirectory = $repoRoot
+  $psi.WorkingDirectory = if ($SkillsInstall) { $tempRoot } else { $repoRoot }
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
   $psi.RedirectStandardInput = $RedirectStreams
@@ -38,6 +38,7 @@ function Start-IsolatedProcess([string]$FilePath, [string[]]$Arguments, [hashtab
   $psi.RedirectStandardError = $RedirectStreams
   foreach ($key in @($psi.Environment.Keys)) {
     if ([string]$key -match "(?i)(TOKEN|SECRET|API_KEY|AUTHORIZATION|GITHUB|LINEAR|OPENAI)" -or
+        ($SkillsInstall -and [string]$key -eq "CODEX_HOME") -or
         [string]$key -in @("SYMPP_REPO_ROOT", "SYMPP_DATABASE", "SYMPP_SOURCE_FALLBACK", "SYMPP_ARTIFACT_RUNTIME", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT", "SYMPP_BACKEND_URL", "SYMPP_DASHBOARD_ORIGIN")) {
       [void]$psi.Environment.Remove([string]$key)
     }
@@ -153,7 +154,14 @@ try {
 
   $backendPort = New-IsolatedPort @()
   $dashboardPort = New-IsolatedPort @($backendPort)
-  if ($ArtifactManifest) {
+  if ($ArtifactManifest -or $SkillsInstall) {
+    if ($SkillsInstall) {
+      $installedRoot = [IO.Path]::GetFullPath($SkillsInstall)
+      $install = Get-Content -LiteralPath (Join-Path $installedRoot ".sympp-install.json") -Raw | ConvertFrom-Json
+      $manifest = [pscustomobject]@{ source_revision = $install.revision }
+      $codexHome = $null
+      New-Item -ItemType Directory -Path (Join-Path $tempRoot "profile") -Force | Out-Null
+    } else {
     $manifest = Get-Content -LiteralPath $ArtifactManifest -Raw | ConvertFrom-Json
     $archive = Join-Path (Split-Path -Parent $ArtifactManifest) $manifest.artifact.file
     $codexHome = Join-Path $tempRoot "codex"
@@ -174,6 +182,7 @@ try {
           path = $archive; sha256 = $manifest.artifact.sha256; entrypoint = "start-runtime.ps1"
           dashboard = @{ asset_root = $manifest.dashboard.relative_path; fingerprint = $manifest.dashboard.fingerprint } })
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
+    }
     $database = Join-Path $tempRoot "database/explicit ledger.sqlite3"
     $environment = @{
       CODEX_HOME = $codexHome; SYMPP_HOME = Join-Path $tempRoot "runtime-home"; SYMPP_RUNTIME_FILE = $runtimeFile
@@ -192,12 +201,32 @@ try {
       $actualPath = ([string]$readiness.ledger.identity.display_path).Replace('$HOME', $environment.USERPROFILE).Replace('/', '\')
       if ($readiness.ledger.identity.kind -ne "sqlite" -or [IO.Path]::GetFullPath($actualPath) -ine [IO.Path]::GetFullPath($database)) { throw "Packaged runtime ledger identity '$($readiness.ledger.identity.display_path)' did not match '$database'." }
       if ($activeState.runtime_mode -ne "artifact" -or $readiness.source.revision -ne $manifest.source_revision) { throw "Packaged runtime source identity mismatch." }
+      if ($SkillsInstall -and ($activeState.plugin_root -ne $installedRoot -or (Test-Path (Join-Path $environment.USERPROFILE ".codex")))) { throw "Portable launch depended on a Codex cache or the source checkout." }
     }
     $first = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -CreateMarker -OnAttached {
       param($activeState, $sessionId)
       & $assertLedger $activeState $sessionId
       $second = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $sessionId -OnAttached $assertLedger
       if ($second.backend_pid -ne $activeState.backend.pid) { throw "Warm client did not share the packaged backend." }
+      if ($SkillsInstall) {
+        $foreign = $environment.Clone()
+        $foreign.SYMPP_HOME = Join-Path $tempRoot "other-home"
+        $foreign.SYMPP_RUNTIME_FILE = Join-Path $tempRoot "other-home/runtime.json"
+        $foreign.SYMPP_BACKEND_PORT = [string](New-IsolatedPort @($backendPort))
+        foreach ($expectedError in @("already owned by another", "already in use")) {
+          if ($expectedError -eq "already in use") {
+            # An older launcher has no portable receipt; its real SQLite handle must still exclude a new owner.
+            Remove-Item -LiteralPath "$database.sympp-owner.json"
+          }
+          $refused = Start-IsolatedProcess $cmd @("/d", "/c", "call `"$command`"") $foreign
+          try {
+            $errorText = $refused.StandardError.ReadToEndAsync()
+            if (-not $refused.WaitForExit(60000)) { $refused.Kill($true); throw "Competing ledger home did not refuse startup." }
+            if ($refused.ExitCode -eq 0 -or $errorText.GetAwaiter().GetResult() -notmatch $expectedError) { throw "Different home and port were allowed to compete for the same ledger ($expectedError)." }
+          } finally { $refused.Dispose() }
+        }
+        [void](Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 20; method = "tools/list"; params = @{} })
+      }
     }
     Wait-ManagedRuntimeStopped $first.backend_pid $first.backend_port
     $secondWave = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
@@ -356,7 +385,7 @@ server.listen(port,"127.0.0.1");
     source_last_detach_stopped = $true; isolated_runtime_ledger_ports = $true
   } | ConvertTo-Json -Compress
 } finally {
-  if ($ArtifactManifest -and (Test-Path -LiteralPath $runtimeFile)) {
+  if (($ArtifactManifest -or $SkillsInstall) -and (Test-Path -LiteralPath $runtimeFile)) {
     $ownedState = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
     $ownedBackend = if ([int]$ownedState.backend.pid -gt 0) { Get-Process -Id ([int]$ownedState.backend.pid) -ErrorAction SilentlyContinue } else { $null }
     if ($ownedBackend -and [string]$ownedState.publication.backend.process_start_time_utc_ticks -eq [string]$ownedBackend.StartTime.ToUniversalTime().Ticks) {

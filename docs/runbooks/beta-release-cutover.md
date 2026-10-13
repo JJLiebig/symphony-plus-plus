@@ -225,7 +225,42 @@ Check that every required copy completed and retain the hashes. A stopped,
 complete backup is required even when intending only a short trial: the first
 beta connection can migrate the ledger and normal operation can apply retention.
 
-## Upgrade and reconnect
+## Skills CLI cutover
+
+The preferred host-neutral route is the [Skills install](../portable-skills.md).
+It uses the already-published beta.2 artifact; adding this distribution requires
+no new release. An empty-ledger side-by-side beta trial is independent of this
+factory cutover. A raw factory copy is not a safe MCP dogfood ledger; offline
+snapshot/view rules remain in [development](../development.md#isolated-source-beta).
+
+After the stopped-ledger backup above and an approved cutover window:
+
+1. Retain the original marketplace registration/configuration and artifacts for
+   rollback. In the selected replacement Codex home, explicitly disable/remove
+   its old Symphony++ MCP plugin or manual entry. Remove the old Claude entry
+   only in the project being converted. Setup refuses conflicting entries.
+2. In the intended project, select the recorded `SYMPP_HOME`, `SYMPP_DATABASE`
+   and `SYMPP_RUNTIME_FILE`, then run the combined Skills install and setup
+   commands in the portable guide. This registers one stable installed launcher
+   for both hosts. Do not set `SYMPP_REPO_ROOT` or change the ledger path.
+3. Open one fresh host session. Require artifact mode, runtime build
+   `87d828d528b68e7b35ebb94d307a96b6f2c556ed`, and the original ledger identity.
+   For this route `plugin_root` must be the installed skill directory, not a
+   marketplace cache. Run the actual-session checks below before the second host.
+4. Open the second host and verify shared work and one runtime. Reclaim existing
+   assignments before resuming. Never run old and new launchers concurrently
+   against the same stopped ledger: older launchers do not honor portable ledger
+   ownership receipts. A detected live old owner is refused.
+
+For future Skills upgrades, close clients, save `skills-lock.json`, run
+`npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`, and reopen
+sessions. If install location changes, repeat setup to repair its owned entry.
+Rollback re-adds the previous Skills-capable full commit SHA. This first Skills
+release has no earlier Skills-capable release, so restore the paired original
+marketplace/configuration/artifact backup for its rollback. Restore the stopped
+ledger and sidecars too when migrations or retention require it.
+
+## Marketplace alternative: upgrade and reconnect
 
 Use the same factory environment in every replacement host. Clear developer-only
 `SYMPP_REPO_ROOT`, source-root hints and artifact overrides from that environment.

@@ -4,7 +4,48 @@ Configure MCP before the model session starts. Skills supply procedures; the
 host loads tools. Skill visibility, host configuration and actual session tool
 availability are separate facts.
 
-## Windows Installed Beta
+## Windows Skills CLI Installation
+
+The portable `symphony-plus-plus` skill includes the same launcher and published
+runtime pointer as the MCP package. Git, Node.js 18+, PowerShell 7 and the selected
+host are required on Windows x64. No marketplace clone or Codex cache is needed.
+Native Linux/macOS and Windows ARM setup are unsupported.
+
+Install from the intended project:
+
+```powershell
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex claude-code --skill symphony-plus-plus --yes
+node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+```
+
+Use one `--agent` for one host. For a Claude-only copy, run setup from
+`.claude/skills/symphony-plus-plus/scripts/setup-sympp.js`. Setup detects installed
+hosts; `--host codex`, `--host claude` or `--host both` selects explicitly.
+An agent recovering missing MCP tools may run this installed setup command.
+Then open a fresh model session; setup cannot load tools into an existing one.
+
+Before setup, set `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE` and optional
+`SYMPP_BACKEND_PORT`; both host entries capture those choices. Codex writes only
+the selected `CODEX_HOME/config.toml` with 360/300-second startup/tool timeouts.
+Claude writes only the project's `.mcp.json`. Use a dedicated workspace, host
+profiles, Symphony++ home, ledger and port for side-by-side beta; do not reuse
+the factory ledger for dogfooding. A raw copied ledger is not an MCP sandbox.
+
+Both hosts share one managed runtime only with the same home/runtime file and
+ledger. Setup refuses conflicting unmanaged registration or an enabled MCP
+marketplace plugin in the selected Codex home. It repairs only its own entry.
+Keep local machine paths out of committed shared configuration.
+
+Close this runtime's clients, then update from the same project with
+`npx --yes skills@1.7.0 update symphony-plus-plus --project --yes` and open fresh
+sessions. Skills 1.7.0 retains the beta branch. The stable install path preserves
+registration; repeat setup after relocating the installation. Rollback re-adds
+the previous Skills-capable commit using `/tree/<full-sha>` and repeats setup.
+Older runtime tags contain procedures only. Ledger migrations and retention
+need their own stopped-backup rollback. Setup prints the selected runtime build
+and payload digest; changing launcher/procedures does not require a new runtime.
+
+## Windows Marketplace Beta
 
 Use Git, Node.js, PowerShell 7 and Codex on Windows. The skill-only
 `symphony-plus-plus` package does not start MCP; dedicated persistent sessions
