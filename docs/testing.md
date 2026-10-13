@@ -26,6 +26,17 @@ receive an explicit environment allowlist and stop before their temporary trees
 are removed. This qualifies the candidate STDIO boundary; installed launcher and
 Windows process qualification remain separate gates.
 
+Factory journeys start the candidate cockpit on an ephemeral loopback port with
+a separate disposable SQLite ledger. They use real HTTP MCP clients for request
+creation, architect claims, clarification, decisions, plan edits, grouping,
+repository scope, dependency refusal, ordinary dispatch, and explicit blockers.
+Human choice validation also exercises the public operator answer route with its
+required same-origin header and reads persisted answers through MCP. The cockpit
+uses a dashboard origin without opening a browser or building UI assets. No worker
+process, worker MCP claim, live provider, or model is required for dispatch proof.
+Each candidate retains a separate process log and exits before its temporary
+ledger/home is removed.
+
 The `native acceptance` job is an explicit dependency of `make-all`. Legacy
 checks remain required until the owning acceptance journey replaces their
 guarantees. Preserve unique storage, concurrency, authority, process, and live
@@ -33,6 +44,12 @@ provider contracts; live external qualification remains opt-in. Define expected
 outcomes from requirements or external contracts before writing replacements.
 Remove implementation-shape assertions and same-guarantee duplicates only with
 their owning conversion.
+
+Keep mixed authority, historical storage, concurrency, and delivery suites when
+they prove distinct boundaries. Sequential authorized clients do not prove grant
+denial matrices, SQLite contention or historical migrations. A current architect
+escalation report does not replace stored-guidance authorization and transaction
+checks. Preserve those distinctions in the per-definition conversion evidence.
 
 Retain `.e2e/report.json`, traces, process logs, checkout/head/base revisions,
 commands, and job timings as hosted artifacts. Distinguish literal definitions

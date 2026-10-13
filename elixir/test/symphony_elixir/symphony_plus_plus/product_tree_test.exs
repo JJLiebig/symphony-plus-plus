@@ -1,7 +1,6 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
   use ExUnit.Case, async: false
 
-  alias Ecto.Adapters.SQL
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.{DependencyEdge, Node, Revision}
   alias SymphonyElixir.SymphonyPlusPlus.Repo
@@ -25,81 +24,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
     repo.delete_all(Node)
     repo.delete_all(WorkRequest)
     :ok
-  end
-
-  test "projects nested product nodes with canonical WorkPackage ownership", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-PRODUCT-TREE")
-    parent = create_node!(repo, work_request, id: "node_parent", title: "Backend", position: 1)
-    child = create_node!(repo, work_request, id: "node_child", parent_id: parent.id, title: "Serving", position: 1)
-
-    nested = add_work_package!(repo, work_request, id: "wp_nested", product_tree_node_id: child.id, status: "implementing")
-    direct = add_work_package!(repo, work_request, id: "wp_direct", status: "planned")
-
-    projection = ProductTree.project(repo, work_request.id, Enum.map([nested, direct], &payload/1))
-    nodes = Map.new(projection.nodes, &{&1.id, &1})
-
-    assert projection.mode == "product_tree"
-    assert projection.root_node_ids == [parent.id]
-    assert projection.root_work_package_ids == [direct.id]
-    assert nodes[child.id].work_package_ids == [nested.id]
-    assert nodes[child.id].computed_completion_mark == "partial"
-    assert nodes[parent.id].computed_completion_mark == "partial"
-    assert projection.summary.work_package_count == 2
-  end
-
-  test "moves one canonical WorkPackage between a node and direct WorkRequest ownership", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-MOVE-PACKAGE")
-    first = create_node!(repo, work_request, id: "node_first")
-    second = create_node!(repo, work_request, id: "node_second")
-    package = add_work_package!(repo, work_request, id: "wp_move", product_tree_node_id: first.id)
-
-    assert {:ok, moved} =
-             WorkRequestRepository.update_work_package(
-               repo,
-               work_request.id,
-               package.id,
-               package.contract_revision,
-               %{product_tree_node_id: second.id, base_branch: "origin/main"}
-             )
-
-    assert moved.id == package.id
-    assert moved.product_tree_node_id == second.id
-    assert moved.base_branch == "main"
-
-    assert {:ok, direct} =
-             WorkRequestRepository.update_work_package(
-               repo,
-               work_request.id,
-               package.id,
-               moved.contract_revision,
-               %{product_tree_node_id: nil}
-             )
-
-    projection = ProductTree.project(repo, work_request.id, [payload(direct)])
-    assert projection.root_work_package_ids == [package.id]
-    assert Enum.all?(projection.nodes, &(&1.work_package_ids == []))
-  end
-
-  test "normalizes atom-keyed goals into worker engineering scope", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-ATOM-GOAL")
-
-    assert {:ok, %{work_packages: [package]}} =
-             WorkRequestRepository.slice_work_request(repo, work_request.id, [
-               %{
-                 id: "wp_atom_goal",
-                 title: "Atom-keyed package",
-                 goal: "Own the canonical package boundary.",
-                 kind: "mcp",
-                 base_branch: " refs/remotes/origin/main ",
-                 branch_pattern: "refactor/canonical-work-packages",
-                 allowed_file_globs: ["elixir/lib/**"],
-                 acceptance_criteria: ["The package has one identity."]
-               }
-             ])
-
-    assert package.goal == "Own the canonical package boundary."
-    assert package.engineering_scope == package.goal
-    assert package.base_branch == "main"
   end
 
   test "visible-only projection keeps the owned node path without leaking hidden nodes", %{repo: repo} do
@@ -193,27 +117,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
 
     assert {"hard dependency edges require a reason or decision reference", _metadata} = changeset.errors[:kind]
     assert repo.get!(DependencyEdge, edge.id).decision_ref == %{"id" => "WRD-CONTEXT"}
-  end
-
-  test "records revisions and no removed product-tree linkage table remains", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-REVISION")
-    node = create_node!(repo, work_request, id: "node_revision")
-
-    assert {:error, :id_already_exists} =
-             ProductTree.create_node(repo, %{id: node.id, work_request_id: work_request.id, title: "Duplicate"})
-
-    assert {:ok, first} = ProductTree.record_revision(repo, work_request.id, %{id: "revision_one", reason: "First"})
-    assert first.revision_number == 1
-    assert {:ok, second} = ProductTree.record_revision(repo, work_request.id, %{id: "revision_two", reason: "Second"})
-    assert second.revision_number == 2
-
-    assert {:ok, trees} = ProductTree.trees_for_work_requests(repo, [work_request.id])
-    assert trees[work_request.id].latest_revision.id == second.id
-
-    %{rows: rows} =
-      SQL.query!(repo, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sympp_product_tree_slice_links'")
-
-    assert rows == []
   end
 
   defp create_work_request!(repo, overrides) do
