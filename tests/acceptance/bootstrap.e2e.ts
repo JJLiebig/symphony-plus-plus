@@ -1,4 +1,5 @@
-import { access, realpath } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from 'e2e';
 import { test } from '../support/candidate.js';
@@ -34,7 +35,7 @@ test('fresh candidate bootstrap reports healthy isolated ledgers through its rea
     expect(health.source.revision).toBe(process.env.ACCEPTANCE_CHECKOUT_SHA);
     const version = await candidate.request('resources/read', { uri: 'sympp://health/version' });
     expect(JSON.parse(version.contents[0].text).source.revision).toBe(process.env.ACCEPTANCE_CHECKOUT_SHA);
-    await expect(access(join(candidate.home, '.agents', 'splusplus', 'symphony_plus_plus.sqlite3'))).rejects.toThrow();
+    expect(existsSync(join(candidate.home, '.agents', 'splusplus', 'symphony_plus_plus.sqlite3'))).toBe(false);
   }
   expect(identities[0]).not.toBe(identities[1]);
   expect(candidates.primary.process.pid).not.toBe(candidates.peer.process.pid);
