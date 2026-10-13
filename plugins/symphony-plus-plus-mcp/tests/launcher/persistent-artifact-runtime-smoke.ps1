@@ -245,7 +245,8 @@ try {
           try {
             $errorText = $refused.StandardError.ReadToEndAsync()
             if (-not $refused.WaitForExit(60000)) { $refused.Kill($true); throw "Competing ledger home did not refuse startup." }
-            if ($refused.ExitCode -eq 0 -or $errorText.GetAwaiter().GetResult() -notmatch $expectedError) { throw "Different home and port were allowed to compete for the same ledger ($expectedError)." }
+            $actualError = $errorText.GetAwaiter().GetResult()
+            if ($refused.ExitCode -eq 0 -or $actualError -notmatch $expectedError) { throw "Competing owner expected '$expectedError'; exit=$($refused.ExitCode), stderr=$actualError" }
           } finally { $refused.Dispose() }
         }
         [void](Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 20; method = "tools/list"; params = @{} })
