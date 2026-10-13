@@ -55,6 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     WorkRequestPayloads
   }
 
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
@@ -166,6 +167,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   @doc false
   @spec handle_response_state(term(), t()) :: {map() | [map()] | nil, t()}
   def handle_response_state(payload, %__MODULE__{} = server) do
+    if OfflineSandbox.enabled?() do
+      id = if is_map(payload), do: Map.get(payload, "id")
+      {Response.error(id, -32_003, "MCP is disabled in the offline beta sandbox", %{"reason" => "offline_sandbox"}), server}
+    else
+      handle_online_response_state(payload, server)
+    end
+  end
+
+  defp handle_online_response_state(payload, server) do
     HandleStateStore.cleanup_default_handle_states()
     server = HandleStateStore.restore(payload, server)
     {response, updated_server} = handle_state(payload, server)

@@ -1,8 +1,15 @@
 defmodule Mix.Tasks.Sympp.CockpitTest do
   use ExUnit.Case, async: false
 
+  alias Mix.Tasks.Sympp.BetaMigrate
   alias Mix.Tasks.Sympp.Cockpit, as: CockpitTask
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.{Config, Server, Stdio}
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.Repo
+  alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
+  alias SymphonyElixir.SymphonyPlusPlus.ReviewObservation
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -42,6 +49,84 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
     assert_received {:mix_shell, :info, [message]}
     assert message =~ "mix sympp.cockpit"
     assert message =~ "--database <sqlite-path>"
+  end
+
+  test "marked snapshots refuse an unprotected boot and serve local actions with MCP and probes disabled" do
+    database = WorkPackageFactory.database_path()
+    previous = System.get_env("SYMPP_OFFLINE_SANDBOX")
+    {:ok, connection} = Exqlite.Sqlite3.open(database)
+    :ok = Exqlite.Sqlite3.execute(connection, "CREATE TABLE sympp_offline_sandbox (created_at TEXT NOT NULL)")
+    :ok = Exqlite.Sqlite3.close(connection)
+
+    try do
+      System.delete_env("SYMPP_OFFLINE_SANDBOX")
+      assert {:ok, opts} = CockpitTask.parse_args_for_test(["--database", database, "--port", "0", "--open-dashboard"])
+
+      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+        CockpitTask.run_cockpit_for_test(opts, fn -> flunk("unprotected HTTP server started") end)
+      end
+
+      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+        Repo.init(:supervisor, database: database)
+      end
+
+      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+        OfflineSandbox.verify!("file:#{URI.encode(database)}?mode=rwc")
+      end
+
+      System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
+      assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> OfflineSandbox.verify!(database <> ".missing") end
+      BetaMigrate.run(["--database", database])
+      assert :ok = OfflineSandbox.verify!(database)
+
+      opts = Keyword.put(opts, :operator_dashboard_opener, fn _url -> flunk("browser opened") end)
+
+      CockpitTask.run_cockpit_for_test(opts, fn ->
+        assert is_list(Repo.config())
+        port = wait_for_bound_port()
+        origin = "http://127.0.0.1:#{port}"
+        assert Req.get!(origin <> "/api/v1/sympp/operator/dashboard", headers: browser_api_headers()).status == 200
+        assert Req.post!(origin <> "/mcp", json: %{jsonrpc: "2.0", id: 1, method: "initialize"}).status == 403
+        assert Req.post!(origin <> "/mcp/client-lease", json: %{}).status == 403
+        assert Req.get!(origin <> "/mcp/readiness").status == 200
+
+        assert {:ok, request} =
+                 WorkRequestRepository.create(Repo, %{
+                   title: "Copied goal",
+                   repo: "example/widget",
+                   base_branch: "main",
+                   work_type: "feature",
+                   human_description: "Exercise a copied goal.",
+                   desired_dispatch_shape: "single_package"
+                 })
+
+        path = origin <> "/api/v1/sympp/operator/work-requests/#{request.id}"
+        assert Req.post!(path <> "/state", json: %{state: "completed"}, headers: browser_api_headers()).status == 200
+        assert Req.post!(path <> "/archive", json: %{}, headers: browser_api_headers()).status == 200
+        assert Req.post!(path <> "/delete", json: %{}, headers: browser_api_headers()).status == 200
+        assert Repo.get(WorkRequest, request.id) == nil
+        assert Req.post!(path <> "/architect-handoff", json: %{}, headers: browser_api_headers()).status == 403
+
+        server = Server.new(Config.default())
+        response = Stdio.handle_payload(%{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize"}, server)
+        assert response["error"]["data"]["reason"] == "offline_sandbox"
+
+        package = %WorkPackage{id: "WP-OFFLINE", status: "active", worktree_path: File.cwd!(), review_requirement: %{"type" => "review-suite"}}
+
+        assert ReviewObservation.observe([package],
+                 find_executable: fn _name -> "/unused/probe" end,
+                 runner: fn _, _, _, _ -> flunk("review probe") end
+               ) == %{}
+
+        assert RepoIdentity.local_git_origin_remote(File.cwd!()) == nil
+        assert {:error, :offline_sandbox} = DefaultClient.auth_status()
+        assert {:error, :offline_sandbox} = DefaultClient.get_json("repos/example/widget", [])
+        assert :ok = OperatorDashboardOpener.open_once(opener: fn _url -> flunk("browser opened") end)
+      end)
+    after
+      restore_system_env("SYMPP_OFFLINE_SANDBOX", previous)
+      File.rm(database)
+    end
   end
 
   test "parses safe defaults and explicit options" do

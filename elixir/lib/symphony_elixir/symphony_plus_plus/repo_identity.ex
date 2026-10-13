@@ -1,5 +1,8 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentity do
   @moduledoc false
+
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
+
   @git_origin_timeout_ms 5_000
   @max_git_origin_output_bytes 8_192
 
@@ -60,7 +63,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentity do
 
   @spec local_git_origin_remote(term()) :: String.t() | nil
   def local_git_origin_remote(repo_path) when is_binary(repo_path) do
-    with true <- local_git_repo_path?(repo_path),
+    with :ok <- OfflineSandbox.require_online(),
+         true <- local_git_repo_path?(repo_path),
          git when is_binary(git) <- System.find_executable("git") || System.find_executable("git.exe"),
          {:ok, origin} <- git_origin_remote(git, repo_path),
          origin <- String.trim(origin),
