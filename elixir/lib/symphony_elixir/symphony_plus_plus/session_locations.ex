@@ -33,7 +33,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
           observe_location(payload, response, server, metadata)
           %{server | client_location: metadata}
 
-        _missing -> server
+        _missing ->
+          server
       end
     else
       server
@@ -137,6 +138,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
     repo.all(from(location in Location, where: location.target_kind == ^target_kind and location.target_id in ^target_ids))
     |> Enum.group_by(& &1.target_id)
     |> Map.new(fn {id, locations} -> {id, preferred(locations)} end)
+  end
+
+  @spec delete_for_targets(module(), String.t(), [String.t()]) :: :ok
+  def delete_for_targets(repo, target_kind, target_ids) do
+    repo.delete_all(from(location in Location, where: location.target_kind == ^target_kind and location.target_id in ^target_ids))
+    :ok
   end
 
   defp preferred(locations) do

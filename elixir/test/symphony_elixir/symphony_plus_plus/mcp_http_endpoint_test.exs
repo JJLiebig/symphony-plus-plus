@@ -496,7 +496,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
           "work_request_id" => work_request.id,
           "claimed_by" => "architect-http",
           "session_description" => "Terminal window: widget planning"
-        }) |> with_location("architect-client", "planning-desk", %{}),
+        })
+        |> with_location("architect-client", "planning-desk", %{}),
         [{"mcp-session-id", session_id}]
       )
 

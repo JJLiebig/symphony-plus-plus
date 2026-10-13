@@ -51,6 +51,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorConfig do
         value when is_map(value) -> value
         _other -> %{}
       end
+
     label = Map.get(configured, "label")
     kind = Map.get(configured, "kind")
 
