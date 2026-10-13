@@ -54,10 +54,10 @@ export class Client {
       body: JSON.stringify({ jsonrpc: '2.0', id: ++this.sequence, method, params }),
       signal: AbortSignal.timeout(30_000),
     });
-    expect(response.status).toBe(200);
     this.session = response.headers.get('mcp-session-id') ?? this.session;
     const result = await response.json();
-    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method, params, response: result })}\n`);
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method, params, status: response.status, response: result })}\n`);
+    expect(response.status).toBe(200);
     return result;
   }
 
@@ -79,7 +79,9 @@ export class Client {
       method: 'POST', headers: { 'content-type': 'application/json', origin: new URL(this.endpoint).origin },
       body: JSON.stringify(args), signal: AbortSignal.timeout(30_000),
     });
-    return { status: response.status, body: await response.json() };
+    const body = await response.json();
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method: 'POST', path, args, status: response.status, response: body })}\n`);
+    return { status: response.status, body };
   }
 
   async inspect(path: string) {

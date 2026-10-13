@@ -31,6 +31,12 @@ test('ordinary PR handoff observes pending qualification then reconciles an exac
   expect(qualified.metadata.pr.check_summary.status).toBe('passing');
   expect(qualified.metadata.pr.review_state.status).toBe('approved');
   expect(qualified.metadata.pr.head_sha).toBe(head('a'));
+  expect(qualified.metadata.pr.head_changed_at).toBe(waiting.metadata.pr.head_changed_at);
+  expect(qualified.metadata.pr.checks_changed_at).not.toBe(waiting.metadata.pr.checks_changed_at);
+  await sync(architect, wp, 101, head('a'));
+  const repeated = await detail();
+  expect(repeated.metadata.pr.head_changed_at).toBe(qualified.metadata.pr.head_changed_at);
+  expect(repeated.metadata.pr.checks_changed_at).toBe(qualified.metadata.pr.checks_changed_at);
   expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(true);
   expect(await completion()).toBeNull();
 
@@ -64,6 +70,7 @@ test('provider errors and incomplete or wrong-head evidence cannot complete a di
   const [wp] = (await architect.call('slice_work_request', { work_packages: [contract('Evidence refusal')] })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: wp });
   const handoff = { work_package_id: wp, url: prUrl(102), head_sha: head('a') };
+  await architect.reject('sync_pr', { ...handoff, url: 'https://example.invalid/not-a-pr' }, 'invalid_pr_url');
   for (const [stdout, exitCode, reason] of [
     ['HTTP 401 private synthetic diagnostics', 1, 'gh_unauthorized'], ['HTTP 404 private synthetic diagnostics', 1, 'gh_not_found'],
     ['no such file private synthetic diagnostics', 1, 'gh_unavailable'], ['unexpected private synthetic diagnostics', 2, 'request_failed'],
@@ -78,7 +85,7 @@ test('provider errors and incomplete or wrong-head evidence cannot complete a di
   }
   for (const patch of [
     { headRefOid: null }, { headRefOid: head('b') }, { baseRefName: 'other' },
-    { changedFiles: 2 }, { changedFiles: undefined }, { files: undefined }, { files: [] }, { files: [{ path: '', changeType: 'MODIFIED' }] },
+    { changedFiles: 2 }, { changedFiles: undefined, files: [] }, { files: undefined }, { files: [] }, { files: [{ path: '', changeType: 'MODIFIED' }] },
     { files: [{ path: 'src/new.ts', changeType: 'RENAMED' }] }, { files: [{ path: 'src/service.ts' }] },
     { files: [{ path: 'src/service.ts', changeType: {} }] }, { url: prUrl(999), number: 999 },
   ]) {
@@ -88,10 +95,11 @@ test('provider errors and incomplete or wrong-head evidence cannot complete a di
     expect((await row(architect, request, wp)).raw_status).toBe('ready_for_worker');
     expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
   }
-  provider.set(102, pr(102, head('a'), { files: [{ path: 'src/new.ts', changeType: 'RENAMED', previous_filename: 'src/old.ts' }], additional_field: true }));
+  provider.set(102, pr(102, head('a'), { changedFiles: undefined, files: [{ path: 'src/new.ts', changeType: 'RENAMED', previous_filename: 'src/old.ts' }], additional_field: true }));
   await sync(architect, wp, 102, head('a'));
   const initial = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
   expect(initial.metadata.pr.changed_files[0].previous_path).toBe('src/old.ts');
+  expect(initial.metadata.pr.changed_files_count).toBe(1);
   provider.set(102, pr(102, head('a'), {
     state: 'CLOSED', mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN',
     statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'STARTUP_FAILURE' }],
@@ -198,6 +206,7 @@ test('blocked handoff accepts new PR and head observations without reviving an o
   await architect.call('dispatch_work_package', { work_package_id: wp });
   await architect.call('append_progress', { work_package_id: wp, summary: 'An ordinary wait is not a blocker.', idempotency_key: 'ordinary-wait', payload: { type: 'waiting', active: true, source_tool: 'report_blocker', blocker_id: 'ordinary' } });
   await architect.call('append_progress', { work_package_id: wp, summary: 'Resolve scope before accepting handoff.', idempotency_key: 'block-scope', payload: { type: 'blocker', active: true, blocker_id: 'scope' } });
+  let priorHeadChanged: string | undefined;
   for (const [number, sha] of [[103, head('a')], [103, head('b')], [104, head('c')], [104, head('a')]] as const) {
     provider.set(number, pr(number, sha, sha === head('b') ? { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('e') } } : {}));
     const waiting = await sync(architect, wp, number, sha);
@@ -205,13 +214,15 @@ test('blocked handoff accepts new PR and head observations without reviving an o
     const detail = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
     expect(detail.metadata.pr.head_sha).toBe(sha);
     expect(detail.metadata.pr.number).toBe(number);
+    expect(detail.metadata.pr.head_changed_at).not.toBe(priorHeadChanged);
+    priorHeadChanged = detail.metadata.pr.head_changed_at;
     expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
   }
   await architect.call('resolve_blocker', { work_package_id: wp, blocker_id: 'scope', resolution: 'Scope accepted.', summary: 'Continue handoff.', idempotency_key: 'resolve-scope' });
   expect((await sync(architect, wp, 104, head('a'))).pr_sync.readiness_reasons).toEqual([]);
   expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(true);
   provider.set(103, pr(103, head('b'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('e') } }));
-  await architect.call('sync_pr', { work_package_id: wp });
+  await architect.reject('sync_pr', { work_package_id: wp }, 'pr_not_merged');
   expect(provider.calls.at(-1)?.argv[2]).toBe('104');
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
   provider.set(104, pr(104, head('a'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));

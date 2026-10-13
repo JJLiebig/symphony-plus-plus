@@ -50,6 +50,9 @@ test('all dependency endpoint combinations dispatch only after canonical deliver
   expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeTruthy();
   expect((await row(architect, request, direct)).delivery_outcome).toBe('superseded');
   expect((await row(architect, request, successor)).delivery_outcome).toBe('superseded');
+  const archived = await architect.operator(`/api/v1/sympp/operator/work-requests/${request}/archive`, {});
+  expect(archived.status).toBe(200);
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.archived_at).toBeTruthy();
 });
 
 test('candidate pins allow dispatch but all overlapping constraints and current dependent inputs gate merge', async ({ delivery: { factory, provider } }) => {
