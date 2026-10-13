@@ -30,6 +30,7 @@ $processRuntimePath = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp/script
 $betaPath = Join-Path $repoRoot "scripts/sympp-beta.ps1"
 . $runtimePath
 . $helperPath
+. (Join-Path $repoRoot "plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-artifact-manifest.ps1")
 . $processRuntimePath
 Import-ScriptFunction $scriptPath "Test-HealthySymppDashboard"
 $BoardPath = "/sympp/board"
@@ -81,7 +82,7 @@ Assert-True ($boundedState.buffered_lines.Count -eq 1 -and $boundedState.pending
 Assert-True (-not (Test-McpBackendUnavailableResponse ([pscustomobject]@{ ok = $false; statusCode = 503 }))) "HTTP errors must remain backend responses"
 Assert-True (Test-McpBackendUnavailableResponse ([pscustomobject]@{ ok = $false; statusCode = $null })) "Transport failures without a status must trigger recovery"
 foreach ($name in @(
-    "Normalize-McpContractFingerprint", "Get-McpContractFingerprintFromContractFile",
+    "Get-McpContractFingerprintFromContractFile",
     "Get-McpContractFingerprintFromMarketplaceSource", "Resolve-LocalMcpContractFingerprint",
     "New-RuntimeKey", "Get-RuntimeStateKey", "Get-PortFromOrigin", "Test-EndpointMatches", "Test-BackendShouldShutdownOnIdle",
     "Test-PortSelectionAllowsReuse", "Test-BackendContractMatches", "Resolve-SymppDatabasePath", "Test-SymppDatabasePathsMatch", "Test-BackendLaunchCompatible",

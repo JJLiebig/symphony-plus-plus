@@ -120,8 +120,31 @@ try {
       if ($LASTEXITCODE -ne 0) { throw "View requires a marked snapshot. Run -Action Snapshot first; see logs/verify.log for details." }
       Write-Output "board: $(("http://127.0.0.1:$Port/sympp/board") | ConvertTo-Json -Compress)"
       Write-Output "stop: Press Ctrl+C in this terminal before refreshing the snapshot."
-      & $runtime.entrypoint -IUnderstandThatThisWillBeRunningWithoutTheUsualGuardrails -LogsRoot $logRoot -Port $Port *> (Join-Path $logRoot "viewer.log")
-      if ($LASTEXITCODE -ne 0) { throw "Offline viewer stopped with an error. See logs/viewer.log in its home." }
+      $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME "pwsh.exe"))
+      $start.UseShellExecute = $false
+      # Only this foreground wrapper receives Ctrl+C; its finally owns the entire child tree.
+      $start.CreateNoWindow = $true
+      $start.RedirectStandardOutput = $true
+      $start.RedirectStandardError = $true
+      foreach ($argument in @("-NoProfile", "-File", $runtime.entrypoint, "-IUnderstandThatThisWillBeRunningWithoutTheUsualGuardrails", "-LogsRoot", $logRoot, "-Port", [string]$Port)) {
+        $start.ArgumentList.Add($argument)
+      }
+      $child = $null
+      try {
+        $child = [Diagnostics.Process]::Start($start)
+        $stdout = $child.StandardOutput.ReadToEndAsync()
+        $stderr = $child.StandardError.ReadToEndAsync()
+        Wait-Process -InputObject $child
+        if ($child.ExitCode -ne 0) { throw "Offline viewer stopped with an error. See logs/viewer.log in its home." }
+      } finally {
+        if ($child) {
+          try {
+            if (-not $child.HasExited) { $child.Kill($true) }
+            $child.WaitForExit()
+            [IO.File]::WriteAllText((Join-Path $logRoot "viewer.log"), $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult())
+          } finally { $child.Dispose() }
+        }
+      }
     }
   }
 } catch {

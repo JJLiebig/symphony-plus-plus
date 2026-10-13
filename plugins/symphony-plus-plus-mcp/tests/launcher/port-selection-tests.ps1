@@ -1,10 +1,11 @@
 $ErrorActionPreference = "Stop"
 $launcher = Join-Path $PSScriptRoot "../../scripts/start-sympp-mcp.ps1"
+. (Join-Path $PSScriptRoot "../../scripts/sympp-mcp-artifact-manifest.ps1")
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($launcher, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw "Launcher does not parse." }
-foreach ($name in @("Select-AvailablePort", "Get-FreeTcpPort", "Assert-SymppPortableBackendOwner", "Resolve-BackendPlan", "Test-BackendLaunchCompatible", "Test-BackendContractMatches", "Normalize-McpContractFingerprint", "Resolve-SymppDatabasePath", "Test-SymppDatabasePathsMatch")) {
+foreach ($name in @("Select-AvailablePort", "Get-FreeTcpPort", "Assert-SymppPortableBackendOwner", "Resolve-BackendPlan", "Test-BackendLaunchCompatible", "Test-BackendContractMatches", "Resolve-SymppDatabasePath", "Test-SymppDatabasePathsMatch")) {
   $definition = $ast.Find({ param($node)
     $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
   }, $true)
