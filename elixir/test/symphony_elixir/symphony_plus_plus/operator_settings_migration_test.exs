@@ -30,7 +30,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorSettingsMigrationTest do
           updated_at: now
         }
 
-        assert {1, _rows} = Repo.insert_all("sympp_operator_settings", [Map.update!(before, :hidden_work_package_ids, &Jason.encode!/1)])
+        stored = before |> Map.update!(:hidden_work_package_ids, &Jason.encode!/1) |> Map.merge(%{open_dashboard_on_boot: 0, capture_failed_mcp_calls: 1})
+        assert {1, _rows} = Repo.insert_all("sympp_operator_settings", [stored])
 
         assert @migration_version in Ecto.Migrator.run(Repo, Migrations.all(), :up, all: true, log: false)
         assert {:ok, after_upgrade} = Repository.get(Repo)

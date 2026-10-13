@@ -3166,6 +3166,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert configured["settings"]["work_request_never_started_archive_after_days"] == 10
       archived = local_operator_dashboard_payload()
       refute Enum.any?(archived["work_requests"]["work_requests"], &(&1["id"] == request.id))
+
       assert [%{"id" => "WR-UNSTARTED-OPERATOR", "archive_reason" => "never_started", "completed_at" => nil}] =
                archived["archived_work_requests"]["work_requests"]
 

@@ -39,7 +39,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.NeverStartedRetention do
   defp candidates(cutoff) do
     from(request in WorkRequest,
       where: is_nil(request.archived_at) and is_nil(request.completed_at),
-      where: fragment("COALESCE(?, ?)", request.never_started_restored_at, request.inserted_at) <= ^cutoff,
+      where: fragment("COALESCE(?, ?)", request.never_started_restored_at, request.inserted_at) <= type(^cutoff, :utc_datetime_usec),
       where: fragment("NOT EXISTS (SELECT 1 FROM sympp_work_package_deliveries WHERE work_request_id = ?)", request.id),
       order_by: [asc: request.inserted_at, asc: request.id]
     )

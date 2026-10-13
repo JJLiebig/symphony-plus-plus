@@ -272,6 +272,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
            completed_at: timestamp(completion_state.completed_at),
            completion_source: work_request.completion_source,
            archived_at: timestamp(completion_state.archived_at),
+           archive_reason: work_request.archive_reason,
            operational_state: operational_state
          }}
       end)
