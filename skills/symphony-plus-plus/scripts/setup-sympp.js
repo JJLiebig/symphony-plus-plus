@@ -71,10 +71,12 @@ function main(args) {
     SYMPP_RUNTIME_FILE: path.resolve(process.env.SYMPP_RUNTIME_FILE || path.join(symppHome, "runtime", "codex-plugin.json")),
   };
   for (const key of ["SYMPP_BACKEND_PORT", "SYMPP_LOG_DIR", "SYMPP_OPEN_DASHBOARD"]) if (process.env[key]) env[key] = process.env[key];
-  const registration = { type: "stdio", command: "cmd.exe", args: ["/d", "/s", "/c", `\"${path.join(root, "scripts", "start-sympp-mcp.cmd")}\"`], env };
+  const registration = { type: "stdio", command: process.execPath, args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
   const plans = hosts.map(host => {
     const file = host === "codex" ? path.join(path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")), "config.toml") : path.join(process.cwd(), ".mcp.json");
     const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+    // Native Codex reads require an explicitly selected home to already exist.
+    if (host === "codex") fs.mkdirSync(path.dirname(file), { recursive: true });
     const servers = host === "codex" ? codexRead("codex mcp list --json") : [];
     // Filtering the local marketplace avoids querying Codex's remote catalog.
     const plugins = host === "codex" ? codexRead("codex plugin list --marketplace symphony-plus-plus --json").installed : [];

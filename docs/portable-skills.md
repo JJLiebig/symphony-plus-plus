@@ -179,8 +179,9 @@ npx --yes skills@1.7.0 update symphony-plus-plus --project --yes
 ```
 
 Open fresh sessions. The stable project skill path keeps registration valid.
-After relocating the workspace or changing copy/link layout, repeat setup with
-the same runtime selections to repair its absolute path. Re-add `/tree/beta`
+After relocating the workspace, changing copy/link layout, or moving the Node
+executable, repeat setup with the same runtime selections to repair its absolute
+paths. Re-add `/tree/beta`
 to force a payload refresh.
 
 Rollback selects the saved installation bytes:
