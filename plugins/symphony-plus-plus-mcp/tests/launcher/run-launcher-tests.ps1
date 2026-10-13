@@ -31,6 +31,16 @@ $betaPath = Join-Path $repoRoot "scripts/sympp-beta.ps1"
 . $runtimePath
 . $helperPath
 . $processRuntimePath
+Import-ScriptFunction $scriptPath "Test-HealthySymppDashboard"
+$BoardPath = "/sympp/board"
+$script:DashboardResponse = @{ StatusCode = 200; Content = Get-Content -LiteralPath (Join-Path $repoRoot "elixir/assets/index.html") -Raw }
+function Invoke-WebRequest { return $script:DashboardResponse }
+Assert-True (Test-HealthySymppDashboard "http://127.0.0.1:21000") "The shipped dashboard HTML must pass launcher readiness"
+$script:DashboardResponse.StatusCode = 503
+Assert-True (-not (Test-HealthySymppDashboard "http://127.0.0.1:21000")) "A failed dashboard response must not pass readiness"
+$script:DashboardResponse = @{ StatusCode = 200; Content = "<html><title>Unrelated application</title></html>" }
+Assert-True (-not (Test-HealthySymppDashboard "http://127.0.0.1:21000")) "An unrelated HTML listener must not pass dashboard readiness"
+Remove-Item Function:Invoke-WebRequest
 $script:SymppSessionLocation = @{ client_id = "client-ps"; machine_id = "build-desk"; machine_label = "Build-Desk" }
 $locatedRequest = Add-SymppSessionLocation '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_context","arguments":{},"_meta":{"another":true}}}' | ConvertFrom-Json
 Assert-True ($locatedRequest.params._meta.another -and $locatedRequest.params._meta.sympp_session_location.client_id -eq "client-ps") "PowerShell location transport must preserve other MCP metadata"
