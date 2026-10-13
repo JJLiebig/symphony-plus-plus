@@ -25,6 +25,14 @@ and fresh sessions. Repeat setup after relocating the installation. Rollback
 selects the previous Skills-capable install commit, which selects its artifact
 pointer; database rollback remains a separate stopped-backup operation.
 
+For populated records, the [installed offline viewer](portable-skills.md#copy-convert-and-view-an-offline-ledger)
+copies an explicit source through SQLite's online backup and converts the copy
+with this published artifact. Its separate home and port support viewing while
+the source runtime remains open. Python is needed only for copying. The viewer
+has no MCP/agent access; Ctrl+C stops it before refresh. Never promote the copy
+to live. Procedures installed from beta can be newer than beta.2's runtime and
+UI; branch installation alone does not install later settings UI changes.
+
 ## Marketplace Alternative In A Separate Beta Home
 
 Use PowerShell with Git, Node.js, PowerShell 7 and Codex available. Choose

@@ -260,6 +260,12 @@ try {
     if (-not ($trace -match "backend_recovery_leader")) { throw "Second wave did not exercise backend recovery." }
     if (-not (Test-Path -LiteralPath $database -PathType Leaf)) { throw "Explicit packaged database was not created." }
     if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
+    if ($SkillsInstall) {
+      $offlineEnvironment = $environment.Clone()
+      $offlineEnvironment.SYMPP_OFFLINE_SKILL = $installedRoot
+      $offlineEnvironment.SYMPP_OFFLINE_ARTIFACT = $first.artifact_root
+      Invoke-IsolatedCommand (Get-Command python -ErrorAction Stop).Source @((Join-Path $repoRoot "scripts/tests/test_sympp_beta_snapshot.py"), "InstalledSnapshotTest") $offlineEnvironment
+    }
     [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = $true; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true; hosted_process_creation_seam = [bool]$HostedProcessCreation; native_desktop_qualified = -not $HostedProcessCreation } | ConvertTo-Json -Compress
     return
   }

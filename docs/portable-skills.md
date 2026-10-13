@@ -92,11 +92,53 @@ Setup captures runtime paths, so the second terminal needs only its selected
 host profile and project. Read `frontend.url` from the runtime file to open the
 board; the preferred port can fall back to another available port.
 
-An empty ledger supports real agent dogfooding. A copied live ledger is an
-**offline viewer only**: follow [offline sandbox rules](development.md#isolated-source-beta).
-Never point MCP at a raw copy, clear its offline marker, or promote it to live.
-The existing snapshot helper still requires the developer checkout/toolchain;
-packaged snapshot/view support is separate work.
+An empty ledger supports real agent dogfooding. Use the separate offline viewer
+below to inspect a consistent copy of populated records.
+
+## Copy, convert, and view an offline ledger
+
+Use the installed bundle in PowerShell 7 on Windows x64. Snapshot also requires
+Python 3.9+ on PATH; View does not need Python. No checkout, Elixir toolchain,
+host registration or MCP connection is needed. The first use downloads the
+published runtime into the dedicated offline home.
+
+From the project containing the installed skill, set the actual source path
+explicitly. The source may stay open in its existing runtime:
+
+```powershell
+$offlineHelper = '.agents/skills/symphony-plus-plus/scripts/sympp-offline.ps1'
+# Claude-only installs use .claude/skills/symphony-plus-plus/scripts/sympp-offline.ps1.
+$sourceDatabase = 'C:\path\to\recorded-factory-ledger.sqlite3' # Replace with its recorded identity.
+$offlineHome = Join-Path $env:USERPROFILE 'sympp-offline-view'
+pwsh -NoProfile -File $offlineHelper -Action Snapshot -SourceDatabase $sourceDatabase -SymppHome $offlineHome
+pwsh -NoProfile -File $offlineHelper -Action View -SymppHome $offlineHome -Port 21498
+```
+
+Choose a new, empty offline home, separate from both the factory and the empty
+dogfood home above. Port `21498` is separate from that recipe's `21345`; select
+another unused port if necessary. Open `http://127.0.0.1:21498/sympp/board`.
+The viewer runs in this terminal. Press **Ctrl+C**, wait for it to exit, then
+refresh and reopen with:
+
+```powershell
+pwsh -NoProfile -File $offlineHelper -Action Snapshot -SourceDatabase $sourceDatabase -SymppHome $offlineHome -ReplaceSnapshot
+pwsh -NoProfile -File $offlineHelper -Action View -SymppHome $offlineHome -Port 21498
+```
+
+Snapshot uses SQLite's read-only online backup, marks the copy offline, runs the
+published version's migrations without starting application services, and only
+then publishes `ledger/snapshot.sqlite3`. A failed migration preserves the
+previous snapshot. An active viewer excludes replacement. Logs, temporary
+files, operator settings and downloaded artifacts stay in the offline home;
+inherited runtime selections do not redirect the viewer.
+
+Complete, archive, restore, delete and retention affect only this copy. MCP,
+dispatch, session focus, worktree preparation/cleanup and external provider or
+review probes are disabled. Never connect agents to the copy, clear its marker,
+or promote it to live. Marker-aware runtimes refuse ordinary startup of the
+copy; older runtimes cannot enforce that protection. The copy retains private
+data and credentials, so keep it local. The existing
+[source-beta helper](development.md#isolated-source-beta) remains a developer alternative.
 
 ## Runtime identity, sharing, and conflicts
 
@@ -104,6 +146,8 @@ This bundle selects beta.2 build `87d828d528b68e7b35ebb94d307a96b6f2c556ed` thro
 its [published artifact pointer](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013).
 Setup prints the runtime build and bundled payload digest. Procedures and
 launcher can change while the runtime build stays the same.
+Changes merged to beta after this runtime build, including the later settings
+UI, are absent until a new runtime is published and selected by the pointer.
 
 Both hosts must share the same Symphony++ home, runtime file and ledger to
 share a managed runtime. Startup locks serialize startup and client leases
@@ -176,3 +220,9 @@ a test-only process creation fixture with unchanged installed launcher files
 and the real published backend. Desktop user/token/job behavior, authenticated
 host sessions, focus, workstation behavior and populated factory migration
 remain manual qualification.
+
+The installed offline path is also exercised with a synthetic populated
+old-schema WAL ledger: unchanged source bytes and records, staged conversion,
+the offline marker, populated board data, denied MCP/dispatch/focus, untouched
+external-command sentinels, Ctrl+C shutdown, stopped refresh and refusal of
+ordinary startup. This uses the published beta.2 artifact, not a rebuilt backend.
