@@ -14,6 +14,11 @@ unresolved product decisions require it, not because of request type or model.
 
 ## Start
 
+When creating a WorkRequest through MCP outside Herdr, optionally include
+`session_description` on `create_work_request`, such as
+`"Terminal window: widget coordination"`. The client bridge reports location
+automatically inside Herdr. Ordinary coordination requires no extra MCP call.
+
 - Optionally attach a coordinator-owned `symphony-plus-plus-mcp:symphony-solo-session`
   for parent planning through configured MCP tools. Do not share that session
   with workers. Persistence is optional: ordinary delegation needs no Symphony++

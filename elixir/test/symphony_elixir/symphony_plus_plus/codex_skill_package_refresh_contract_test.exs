@@ -16,7 +16,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshContractTest d
     claim_schema = ToolCatalog.worker_tool_input_schema("claim_local_assignment")
 
     assert claim_schema["required"] == ["work_package_id"]
-    assert Map.keys(claim_schema["properties"]) |> Enum.sort() == ["claimed_by", "work_package_id"]
+    assert Map.keys(claim_schema["properties"]) |> Enum.sort() == ["claimed_by", "session_description", "work_package_id"]
   end
 
   test "runtime tool schemas use model enum values" do

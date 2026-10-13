@@ -27,6 +27,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Repository, as: PhaseRepository
   alias SymphonyElixir.SymphonyPlusPlus.Repo
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations.Location
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.Repository, as: SoloSessionRepository
   alias SymphonyElixir.SymphonyPlusPlus.TrackerAdapter
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
@@ -60,6 +62,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     def config, do: [hostname: "ledger-http.example.test", port: 15_432, database: "sympp"]
     def query("PRAGMA database_list", _params, _opts), do: {:error, :unsupported}
     def query(_sql, _params, _opts), do: {:ok, %{rows: [[1]]}}
+  end
+
+  defmodule LocationBusyRepo do
+    def get_by(_schema, _filters), do: raise("database busy")
+  end
+
+  test "optional location storage cannot turn a successful tool call into a retry" do
+    server = %Server{config: Config.default(repo: LocationBusyRepo), session: claimed_session()}
+    payload = tool_call_request("location-busy", "get_current_assignment", %{}) |> with_location("busy-client", "build-desk", %{})
+    response = %{"result" => %{"structuredContent" => %{}}}
+    assert SessionLocations.observe(payload, response, server) == server
   end
 
   setup_all do
@@ -99,6 +112,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     if Process.whereis(HTTPStateStore) == nil, do: start_supervised!(HTTPStateStore)
     HTTPStateStore.reset!()
     Repo.delete_all(OperatorSettings)
+    Repo.delete_all(Location)
     FailedCall.reset()
     :ok
   end
@@ -394,7 +408,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     claim =
       post_json(
-        tool_call_request("claim", "claim_local_assignment", local_assignment_claim_args(work_package, %{"claimed_by" => "worker-http"})),
+        tool_call_request("claim", "claim_local_assignment", local_assignment_claim_args(work_package, %{"claimed_by" => "worker-http"}))
+        |> with_location("worker-client", "build-desk", %{"pane_id" => "w1:p3", "workspace_id" => "w1", "tab_id" => "w1:t2"}),
         [{"mcp-session-id", session_id}]
       )
 
@@ -410,6 +425,53 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
            } = herdr_binding(claim)
 
     refute inspect(json_response(claim, 200)) =~ minted.work_key.secret
+
+    location = SessionLocations.get(Repo, "work_package", work_package.id)
+    assert location.client_id == "worker-client"
+    assert location.machine_id == "build-desk"
+    assert location.herdr["pane_id"] == "w1:p3"
+    assert location.source == "herdr"
+
+    created =
+      post_json(
+        tool_call_request("worker-create-goal", "create_work_request", %{
+          "repo" => "example-org/widget-service",
+          "base_branch" => "main",
+          "title" => "Widget follow-up goal",
+          "request_kind" => "feature",
+          "description" => "Plan the next widget change from this worker session."
+        }),
+        [{"mcp-session-id", session_id}]
+      )
+
+    created_id = get_in(json_response(created, 200), ["result", "structuredContent", "work_request", "id"])
+    creator_location = SessionLocations.get(Repo, "work_request", created_id)
+    assert creator_location.role == "coordinator"
+    assert creator_location.client_id == location.client_id
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
+
+    note =
+      post_json(
+        tool_call_request("worker-goal-note", "add_work_request_comment", %{
+          "work_request_id" => created_id,
+          "body" => "The widget goal still belongs to this coordinator session."
+        }),
+        [{"mcp-session-id", session_id}]
+      )
+
+    assert get_in(json_response(note, 200), ["result", "structuredContent", "comment", "target_id"]) == created_id
+    refreshed_creator = SessionLocations.get(Repo, "work_request", created_id)
+    assert refreshed_creator.client_id == creator_location.client_id
+    assert DateTime.compare(refreshed_creator.last_seen_at, creator_location.last_seen_at) == :gt
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
+
+    failed =
+      tool_call_request("failed-location", "not_a_tool", %{})
+      |> with_location("another-client", "another-desk", %{"pane_id" => "w2:p1"})
+      |> post_json([{"mcp-session-id", session_id}])
+
+    assert json_response(failed, 200)["error"]
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
 
     tools = post_json(tools_list_request("worker-tools"), [{"mcp-session-id", session_id}])
     tool_names = tool_names(json_response(tools, 200))
@@ -463,12 +525,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     claim =
       post_json(
-        tool_call_request("claim", "claim_local_architect_assignment", %{"work_request_id" => work_request.id, "claimed_by" => "architect-http"}),
+        tool_call_request("claim", "claim_local_architect_assignment", %{
+          "work_request_id" => work_request.id,
+          "claimed_by" => "architect-http",
+          "session_description" => "Terminal window: widget planning"
+        })
+        |> with_location("architect-client", "planning-desk", %{}),
         [{"mcp-session-id", session_id}]
       )
 
     assert get_in(json_response(claim, 200), ["result", "structuredContent", "assignment", "grant_role"]) == "architect"
     assert get_in(json_response(claim, 200), ["result", "structuredContent", "assignment", "work_package_id"]) == handoff.anchor_package.id
+
+    location = SessionLocations.get(Repo, "work_request", work_request.id)
+    assert location.role == "architect"
+    assert location.source == "agent"
+    assert location.description == "Terminal window: widget planning"
 
     work_request_id = work_request.id
     anchor_package_id = handoff.anchor_package.id
@@ -492,12 +564,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     read =
       post_json(
-        tool_call_request("read-work-request", "read_work_request", %{"work_request_id" => work_request.id}),
+        tool_call_request("read-work-request", "read_work_request", %{"work_request_id" => work_request.id})
+        |> with_location("architect-client", "planning-desk", %{}),
         [{"mcp-session-id", session_id}]
       )
 
     assert get_in(json_response(read, 200), ["result", "structuredContent", "work_request", "id"]) == work_request.id
     assert herdr_binding(read)["work_request_id"] == work_request.id
+    observed = SessionLocations.get(Repo, "work_request", work_request.id)
+    assert observed.description == location.description
+    assert DateTime.compare(observed.last_seen_at, location.last_seen_at) != :lt
 
     release =
       post_json(
@@ -623,6 +699,64 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     assert get_in(json_response(failed, 200), ["error"]) != nil
     assert get_resp_header(failed, "sympp-herdr-binding") == []
+  end
+
+  test "coordinator location stays with its creator and follows only successful scoped calls" do
+    [session_id] = post_json(initialize_request("location-init")) |> get_resp_header("mcp-session-id")
+    headers = [{"mcp-session-id", session_id}]
+
+    create =
+      tool_call_request("location-create", "create_work_request", %{
+        "repo" => "example-org/widget-service",
+        "base_branch" => "main",
+        "title" => "Widget session location",
+        "request_kind" => "feature",
+        "description" => "Find the widget planning session.",
+        "session_description" => "Terminal window: widget planning"
+      })
+      |> with_location("coordinator-client", "planning-desk", %{})
+      |> post_json(headers)
+
+    work_request_id = get_in(json_response(create, 200), ["result", "structuredContent", "work_request", "id"])
+    assert is_binary(work_request_id)
+    location = SessionLocations.get(Repo, "work_request", work_request_id)
+    assert location.role == "coordinator"
+    assert location.source == "agent"
+
+    [other_session] = post_json(initialize_request("other-init")) |> get_resp_header("mcp-session-id")
+
+    other_read =
+      tool_call_request("other-read", "read_work_request", %{"work_request_id" => work_request_id})
+      |> with_location("other-client", "another-desk", %{})
+      |> post_json([{"mcp-session-id", other_session}])
+
+    assert json_response(other_read, 200)["result"]
+    assert SessionLocations.get(Repo, "work_request", work_request_id) == location
+
+    read =
+      tool_call_request("creator-read", "read_work_request", %{"work_request_id" => work_request_id})
+      |> with_location("coordinator-client", "planning-desk", %{})
+      |> post_json(headers)
+
+    assert json_response(read, 200)["result"]
+    updated = SessionLocations.get(Repo, "work_request", work_request_id)
+    assert updated.client_id == location.client_id
+    assert updated.description == location.description
+    assert DateTime.compare(updated.last_seen_at, location.last_seen_at) == :gt
+
+    second_create =
+      tool_call_request("second-location-create", "create_work_request", %{
+        "repo" => "example-org/widget-service",
+        "base_branch" => "main",
+        "title" => "Another widget goal",
+        "request_kind" => "feature",
+        "description" => "Continue planning in the same session."
+      })
+      |> with_location("coordinator-client", "planning-desk", %{})
+      |> post_json(headers)
+
+    second_id = get_in(json_response(second_create, 200), ["result", "structuredContent", "work_request", "id"])
+    assert SessionLocations.get(Repo, "work_request", second_id).description == location.description
   end
 
   test "POST /mcp rehydrates claimed local worker session after backend state reset" do
@@ -942,12 +1076,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     claim =
       post_json(
-        tool_call_request("claim", "claim_local_assignment", local_assignment_claim_args(work_package, %{"claimed_by" => "worker-revoked"})),
+        tool_call_request("claim", "claim_local_assignment", local_assignment_claim_args(work_package, %{"claimed_by" => "worker-revoked"}))
+        |> with_location("revoked-client", "build-desk", %{}),
         [{"mcp-session-id", session_id}]
       )
 
     assert get_in(json_response(claim, 200), ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
+    location = SessionLocations.get(Repo, "work_package", work_package.id)
+    assert location.client_id == "revoked-client"
     assert {:ok, _revoked} = AccessGrantService.revoke(Repo, minted.grant.id)
+
+    health =
+      tool_call_request("revoked-health", "sympp.health", %{})
+      |> with_location("revoked-client", "another-desk", %{})
+      |> post_json([{"mcp-session-id", session_id}])
+
+    assert json_response(health, 200)["result"]
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
 
     tools = post_json(tools_list_request("revoked-tools"), [{"mcp-session-id", session_id}])
     tool_names = tool_names(json_response(tools, 200))
@@ -1654,6 +1799,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       "claimed_by" => "local-worker-http"
     }
     |> Map.merge(overrides)
+  end
+
+  defp with_location(payload, client_id, machine_id, herdr) do
+    put_in(payload, ["params", "_meta"], %{
+      "sympp_session_location" => %{
+        "client_id" => client_id,
+        "machine_id" => machine_id,
+        "machine_label" => machine_id,
+        "herdr" => herdr,
+        "unknown_future_field" => true
+      }
+    })
   end
 
   defp local_claim_worktree_path(work_package_id) do

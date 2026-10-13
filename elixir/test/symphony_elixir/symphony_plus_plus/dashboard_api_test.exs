@@ -1273,6 +1273,42 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end
   end
 
+  test "session focus routes return missing sessions normally without writing ledger state" do
+    for target <- ["work-packages", "work-requests"] do
+      {conn, queries} = capture_queries(fn -> post(local_operator_conn(), "/api/v1/sympp/operator/#{target}/missing/focus", %{}) end)
+      assert json_response(conn, 200) == %{"ok" => true, "status" => "not_focused", "reason" => "session_gone"}
+      refute Enum.any?(queries, &Regex.match?(~r/^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i, &1))
+    end
+  end
+
+  test "focus rejects cross-origin requests and unsupported methods before reading the ledger" do
+    {conn, queries} =
+      capture_queries(fn ->
+        local_operator_conn()
+        |> put_req_header("origin", "https://example.invalid")
+        |> post("/api/v1/sympp/operator/work-packages/missing/focus", %{})
+      end)
+
+    assert json_response(conn, 401)["error"]["code"] == "unauthorized"
+    assert queries == []
+    assert local_operator_conn() |> get("/api/v1/sympp/operator/work-requests/missing/focus") |> json_response(405)
+  end
+
+  test "offline sandbox refuses focus before any ledger read or external probe" do
+    previous = System.get_env("SYMPP_OFFLINE_SANDBOX")
+    System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
+
+    try do
+      for target <- ["work-packages", "work-requests"] do
+        {conn, queries} = capture_queries(fn -> post(local_operator_conn(), "/api/v1/sympp/operator/#{target}/missing/focus", %{}) end)
+        assert json_response(conn, 403) == %{"error" => "This action is unavailable in the offline beta sandbox."}
+        assert queries == []
+      end
+    after
+      if previous, do: System.put_env("SYMPP_OFFLINE_SANDBOX", previous), else: System.delete_env("SYMPP_OFFLINE_SANDBOX")
+    end
+  end
+
   test "local operator dashboard reads do not write after migration bootstrap" do
     {bootstrap_queries, queries} =
       with_local_operator_endpoint(fn ->

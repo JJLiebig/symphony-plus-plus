@@ -16,6 +16,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
   alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
+  alias SymphonyElixir.SymphonyPlusPlus.SessionFocus
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
@@ -611,6 +612,28 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
         end
       end
     )
+  end
+
+  @spec operator_focus_work_package(Conn.t(), map()) :: Conn.t()
+  def operator_focus_work_package(conn, %{"work_package_id" => id}), do: focus_session(conn, "work_package", id)
+
+  @spec operator_focus_work_request(Conn.t(), map()) :: Conn.t()
+  def operator_focus_work_request(conn, %{"work_request_id" => id}), do: focus_session(conn, "work_request", id)
+
+  defp focus_session(conn, target_kind, target_id) do
+    cond do
+      OfflineSandbox.enabled?() ->
+        conn |> put_status(403) |> json(%{error: "This action is unavailable in the offline beta sandbox."})
+
+      not local_operator_browser?(conn) ->
+        error_response(conn, :unauthorized)
+
+      true ->
+        case Runtime.with_dashboard_repo(&SessionFocus.focus(&1, target_kind, target_id), migrate?: false) do
+          {:error, reason} -> error_response(conn, reason)
+          result -> json(conn, result)
+        end
+    end
   end
 
   defp send_local_operator_response(conn, action, %Target{} = target, tool, fun)
