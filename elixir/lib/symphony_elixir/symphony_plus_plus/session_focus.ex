@@ -9,12 +9,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocus do
   def focus(repo, target_kind, target_id) do
     schema = if target_kind == "work_package", do: WorkPackage, else: WorkRequest
     location = if repo.get(schema, target_id), do: SessionLocations.get(repo, target_kind, target_id)
-    focus_location(location)
+    focus_location(location, [])
   end
 
   @doc false
   @spec focus_location(map() | nil, keyword()) :: map()
-  def focus_location(location, opts \\ [])
   def focus_location(nil, _opts), do: result(:session_gone)
 
   def focus_location(location, opts) do
