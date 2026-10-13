@@ -146,3 +146,56 @@ These existing POST routes require local operator authorization:
 Worktree cleanup runs asynchronously and defers active or paused workers while
 their package records exist. Deleting those records removes that activity check,
 so deletion must not be treated as a way to stop a running worker.
+
+## Focus an agent session
+
+`POST /api/v1/sympp/operator/work-packages/:id/focus` focuses the package's worker.
+`POST /api/v1/sympp/operator/work-requests/:id/focus` focuses the goal's architect,
+or its recorded coordinator when no architect has reported a location.
+Both accept an empty JSON body and require the same local browser authorization
+and Origin checks as other operator actions. Unknown body fields are ignored.
+
+Example (invented package):
+
+```http
+POST /api/v1/sympp/operator/work-packages/wp-widget/focus
+Origin: http://127.0.0.1:4000
+Content-Type: application/json
+
+{}
+```
+
+```json
+{"ok":true,"status":"focused","reason":null}
+```
+
+An unavailable session returns HTTP 200 with `ok: true`, `status: "not_focused"`
+and one of these `reason` values; the board can show the corresponding explanation:
+
+| Reason | Meaning |
+| --- | --- |
+| `session_gone` | No recorded location or no currently recognized agent with that exact identity. |
+| `not_in_herdr` | The session reported a description or machine without a Herdr address. |
+| `other_machine` | The session is on a different machine from the backend; remote focus is unsupported. |
+| `herdr_unreachable` | The Herdr CLI or selected session is unavailable, timed out, or returned an unreadable answer. |
+| `identity_mismatch` | Multiple matching sessions or identity changed during focus; no success is claimed. |
+
+The backend uses the recorded Herdr session/socket selector, searches a fresh
+snapshot for a unique native session identity (or the client's exact role and
+goal/package binding), and focuses the matching current pane. Stored pane IDs
+alone are never sufficient. A moved pane can still be found; a reused pane does
+not identify the previous session. Herdr must currently recognize an agent,
+because its native session reference can outlive that agent.
+
+The installed Herdr CLI must be available through `HERDR_BIN_PATH` or the
+backend's PATH. A probe and a focus each have a five-second timeout. This selects
+the pane within Herdr; it does not launch Herdr or guarantee operating-system
+window activation. Herdr has no conditional identity-and-focus operation, so a
+session can change between verification and focus. The returned identity is
+checked again before reporting success, but this cannot undo a focus that raced
+with an occupant change.
+
+Focusing sends no input and does not register a location, refresh its timestamp,
+write ledger/audit state, or publish a dashboard invalidation. The offline beta
+sandbox returns HTTP 403 before any ledger read or Herdr probe. Authorization
+failures retain the operator API's HTTP 401 response.
