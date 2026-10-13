@@ -1,4 +1,4 @@
-import type { ExecutionGraphWorkPackageRef, ExecutionGraphWorkPackageSignals } from "@/dashboard/execution-graph/model";
+import type { ExecutionGraphWorkPackageRef, ExecutionGraphWorkPackageSignals } from "./execution-graph/model";
 import { describe, expect, it } from "vitest";
 
 import { renderInspector, stripAnsi, terminalCellWidth } from "./render";
@@ -51,6 +51,17 @@ describe("execution inspector rendering", () => {
     expect(output).toContain("Review");
     expect(output).not.toContain("Previous");
     expect(output.split("\n").length).toBeLessThan(9);
+  });
+
+  it("keeps review round timing distinct from total review time", () => {
+    const current: ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals = {
+      ...pkg("wp-a", "Review", "reviewing"),
+      activity_signal: { stage: "reviewing", started_at: "2026-10-05T03:00:00Z", elapsed_seconds: 3600 },
+      review_signal: { status: "in_progress", round: "2", started_at: "2026-10-05T01:00:00Z", round_started_at: "2026-10-05T03:00:00Z" },
+    };
+    expect(stripAnsi(renderInspector(state([current]), 100, 40))).toContain("Round 2 · 1h 0m this round");
+    current.activity_signal = { stage: "reviewing", started_at: "2026-10-05T01:00:00Z", elapsed_seconds: 10800 };
+    expect(stripAnsi(renderInspector(state([current]), 100, 40))).toContain("3h 0m in review");
   });
 
   it("renders branching topology without horizontal overflow", () => {

@@ -1,8 +1,8 @@
-import { executionFrontierProjection } from "@/dashboard/execution-graph/frontier";
-import { workPackageIsFinished, type ExecutionGraphWorkPackageRef } from "@/dashboard/execution-graph/model";
-import { isQualifiedState, qualifiedBadgeLabel } from "@/lib/delivery-eligibility";
-import { workActivityFacts } from "@/lib/operational-state-activity";
-import type { ExecutionGraphWorkPackageSignals } from "@/dashboard/execution-graph/model";
+import { executionFrontierProjection } from "./execution-graph/frontier";
+import { workPackageIsFinished, type ExecutionGraphWorkPackageRef } from "./execution-graph/model";
+import { isQualifiedState, qualifiedBadgeLabel } from "./delivery-eligibility";
+import { workActivityFacts } from "./operational-state-activity";
+import type { ExecutionGraphWorkPackageSignals } from "./execution-graph/model";
 
 import { exactWorkerPaneId } from "./binding";
 import type { InspectorState } from "./types";

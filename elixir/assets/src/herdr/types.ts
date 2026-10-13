@@ -1,4 +1,4 @@
-import type { WorkRequestExecutionGraphModel } from "@/dashboard/execution-graph/model";
+import type { WorkRequestExecutionGraphModel } from "./execution-graph/model";
 
 export type HerdrAgentSession = {
   agent?: string;

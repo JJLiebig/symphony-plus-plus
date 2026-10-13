@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "browser:smoke": "node scripts/browser-smoke.mjs",
     "build": "npm run typecheck && node scripts/clean-vite-output.mjs && vite build",
     "build:herdr": "vite build --config vite.herdr.config.ts",
     "dev": "vite",
@@ -19,23 +18,9 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/geist-mono": "^5.2.8",
-    "@radix-ui/react-collapsible": "^1.1.13",
-    "@radix-ui/react-dialog": "^1.1.16",
-    "@radix-ui/react-label": "^2.1.9",
-    "@radix-ui/react-scroll-area": "^1.2.10",
-    "@radix-ui/react-select": "^2.3.0",
-    "@radix-ui/react-separator": "^1.1.9",
-    "@radix-ui/react-slot": "^1.2.5",
-    "@radix-ui/react-tabs": "^1.1.14",
-    "@radix-ui/react-tooltip": "^1.2.9",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "lucide-react": "^1.18.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.6.0"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -48,7 +33,6 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.6.0",
-    "playwright": "^1.61.0",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
