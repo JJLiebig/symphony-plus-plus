@@ -193,7 +193,17 @@ function startOf(slice: Slice, timed: Timed[], endAt: number | null) {
 }
 
 function buildPkg(slice: Slice, events: HistoryEvent[], now: number): Pkg {
-  return slice.board_state ? boardPkg(slice, slice.board_state, now) : historyPkg(slice, events, now);
+  if (!slice.board_state) return historyPkg(slice, events, now);
+  const present = boardPkg(slice, slice.board_state, now);
+  return events.length > 0 ? withPast(present, historyPkg(slice, events, now)) : present;
+}
+
+// A snapshot also carries recorded history. The backend's reading stays the present; the history fills in how the package got there, for the replay.
+function withPast(present: Pkg, past: Pkg): Pkg {
+  const cut = present.segs[0]?.from ?? present.endAt;
+  if (cut === null) return present;
+  const earlier = past.segs.filter((seg) => seg.from < cut).map((seg) => ({ ...seg, to: Math.min(seg.to, cut) }));
+  return { ...present, segs: [...earlier, ...present.segs], rounds: past.rounds.length > 0 ? past.rounds : present.rounds, actors: past.actors };
 }
 
 // The backend's own reading of a package: its stage, when it got there, and whether it ends in a merge.
@@ -221,7 +231,8 @@ function boardOutcome(board: BoardState, short: boolean): Outcome | null {
   return short ? "finished" : "merged";
 }
 
-// When the package reached its stage: the backend's evidence first, then what it observed about that stage.
+// When the package reached its stage: the backend's evidence first, then the closest thing it observed about that stage.
+// For checks and merge that is when the current head or its check result was first seen, which is close enough to show.
 function stageTime(slice: Slice, board: BoardState) {
   const pr = slice.pr_signal ?? {};
   const checks = pr.checks ?? {};
@@ -229,7 +240,7 @@ function stageTime(slice: Slice, board: BoardState) {
   const delivery = slice.delivery ?? {};
   const observed: Partial<Record<Stage, Array<string | null | undefined>>> = {
     build: [slice.dispatched_at],
-    checks: [checks.changed_at, pr.head_changed_at, pr.created_at],
+    checks: [checks.changed_at, pr.head_changed_at],
     review: [review.round_started_at, review.started_at],
     merge: [checks.changed_at, pr.head_changed_at],
     done: [delivery.pr_merged_at, delivery.recorded_at],

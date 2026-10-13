@@ -20,7 +20,8 @@ export function snapshotApi(): Plugin {
   let snapshot = loadSnapshot(dir);
   let history: Json | null = null;
   const streams = new Set<ServerResponse>();
-  const notify = () => streams.forEach((stream) => stream.write("event: dashboard_changed\ndata: {}\n\n"));
+  // The dashboard listens for `dashboard_changed`, the operator board for `invalidated`.
+  const notify = () => streams.forEach((stream) => stream.write("event: dashboard_changed\ndata: {}\n\nevent: invalidated\ndata: {}\n\n"));
 
   return {
     name: "sympp-snapshot-api",
@@ -156,10 +157,11 @@ async function handlePost(snapshot: Snapshot, route: string, req: IncomingMessag
   notify();
 }
 
+// The snapshot's clock stands at its capture time, so a goal marked done is done as of then.
 function changeRequestState(snapshot: Snapshot, id: string, body: Json) {
   const completed = body.state === "completed";
   const patch = completed
-    ? { status: "completed", completed_at: new Date().toISOString(), completion_source: "operator", operational_state: { key: "completed", label: "Completed", tone: "success", raw_status: "completed", attention_items: [] } }
+    ? { status: "completed", completed_at: snapshot.hydrated.generated_at, completion_source: "operator", operational_state: { key: "completed", label: "Completed", tone: "success", raw_status: "completed", attention_items: [] } }
     : { status: body.state, completed_at: null, operational_state: { key: body.state, label: "Ready For Slicing", tone: "neutral", raw_status: body.state, attention_items: [] } };
   requestRecords(snapshot, id).forEach((record) => Object.assign(record, patch));
   return { work_request: { id, ...patch } };

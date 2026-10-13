@@ -49,13 +49,20 @@ export function App() {
 
   const shownNow = useRef<number | null>(null);
   // The first read opens on the busiest moment; later reads keep the board live unless it is replaying.
+  // Reads can overlap (the timer, a change signal, an action), so only the latest one started is shown.
+  const reads = useRef(0);
   const read = useCallback(() => {
+    const turn = ++reads.current;
     void load().then((loaded) => {
+      if (turn !== reads.current) return;
       const before = shownNow.current;
       shownNow.current = loaded.now;
+      setFailure(null);
       setData(loaded);
       setAt((current) => (before === null ? loaded.busiest : followNow(current, before, loaded.now)));
-    }, (caught: unknown) => setFailure(caught instanceof Error ? caught.message : "Could not read the ledger"));
+    }, (caught: unknown) => {
+      if (turn === reads.current) setFailure(caught instanceof Error ? caught.message : "Could not read the ledger");
+    });
   }, []);
   useEffect(read, [read]);
   useChangeSignal(read);
@@ -143,7 +150,7 @@ export function App() {
 
 async function load(): Promise<Loaded> {
   const [hydrated, history, local] = await Promise.all([
-    fetch("/api/v1/sympp/operator/dashboard/hydrated", { headers: { accept: "application/json" } }).then((response) => response.json() as Promise<Hydrated>),
+    ledger(),
     sketchOnly<Record<string, HistoryEvent[]>>("/__snapshot/history"),
     sketchOnly<{ areas?: AreaRule[]; samples?: SampleRule[] }>("/__snapshot/local"),
   ]);
@@ -159,6 +166,13 @@ async function load(): Promise<Loaded> {
   const busiest = start + realSamples.indexOf(Math.max(...realSamples)) * STEP_MS;
   const goals = [...real, ...mockGoals(busiest, now)];
   return { goals, now, busiest, samples: sample(goals), replayable: true };
+}
+
+// A refused or failed read is an error, not an empty ledger.
+async function ledger(): Promise<Hydrated> {
+  const response = await fetch("/api/v1/sympp/operator/dashboard/hydrated", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`Could not read the ledger (${response.status})`);
+  return (await response.json()) as Hydrated;
 }
 
 // These routes exist on the snapshot server only. A backend answers them with its page, not with data.

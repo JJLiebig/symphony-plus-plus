@@ -424,9 +424,9 @@ export function Session({ view }: { view: PkgView }) {
   const rows = [[place.machine.kind, place.machine.name], ...(view.actor ? [["Where", address], ["Thread", view.actor]] : [])];
 
   return (
-    <button className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate([place.machine.name, address].filter(Boolean).join(" › "))}>
+    <button aria-label={`Session on ${place.machine.name}`} className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => locate([place.machine.name, address].filter(Boolean).join(" › "))}>
       <place.machine.icon className="size-3.5" />
-      <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-72 rounded border border-line bg-bg p-2.5 text-left text-xs shadow-xl group-hover:block">
+      <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-72 rounded border border-line bg-bg p-2.5 text-left text-xs shadow-xl group-hover:block group-focus-visible:block">
         {rows.map(([label, value]) => (
           <span key={label} className="flex justify-between gap-3 py-0.5">
             <span className="shrink-0 text-faint">{label}</span>
