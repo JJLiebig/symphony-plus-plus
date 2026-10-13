@@ -75,6 +75,7 @@ test('questions, human escalation and review waits preserve explicit package blo
   const first = await architect.call('append_progress', declaration);
   const replay = await architect.call('append_progress', declaration);
   expect(replay.progress_event.id).toBe(first.progress_event.id);
+  await architect.reject('append_progress', { ...declaration, summary: 'Replace the original history.' }, 'idempotency_conflict');
   await architect.call('append_progress', {
     ...declaration, summary: 'Required access is unavailable.', idempotency_key: 'access-blocker',
     payload: { type: 'blocker', active: true, blocker_id: 'access' },
@@ -97,6 +98,8 @@ test('questions, human escalation and review waits preserve explicit package blo
   };
   const resolved = await architect.call('resolve_blocker', resolution);
   expect((await architect.call('resolve_blocker', resolution)).progress_event.id).toBe(resolved.progress_event.id);
+  // Reusing a resolution key cannot resolve a different blocker or replace history.
+  expect((await architect.call('resolve_blocker', { ...resolution, blocker_id: 'access' })).progress_event.id).toBe(resolved.progress_event.id);
   expect((await packageState(architect, id, affected)).blocker_state['active?']).toBe(true);
   await architect.call('resolve_blocker', {
     ...resolution, blocker_id: 'access', resolution: 'Access supplied.', summary: 'Access prerequisite available.', idempotency_key: 'resolve-access',
@@ -115,6 +118,16 @@ test('human choice submission rejects unknown or empty redirects and preserves t
     tl_dr: 'Choose the bounded path.', details: 'The operator decides the product outcome.',
     options: [{ id: 'continue', label: 'Continue', answer: 'Continue with the bounded path.' }],
   };
+  for (const malformed of [
+    { tl_dr: 'Missing options', details: 'A choice is required.' },
+    { ...prompt, options: [{ id: '__custom_redirect__', label: 'Reserved id', answer: 'Invalid choice.' }] },
+  ]) {
+    const response = await architect.rpc('tools/call', { name: 'ask_question', arguments: {
+      work_request_id: id, category: 'scope', question: 'Invalid question', why_needed: 'A complete choice is required.', decision_prompt: malformed,
+    } });
+    expect(response.error.code).toBe(-32602);
+  }
+  expect((await architect.call('read_work_request', { work_request_id: id })).clarification_questions).toEqual([]);
   const ask = async (decision_prompt?: object) => (await architect.call('ask_question', {
     work_request_id: id, category: 'scope', question: 'Which path should ship?', why_needed: 'Record the human choice.',
     ...(decision_prompt ? { decision_prompt } : {}),
