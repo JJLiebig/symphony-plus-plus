@@ -450,6 +450,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert creator_location.client_id == location.client_id
     assert SessionLocations.get(Repo, "work_package", work_package.id) == location
 
+    note =
+      post_json(
+        tool_call_request("worker-goal-note", "add_work_request_comment", %{
+          "work_request_id" => created_id,
+          "body" => "The widget goal still belongs to this coordinator session."
+        }),
+        [{"mcp-session-id", session_id}]
+      )
+
+    assert json_response(note, 200)["result"]
+    refreshed_creator = SessionLocations.get(Repo, "work_request", created_id)
+    assert refreshed_creator.client_id == creator_location.client_id
+    assert DateTime.compare(refreshed_creator.last_seen_at, creator_location.last_seen_at) == :gt
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
+
     failed =
       tool_call_request("failed-location", "not_a_tool", %{})
       |> with_location("another-client", "another-desk", %{"pane_id" => "w2:p1"})
