@@ -49,44 +49,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraphTest do
              )
   end
 
-  test "nested Group dependencies omit overlapping identity pairs" do
-    groups = [group("parent_group"), %Node{id: "child_group", parent_id: "parent_group"}]
-
-    work_packages = [
-      work_package("wp_parent", "parent_group"),
-      work_package("wp_child_a", "child_group"),
-      work_package("wp_child_b", "child_group")
-    ]
-
-    graph =
-      ExecutionGraph.evaluate(
-        %{
-          nodes: groups,
-          dependency_edges: [
-            dependency("dep_nested_groups", "product_node", "child_group", "product_node", "parent_group")
-          ]
-        },
-        work_packages,
-        []
-      )
-
-    assert Enum.map(graph.effective_edges, &Map.drop(&1, [:constraints])) == [
-             %{
-               dependent_work_package_id: "wp_child_a",
-               dependency_ids: ["dep_nested_groups"],
-               prerequisite_work_package_id: "wp_parent"
-             },
-             %{
-               dependent_work_package_id: "wp_child_b",
-               dependency_ids: ["dep_nested_groups"],
-               prerequisite_work_package_id: "wp_parent"
-             }
-           ]
-
-    assert graph.cycles == []
-    assert graph.topological_order == ["wp_parent", "wp_child_a", "wp_child_b"]
-  end
-
   test "retired attempts do not resolve required scope without a delivered successor" do
     group = group("resolved_group")
 

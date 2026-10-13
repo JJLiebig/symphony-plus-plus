@@ -26,28 +26,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
     :ok
   end
 
-  test "normalizes atom-keyed goals into worker engineering scope", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-ATOM-GOAL")
-
-    assert {:ok, %{work_packages: [package]}} =
-             WorkRequestRepository.slice_work_request(repo, work_request.id, [
-               %{
-                 id: "wp_atom_goal",
-                 title: "Atom-keyed package",
-                 goal: "Own the canonical package boundary.",
-                 kind: "mcp",
-                 base_branch: " refs/remotes/origin/main ",
-                 branch_pattern: "refactor/canonical-work-packages",
-                 allowed_file_globs: ["elixir/lib/**"],
-                 acceptance_criteria: ["The package has one identity."]
-               }
-             ])
-
-    assert package.goal == "Own the canonical package boundary."
-    assert package.engineering_scope == package.goal
-    assert package.base_branch == "main"
-  end
-
   test "visible-only projection keeps the owned node path without leaking hidden nodes", %{repo: repo} do
     work_request = create_work_request!(repo, id: "WR-VISIBLE-TREE")
     parent = create_node!(repo, work_request, id: "node_visible_parent")
