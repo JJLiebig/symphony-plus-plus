@@ -21,7 +21,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   @completion_blocking_work_request_statuses ["human_info_needed"]
   @operator_completion_source "operator"
   @restorable_archive_reasons ["age"]
-  @default_archive_after_days 14
+  @default_archive_after_days 3
   @completed_visible_limit 10
   @delete_work_request_chunk_size 500
 

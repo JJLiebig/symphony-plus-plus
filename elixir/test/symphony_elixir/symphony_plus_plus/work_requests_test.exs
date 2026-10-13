@@ -498,16 +498,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert still_archived.archived_at == archived.archived_at
   end
 
-  test "retention archives completed work requests after fourteen days and preserves history", %{repo: repo} do
+  test "retention archives at exactly seventy-two hours and preserves unfinished goals and history", %{repo: repo} do
     now = utc_usec(~U[2026-05-23 12:00:00Z])
-    old_completed_at = utc_usec(~U[2026-05-09 12:00:00Z])
-    recent_completed_at = utc_usec(~U[2026-05-20 12:00:00Z])
+    old_completed_at = utc_usec(~U[2026-05-20 12:00:00Z])
+    recent_completed_at = DateTime.add(old_completed_at, 1, :microsecond)
 
     old_request = completed_delivered_request!(repo, "WR-RETENTION-OLD", old_completed_at)
     recent_request = completed_delivered_request!(repo, "WR-RETENTION-RECENT", recent_completed_at)
+    assert {:ok, unfinished} = Repository.create(repo, attrs(id: "WR-RETENTION-UNFINISHED"))
 
     assert {:ok, _decision} =
              Repository.record_decision(repo, old_request.id, decision_attrs(id: "WRD-RETENTION-OLD"))
+
+    assert {:ok, before_boundary} = Service.retention_pass(repo, now: DateTime.add(now, -1, :microsecond))
+    assert before_boundary.archived_ids == []
 
     assert {:ok, summary} = Service.retention_pass(repo, now: now)
     assert summary.archived_ids == [old_request.id]
@@ -520,20 +524,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert {:ok, [_slice]} = Repository.list_work_packages(repo, old_request.id)
     assert {:ok, [_decision]} = Repository.list_decisions(repo, old_request.id)
 
-    assert {:ok, [^recent_request]} = Repository.list(repo)
+    assert {:ok, ^unfinished} = Repository.get(repo, unfinished.id)
+    assert {:ok, [^recent_request, ^unfinished]} = Repository.list(repo)
     assert {:ok, all_requests} = Repository.list(repo, %{include_archived: true})
-    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id]
+    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id, unfinished.id]
 
     assert {:ok, all_requests} = Repository.list(repo, %{"include_archived" => "true"})
-    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id]
+    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id, unfinished.id]
 
     assert {:ok, all_requests} = Repository.list(repo, include_archived: true)
-    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id]
+    assert Enum.map(all_requests, & &1.id) == [old_request.id, recent_request.id, unfinished.id]
   end
 
   test "retention emits no writes when no WorkRequest is eligible", %{repo: repo} do
     now = utc_usec(~U[2026-05-23 12:00:00Z])
-    recent_completed_at = DateTime.add(now, -24 * 60 * 60, :second)
+    recent_completed_at = now |> DateTime.add(-72 * 60 * 60, :second) |> DateTime.add(1, :microsecond)
 
     assert {:ok, _draft} = Repository.create(repo, attrs(id: "WR-RETENTION-INELIGIBLE-DRAFT"))
     completed_delivered_request!(repo, "WR-RETENTION-INELIGIBLE-RECENT", recent_completed_at)
@@ -550,11 +555,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     completed_at = utc_usec(~U[2026-05-20 12:00:00Z])
     request = completed_delivered_request!(repo, "WR-RETENTION-CUSTOM-CUTOFF", completed_at)
 
-    assert {:ok, default_summary} = Service.retention_pass(repo, now: now)
-    assert default_summary.archived_ids == []
+    assert {:ok, custom_summary} = Service.retention_pass(repo, now: now, archive_after_days: 4)
+    assert custom_summary.archived_ids == []
 
-    assert {:ok, custom_summary} = Service.retention_pass(repo, now: now, archive_after_days: 2)
-    assert custom_summary.archived_ids == [request.id]
+    assert {:ok, default_summary} = Service.retention_pass(repo, now: now)
+    assert default_summary.archived_ids == [request.id]
     assert {:ok, auto_archived} = Repository.get(repo, request.id)
     assert auto_archived.archive_reason == "age"
 
@@ -661,7 +666,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     release_request =
       completed_delivered_request!(repo, "WR-RETENTION-CAP-RELEASE", release_completed_at, base_branch: "release/1.0")
 
-    assert {:ok, summary} = Service.retention_pass(repo, now: now)
+    assert {:ok, summary} = Service.retention_pass(repo, now: now, archive_after_days: 14)
     assert summary.archived_ids == ["WR-RETENTION-CAP-1", "WR-RETENTION-CAP-2"]
     assert summary.archived_count == 2
     assert {:ok, first_overflow} = Repository.get(repo, "WR-RETENTION-CAP-1")
@@ -670,7 +675,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestsTest do
     assert {:ok, visible_requests} = Repository.list(repo)
     expected_requests = Enum.drop(completed_requests, 2) ++ [release_request]
     assert Enum.map(visible_requests, & &1.id) == Enum.map(expected_requests, & &1.id)
-    assert {:ok, second_summary} = Service.retention_pass(repo, now: now)
+    assert {:ok, second_summary} = Service.retention_pass(repo, now: now, archive_after_days: 14)
     assert second_summary.archived_ids == []
     assert {:ok, first_overflow_after_second_pass} = Repository.get(repo, "WR-RETENTION-CAP-1")
     assert first_overflow_after_second_pass.archived_at == first_overflow.archived_at
