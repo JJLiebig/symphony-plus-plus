@@ -367,6 +367,11 @@ try {
     if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
     if ($SkillsInstall) {
       $offlineEnvironment = $environment.Clone()
+      if ($HostedProcessCreation) {
+        # The executable-shadow fixture belongs to the MCP startup checks above.
+        Remove-Item -LiteralPath (Join-Path $tempRoot 'pwsh.exe'), (Join-Path $tempRoot 'untrusted-project')
+        $offlineEnvironment.PATH = $env:PATH
+      }
       $offlineEnvironment.SYMPP_OFFLINE_SKILL = $installedRoot
       $offlineEnvironment.SYMPP_OFFLINE_ARTIFACT = $first.artifact_root
       Invoke-IsolatedCommand (Get-Command python -ErrorAction Stop).Source @((Join-Path $repoRoot "scripts/tests/test_sympp_beta_snapshot.py"), "InstalledSnapshotTest") $offlineEnvironment
