@@ -74,6 +74,11 @@ See [Runtime](runtime.md) for installed artifact ownership and repair.
 
 ## Isolated Source Beta
 
+For checkout-free copy/conversion/viewing, use the
+[installed Skills offline viewer](portable-skills.md#copy-convert-and-view-an-offline-ledger).
+It uses the published artifact and needs Python only for copying. The source
+helper below remains for explicit developer validation with an Elixir toolchain.
+
 Source runtime validation is separate from installed beta use. Use the script
 from the beta checkout containing this change. Explicit checkout paths support
 an already registered beta worktree without changing the main checkout:

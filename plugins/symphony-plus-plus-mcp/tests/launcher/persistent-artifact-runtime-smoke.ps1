@@ -50,10 +50,14 @@ function Start-IsolatedProcess([string]$FilePath, [string[]]$Arguments, [hashtab
 }
 
 function Invoke-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment) {
-  $process = Start-IsolatedProcess $FilePath $Arguments $Environment $false
+  $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit(900000)) { $process.Kill($true); throw "Timed out: $FilePath" }
-    if ($process.ExitCode -ne 0) { throw "$FilePath exited $($process.ExitCode)." }
+    $details = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+    if ($process.ExitCode -ne 0) { throw "$FilePath exited $($process.ExitCode). $details" }
+    Write-Host $details
   } finally {
     if (-not $process.HasExited) { $process.Kill($true) }
     $process.Dispose()
@@ -260,6 +264,12 @@ try {
     if (-not ($trace -match "backend_recovery_leader")) { throw "Second wave did not exercise backend recovery." }
     if (-not (Test-Path -LiteralPath $database -PathType Leaf)) { throw "Explicit packaged database was not created." }
     if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
+    if ($SkillsInstall) {
+      $offlineEnvironment = $environment.Clone()
+      $offlineEnvironment.SYMPP_OFFLINE_SKILL = $installedRoot
+      $offlineEnvironment.SYMPP_OFFLINE_ARTIFACT = $first.artifact_root
+      Invoke-IsolatedCommand (Get-Command python -ErrorAction Stop).Source @((Join-Path $repoRoot "scripts/tests/test_sympp_beta_snapshot.py"), "InstalledSnapshotTest") $offlineEnvironment
+    }
     [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = $true; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true; hosted_process_creation_seam = [bool]$HostedProcessCreation; native_desktop_qualified = -not $HostedProcessCreation } | ConvertTo-Json -Compress
     return
   }

@@ -168,6 +168,14 @@ Do not claim beta.2 native qualification from those older results.
 
 ## Stop and back up the factory
 
+Before a cutover, populated records can be inspected through the
+[installed offline copy/view commands](../portable-skills.md#copy-convert-and-view-an-offline-ledger)
+while the factory stays open. Use a separate offline home and port, keep the
+durable marker, and stop View with Ctrl+C before refreshing. This inspection
+uses beta.2's published schema and UI; newer branch procedures do not include
+later settings UI changes. An exercised snapshot is never the cutover ledger
+or a substitute for the stopped backup below.
+
 Start only after the operator approves a cutover window and the promoted beta
 pointer resolves to the inspected build. Publication alone does not approve a
 factory move. Keep the current factory homes and original ledger; the separate

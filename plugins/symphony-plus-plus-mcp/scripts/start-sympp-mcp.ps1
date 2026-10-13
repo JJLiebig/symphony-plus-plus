@@ -464,19 +464,6 @@ function Get-HealthSourceRevision($Payload) {
   return Normalize-SymppSourceRevision ([string]$source.revision)
 }
 
-function Normalize-McpContractFingerprint([string]$Fingerprint) {
-  if ([string]::IsNullOrWhiteSpace($Fingerprint)) {
-    return $null
-  }
-
-  $fingerprint = $Fingerprint.Trim().ToLowerInvariant()
-  if ($fingerprint -match "^[0-9a-f]{64}$") {
-    return $fingerprint
-  }
-
-  return $null
-}
-
 function Get-McpContractFingerprintFromContractFile([string]$ContractPath) {
   if ([string]::IsNullOrWhiteSpace($ContractPath) -or -not (Test-Path -LiteralPath $ContractPath -PathType Leaf)) {
     return $null

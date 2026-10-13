@@ -38,6 +38,27 @@ Rollback re-adds that bundle or a known previous Skills-capable commit and
 selects its pointer; ledger rollback may require a stopped backup. A raw ledger copy
 is not a safe MCP sandbox.
 
+For a consistent offline copy, use the installed helper with an explicit source
+and a new empty home separate from every online runtime. Python 3.9+ is required
+only for Snapshot; both actions require PowerShell 7 on Windows x64:
+
+```powershell
+$offlineHelper = '.agents/skills/symphony-plus-plus/scripts/sympp-offline.ps1'
+$offlineHome = Join-Path $env:USERPROFILE 'sympp-offline-view'
+pwsh -NoProfile -File $offlineHelper -Action Snapshot -SourceDatabase 'C:\explicit\source.sqlite3' -SymppHome $offlineHome
+pwsh -NoProfile -File $offlineHelper -Action View -SymppHome $offlineHome -Port 21498
+```
+
+Claude-only installs use `.claude/skills/symphony-plus-plus/scripts/sympp-offline.ps1`.
+Open `http://127.0.0.1:21498/sympp/board`; use an unused port different from the
+online dogfood runtime. Press Ctrl+C and wait for View to exit before repeating
+Snapshot with `-ReplaceSnapshot`. The source may remain open. Conversion and
+viewing use the selected published artifact without a checkout or Elixir.
+The copy has no MCP/agent access or external worktree/PR actions. Keep its
+offline marker, never promote it to live, and keep copied private data local.
+Branch updates can change these procedures while still selecting beta.2;
+later runtime and settings UI changes need a new published artifact.
+
 The [connection procedure](references/symphony-work-package/references/mcp_wiring.md)
 covers marketplace/developer alternatives and assignment recovery. Skill
 visibility and health probes do not restore claims. Keep credentials out of
