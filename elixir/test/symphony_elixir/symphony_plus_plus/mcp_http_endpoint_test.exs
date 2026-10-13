@@ -432,6 +432,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert location.herdr["pane_id"] == "w1:p3"
     assert location.source == "herdr"
 
+    created =
+      post_json(
+        tool_call_request("worker-create-goal", "create_work_request", %{
+          "repo" => "example-org/widget-service",
+          "base_branch" => "main",
+          "title" => "Widget follow-up goal",
+          "request_kind" => "feature",
+          "description" => "Plan the next widget change from this worker session."
+        }),
+        [{"mcp-session-id", session_id}]
+      )
+
+    created_id = get_in(json_response(created, 200), ["result", "structuredContent", "work_request", "id"])
+    creator_location = SessionLocations.get(Repo, "work_request", created_id)
+    assert creator_location.role == "coordinator"
+    assert creator_location.client_id == location.client_id
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
+
     failed =
       tool_call_request("failed-location", "not_a_tool", %{})
       |> with_location("another-client", "another-desk", %{"pane_id" => "w2:p1"})
@@ -1043,12 +1061,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     claim =
       post_json(
-        tool_call_request("claim", "claim_local_assignment", local_assignment_claim_args(work_package, %{"claimed_by" => "worker-revoked"})),
+        tool_call_request("claim", "claim_local_assignment", local_assignment_claim_args(work_package, %{"claimed_by" => "worker-revoked"}))
+        |> with_location("revoked-client", "build-desk", %{}),
         [{"mcp-session-id", session_id}]
       )
 
     assert get_in(json_response(claim, 200), ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
+    location = SessionLocations.get(Repo, "work_package", work_package.id)
+    assert location.client_id == "revoked-client"
     assert {:ok, _revoked} = AccessGrantService.revoke(Repo, minted.grant.id)
+
+    health =
+      tool_call_request("revoked-health", "sympp.health", %{})
+      |> with_location("revoked-client", "another-desk", %{})
+      |> post_json([{"mcp-session-id", session_id}])
+
+    assert json_response(health, 200)["result"]
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
 
     tools = post_json(tools_list_request("revoked-tools"), [{"mcp-session-id", session_id}])
     tool_names = tool_names(json_response(tools, 200))

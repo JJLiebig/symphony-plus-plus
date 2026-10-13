@@ -5,12 +5,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.Sanitizer
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
-  alias SymphonyElixir.SymphonyPlusPlus.MCP.{HerdrBinding, Server}
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.{HerdrBinding, Server, ToolCatalog}
   alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
   alias SymphonyElixir.SymphonyPlusPlus.SessionLocations.Location
 
   @herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id session socket_path native_session_id native_session_agent)
   @public_herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id)
+  @assignment_tools ToolCatalog.worker_tools() ++ ToolCatalog.architect_tools() ++ ToolCatalog.session_claim_tools()
 
   @spec observe(term(), term(), Server.t()) :: Server.t()
   def observe(payload, response, server) do
@@ -45,7 +46,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
 
   defp observe_location(payload, response, server, metadata) do
     with client_id when is_binary(client_id) <- text(metadata["client_id"]),
-         binding when is_map(binding) <- HerdrBinding.response_binding(payload, response, server),
+         binding when is_map(binding) <- location_binding(payload, response, server),
          {target_kind, target_id, role} <- target(binding, payload, server.config.repo, client_id) do
       repo = server.config.repo
       existing = repo.get_by(Location, target_kind: target_kind, target_id: target_id, role: role)
@@ -77,6 +78,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
       _unlocated -> :ok
     end
   end
+
+  defp location_binding(%{"params" => %{"name" => "create_work_request"}}, response, _server) do
+    if id = get_in(response, ["result", "structuredContent", "work_request", "id"]) do
+      %{"role" => "coordinator", "work_request_id" => id}
+    end
+  end
+
+  defp location_binding(%{"params" => %{"name" => name}} = payload, response, server) when name in @assignment_tools,
+    do: HerdrBinding.response_binding(payload, response, server)
+
+  defp location_binding(payload, response, server),
+    do: HerdrBinding.response_binding(payload, response, %{server | session: nil})
 
   defp target(%{"role" => "worker", "work_package_id" => id}, _payload, _repo, _client_id) when is_binary(id),
     do: {"work_package", id, "worker"}
