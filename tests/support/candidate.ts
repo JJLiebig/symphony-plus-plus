@@ -31,7 +31,9 @@ export class Candidate {
         USERPROFILE: this.home,
         TMPDIR: root,
         MIX_ENV: 'dev',
-        ELIXIR_ERL_OPTIONS: '+S 2:2',
+        MIX_HOME: process.env.MIX_HOME,
+        LANG: 'C.UTF-8',
+        ELIXIR_ERL_OPTIONS: '+S 2:2 +fnu',
       },
       stdio: 'pipe',
     });

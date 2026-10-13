@@ -15,6 +15,7 @@ jobs:
       E2E_OAUTH_CREDENTIALS: '{}'
       E2E_TELEMETRY_DISABLED: '1'
       DO_NOT_TRACK: '1'
+      MIX_HOME: ${{ runner.temp }}/sympp-acceptance-mix
     steps:
       - name: Checkout candidate combined tree
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -51,6 +52,7 @@ jobs:
       - name: Build candidate source
         working-directory: elixir
         run: |
+          mix local.hex --force
           mix deps.get
           mix compile --warnings-as-errors
       - name: Prove native bootstrap and health isolation
@@ -213,6 +215,13 @@ jobs:
           SLOW_TEST_PARTITIONS: ${{ matrix.partitions }}
           MIX_TEST_PARTITION: ${{ matrix.partition }}
 
+      - name: Retain static and test gate evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gate-${{ matrix.target }}-${{ matrix.partition || 'single' }}
+          path: elixir/_build/make-logs
+
   parallel-gates:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -302,6 +311,13 @@ jobs:
               GATE_LOG_ROOT: _p/${{ matrix.gate_id }}/l
               GATE_RUN_ID: ${{ matrix.gate_id }}-${{ matrix.partition_2 }}
               ELIXIR_ERL_OPTIONS: "+S 2:2"
+
+      - name: Retain partition test evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gate-${{ matrix.gate_id }}
+          path: elixir/_p/${{ matrix.gate_id }}/l
 
   frontend:
     runs-on: ubuntu-latest
