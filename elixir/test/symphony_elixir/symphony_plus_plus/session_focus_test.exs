@@ -12,6 +12,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocusTest do
 
   test "focus follows the uniquely identified current terminal and sends no input" do
     pane = pane()
+
     request = fn
       _, ["api", "snapshot"] -> {:ok, %{"snapshot" => %{"panes" => [%{pane | "pane_id" => "w2:p9"}]}}}
       _, ["agent", "focus", "w2:p9"] -> {:ok, %{"agent" => pane}}
