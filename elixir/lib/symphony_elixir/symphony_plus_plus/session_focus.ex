@@ -81,13 +81,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocus do
   defp request(selector, args) do
     executable = System.get_env("HERDR_BIN_PATH") || System.find_executable("herdr")
 
-    if is_binary(executable) do
-      env =
-        Enum.map([{"HERDR_SESSION", "session"}, {"HERDR_SOCKET_PATH", "socket_path"}], fn {key, field} ->
-          value = if is_binary(selector[field]), do: String.to_charlist(selector[field]), else: false
-          {String.to_charlist(key), value}
-        end)
+    env =
+      Enum.map([{"HERDR_SESSION", "session"}, {"HERDR_SOCKET_PATH", "socket_path"}], fn {key, field} ->
+        value = if is_binary(selector[field]), do: String.to_charlist(selector[field]), else: false
+        {String.to_charlist(key), value}
+      end)
 
+    if is_binary(executable) do
       port = Port.open({:spawn_executable, executable}, [:binary, :exit_status, :stderr_to_stdout, :hide, args: args, env: env])
       collect(port, "", System.monotonic_time(:millisecond) + 5_000)
     else
