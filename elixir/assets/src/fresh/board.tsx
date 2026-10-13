@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 
 import { GoalActions } from "./actions";
+import { areaLabel } from "./areas";
 import { deployAt, span, type GoalView } from "./model";
 import { Deploy, locate, Shelf } from "./parts";
 import { GoalTitle, reportFor, type Verdict } from "./report";
@@ -66,6 +67,7 @@ function Landed({ at, views }: { at: number; views: GoalView[] }) {
             <span className="max-w-[40%] shrink-0 truncate font-medium">
               <GoalTitle goal={view.goal} />
             </span>
+            <span className="shrink-0 text-[11px] uppercase tracking-[0.12em] text-faint" title={view.goal.repo}>{areaLabel(view.goal.area)}</span>
             <span className="min-w-0 flex-1 truncate text-dim">{reportFor(view, at).brief}</span>
             <Deploy at={at} goal={view.goal} />
             <span className="w-24 shrink-0 text-right font-mono text-xs text-faint">{span(at - view.lastMoveAt)} ago</span>

@@ -1,4 +1,5 @@
 import { GoalActions } from "./actions";
+import { areaLabel } from "./areas";
 import { deployAt, span, type DeployStep, type Goal, type GoalView, type PkgView, type Stage } from "./model";
 import { POP, useFlash } from "./motion";
 
@@ -83,7 +84,8 @@ export function Shelf({ age, at, hint, label, views }: { age: string; at: number
       <ul className="mt-2 max-w-[900px] space-y-1">
         {views.map((view) => (
           <li key={view.goal.id} className="flex items-center justify-between gap-4">
-            <span className="shrink-0 truncate">{view.goal.title}</span>
+            <span className="min-w-0 truncate">{view.goal.title}</span>
+            <span className="shrink-0 text-[11px] uppercase tracking-[0.12em] text-faint" title={view.goal.repo}>{areaLabel(view.goal.area)}</span>
             <span className="min-w-0 flex-1 truncate text-faint">{view.goal.report?.parked?.text}</span>
             <span className="shrink-0 font-mono text-xs text-faint">
               {shelfCount(view)} · {age} {span(at - (view.goal.report?.parked?.at ?? view.lastMoveAt))}
