@@ -13,11 +13,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
   @public_herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id)
 
   @spec observe(term(), term(), Server.t()) :: Server.t()
-  def observe(%{"method" => "initialize", "params" => params}, %{"result" => _result}, server) when is_map(params) do
+  def observe(payload, response, server) do
+    do_observe(payload, response, server)
+  rescue
+    _error -> server
+  catch
+    :exit, _reason -> server
+  end
+
+  defp do_observe(%{"method" => "initialize", "params" => params}, %{"result" => _result}, server) when is_map(params) do
     %{server | client_location: metadata(params, server)}
   end
 
-  def observe(%{"method" => "tools/call", "params" => params} = payload, %{"result" => result} = response, server)
+  defp do_observe(%{"method" => "tools/call", "params" => params} = payload, %{"result" => result} = response, server)
       when is_map(params) and is_map(result) do
     if result["isError"] != true do
       case metadata(params, server) do
@@ -25,14 +33,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
           observe_location(payload, response, server, metadata)
           %{server | client_location: metadata}
 
-        _missing -> server
+        _missing ->
+          server
       end
     else
       server
     end
   end
 
-  def observe(_payload, _response, server), do: server
+  defp do_observe(_payload, _response, server), do: server
 
   defp observe_location(payload, response, server, metadata) do
     with client_id when is_binary(client_id) <- text(metadata["client_id"]),
@@ -129,6 +138,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
     repo.all(from(location in Location, where: location.target_kind == ^target_kind and location.target_id in ^target_ids))
     |> Enum.group_by(& &1.target_id)
     |> Map.new(fn {id, locations} -> {id, preferred(locations)} end)
+  end
+
+  @spec delete_for_targets(module(), String.t(), [String.t()]) :: :ok
+  def delete_for_targets(repo, target_kind, target_ids) do
+    repo.delete_all(from(location in Location, where: location.target_kind == ^target_kind and location.target_id in ^target_ids))
+    :ok
   end
 
   defp preferred(locations) do

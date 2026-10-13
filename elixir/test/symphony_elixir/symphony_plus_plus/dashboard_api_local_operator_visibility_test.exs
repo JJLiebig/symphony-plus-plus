@@ -172,14 +172,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
 
       for {kind, id, role} <- [{"work_request", request.id, "coordinator"}, {"work_request", request.id, "architect"}, {"work_package", package.id, "worker"}] do
         repo.insert!(%Location{
-          id: Ecto.UUID.generate(), target_kind: kind, target_id: id, role: role,
-          client_id: "private-client", machine_id: "build-desk", machine_label: "Build-Desk",
-          source: "herdr", last_seen_at: observed_at,
+          id: Ecto.UUID.generate(),
+          target_kind: kind,
+          target_id: id,
+          role: role,
+          client_id: "private-client",
+          machine_id: "build-desk",
+          machine_label: "Build-Desk",
+          source: "herdr",
+          last_seen_at: observed_at,
           herdr: %{
-            "workspace_id" => "w1", "workspace_label" => "Widget Service",
-            "tab_id" => "w1:t2", "tab_label" => "Implementation", "pane_id" => "w1:p3",
-            "socket_path" => "private-selector", "session" => "private-session",
-            "native_session_id" => "private-native-id", "future_secret" => "not-public"
+            "workspace_id" => "w1",
+            "workspace_label" => "Widget Service",
+            "tab_id" => "w1:t2",
+            "tab_label" => "Implementation",
+            "pane_id" => "w1:p3",
+            "socket_path" => "private-selector",
+            "session" => "private-session",
+            "native_session_id" => "private-native-id",
+            "future_secret" => "not-public"
           }
         })
       end
@@ -214,6 +225,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
       assert renamed_location["machine_id"] == "build-desk"
       assert renamed_location["last_seen_at"] == DateTime.to_iso8601(observed_at)
       assert repo.all(Location) |> Enum.all?(&(&1.last_seen_at == observed_at))
+      assert {:ok, _deleted} = SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service.delete(repo, request.id)
+      assert repo.all(Location) == []
     end)
   end
 
