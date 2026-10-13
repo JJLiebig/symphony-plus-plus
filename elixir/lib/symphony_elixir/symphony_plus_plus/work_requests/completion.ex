@@ -4,6 +4,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Service, as: CommentService
   alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
@@ -11,6 +12,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.NeverStartedRetention
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
@@ -39,6 +41,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
           delete_error()
           | :active_runtime
           | :invalid_archive_after_days
+          | :invalid_never_started_archive_after_days
           | :invalid_delete_after_days
           | :not_completed
 
@@ -111,7 +114,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     %{
       completed?: completed?,
       completed_at: completed_at,
-      archived_at: if(completed?, do: work_request.archived_at)
+      archived_at: if(completed? or work_request.archive_reason == "never_started", do: work_request.archived_at)
     }
   end
 
@@ -188,8 +191,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   @doc false
   @spec refresh_in_transaction(Repository.repo(), String.t()) :: {:ok, WorkRequest.t()} | {:error, Repository.error()}
   def refresh_in_transaction(repo, work_request_id) do
-    with {:ok, work_request} <- Repository.get(repo, work_request_id),
-         {:ok, question_state} <- question_state(repo, work_request_id),
+    with {:ok, work_request} <- Repository.get(repo, work_request_id) do
+      refresh_work_request(repo, work_request)
+    end
+  end
+
+  defp refresh_work_request(_repo, %WorkRequest{archive_reason: "never_started", archived_at: %DateTime{}} = work_request), do: {:ok, work_request}
+
+  defp refresh_work_request(repo, %WorkRequest{id: work_request_id} = work_request) do
+    with {:ok, question_state} <- question_state(repo, work_request_id),
          {:ok, work_packages} <- Repository.list_work_packages(repo, work_request_id),
          {:ok, deliveries_by_slice_id} <- work_package_deliveries_by_id(repo, work_packages),
          :ok <- clear_terminal_work_package_attention(repo, work_packages, deliveries_by_slice_id),
@@ -248,7 +258,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     now = Keyword.get_lazy(opts, :now, fn -> DateTime.utc_now(:microsecond) end)
 
     with {:ok, archive_after_days} <- archive_after_days(opts),
+         {:ok, never_started_days} <- never_started_archive_after_days(opts),
          {:ok, delete_after_days} <- delete_after_days(opts),
+         {:ok, archived_never_started} <- NeverStartedRetention.archive(repo, now, never_started_days),
          {:ok, age_candidates} <- retention_age_candidates(repo, now, archive_after_days),
          {:ok, refreshed} <- refresh_all(repo, age_candidates),
          {:ok, _restored_for_age} <- restore_unexpired(repo, refreshed, now, archive_after_days),
@@ -256,7 +268,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
          {:ok, visible_completed} <- completed_unarchived(repo),
          {:ok, archived_for_limit, overflow_refreshed_count} <- archive_overflow(repo, visible_completed),
          {:ok, deleted_ids} <- delete_expired_archived(repo, now, delete_after_days) do
-      archived_ids = archived_for_age ++ archived_for_limit
+      archived_ids = archived_for_age ++ archived_for_limit ++ archived_never_started
 
       {:ok,
        %{
@@ -364,6 +376,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
       nil -> {:ok, nil}
       days when is_integer(days) and days >= 1 -> {:ok, days}
       _days -> {:error, :invalid_delete_after_days}
+    end
+  end
+
+  defp never_started_archive_after_days(opts) do
+    case Keyword.get(opts, :never_started_archive_after_days, Settings.default().work_request_never_started_archive_after_days) do
+      days when is_integer(days) and days >= 1 -> {:ok, days}
+      _days -> {:error, :invalid_never_started_archive_after_days}
     end
   end
 
@@ -527,6 +546,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
       repo.all(
         from(work_request in WorkRequest,
           where: not is_nil(work_request.archived_at),
+          where: is_nil(work_request.archive_reason) or work_request.archive_reason != "never_started",
           where: work_request.archived_at < ^cutoff,
           order_by: [asc: work_request.archived_at, asc: work_request.id],
           select: work_request.id
@@ -858,6 +878,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   defp archive_update_result({_count, _rows}, _repo, _id), do: {:error, {:constraint_failed, "multiple_work_request_archives"}}
 
   defp restore_completed(repo, %WorkRequest{} = work_request), do: restore_completed(repo, work_request, reset_completed_at?: true)
+
+  defp restore_completed(repo, %WorkRequest{archive_reason: "never_started", archived_at: %DateTime{}} = work_request, _opts) do
+    work_request
+    |> Ecto.Changeset.change(archived_at: nil, archive_reason: nil, never_started_restored_at: DateTime.utc_now(:microsecond))
+    |> update_work_request(repo)
+  end
 
   defp restore_completed(_repo, %WorkRequest{archived_at: nil, archive_reason: nil} = work_request, _opts), do: {:ok, work_request}
 

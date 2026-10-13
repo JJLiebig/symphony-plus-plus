@@ -43,6 +43,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention do
     with {:ok, _work_request_summary} <-
            WorkRequestService.retention_pass(repo,
              archive_after_days: settings.work_request_archive_after_days,
+             never_started_archive_after_days: settings.work_request_never_started_archive_after_days,
              delete_after_days: settings.solo_session_delete_after_days
            ),
          {:ok, _solo_summary} <- SoloSessionService.retention_pass(repo, now) do

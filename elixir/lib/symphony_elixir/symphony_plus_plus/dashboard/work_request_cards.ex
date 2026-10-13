@@ -510,6 +510,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
     promoted_state = primary_work_request_slice_state(slice_states)
 
     cond do
+      completion_state.archived_at && work_request.archive_reason == "never_started" ->
+        operational_state_map("archived", "Archived", "neutral", "Goal was archived because no package was ever started.", work_request.status, attention_items)
+
       completion_state.archived_at ->
         completed_operational_state(work_request, attention_items)
 

@@ -18,6 +18,11 @@ convert the former stored default of 14 days to 3 days. See
 [operator retention and actions](../docs/operator-board-api.md#finished-goal-retention-and-operator-actions)
 for upgrade details and cleanup consequences.
 
+Never-started goals archive after 30 days by default, remain restorable, and are
+exempt from automatic deletion and worktree cleanup. Restore starts a fresh
+window. See [never-started retention](../docs/operator-board-api.md#never-started-goal-retention)
+for the configurable operator API setting and execution evidence rules.
+
 ## Screenshot
 
 ![Symphony Elixir screenshot](../.github/media/elixir-screenshot.png)

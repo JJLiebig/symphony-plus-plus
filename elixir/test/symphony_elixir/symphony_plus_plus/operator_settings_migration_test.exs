@@ -17,18 +17,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorSettingsMigrationTest do
       try do
         Ecto.Migrator.run(Repo, Migrations.all(), :up, to: @previous_version, log: false)
 
-        assert {:ok, before} =
-                 Repository.update(Repo, %{
-                   "work_request_archive_after_days" => unquote(stored_days),
-                   "solo_session_delete_after_days" => 45,
-                   "open_dashboard_on_boot" => false,
-                   "capture_failed_mcp_calls" => true,
-                   "hidden_work_package_ids" => ["WP-ARCHIVE-UPGRADE"]
-                 })
+        now = DateTime.utc_now(:microsecond)
+
+        before = %{
+          id: "local_operator",
+          work_request_archive_after_days: unquote(stored_days),
+          solo_session_delete_after_days: 45,
+          open_dashboard_on_boot: false,
+          capture_failed_mcp_calls: true,
+          hidden_work_package_ids: ["WP-ARCHIVE-UPGRADE"],
+          inserted_at: now,
+          updated_at: now
+        }
+
+        assert {1, _rows} = Repo.insert_all("sympp_operator_settings", [Map.update!(before, :hidden_work_package_ids, &Jason.encode!/1)])
 
         assert @migration_version in Ecto.Migrator.run(Repo, Migrations.all(), :up, all: true, log: false)
         assert {:ok, after_upgrade} = Repository.get(Repo)
-        assert after_upgrade == %{before | work_request_archive_after_days: unquote(expected_days)}
+        assert Map.take(Map.from_struct(after_upgrade), Map.keys(before)) == %{before | work_request_archive_after_days: unquote(expected_days)}
+        assert after_upgrade.work_request_never_started_archive_after_days == 30
 
         assert {:ok, _custom} = Repository.update(Repo, %{"work_request_archive_after_days" => 14})
         assert [] == Ecto.Migrator.run(Repo, Migrations.all(), :up, all: true, log: false)
