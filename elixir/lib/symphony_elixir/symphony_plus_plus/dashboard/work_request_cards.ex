@@ -511,11 +511,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
     promoted_state = primary_work_request_slice_state(slice_states)
 
     cond do
-      completion_state.archived_at && work_request.archive_reason == "never_started" ->
-        operational_state_map("archived", "Archived", "neutral", "Goal was archived because no package was ever started.", work_request.status, attention_items)
-
       completion_state.archived_at ->
-        completed_operational_state(work_request, attention_items)
+        archived_operational_state(work_request, attention_items)
 
       operator_completed?(work_request, completion_state) ->
         completed_operational_state(work_request, attention_items)
@@ -537,6 +534,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
         base_operational_state(work_request.status, attention_items)
     end
   end
+
+  defp archived_operational_state(%WorkRequest{archive_reason: "never_started"} = work_request, attention_items) do
+    operational_state_map("archived", "Archived", "neutral", "Goal was archived because no package was ever started.", work_request.status, attention_items)
+  end
+
+  defp archived_operational_state(work_request, attention_items), do: completed_operational_state(work_request, attention_items)
 
   defp operator_completed?(%WorkRequest{completion_source: "operator"}, %{completed?: true}), do: true
   defp operator_completed?(%WorkRequest{}, _completion_state), do: false

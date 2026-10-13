@@ -113,10 +113,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service do
 
   @spec retention_pass(Repository.repo()) ::
           {:ok, Completion.retention_summary()}
-          | {:error, error() | :invalid_archive_after_days | :invalid_never_started_archive_after_days | :invalid_delete_after_days | :not_completed}
+          | {:error, Completion.retention_error()}
   @spec retention_pass(Repository.repo(), keyword()) ::
           {:ok, Completion.retention_summary()}
-          | {:error, error() | :invalid_archive_after_days | :invalid_never_started_archive_after_days | :invalid_delete_after_days | :not_completed}
+          | {:error, Completion.retention_error()}
   def retention_pass(repo, opts \\ []), do: Completion.retention_pass(repo, opts)
 
   defp normalize_transaction_result({:ok, value}), do: {:ok, value}

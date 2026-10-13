@@ -3170,12 +3170,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert [%{"id" => "WR-UNSTARTED-OPERATOR", "archive_reason" => "never_started", "completed_at" => nil}] =
                archived["archived_work_requests"]["work_requests"]
 
+      assert get_in(hd(archived["archived_work_requests"]["work_requests"]), ["operational_state", "key"]) == "archived"
+
       detail =
         local_operator_conn()
         |> get("/api/v1/sympp/operator/work-requests/#{request.id}")
         |> json_response(200)
 
-      assert get_in(detail, ["work_request", "operational_state", "key"]) == "archived"
+      assert get_in(detail, ["work_request", "archive_reason"]) == "never_started"
       assert get_in(detail, ["work_request", "completed_at"]) == nil
 
       restored =
