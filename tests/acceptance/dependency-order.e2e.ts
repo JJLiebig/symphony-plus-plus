@@ -65,7 +65,11 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   await architect.call('dispatch_work_package', { work_package_id: backend });
   provider.set(201, pr(201, head('a')));
   await sync(architect, backend, 201, head('a'));
-  const pinned = { dependent: endpoint(group, 'group'), prerequisite: endpoint(backend), candidate_head_sha: head('a'), reason: 'Wire the reviewed candidate.' };
+  const decision = await architect.call('record_decision', {
+    work_request_id: request, source_type: 'architect', decision: 'Consume the reviewed backend candidate.',
+    rationale: 'Qualify the consumer before delivery.', scope_impact: 'Use the exact backend head.',
+  });
+  const pinned = { dependent: endpoint(group, 'group'), prerequisite: endpoint(backend), candidate_head_sha: head('a'), decision_ref: { id: decision.decision_log_entry.id } };
   const pin = (await architect.call('upsert_dependency', pinned)).dependency.id;
   const ordinary = (await architect.call('upsert_dependency', { dependent: endpoint(ui), prerequisite: endpoint(backend), reason: 'Also require delivered scope.' })).dependency.id;
   await architect.reject('dispatch_work_package', { work_package_id: ui }, 'unmet_work_package_dependencies');
@@ -79,8 +83,12 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   expect(selection.candidate_head_sha).toBe(head('a'));
   expect(selection.candidate_state).toBe('current');
   expect(selection.selection_updated_at).toBeTruthy();
+  const contextBefore = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_edges.find((edge: any) => edge.id === pin);
   const invalidContext = await architect.rpc('tools/call', { name: 'upsert_dependency', arguments: { ...pinned, dependency_id: pin, reason: '', decision_ref: {} } });
   expect(invalidContext.error).toBeTruthy();
+  const contextAfter = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_edges.find((edge: any) => edge.id === pin);
+  expect(contextAfter).toEqual(contextBefore);
+  expect(contextAfter.decision_ref).toEqual({ id: decision.decision_log_entry.id });
   expect((await graph(architect, request)).effective_edges.find((edge: any) => edge.dependent_work_package_id === ui).constraints[0].candidate_head_sha).toBe(head('a'));
   await architect.reject('upsert_dependency', { dependent: endpoint(ui), prerequisite: endpoint(group, 'group'), candidate_head_sha: head('a'), reason: 'A group cannot identify one candidate head.' }, 'invalid_dependency');
 

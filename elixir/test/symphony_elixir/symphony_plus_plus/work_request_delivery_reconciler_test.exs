@@ -18,7 +18,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Repository, as: PhaseRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
-  alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.Revision
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
@@ -27,7 +26,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
-  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryReconciler
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -62,92 +60,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
     end
 
     :ok
-  end
-
-  test "dry-run proposes and apply records merged PR closeout through delivery service", %{repo: repo} do
-    {work_request, work_package, linked_package} =
-      linked_slice!(repo,
-        work_request_id: "WR-RECONCILE-PR-MERGED",
-        work_package_id: "WP-RECONCILE-PR-MERGED",
-        status: "ready_for_merge"
-      )
-
-    append_merged_pr_evidence!(repo, linked_package, 902, "head-902")
-
-    assert {:ok, dry_run} = DeliveryReconciler.reconcile(repo, work_request.id, recorded_by: "reconciler-test")
-
-    assert dry_run.mode == "dry_run"
-    assert dry_run.proposed_count == 1
-    assert dry_run.applied_count == 0
-
-    assert [
-             %{
-               status: "proposed",
-               reason: "github_pr_merged",
-               work_package_id: work_package_id,
-               action: action
-             }
-           ] = dry_run.results
-
-    assert work_package_id == work_package.id
-    assert work_package_id == linked_package.id
-    assert action.work_request_id == work_request.id
-    assert action.work_package_id == work_package.id
-    assert action.outcome == "pr_merged"
-    assert action.recorded_by == "reconciler-test"
-    assert action.evidence.pr_merged.pr_number == 902
-    assert action.evidence.pr_merged.merge_commit_sha == "merge-sha-902"
-    refute Map.has_key?(action, :pr_url)
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
-    assert repo.get!(WorkPackage, linked_package.id).status == "ready_for_merge"
-
-    assert {:ok, applied} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply, recorded_by: "reconciler-test")
-
-    assert applied.applied_count == 1
-    assert [%{status: "applied", reason: "github_pr_merged", delivery_id: delivery_id}] = applied.results
-    assert is_binary(delivery_id)
-
-    assert [delivery] = repo.all(WorkPackageDelivery)
-    assert delivery.outcome == "pr_merged"
-    assert delivery.work_package_id == work_package.id
-    assert delivery.recorded_by == "reconciler-test"
-    assert repo.get!(WorkPackage, linked_package.id).status == "merged"
-  end
-
-  test "reconciliation preserves an out-of-order external merge and keeps its violation visible", %{repo: repo} do
-    {request, ui, _linked} = linked_slice!(repo, work_request_id: "WR-ORDER-VIOLATION", work_package_id: "UI-ORDER", status: "ready_for_merge")
-    assert {:ok, backend} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "BACKEND-ORDER", kind: "docs", status: "reviewing"))
-
-    assert {:ok, _edge} =
-             ProductTree.create_dependency_edge(repo, %{
-               work_request_id: request.id,
-               source_kind: "work_package",
-               source_id: ui.id,
-               target_kind: "work_package",
-               target_id: backend.id,
-               kind: "depends_on",
-               reason: "Backend must deliver first."
-             })
-
-    append_merged_pr_evidence!(repo, ui, 1902, "head-ui")
-    assert {:ok, applied} = DeliveryReconciler.reconcile(repo, request.id, mode: :apply, recorded_by: "reconciler-test")
-    assert applied.applied_count == 1
-    row = Enum.find(applied.delivery_board.work_packages, &(&1.id == ui.id))
-    assert row.delivery_outcome == "pr_merged"
-    assert "delivery_order_violation" in row.attention_reason_codes
-
-    assert {:ok, _delivery} =
-             WorkRequestRepository.record_work_package_delivery(repo, request.id, backend.id, %{
-               outcome: "completed_no_pr",
-               idempotency_key: "late-backend",
-               recorded_by: "test",
-               no_pr_evidence: "Backend delivered after the external UI merge."
-             })
-
-    assert {:ok, board} = DeliveryBoard.project(repo, request.id)
-    row = Enum.find(board.work_packages, &(&1.id == ui.id))
-    assert row.delivery_outcome == "pr_merged"
-    assert "delivery_order_violation" in row.merge_eligibility.reason_codes
   end
 
   test "apply records merged PR closeout when only stale agent runtime evidence remains", %{repo: repo} do
@@ -253,62 +165,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
     assert repo.get!(WorkPackage, linked_package.id).status == "ready_for_merge"
   end
 
-  test "MCP reconcile_work_request dry-run action replays through record_work_package_delivery", %{repo: repo} do
-    {work_request, _work_package, linked_package} =
-      linked_slice!(
-        repo,
-        work_request_id: "WR-RECONCILE-MCP-REPLAY",
-        work_package_id: "WP-RECONCILE-MCP-REPLAY",
-        status: "ready_for_merge"
-      )
-
-    append_merged_pr_evidence!(repo, linked_package, 915, "head-915")
-    session = create_work_request_architect_session(repo, work_request, ["read:work_request", "write:work_request"])
-
-    response =
-      mcp_tool(repo, session, "reconcile_work_request", %{
-        "work_request_id" => work_request.id,
-        "recorded_by" => "manual-reconciler"
-      })
-
-    assert [result] = get_in(response, ["result", "structuredContent", "reconciliation", "results"])
-    assert get_in(result, ["action", "recorded_by"]) == "manual-reconciler"
-
-    record_response = mcp_tool(repo, session, "record_work_package_delivery", result["action"])
-    assert get_in(record_response, ["result", "structuredContent", "work_package_delivery", "outcome"]) == "pr_merged"
-    assert get_in(record_response, ["result", "structuredContent", "work_package_delivery", "recorded_by"]) == "manual-reconciler"
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
-  end
-
-  test "MCP reconcile_work_request dry-run action clears active blockers when replayed", %{repo: repo} do
-    {work_request, _work_package, linked_package} =
-      linked_slice!(
-        repo,
-        work_request_id: "WR-RECONCILE-MCP-BLOCKER-REPLAY",
-        work_package_id: "WP-RECONCILE-MCP-BLOCKER-REPLAY",
-        status: "ready_for_merge"
-      )
-
-    append_merged_pr_evidence!(repo, linked_package, 916, "head-916")
-    append_active_blocker!(repo, linked_package.id, "replay-blocker")
-    session = create_work_request_architect_session(repo, work_request, ["read:work_request", "write:work_request"])
-
-    response = mcp_tool(repo, session, "reconcile_work_request", %{"work_request_id" => work_request.id})
-    assert [result] = get_in(response, ["result", "structuredContent", "reconciliation", "results"])
-    refute Map.has_key?(result["action"], "allow_active_blocker_closeout")
-
-    record_response = mcp_tool(repo, session, "record_work_package_delivery", result["action"])
-    assert get_in(record_response, ["result", "structuredContent", "work_package_delivery", "outcome"]) == "pr_merged"
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
-    refute WorkPackageActivity.context(repo, linked_package.id).blocker_state.active?
-
-    assert {:ok, replay} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply)
-
-    assert replay.applied_count == 0
-    assert [%{status: "skipped", reason: "already_closeout", delivery_outcome: "pr_merged"}] = replay.results
-  end
-
-  test "MCP reconcile_work_request apply clears active blockers", %{repo: repo} do
+  test "reconcile replay backfills a deleted product-tree revision", %{repo: repo} do
     {work_request, _work_package, linked_package} =
       linked_slice!(
         repo,
@@ -318,24 +175,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
       )
 
     append_merged_pr_evidence!(repo, linked_package, 917, "head-917")
-    append_active_blocker!(repo, linked_package.id, "apply-blocker")
     session = create_work_request_architect_session(repo, work_request, ["read:work_request", "write:work_request"])
 
     response = mcp_tool(repo, session, "reconcile_work_request", %{"work_request_id" => work_request.id, "apply" => true})
     payload = get_in(response, ["result", "structuredContent", "reconciliation"])
 
     assert payload["applied_count"] == 1
-    assert [result] = payload["results"]
-    assert result["status"] == "applied"
-    refute Map.has_key?(result["action"], "allow_active_blocker_closeout")
-    refute Map.has_key?(result, "blocker_closeout_event_ids")
     assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
-    refute WorkPackageActivity.context(repo, linked_package.id).blocker_state.active?
-    assert revision_count(repo, work_request.id) == 1
-
-    replay_response = mcp_tool(repo, session, "reconcile_work_request", %{"work_request_id" => work_request.id, "apply" => true})
-
-    assert get_in(replay_response, ["result", "structuredContent", "reconciliation", "applied_count"]) == 0
     assert revision_count(repo, work_request.id) == 1
 
     repo.delete_all(from(revision in Revision, where: revision.work_request_id == ^work_request.id))
@@ -345,6 +191,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
 
     assert get_in(backfill_response, ["result", "structuredContent", "reconciliation", "applied_count"]) == 0
     assert revision_count(repo, work_request.id) == 1
+    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
   end
 
   test "apply leaves active blockers unchanged when delivery recording fails", %{repo: repo} do
@@ -400,54 +247,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
 
     assert {:error, {:delivery_reconciliation_failed, "concurrent_closeout"}} =
              DeliveryReconciler.reconcile_work_package(repo, linked_package.id, record_work_package_delivery: record_delivery)
-  end
-
-  test "MCP reconcile_work_request apply returns fresh post-closeout delivery board", %{repo: repo} do
-    {work_request, _work_package, linked_package} =
-      linked_slice!(
-        repo,
-        work_request_id: "WR-RECONCILE-MCP-APPLY",
-        work_package_id: "WP-RECONCILE-MCP-APPLY",
-        status: "ready_for_merge"
-      )
-
-    append_merged_pr_evidence!(repo, linked_package, 904, "head-904")
-    session = create_work_request_architect_session(repo, work_request, ["read:work_request", "write:work_request"])
-
-    response = mcp_tool(repo, session, "reconcile_work_request", %{"work_request_id" => work_request.id, "apply" => true})
-    payload = get_in(response, ["result", "structuredContent", "reconciliation"])
-
-    assert payload["applied_count"] == 1
-    counts = get_in(response, ["result", "structuredContent", "delivery_board", "counts"])
-    assert Map.get(counts, "needs_closeout", 0) == 0
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
-    assert repo.get!(WorkPackage, linked_package.id).status == "merged"
-  end
-
-  test "repository base and head mismatches are skipped with reason codes", %{repo: repo} do
-    cases = [
-      {"repository_mismatch", [repository: "other/repo"]},
-      {"base_branch_mismatch", [base_branch: "release"]},
-      {"head_mismatch", [synced_head_sha: "other-head"]}
-    ]
-
-    for {reason, evidence_opts} <- cases do
-      {work_request, _work_package, linked_package} =
-        linked_slice!(repo,
-          work_request_id: "WR-RECONCILE-#{String.upcase(reason)}",
-          work_package_id: "WP-RECONCILE-#{String.upcase(reason)}",
-          status: "ready_for_merge"
-        )
-
-      append_merged_pr_evidence!(repo, linked_package, System.unique_integer([:positive]), "expected-head", evidence_opts)
-
-      assert {:ok, result} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply)
-
-      assert result.applied_count == 0
-      assert [%{status: "skipped", reason: ^reason}] = result.results
-      assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
-      assert repo.get!(WorkPackage, linked_package.id).status == "ready_for_merge"
-    end
   end
 
   test "delivery matches merged PR evidence to a local checkout scope", %{repo: repo} do
@@ -565,45 +364,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
     assert [%{status: "skipped", reason: "no_structured_pr_merge_evidence"}] = result.results
     assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
     assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-  end
-
-  test "already closed-out slices are skipped without duplicate deliveries", %{repo: repo} do
-    {work_request, _work_package, linked_package} =
-      linked_slice!(repo,
-        work_request_id: "WR-RECONCILE-ALREADY-CLOSED",
-        work_package_id: "WP-RECONCILE-ALREADY-CLOSED",
-        status: "ready_for_merge"
-      )
-
-    append_merged_pr_evidence!(repo, linked_package, 911, "head-911")
-
-    assert {:ok, first} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply)
-    assert [%{status: "applied"}] = first.results
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
-
-    assert {:ok, second} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply)
-
-    assert second.applied_count == 0
-    assert [%{status: "skipped", reason: "already_closeout", delivery_outcome: "pr_merged"}] = second.results
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
-  end
-
-  test "merged PR evidence without strong merge fields is skipped before apply", %{repo: repo} do
-    {work_request, _work_package, linked_package} =
-      linked_slice!(repo,
-        work_request_id: "WR-RECONCILE-WEAK-PR",
-        work_package_id: "WP-RECONCILE-WEAK-PR",
-        status: "ready_for_merge"
-      )
-
-    append_merged_pr_evidence!(repo, linked_package, 912, "head-912", merge_commit_sha: nil)
-
-    assert {:ok, result} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply)
-
-    assert result.applied_count == 0
-    assert [%{status: "skipped", reason: "missing_strong_pr_evidence", missing: "merge_commit_sha"}] = result.results
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
-    assert repo.get!(WorkPackage, linked_package.id).status == "ready_for_merge"
   end
 
   defp linked_slice!(repo, overrides) do

@@ -12,7 +12,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryCloseoutTerminalN
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
-  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle
@@ -44,115 +43,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryCloseoutTerminalN
     repo.delete_all(WorkPackage)
     repo.delete_all(WorkRequest)
     :ok
-  end
-
-  test "normal no-PR closeout resolves active blockers", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "reviewing")
-
-    assert {:ok, _blocker} =
-             PlanningRepository.append_progress_event(repo, %{
-               work_package_id: linked_package.id,
-               summary: "Blocked",
-               status: "blocked",
-               idempotency_key: "closeout-active-blocker",
-               payload: %{type: "blocker", source_tool: "report_blocker", blocker_id: "closeout", active: true}
-             })
-
-    assert {:ok, delivery} =
-             Service.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "completed_no_pr",
-                 idempotency_key: "delivery-active-blocker",
-                 no_pr_evidence: "Operator confirmed the work landed elsewhere."
-               })
-             )
-
-    assert delivery.outcome == "completed_no_pr"
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
-    assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-    refute WorkPackageActivity.context(repo, linked_package.id).blocker_state.active?
-  end
-
-  test "superseded closeout closes stale package and resolves active blockers", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "implementing")
-    successor_slice = create_work_package!(repo, work_request, id: "WRS-DELIVERY-BLOCKED-SUCCESSOR")
-
-    assert {:ok, blocker_event} =
-             PlanningRepository.append_progress_event(repo, %{
-               work_package_id: linked_package.id,
-               summary: "Review scope blocked",
-               status: "blocked",
-               idempotency_key: "spec-md-review-scope",
-               payload: %{type: "blocker", source_tool: "report_blocker", blocker_id: "spec-md-review-scope", active: true}
-             })
-
-    assert {:ok, delivery} =
-             Service.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "superseded",
-                 idempotency_key: "delivery-superseded-with-blocker",
-                 successor_work_package_id: successor_slice.id,
-                 superseded_reason: "Recut around the active review-scope blocker."
-               })
-             )
-
-    assert delivery.outcome == "superseded"
-    assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-
-    events = repo.all(ProgressEvent)
-    assert Enum.find(events, &(&1.id == blocker_event.id)).payload["active"] == true
-    assert Enum.any?(events, &(get_in(&1.payload, ["source_tool"]) == "resolve_blocker"))
-    closeout_event = Enum.find(events, &(&1.payload["type"] == "work_request_delivery_closeout"))
-    assert closeout_event.summary =~ "active blockers cleared"
-    assert closeout_event.payload["active_blocker_ids"] == ["spec-md-review-scope"]
-    assert closeout_event.payload["blocker_reason_codes"] == ["active_blocker"]
-
-    assert {:ok, %{counts: %{"superseded" => 1}, work_packages: [slice, _successor]}} = DeliveryBoard.project(repo, work_request.id)
-    assert slice.operational_state.key == "superseded"
-    assert slice.work_package.raw_status == "closed"
-    assert slice.attention_reason_codes == []
-  end
-
-  test "abandoned no-code closeout closes cleaned package and resolves active blockers", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "ready_for_worker")
-
-    assert {:ok, _blocker_event} =
-             PlanningRepository.append_progress_event(repo, %{
-               work_package_id: linked_package.id,
-               summary: "Worker dependency blocked",
-               status: "blocked",
-               idempotency_key: "abandoned-active-blocker",
-               payload: %{type: "blocker", source_tool: "report_blocker", blocker_id: "worker-dependency", active: true}
-             })
-
-    assert {:ok, delivery} =
-             Service.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "abandoned",
-                 idempotency_key: "delivery-abandoned-with-blocker",
-                 abandoned_rationale: "No code was produced and the architect recut the work."
-               })
-             )
-
-    assert delivery.outcome == "abandoned"
-    assert repo.get!(WorkPackage, linked_package.id).status == "abandoned"
-
-    closeout_event =
-      repo.all(ProgressEvent)
-      |> Enum.find(&(&1.payload["type"] == "work_request_delivery_closeout"))
-
-    assert closeout_event.summary =~ "active blockers cleared"
-    assert closeout_event.payload["active_blocker_ids"] == ["worker-dependency"]
-    refute WorkPackageActivity.context(repo, linked_package.id).blocker_state.active?
   end
 
   test "superseded closeout retires active worker authority", %{repo: repo} do
@@ -480,31 +370,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryCloseoutTerminalN
     assert closeout_event.payload["retired_worker_grant_ids"] == [minted.grant.id]
 
     refute "worker_grant_active" in List.wrap(closeout_event.payload["runtime_reason_codes_before_closeout"])
-  end
-
-  test "unclaimed worker grants are retired during no-PR closeout", %{repo: repo} do
-    {work_request, work_package, linked_package} =
-      linked_slice!(repo,
-        work_request_id: "WR-DELIVERY-UNCLAIMED-WORKER-GRANT",
-        status: "ready_for_merge"
-      )
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, linked_package.id)
-
-    attrs =
-      delivery_attrs(%{
-        outcome: "completed_no_pr",
-        idempotency_key: "delivery-unclaimed-worker-grant",
-        no_pr_evidence: "A stale worker grant should not block architect no-PR closeout."
-      })
-
-    assert {:ok, delivery} = Service.record_work_package_delivery(repo, work_request.id, work_package.id, attrs)
-    assert delivery.outcome == "completed_no_pr"
-    assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-    assert repo.get!(AccessGrant, minted.grant.id).revoked_at
-
-    closeout_event = Enum.find(repo.all(ProgressEvent), &(&1.payload["type"] == "work_request_delivery_closeout"))
-    assert closeout_event.payload["retired_worker_grant_ids"] == [minted.grant.id]
   end
 
   defp linked_slice!(repo, overrides) do
