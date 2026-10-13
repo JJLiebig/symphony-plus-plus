@@ -31,6 +31,11 @@ $betaPath = Join-Path $repoRoot "scripts/sympp-beta.ps1"
 . $runtimePath
 . $helperPath
 . $processRuntimePath
+$script:SymppSessionLocation = @{ client_id = "client-ps"; machine_id = "build-desk"; machine_label = "Build-Desk" }
+$locatedRequest = Add-SymppSessionLocation '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_context","arguments":{},"_meta":{"another":true}}}' | ConvertFrom-Json
+Assert-True ($locatedRequest.params._meta.another -and $locatedRequest.params._meta.sympp_session_location.client_id -eq "client-ps") "PowerShell location transport must preserve other MCP metadata"
+Assert-True ($locatedRequest.params.name -eq "read_context" -and $locatedRequest.params._meta.sympp_session_location.machine_id -eq "build-desk") "PowerShell location transport must preserve the tool and client machine"
+$script:SymppSessionLocation = $null
 & (Join-Path $PSScriptRoot "port-selection-tests.ps1")
 $herdrBindingJson = '{"role":"architect","work_request_id":"wr-test","show_inspector":true}'
 $herdrBindingEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($herdrBindingJson)).TrimEnd("=").Replace("+", "-").Replace("/", "_")

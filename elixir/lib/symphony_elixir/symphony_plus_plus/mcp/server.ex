@@ -91,6 +91,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     :state_key,
     :state_key_version,
     :stale_architect_claim,
+    :client_location,
     batch_claim_pending: false,
     local_daemon_trusted: false,
     state_key_explicit: false,
@@ -105,6 +106,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
           state_key: term(),
           state_key_version: integer() | nil,
           stale_architect_claim: map() | nil,
+          client_location: map() | nil,
           batch_claim_pending: boolean(),
           local_daemon_trusted: boolean(),
           state_key_explicit: boolean(),
@@ -179,6 +181,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     HandleStateStore.cleanup_default_handle_states()
     server = HandleStateStore.restore(payload, server)
     {response, updated_server} = handle_state(payload, server)
+    updated_server = SymphonyElixir.SymphonyPlusPlus.SessionLocations.observe(payload, response, updated_server)
     updated_server = HandleStateStore.persist(payload, response, server, updated_server)
     {response, updated_server}
   end

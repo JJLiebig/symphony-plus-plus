@@ -17,6 +17,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.ReviewObservation
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -52,7 +53,10 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
        context
        |> base_payload()
        |> Map.merge(%{
-         work_requests: %{work_requests: Enum.map(cards, &put_area_path(&1, context)), total_count: length(cards)},
+         work_requests: %{
+           work_requests: Enum.map(cards, &put_work_request_location(put_area_path(&1, context), context, projection_context)),
+           total_count: length(cards)
+         },
          deferred: %{dashboard_sections: true}
        })}
     end
@@ -145,18 +149,34 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
       work_packages =
         Enum.map(detail.work_packages, &put_session_location(&1, context.operator_config, projection_context))
 
-      %{detail | work_request: put_area_path(detail.work_request, context), work_packages: work_packages}
+      work_request = detail.work_request |> put_area_path(context) |> put_work_request_location(context, projection_context)
+      %{detail | work_request: work_request, work_packages: work_packages}
     end)
   end
 
   defp put_session_location(work_package, operator_config, projection_context) do
     session = get_in(projection_context, [:work_package_contexts, work_package.id, :current_worker_session])
-    location = OperatorConfig.session_location(operator_config, session)
+    observed = get_in(projection_context, [:package_locations, work_package.id])
+    location = SessionLocations.public(observed, operator_config) || OperatorConfig.session_location(operator_config, session)
     if location, do: Map.put(work_package, :session_location, location), else: work_package
   end
 
+  defp put_work_request_location(work_request, context, projection_context) do
+    observed = get_in(projection_context, [:architect_locations, work_request.id])
+
+    case SessionLocations.public(observed, context.operator_config) do
+      nil -> work_request
+      location -> Map.put(work_request, :architect_session_location, location)
+    end
+  end
+
   defp operator_projection_context(repo, work_requests, context) do
-    Dashboard.operator_projection_context(repo, work_requests, context.work_packages)
+    with {:ok, projection} <- Dashboard.operator_projection_context(repo, work_requests, context.work_packages) do
+      {:ok,
+       projection
+       |> Map.put(:architect_locations, SessionLocations.for_targets(repo, "work_request", Enum.map(work_requests, & &1.id)))
+       |> Map.put(:package_locations, SessionLocations.for_targets(repo, "work_package", Enum.map(context.work_packages, & &1.id)))}
+    end
   end
 
   defp operator_dashboard_context(repo) do

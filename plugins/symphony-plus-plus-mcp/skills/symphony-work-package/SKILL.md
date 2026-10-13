@@ -19,6 +19,10 @@ write authority.
 - In a dedicated MCP-enabled session on the dispatch ledger, claim the assigned
   WorkPackage with `claim_local_assignment({"work_package_id":"<id>"})`.
   Include `claimed_by` only when the parent supplies a stable identity.
+  Inside Herdr, the client bridge reports the session location automatically.
+  Outside Herdr, optionally add `session_description` to this existing claim,
+  for example `"Terminal window: widget implementation"`. Do not add an MCP
+  call just to report a location.
 - Reuse the returned assignment. Recheck binding with `get_current_assignment`
   only after reconnect, denial, or conflicting identity. A paused or different
   owner requires the parent; never bypass a denial or mint a replacement.

@@ -108,6 +108,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
           server
           | initialized: server.initialized or stored.initialized,
             session: session,
+            client_location: server.client_location || stored.client_location,
             state_key_version: state_key_version,
             session_refresh_required: session_refresh_required?
         }
@@ -137,6 +138,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HandleStateStore do
           server
           | initialized: server.initialized or stored.initialized,
             session: server.session || stored.session,
+            client_location: server.client_location || stored.client_location,
             stale_assignment_role: server.stale_assignment_role || stored.stale_assignment_role,
             stale_architect_claim: server.stale_architect_claim || stored.stale_architect_claim
         }
