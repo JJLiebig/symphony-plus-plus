@@ -32,6 +32,7 @@ export class Candidate {
         TMPDIR: root,
         MIX_ENV: 'dev',
         MIX_HOME: process.env.MIX_HOME,
+        MIX_ARCHIVES: process.env.MIX_ARCHIVES,
         LANG: 'C.UTF-8',
         ELIXIR_ERL_OPTIONS: '+S 2:2 +fnu',
       },

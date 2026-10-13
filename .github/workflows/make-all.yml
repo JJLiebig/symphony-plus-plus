@@ -40,6 +40,7 @@ jobs:
           git show -s --format='%H %P' HEAD > .e2e/checkout-parents.txt
           echo "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "MIX_HOME=$RUNNER_TEMP/sympp-acceptance-mix" >> "$GITHUB_ENV"
+          echo "MIX_ARCHIVES=$RUNNER_TEMP/sympp-acceptance-mix/archives" >> "$GITHUB_ENV"
           printf 'head=%s\nbase=%s\nrun=%s\n' "$HEAD_SHA" "$BASE_SHA" "$GITHUB_RUN_ID" > .e2e/inputs.txt
       - name: Retain dependency lock
         if: ${{ always() }}

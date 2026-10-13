@@ -1,11 +1,16 @@
 # Testing
 
 Native acceptance uses TesterArmy e2e against candidate source. Build in the
-hosted runner with `mix deps.get` and `mix compile --warnings-as-errors` in
-`elixir/`, install the root lock with `npm ci`, then run:
+hosted runner using the toolchain in `elixir/mise.toml`. Put its native binaries
+on `PATH` before isolating runtime homes. Set `MIX_HOME` to a disposable build-tool
+directory and `MIX_ARCHIVES` to its `archives` subdirectory; install Hex and Rebar
+there with `mix local.hex --force` and `mix local.rebar --force`. Run
+`mix deps.get` and `mix compile --warnings-as-errors` in `elixir/`, install the
+root lock with `npm ci --ignore-scripts`, then run:
 
 ```text
 ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD) npm run test:e2e
+node scripts/acceptance/check-report.mjs
 ```
 
 The `api` target has no browser, engine, executor, or model. It fixes workers to
