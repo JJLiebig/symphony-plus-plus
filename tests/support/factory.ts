@@ -1,17 +1,19 @@
 import { createInterface } from 'node:readline';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { expect, test as base } from 'e2e';
 import { Candidate } from './candidate.js';
 
 // The public cockpit owns trusted local HTTP initialization, sessions and SQLite.
 // The dashboard origin skips UI asset construction; no browser is opened or used.
-class Factory extends Candidate {
+export class Factory extends Candidate {
   readonly endpoint: Promise<string>;
+  private receipt: string;
 
-  constructor(root: string) {
-    super(root, 'factory', 'http');
+  constructor(root: string, provider?: { bin: string; endpoint: string }) {
+    super(root, 'factory', 'http', provider);
+    this.receipt = join('.e2e', `${basename(root)}-mcp.jsonl`);
     this.endpoint = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Candidate cockpit startup timed out')), 30_000);
       const lines = createInterface({ input: this.process.stdout });
@@ -25,7 +27,7 @@ class Factory extends Candidate {
   }
 
   async client() {
-    const client = new Client(await this.endpoint);
+    const client = new Client(await this.endpoint, this.receipt);
     const initialized = await client.rpc('initialize', {
       protocolVersion: '2025-03-26', capabilities: {},
       clientInfo: { name: 'factory-acceptance', version: '1.0.0' },
@@ -43,7 +45,7 @@ export class Client {
   private sequence = 0;
   private session?: string;
 
-  constructor(private endpoint: string) {}
+  constructor(private endpoint: string, private receipt?: string) {}
 
   async rpc(method: string, params: object = {}) {
     const response = await fetch(this.endpoint, {
@@ -54,7 +56,9 @@ export class Client {
     });
     expect(response.status).toBe(200);
     this.session = response.headers.get('mcp-session-id') ?? this.session;
-    return response.json();
+    const result = await response.json();
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method, params, response: result })}\n`);
+    return result;
   }
 
   async call(name: string, args: object = {}) {
@@ -76,6 +80,16 @@ export class Client {
       body: JSON.stringify(args), signal: AbortSignal.timeout(30_000),
     });
     return { status: response.status, body: await response.json() };
+  }
+
+  async inspect(path: string) {
+    const response = await fetch(new URL(path, this.endpoint), {
+      headers: { origin: new URL(this.endpoint).origin }, signal: AbortSignal.timeout(30_000),
+    });
+    const result = await response.json();
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method: 'GET', path, status: response.status, response: result })}\n`);
+    expect(response.status).toBe(200);
+    return result;
   }
 
   async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta') {

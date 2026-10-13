@@ -37,6 +37,15 @@ process, worker MCP claim, live provider, or model is required for dispatch proo
 Each candidate retains a separate process log and exits before its temporary
 ledger/home is removed.
 
+Delivery journeys place a test-only `gh` subprocess on the candidate child's PATH.
+It forwards actual argv to a controlled loopback HTTP provider and returns its
+JSON and exit status. The factory and GitHub adapters run unchanged. This proves
+adapter behavior and the external CLI protocol, not the real `gh` implementation,
+GitHub HTTP compatibility, or live provider operation. No provider credentials
+are supplied. MCP drives dispatch, dependency selection and reconciliation;
+public operator reads observe stored qualification and request completion.
+Provider and MCP receipts accompany the process logs, including failed calls.
+
 The `native acceptance` job is an explicit dependency of `make-all`. Legacy
 checks remain required until the owning acceptance journey replaces their
 guarantees. Preserve unique storage, concurrency, authority, process, and live

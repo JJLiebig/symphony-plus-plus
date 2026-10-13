@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, delimiter, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { test as base } from 'e2e';
 
@@ -18,7 +18,7 @@ export class Candidate {
   private pending = new Map<number, { resolve: (response: any) => void; reject: (error: Error) => void }>();
   private log;
 
-  constructor(root: string, name: string, private transport: 'stdio' | 'http' = 'stdio') {
+  constructor(root: string, name: string, private transport: 'stdio' | 'http' = 'stdio', provider?: { bin: string; endpoint: string }) {
     this.home = join(root, name);
     this.database = join(this.home, 'ledger.sqlite3');
     this.log = createWriteStream(resolve('.e2e', `${basename(root)}-${name}.log`));
@@ -30,7 +30,8 @@ export class Candidate {
       cwd: resolve('elixir'),
       // Deliberate allowlist: no live provider, host authentication, or plugin settings.
       env: {
-        PATH: process.env.PATH,
+        PATH: provider ? `${provider.bin}${delimiter}${process.env.PATH}` : process.env.PATH,
+        ...(provider ? { ACCEPTANCE_PROVIDER: provider.endpoint } : {}),
         HOME: this.home,
         USERPROFILE: this.home,
         TMPDIR: root,
