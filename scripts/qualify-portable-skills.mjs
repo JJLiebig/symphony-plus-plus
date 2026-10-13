@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,7 +75,7 @@ for (const agent of ['codex', 'claude-code']) {
   cli(cwd, install);
   assert.deepEqual(await files(installed), expected);
   if (process.argv.includes('--runtime') && agent === 'claude-code') {
-    const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', installed, ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], { cwd, env, encoding: 'utf8', timeout: 900000 });
+    const smoke = spawnSync('pwsh', ['-NoProfile', '-File', join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'), '-SkillsInstall', await realpath(installed), ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], { cwd, env, encoding: 'utf8', timeout: 900000 });
     assert.equal(smoke.status, 0, `${smoke.stdout}\n${smoke.stderr}`);
     console.log(smoke.stdout.trim());
   }

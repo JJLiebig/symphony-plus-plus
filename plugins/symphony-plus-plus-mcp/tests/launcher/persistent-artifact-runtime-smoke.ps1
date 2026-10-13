@@ -71,6 +71,7 @@ function Send-BridgeRequest($Process, $Request) {
 }
 
 function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment, [switch]$CreateMarker, [string]$MarkerSessionId, [scriptblock]$OnAttached, [switch]$RecoverBackend) {
+  Write-Host "MCP fixture: state=$($Environment.SYMPP_RUNTIME_FILE) create=$CreateMarker recover=$RecoverBackend"
   $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
     $stderr = $process.StandardError.ReadToEndAsync()
@@ -81,6 +82,7 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
     $responses = foreach ($request in $requests) {
       Send-BridgeRequest $process $request
     }
+    Write-Host "MCP initialize and tools/list succeeded."
     if ($CreateMarker) {
       $attached = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 3; method = "tools/call"; params = @{ name = "solo_attach"; arguments = @{ repo = "fixture/packaged-ledger"; base_branch = "beta"; workspace_path = $tempRoot; caller_id = "artifact-smoke"; title = "Disposable persistence marker" } } }
       $MarkerSessionId = [string]$attached.result.structuredContent.solo_session.id
@@ -120,6 +122,10 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
   } catch {
     $failure = $_.Exception.Message
     if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) }
+    Write-Host "MCP fixture exit: $($process.ExitCode)"
+    if ($Environment.SYMPP_LAUNCHER_TRACE_DIR) {
+      Get-ChildItem -LiteralPath $Environment.SYMPP_LAUNCHER_TRACE_DIR -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Tail 20 | Write-Host }
+    }
     throw "$failure Launcher: $($stderr.GetAwaiter().GetResult())"
   } finally {
     if (-not $process.HasExited) { $process.Kill($true) }
