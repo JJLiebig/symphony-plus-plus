@@ -228,6 +228,7 @@ try {
         $foreign.SYMPP_HOME = Join-Path $tempRoot "other-home"
         $foreign.SYMPP_RUNTIME_FILE = Join-Path $tempRoot "other-home/runtime.json"
         $foreign.SYMPP_BACKEND_PORT = [string](New-IsolatedPort @($backendPort))
+        $foreign.SYMPP_DASHBOARD_PORT = $foreign.SYMPP_BACKEND_PORT
         $isolated = $foreign.Clone()
         $isolated.SYMPP_DATABASE = Join-Path $tempRoot "database/second ledger.sqlite3"
         $independent = Invoke-McpBridge $cmd @("/d", "/c", "call `"$command`"") $isolated
