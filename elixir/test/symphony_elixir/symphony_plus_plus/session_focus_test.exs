@@ -29,7 +29,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocusTest do
       _, ["agent", "focus", "w2:p9"] -> {:ok, %{"agent" => pane}}
     end
 
-    assert SessionFocus.focus_location(location(), machine_id: "host-a", request: request) == %{ok: true, status: "focused", reason: nil}
+    result = SessionFocus.focus_location(location(), machine_id: "host-a", request: request)
+    assert result == %{ok: true, status: "focused", reason: nil}
   end
 
   test "client token fallback requires the exact role and target binding" do
@@ -59,7 +60,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocusTest do
   end
 
   test "unreachable Herdr and a terminal disappearing during focus are normal outcomes" do
-    assert SessionFocus.focus_location(location(), machine_id: "host-a", request: fn _, _ -> {:error, :unreachable} end).reason == "herdr_unreachable"
+    unreachable = fn _, _ -> {:error, :unreachable} end
+    assert SessionFocus.focus_location(location(), machine_id: "host-a", request: unreachable).reason == "herdr_unreachable"
 
     request = fn
       _, ["api", "snapshot"] -> {:ok, %{"snapshot" => %{"panes" => [pane()]}}}

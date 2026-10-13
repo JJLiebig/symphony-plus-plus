@@ -45,27 +45,30 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocus do
     end
   end
 
-  defp identity?(pane, location) when is_map(pane) do
-    session = pane["agent_session"] || %{}
-    tokens = pane["tokens"] || %{}
-    native_id = location.herdr["native_session_id"]
-    native_agent = location.herdr["native_session_agent"]
+  defp identity?(%{"agent" => agent} = pane, location) when is_binary(agent) and agent != "" do
+    case location.herdr do
+      %{"native_session_id" => id} when is_binary(id) and id != "" ->
+        native_identity?(pane["agent_session"], agent, id, location.herdr["native_session_agent"])
 
-    live_agent? = is_binary(pane["agent"]) and pane["agent"] != ""
-
-    if is_binary(native_id) and native_id != "" do
-      live_agent? and pane["agent"] == native_agent and session["agent"] == native_agent and
-        session["kind"] == "id" and session["value"] == native_id
-    else
-      target_key = if location.target_kind == "work_package", do: "sympp_work_package_id", else: "sympp_work_request_id"
-
-      live_agent? and is_binary(location.client_id) and location.client_id != "" and
-        tokens["sympp_session_location_id"] == location.client_id and tokens["sympp_role"] == location.role and
-        tokens[target_key] == location.target_id
+      _ ->
+        binding?(pane["tokens"], location)
     end
   end
 
   defp identity?(_pane, _location), do: false
+
+  defp native_identity?(%{"kind" => "id", "agent" => agent, "value" => id}, agent, id, agent), do: true
+  defp native_identity?(_session, _agent, _id, _native_agent), do: false
+
+  defp binding?(tokens, location) when is_map(tokens) do
+    target_key = if location.target_kind == "work_package", do: "sympp_work_package_id", else: "sympp_work_request_id"
+
+    is_binary(location.client_id) and location.client_id != "" and
+      tokens["sympp_session_location_id"] == location.client_id and tokens["sympp_role"] == location.role and
+      tokens[target_key] == location.target_id
+  end
+
+  defp binding?(_tokens, _location), do: false
 
   defp result(nil), do: %{ok: true, status: "focused", reason: nil}
   defp result(reason), do: %{ok: true, status: "not_focused", reason: Atom.to_string(reason)}
@@ -81,7 +84,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionFocus do
     if is_binary(executable) do
       env =
         Enum.map([{"HERDR_SESSION", "session"}, {"HERDR_SOCKET_PATH", "socket_path"}], fn {key, field} ->
-          {String.to_charlist(key), if(is_binary(selector[field]), do: String.to_charlist(selector[field]), else: false)}
+          value = if is_binary(selector[field]), do: String.to_charlist(selector[field]), else: false
+          {String.to_charlist(key), value}
         end)
 
       port = Port.open({:spawn_executable, executable}, [:binary, :exit_status, :stderr_to_stdout, :hide, args: args, env: env])
