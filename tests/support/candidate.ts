@@ -18,11 +18,15 @@ export class Candidate {
   private pending = new Map<number, { resolve: (response: any) => void; reject: (error: Error) => void }>();
   private log;
 
-  constructor(root: string, name: string) {
+  constructor(root: string, name: string, transport: 'stdio' | 'http' = 'stdio') {
     this.home = join(root, name);
     this.database = join(this.home, 'ledger.sqlite3');
     this.log = createWriteStream(resolve('.e2e', `${name}.log`));
-    this.process = spawn('mix', ['sympp.mcp', '--database', this.database, '--repo-root', resolve('.')], {
+    const args = transport === 'stdio'
+      ? ['sympp.mcp', '--database', this.database, '--repo-root', resolve('.')]
+      : ['sympp.cockpit', '--database', this.database, '--port', '0', '--no-open-dashboard',
+        '--dashboard-origin', 'http://127.0.0.1:1'];
+    this.process = spawn('mix', args, {
       cwd: resolve('elixir'),
       // Deliberate allowlist: no live provider, host authentication, or plugin settings.
       env: {
