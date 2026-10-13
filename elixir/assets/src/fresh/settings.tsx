@@ -70,12 +70,13 @@ function Panel({ settings, onSaved }: { settings: Settings; onSaved: () => void 
     setBusy(true);
     setFailure(null);
     const response = await fetch(api("/settings"), { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(sent) }).catch(() => null);
+    const payload = response?.ok ? ((await response.json().catch(() => null)) as { settings?: Settings } | null) : null;
+    // The fields stay locked until the whole answer has been read and applied.
     setBusy(false);
     if (!response?.ok) {
       // The backend's own wording names its internal fields, so the board says it in its words.
       return setFailure(response?.status === 422 ? "The backend did not accept one of these values." : "Could not save the settings.");
     }
-    const payload = (await response.json().catch(() => null)) as { settings?: Settings } | null;
     setAnswer({ settings: payload?.settings ?? { ...current, ...sent }, over: settings });
     setDraft({});
     onSaved();
