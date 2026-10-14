@@ -2,7 +2,7 @@
 
 The guides describe the current beta product. The [factory workflow](design/factory-workflow.md)
 preserves its approved contract and editable diagram.
-[Release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
+[Branch runtime and cutover](runbooks/beta-release-cutover.md)
 record exact tested builds and hosts.
 
 ## Sources Of Truth

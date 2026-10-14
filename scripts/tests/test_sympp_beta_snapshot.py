@@ -171,7 +171,7 @@ class InstalledSnapshotTest(unittest.TestCase):
                 originals = {path: path.read_bytes() for path in (source, Path(str(source) + "-wal"))}
                 copied = run(copy_args)
                 self.assertEqual(copied.returncode, 0, copied.stdout + copied.stderr)
-                self.assertIn("87d828d528b68e7b35ebb94d307a96b6f2c556ed", copied.stdout)
+                self.assertIn(os.environ["SYMPP_OFFLINE_REVISION"], copied.stdout)
                 with closing(snapshot.readonly(destination)) as copied_db:
                     self.assertEqual(copied_db.execute("SELECT work_request_archive_after_days,work_request_never_started_archive_after_days FROM sympp_operator_settings").fetchall(), [(3, 30)])
                     self.assertEqual(copied_db.execute("SELECT title FROM sympp_work_requests").fetchall(), [("Copied example goal",)])
@@ -264,7 +264,7 @@ kernel.FreeConsole()
                 self.assertEqual(sentinel.read_text(), "do not change\n")
                 self.assertFalse(command_log.exists(), "offline runtime invoked an external command")
                 self.assertFalse(any((viewer_home / "ledger").glob(".beta-snapshot-*")))
-                print("Installed beta.2 offline proof: old-schema WAL copy, marker, populated board, denied MCP/dispatch/focus, untouched source/commands, Ctrl+C isolation, refresh, online-start refusal.")
+                print("Installed runtime offline proof: old-schema WAL copy, marker, populated board, denied MCP/dispatch/focus, untouched source/commands, Ctrl+C isolation, refresh, online-start refusal.")
 
 
 if __name__ == "__main__":

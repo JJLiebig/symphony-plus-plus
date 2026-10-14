@@ -1,37 +1,28 @@
-# Install And Run Symphony++
+# Install And Run
 
-The beta package is `0.2.0-beta.2`. These native connections are for Windows
-Codex and Claude Code. [Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
-record the build, hosted checks, and native qualification limits. Linux/macOS runtime archives do not
-establish native plugin or host support.
+Symphony++ `0.2.0` supports native Codex and Claude Code connections on Windows x64.
+Use [Skills installation](portable-skills.md) for the normal host-neutral route.
+Install main for normal work; `/tree/beta` selects an isolated preview.
 
-## Install With Skills CLI
+Setup reads the Skills lock's selected branch and registers its runtime channel
+for both hosts. Marketplace connections read the owning clone's branch metadata.
+Main follows `stable`; beta follows `beta`. Hosted builds publish automatically
+on branch pushes, without a manual release tag or pointer promotion.
 
-The [portable installation guide](portable-skills.md) has exact Claude-only,
-Codex-only and combined install commands, plus an isolated empty-ledger dogfood
-recipe. `npx --yes skills@1.7.0 add .../tree/beta` installs the procedures and
-launcher; one `node <installed-skill>/scripts/setup-sympp.js` command registers
-detected hosts. It selects the published beta.2 build
-`87d828d528b68e7b35ebb94d307a96b6f2c556ed`, with no marketplace or source checkout.
+Close every client of this factory before updating, run Skills update and setup,
+and open fresh sessions. A cold factory selects the latest successfully published
+branch artifact. Healthy clients share their existing runtime until they close;
+there is no hot replacement. Artifact checksums, MCP contract compatibility and
+actual source SHA remain verified. Publication can lag source head; read the
+running SHA and manifest before relying on a newly merged feature.
 
-This route uses `CODEX_HOME` only for Codex configuration. Claude uses the project
-`.mcp.json`. Setup captures shared home, explicit ledger and runtime-file paths,
-so fresh terminals use the intended runtime. Open fresh host sessions after
-setup. Separate beta profiles, home, ledger and port allow the existing main
-factory to keep running. Never use the factory ledger for an empty-ledger trial.
-
-Update with `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`
-and fresh sessions. Repeat setup after relocating the installation. Rollback
-re-adds a saved bundle or previous Skills-capable commit, selecting its artifact
-pointer; database rollback remains a separate stopped-backup operation.
-
-For populated records, the [installed offline viewer](portable-skills.md#copy-convert-and-view-an-offline-ledger)
-copies an explicit source through SQLite's online backup and converts the copy
-with this published artifact. Its separate home and port support viewing while
-the source runtime remains open. Python is needed only for copying. The viewer
-has no MCP/agent access; Ctrl+C stops it before refresh. Never promote the copy
-to live. Procedures installed from beta can be newer than beta.2's runtime and
-UI; branch installation alone does not install later settings UI changes.
+Keep beta's home, runtime file, port and ledger separate from the original factory.
+Use an empty ledger for real dogfood work. A copied live ledger is inspection-only:
+[Copy and View](portable-skills.md#copy-convert-and-view-an-offline-ledger) uses
+SQLite's online backup, a durable offline marker and a separate home/port. The
+viewer has no MCP/agent access; Ctrl+C stops it before refresh. Never promote the
+copy to live. A factory move requires the [stopped-ledger backup and cutover
+procedure](runbooks/beta-release-cutover.md).
 
 ## Marketplace Alternative In A Separate Beta Home
 
@@ -62,7 +53,7 @@ For Claude Code, install the [portable procedures](portable-skills.md), then
 register the same installed bridge from the intended project:
 
 ```powershell
-$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0-beta.2/scripts/start-sympp-mcp.cmd'
+$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0/scripts/start-sympp-mcp.cmd'
 claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
 claude
 ```
@@ -91,13 +82,13 @@ URL. See [Operations](operations.md) for the Work board and starting a request.
 
 For moving an existing factory ledger from main to beta, follow the
 [release and cutover runbook](runbooks/beta-release-cutover.md), including its
-publication gate, stopped-ledger backup, migration effects and rollback.
+branch selection, stopped-ledger backup, migration effects and rollback.
 
 The first client starts the runtime; clients with matching settings attach.
 Closing one host leaves the other usable. The backend stops after the last
-client detaches. The next session can restart the verified artifact without
-downloading the channel manifest again. Changed package generation or launch
-settings require full preparation.
+client detaches. A cold branch-tracking factory resolves the current channel manifest again; its
+verified archive cache avoids downloading unchanged runtime bytes. Changed
+package generation or launch settings require full preparation.
 
 For a connection failure, keep healthy sessions running. Check the recorded
 endpoint and host error, then reconnect the affected host. A health probe does
@@ -117,7 +108,7 @@ Open fresh sessions. If the package version changes, update Claude's bridge
 registration to the installed version before reopening Claude. Never refresh
 an installed cache from a developer checkout or set `SYMPP_REPO_ROOT` for
 normal installed use. The bridge resolves its owning marketplace source clone
-and shipped beta artifact pointer.
+and selects its recorded branch channel.
 
 If startup cannot resolve a home, choose explicit absolute home and database
 paths. For persistent failures, compare the installed version and release notes
@@ -128,8 +119,7 @@ or stop another healthy host to repair one failed attachment.
 
 New runtime builds use `<SYMPP_HOME>/rt/<platform>/<hash16>/runtime`, with the
 release directly inside that directory. Full artifact hashes and source
-provenance remain verified metadata. Beta.2 pairs this flattened archive layout
-with the updated launcher; beta.1 used the old layout. Do not refresh an installed
+provenance remain verified metadata. The current launcher uses this flattened archive layout. Do not refresh an installed
 runtime with an unqualified source build.
 
 Source validation, manual HTTP connections, beta runtime controls and

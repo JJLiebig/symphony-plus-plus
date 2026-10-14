@@ -48,13 +48,11 @@ outputs.set(resolve(bundle, 'scripts/sympp_beta_snapshot.py'),
 for (const name of [...outputs.keys()].map(path => portablePath(relative(bundle, path))).sort()) {
   payloadHash.update(`${name}\n${outputs.get(resolve(bundle, name))}\n`);
 }
-const pointer = JSON.parse(await readFile(resolve(plugin, 'assets/sympp-runtime-artifacts.json'), 'utf8'));
 const manifest = JSON.parse(await readFile(resolve(plugin, '.codex-plugin/plugin.json'), 'utf8'));
 const contract = JSON.parse(await readFile(resolve(repo, 'elixir/priv/symphony_plus_plus/mcp_contract.json'), 'utf8'));
-if (!/^[0-9a-f]{40}$/.test(pointer.source_revision || '')) throw new Error('Portable install needs the published runtime source_revision in the artifact pointer.');
 outputs.set(resolve(bundle, '.sympp-install.json'), JSON.stringify({
   schema_version: 1, distribution: 'skills', name: manifest.name, version: manifest.version,
-  revision: pointer.source_revision, contract_fingerprint: contract.mcp_contract_fingerprint,
+  contract_fingerprint: contract.mcp_contract_fingerprint,
   payload_sha256: payloadHash.digest('hex'),
 }, null, 2) + '\n');
 for (const [path, body] of outputs) {

@@ -3,7 +3,7 @@
 **Approved beta contract.** The diagram preserves product intent.
 Use [Current system](../system.md), [Operations](../operations.md) and the
 [packaged skills](../../plugins/symphony-plus-plus-mcp/skills/) for current
-behavior. [Release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-20261007)
+behavior. [Branch runtime and cutover](../runbooks/beta-release-cutover.md)
 record exact tested builds and hosts.
 
 The aim is a lean, agent-agnostic delivery system whose human operator can see

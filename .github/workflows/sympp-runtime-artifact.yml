@@ -5,9 +5,11 @@ on:
   pull_request:
     branches:
       - main
+      - beta
   push:
     branches:
       - main
+      - beta
 
 permissions:
   actions: read
@@ -230,18 +232,21 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish-stable-release:
-    name: Publish stable release channel
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  publish-branch-release:
+    name: Publish branch runtime channel
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta')
     needs: build-runtime-artifact
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: write
+    concurrency:
+      group: sympp-runtime-publish-${{ github.ref_name }}
+      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_CHANNEL: stable
-      RELEASE_TAG: sympp-runtime-stable
+      RELEASE_CHANNEL: ${{ github.ref_name == 'beta' && 'beta' || 'stable' }}
+      RELEASE_TAG: ${{ github.ref_name == 'beta' && 'sympp-runtime-beta' || 'sympp-runtime-stable' }}
 
     steps:
       - name: Checkout
@@ -253,6 +258,15 @@ jobs:
           path: artifacts/sympp-runtime-release
           pattern: sympp-runtime-*-${{ github.sha }}
           merge-multiple: true
+
+      - name: Require current branch head
+        shell: bash
+        run: |
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${GITHUB_REF_NAME}" --jq .object.sha)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "Branch advanced; the newer run owns publication." >&2
+            exit 1
+          fi
 
       - name: Validate release inputs
         shell: bash
@@ -307,4 +321,9 @@ jobs:
       - name: Upload aggregate channel manifest
         shell: bash
         run: |
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${GITHUB_REF_NAME}" --jq .object.sha)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "Branch advanced; retaining the previous complete channel." >&2
+            exit 1
+          fi
           gh release upload "$RELEASE_TAG" "artifacts/sympp-runtime-release/sympp-runtime-artifacts-${RELEASE_CHANNEL}.json" --clobber

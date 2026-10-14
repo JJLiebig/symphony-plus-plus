@@ -81,7 +81,7 @@ For Claude Code, install the portable procedures separately, then register
 the same installed bridge from the intended project:
 
 ```powershell
-$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0-beta.2/scripts/start-sympp-mcp.cmd'
+$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0/scripts/start-sympp-mcp.cmd'
 claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
 ```
 
@@ -90,17 +90,16 @@ keeps registration with that project. The absolute bridge path needs no source
 checkout or working directory. If a later upgrade changes the package version,
 register the new installed path before reopening Claude.
 
-The beta pointer is
-`https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json`.
-[Release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
-record the build, hosted checks, and native qualification limits. Linux/macOS archives do not establish
-native host or plugin support.
+The runtime follows the recorded branch's floating channel (`stable` for main, `beta` for beta).
+Branch pushes publish automatically; cold startup resolves the latest successfully
+published build, while healthy clients keep their current backend. Read actual
+health provenance before assuming a new source feature has reached the runtime.
 
 ## Shared Runtime And Recovery
 
 The first client starts the packaged runtime and dashboard. Other clients
 with matching settings attach; the backend stops after the last client closes.
-A clean next start reuses its verified artifact. Read the actual endpoints:
+A clean next start resolves its branch manifest and reuses unchanged verified archive bytes. Read the actual endpoints:
 
 ```powershell
 $symppRuntime = Get-Content (Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json') -Raw | ConvertFrom-Json

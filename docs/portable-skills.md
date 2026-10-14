@@ -12,21 +12,22 @@ From the project that will use Symphony++, choose one pair:
 
 ```powershell
 # Claude Code only
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent claude-code --skill symphony-plus-plus --yes
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent claude-code --skill symphony-plus-plus --yes
 node .claude/skills/symphony-plus-plus/scripts/setup-sympp.js --host claude
 
 # Codex only
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex --skill symphony-plus-plus --yes
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent codex --skill symphony-plus-plus --yes
 node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host codex
 
 # Both hosts
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex claude-code --skill symphony-plus-plus --yes
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent codex claude-code --skill symphony-plus-plus --yes
 node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
 ```
 
 Omitting `--host` registers installed Codex and Claude Code detected on PATH.
-`--host both` requires both. The qualified CLI version recognizes `/tree/beta`
-and retains that ref in `skills-lock.json` across updates. Codex uses
+`--host both` requires both. The qualified CLI recognizes `/tree/main` and `/tree/beta` and retains that ref
+in `skills-lock.json` across updates. Use main normally; use beta with separate
+homes and an empty ledger for isolated trials. Codex uses
 `.agents/skills/symphony-plus-plus`; Claude uses `.claude/skills/symphony-plus-plus`.
 Shared installations may link to one canonical directory. `--copy` also works.
 
@@ -34,7 +35,8 @@ Setup creates the selected `CODEX_HOME` (default `~/.codex`) when needed, then
 writes its `config.toml` and Claude's project `.mcp.json`, preserving unrelated
 settings. It does not write Claude's user configuration. Both entries launch
 the installed Node bridge with the Node executable running setup. They capture
-`SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE`, and any selected
+the branch-derived `SYMPP_RUNTIME_CHANNEL`, `SYMPP_HOME`, `SYMPP_DATABASE`,
+`SYMPP_RUNTIME_FILE`, and any selected
 backend port/log directory. Codex keeps 360-second startup and 300-second tool
 timeouts. Do not commit machine-specific MCP paths to a shared repository.
 
@@ -71,7 +73,7 @@ $env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'empty.sqlite3'
 $env:SYMPP_RUNTIME_FILE = Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json'
 $env:SYMPP_BACKEND_PORT = '21345'
 $env:SYMPP_OPEN_DASHBOARD = '0'
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex claude-code --skill symphony-plus-plus --yes
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent codex claude-code --skill symphony-plus-plus --yes
 node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host both
 codex
 ```
@@ -143,12 +145,20 @@ data and credentials, so keep it local. The existing
 
 ## Runtime identity, sharing, and conflicts
 
-This bundle selects beta.2 build `87d828d528b68e7b35ebb94d307a96b6f2c556ed` through
-its [published artifact pointer](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013).
-Setup prints the runtime build and bundled payload digest. Procedures and
-launcher can change while the runtime build stays the same.
-Changes merged to beta after this runtime build, including the later settings
-UI, are absent until a new runtime is published and selected by the pointer.
+Main selects the floating `stable` runtime channel; `/tree/beta` selects `beta`.
+Setup derives the channel from the owning Skills lock and prints the channel and
+payload digest. It never guesses a project install's branch from an unrelated
+global install. Global Skills locks honor `XDG_STATE_HOME`; local development
+copies default to stable and may select `SYMPP_RUNTIME_CHANNEL=beta` explicitly.
+Run setup again after changing branch. The payload hash and MCP contract identify
+the installed bundle; the verified artifact manifest and health response identify
+the actual runtime SHA.
+
+Branch pushes publish automatically after hosted platform builds. On cold start,
+the factory resolves the latest successfully published manifest, reusing verified
+archive bytes when unchanged. Healthy attached clients keep their actual current
+backend until the last client closes. Source installation can precede publication;
+check actual runtime provenance before assuming a new feature is available.
 
 Both hosts must share the same Symphony++ home, runtime file and ledger to
 share a managed runtime. Startup locks serialize startup and client leases
@@ -178,28 +188,18 @@ Copy-Item -LiteralPath skills-lock.json -Destination $previousBundle
 npx --yes skills@1.7.0 update symphony-plus-plus --project --yes
 ```
 
-Open fresh sessions. The stable project skill path keeps registration valid.
+Run setup again, then open fresh sessions. The project skill path keeps registration valid.
 After relocating the workspace, changing copy/link layout, or moving the Node
 executable, repeat setup with the same runtime selections to repair its absolute
-paths. Re-add `/tree/beta`
-to force a payload refresh.
+paths. Re-add `/tree/main` or `/tree/beta` to change the selected branch.
 
-Rollback selects the saved installation bytes:
-
-```powershell
-npx --yes skills@1.7.0 add "$previousBundle/symphony-plus-plus" --agent codex claude-code --skill symphony-plus-plus --yes
-node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host both
-```
-
-The lock records branch and content hash, not a resolved Git commit. If you
-separately recorded a known Skills-capable commit, `/tree/<full-sha>` also
-selects that version. A local backup or pinned SHA does not follow beta on
-update; re-add `/tree/beta` to follow beta again. The previous
-bundle selects its previous runtime pointer but cannot undo migrations or
-retention. Restore a stopped ledger backup when the cutover runbook requires
-it. This initial Skills release has no earlier Skills-capable release: retain
-the original marketplace installation and stopped-ledger backup for the first
-cutover's rollback.
+Rollback needs the saved installation **and its matching runtime**. Source bytes
+alone still follow a floating channel. Preserve the previous hosted runtime
+manifest/archive and actual SHA before their artifact retention expires; restore
+them with the local manifest override described in the [cutover runbook](runbooks/beta-release-cutover.md).
+Restore a stopped ledger backup when migrations or retention require it. Keep the
+original marketplace installation and paired backup for the first distribution
+change. Skills locks record branch/content hash rather than a resolved Git SHA.
 
 Before `npx --yes skills@1.7.0 remove symphony-plus-plus --yes`, close clients and
 remove its MCP registration from each host. Removing skill files does not
@@ -209,17 +209,19 @@ remove host configuration.
 
 Canonical procedures and launcher files remain under
 `plugins/symphony-plus-plus-mcp`. `node scripts/package-portable-skills.mjs`
-mirrors them and generates install identity; `--check` detects drift. Pointer
-promotion updates both its URL and published `source_revision`. The bundle
+mirrors them and generates content identity; `--check` detects drift. Both branch
+manifest URLs ship in one payload; runtime source SHA comes from the selected
+verified artifact. The bundle
 contains procedures, setup/launcher support and metadata; first startup
 downloads the verified runtime archive.
 
 Windows CI installs isolated bundles through Skills 1.7.0, checks configuration
-preservation/repair, and exercises the published artifact with real MCP,
+preservation/repair, and exercises real old and current-candidate artifacts with MCP,
 shared attachment, shutdown, restart and conflicting owners. A `/tree/beta`
 installation checks update keeps beta. GitHub's elevated Windows desktop uses
 a test-only process creation fixture with unchanged installed launcher files
-and the real published backend. Desktop user/token/job behavior, authenticated
+and real verified backend releases. Cold refresh proves changed runtime SHA
+with unchanged content identity; warm clients keep their current backend. Desktop user/token/job behavior, authenticated
 host sessions, focus, workstation behavior and populated factory migration
 remain manual qualification.
 
@@ -227,4 +229,4 @@ The installed offline path is also exercised with a synthetic populated
 old-schema WAL ledger: unchanged source bytes and records, staged conversion,
 the offline marker, populated board data, denied MCP/dispatch/focus, untouched
 external-command sentinels, Ctrl+C shutdown, stopped refresh and refusal of
-ordinary startup. This uses the published beta.2 artifact, not a rebuilt backend.
+ordinary startup. This uses the selected branch artifact, not a local source build.
