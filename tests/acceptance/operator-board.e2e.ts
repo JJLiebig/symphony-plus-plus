@@ -2,7 +2,8 @@ import { expect } from 'e2e';
 import { test } from '../support/browser-candidate.js';
 import { contract } from '../support/factory.js';
 import { close, head, pr, row, sync } from '../support/delivery.js';
-import { reviewRepository, installReviewProvider } from '../support/browser-review-provider.js';
+import { installReviewProvider } from '../support/browser-review-provider.js';
+import { repository } from '../support/worktree-git.js';
 import { readFile } from 'node:fs/promises';
 
 test('operator sees dependency ordering, pending qualification and actual delivered completion', async ({ candidate, app, screen, browser, agent }) => {
@@ -87,14 +88,14 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await expect(screen.getByRole('heading', 'Landed · last 24 hours')).toBeVisible();
   expect((await client.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeTruthy();
 
-  const repository = await reviewRepository(candidate);
-  const reviewing = await client.request('Provider-reported review wait', 'ready_for_slicing', 'beta', repository);
+  const reviewRepo = await repository(candidate.root, 'browser-review');
+  const reviewing = await client.request('Provider-reported review wait', 'ready_for_slicing', 'beta', reviewRepo.origin);
   const [reviewWp] = (await client.call('slice_work_request', {
     work_packages: [contract('Review provider findings', { review: { type: 'review-suite', args: { mode: 'fast' } } })],
   })).work_package_ids;
   await client.call('dispatch_work_package', { work_package_id: reviewWp });
   const receipt = await installReviewProvider(candidate);
-  const prepared = await client.call('prepare_work_package_worktree', { work_package_id: reviewWp, target_repo_root: repository });
+  const prepared = await client.call('prepare_work_package_worktree', { work_package_id: reviewWp, target_repo_root: reviewRepo.checkout });
   expect(prepared.worktree.status).toBe('prepared');
   await candidate.capture('provider-review-wait');
   await browser.reload();
