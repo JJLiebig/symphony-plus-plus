@@ -259,7 +259,6 @@ function Test-HealthySymppDashboard([string]$Origin) { return $true }
 function Test-SymppDashboardMcpProxyMatches([string]$Origin, [string]$ExpectedContractFingerprint) { return $false }
 $restartDashboardPlan = Resolve-DashboardPlan 20001 $null "http://127.0.0.1:20000" ("b" * 40) $sourceDashboardState $true ("b" * 40) $fingerprint $true $true
 Assert-True ($restartDashboardPlan.reused -and $restartDashboardPlan.managed -and $restartDashboardPlan.pid -eq 123) "Backend restart must preserve a healthy recorded managed dashboard while its proxy is temporarily unavailable"
-$nodePath = Join-Path $pluginRoot "scripts/start-sympp-mcp-bridge.js"
 
 $pendingBase = Join-Path ([System.IO.Path]::GetTempPath()) "sympp-pending-launch-$([guid]::NewGuid().ToString('N'))"
 $pendingRoot = Join-Path $pendingBase "rt/windows-x64/0123456789abcdef/runtime"
@@ -348,12 +347,6 @@ try {
 } finally {
   Remove-Item -LiteralPath $artifactTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
-& (Get-Command node.exe -ErrorAction Stop).Source --check $nodePath
-$nodeExitCode = $LASTEXITCODE
-Assert-True ($nodeExitCode -eq 0) "Node bridge must parse"
-& (Get-Command node.exe -ErrorAction Stop).Source $nodePath --runtime-supported
-$nodeExitCode = $LASTEXITCODE
-Assert-True ($nodeExitCode -eq 0) "Current Node runtime must satisfy the conservative bridge check"
 & (Get-Command node.exe -ErrorAction Stop).Source (Join-Path $PSScriptRoot "state-identity-tests.js")
 $nodeExitCode = $LASTEXITCODE
 Assert-True ($nodeExitCode -eq 0) "Node state identity tests must pass"

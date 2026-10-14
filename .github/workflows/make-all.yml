@@ -207,12 +207,41 @@ jobs:
           include-hidden-files: true
 
   portable-skills:
-    name: Windows Skills install
+    name: Windows installed runtime
     runs-on: windows-latest
     timeout-minutes: 25
+    env:
+      E2E_OAUTH_CREDENTIALS: '{}'
+      E2E_TELEMETRY_DISABLED: '1'
+      DO_NOT_TRACK: '1'
+      SYMPP_INSTALLED_ACCEPTANCE: '1'
+      ACCEPTANCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Set up acceptance Node
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: node@26.3.0
+      - name: Install locked acceptance dependencies
+        run: npm ci --ignore-scripts
+      - name: Record installed candidate identity
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          New-Item -ItemType Directory -Path .e2e -Force | Out-Null
+          git show -s --format='%H %P' HEAD > .e2e/checkout-parents.txt
+          git cat-file -p HEAD > .e2e/checkout-commit.txt
+          "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
+          @{ head = $env:ACCEPTANCE_HEAD_SHA; base = $env:BASE_SHA; run = $env:GITHUB_RUN_ID } | ConvertTo-Json > .e2e/inputs.json
+          # Native marketplace clones fetch branch commits, not GitHub's synthetic merge ref.
+          git fetch --no-tags --depth=1 origin $env:ACCEPTANCE_HEAD_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch marketplace candidate head' }
+          $headTree = git rev-parse "$($env:ACCEPTANCE_HEAD_SHA)^{tree}"
+          $combinedTree = git rev-parse 'HEAD^{tree}'
+          @{ headTree = $headTree; combinedTree = $combinedTree } | ConvertTo-Json > .e2e/marketplace-tree-identity.json
+          if ($headTree -ne $combinedTree) { throw 'Refresh the branch from current beta before marketplace qualification' }
       - name: Generate portable bundle
         run: node scripts/package-portable-skills.mjs
       - name: Retain generated portable mirror
@@ -226,6 +255,7 @@ jobs:
           node scripts/package-portable-skills.mjs --check
           node plugins/symphony-plus-plus-mcp/tests/launcher/portable-install-tests.js
       - name: Install native configuration hosts
+        id: native-hosts
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP 'codex.zip'
@@ -236,12 +266,79 @@ jobs:
           (Get-ChildItem $bin -Recurse -Filter codex.exe | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
           npm install --global @anthropic-ai/claude-code@2.1.292
           if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
-      - name: Install isolated bundles and exercise the published runtime
-        run: node scripts/qualify-portable-skills.mjs --runtime
-      - name: Prove beta branch tracking across Skills update
-        run: node scripts/qualify-portable-skills.mjs https://github.com/JJLiebig/symphony-plus-plus/tree/beta --branch-only
+      - name: Prove real Skills and marketplace user journeys
+        run: |
+          npm exec -- e2e run tests/acceptance/installed-runtime.e2e.ts --target api
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/support/installed-report.ts tests/acceptance/installed-runtime.e2e.ts
+      - name: Prove native registration and published runtime processes
+        if: ${{ !cancelled() && steps.native-hosts.outcome == 'success' }}
+        run: node scripts/qualify-portable-skills.mjs
       - name: Require committed generated mirror
+        if: ${{ !cancelled() && steps.native-hosts.outcome == 'success' }}
         run: git diff --exit-code -- skills/symphony-plus-plus
+      - name: Retain installed acceptance evidence including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installed-runtime-evidence
+          path: .e2e
+          include-hidden-files: true
+
+  offline-acceptance:
+    name: offline copy acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      E2E_OAUTH_CREDENTIALS: '{}'
+      E2E_TELEMETRY_DISABLED: '1'
+      DO_NOT_TRACK: '1'
+      SYMPP_OFFLINE_ACCEPTANCE: '1'
+    steps:
+      - name: Checkout candidate combined tree
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Set up candidate toolchain
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - name: Record identity and isolate build tools
+        working-directory: elixir
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          echo "$(mise where node)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where erlang)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where elixir)/bin" >> "$GITHUB_PATH"
+          echo "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "MIX_HOME=$RUNNER_TEMP/sympp-offline-mix" >> "$GITHUB_ENV"
+          echo "MIX_ARCHIVES=$RUNNER_TEMP/sympp-offline-mix/archives" >> "$GITHUB_ENV"
+          mkdir -p ../.e2e
+          git show -s --format='%H %P' HEAD > ../.e2e/checkout-parents.txt
+          git cat-file -p HEAD > ../.e2e/checkout-commit.txt
+          printf 'head=%s\nbase=%s\nrun=%s\n' "$HEAD_SHA" "$BASE_SHA" "$GITHUB_RUN_ID" > ../.e2e/inputs.txt
+      - name: Install locked acceptance dependencies
+        run: npm ci --ignore-scripts
+      - name: Build candidate source
+        working-directory: elixir
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          mix compile --warnings-as-errors
+      - name: Prove online copy and offline replacement boundaries
+        run: |
+          npm exec -- e2e run tests/acceptance/offline-copy.e2e.ts --target api
+          node tests/support/installed-report.ts tests/acceptance/offline-copy.e2e.ts
+      - name: Retain offline acceptance evidence including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: offline-copy-evidence
+          path: .e2e
+          include-hidden-files: true
 
   beta-snapshot:
     name: beta snapshot safety
@@ -500,6 +597,7 @@ jobs:
       - browser-candidate-artifact
       - native-acceptance
       - portable-skills
+      - offline-acceptance
       - beta-snapshot
       - single-gates
       - parallel-gates
@@ -522,6 +620,10 @@ jobs:
           fi
           if [ "${{ needs.portable-skills.result }}" != "success" ]; then
             echo "portable Skills result: ${{ needs.portable-skills.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.offline-acceptance.result }}" != "success" ]; then
+            echo "offline acceptance result: ${{ needs.offline-acceptance.result }}"
             exit 1
           fi
           if [ "${{ needs.beta-snapshot.result }}" != "success" ]; then
