@@ -46,6 +46,20 @@ are supplied. MCP drives dispatch, dependency selection and reconciliation;
 public operator reads observe stored qualification and request completion.
 Provider and MCP receipts accompany the process logs, including failed calls.
 
+Authority and recovery journeys use two real candidate clients for claim
+contention, scoped requests, reconnects, revocation, terminal delivery, and an
+actual backend restart. Candidate MCP worker claims are synthetic test clients;
+they start no managed worker agents. Offline denial uses the supported snapshot
+operation on the disposable ledger. Diagnostic checks opt into failed-call
+capture through operator settings and inspect redacted responses, process output,
+and aggregates before disabling capture again.
+
+Grant expiry and lease pause cannot be configured through these public routes.
+Keep their precise lower-level security checks, along with inaccessible historical
+guidance, stored authority, and transaction qualifications. A repository-backed
+failed-call journey does not qualify health calls that lack the selected ledger
+context. Report that diagnostic limitation separately.
+
 The `native acceptance` job is an explicit dependency of `make-all`. Legacy
 checks remain required until the owning acceptance journey replaces their
 guarantees. Preserve unique storage, concurrency, authority, process, and live

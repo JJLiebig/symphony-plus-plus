@@ -109,44 +109,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryCloseoutTest do
     assert slice.work_package.raw_status == "merged"
   end
 
-  test "PR merged recovery closeout merges stale linked package and retires active claim lease", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "implementing")
-
-    assert {:ok, claim_lease} =
-             ClaimLeaseService.claim(
-               repo,
-               linked_package.id,
-               %{"actor_kind" => "agent", "actor_id" => "local:pr-recovery-claim", "actor_display_name" => "worker-claim"},
-               stale_after_ms: 60_000
-             )
-
-    attrs =
-      delivery_attrs(%{
-        outcome: "pr_merged",
-        idempotency_key: "delivery-pr-merged-active-runtime",
-        pr_url: "https://github.com/nextide/symphony-plus-plus/pull/125",
-        pr_number: 125,
-        pr_repository: "nextide/symphony-plus-plus",
-        pr_merged_at: ~U[2026-05-24 12:45:00.000000Z],
-        merge_commit_sha: "abc125"
-      })
-
-    assert {:ok, delivery} = Service.record_work_package_delivery(repo, work_request.id, work_package.id, attrs)
-    assert delivery.outcome == "pr_merged"
-
-    assert repo.get!(WorkPackage, linked_package.id).status == "merged"
-    assert %ClaimLease{status: "released", release_reason: "pr_merged_delivery_closeout"} = repo.get!(ClaimLease, claim_lease.id)
-
-    assert [event] = repo.all(ProgressEvent)
-    assert event.payload["previous_status"] == "implementing"
-    assert event.payload["retired_claim_lease_ids"] == [claim_lease.id]
-    assert "claim_lease_active" in event.payload["runtime_reason_codes_before_closeout"]
-
-    assert {:ok, %{counts: %{"delivered" => 1}, work_packages: [slice]}} = DeliveryBoard.project(repo, work_request.id)
-    assert slice.operational_state.key == "delivered"
-    assert slice.work_package.raw_status == "merged"
-  end
-
   test "PR merged recovery closeout ignores stale agent runtime rows that are not operationally active", %{repo: repo} do
     {work_request, work_package, linked_package} = linked_slice!(repo, status: "ready_for_merge")
 

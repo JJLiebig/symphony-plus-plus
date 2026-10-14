@@ -153,6 +153,7 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   const before = await candidate.rawRequest('tools/call', { name: 'read_context', arguments: {} });
   expect(before.error.data.reason).toBe('server_not_initialized');
   await candidate.request('initialize', initialize);
+  expect((await candidate.rawRequest('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } })).error.data.reason).toBe('claim_required');
   for (const uri of ['sympp://assignment/current', `sympp://work-packages/${wp}/task_plan.md`]) {
     const unbound = await candidate.rawRequest('resources/read', { uri });
     expect(unbound.error.code).toBe(-32001);
@@ -162,9 +163,22 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   expect(catalog.tools.some((entry: any) => entry.name === 'set_status')).toBe(false);
   for (const name of ['mint_worker_grant', 'list_work_packages']) expect((await candidate.rawRequest('tools/call', { name, arguments: {} })).error.code).toBe(-32601);
   expect((await candidate.rawRequest('tools/call', { name: 'read_context', arguments: {} })).error.data.reason).toBe('claim_required');
-  const claimed = await candidate.request('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp, claimed_by: 'stdio-worker' } });
+  expect((await candidate.rawRequest('tools/call', { name: 'claim_local_assignment', arguments: [] })).error.data.reason).toBe('invalid_tool_arguments');
+  expect((await candidate.rawRequest('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp, unexpected: true } })).error.data.reason).toBe('unexpected_argument');
+  const claimed = await candidate.request('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp } });
   expect(claimed.structuredContent.assignment.work_package_id).toBe(wp);
+  const assignmentResource = JSON.parse((await candidate.request('resources/read', { uri: 'sympp://assignment/current' })).contents[0].text);
+  expect(assignmentResource.work_package_id).toBe(wp);
+  expect(assignmentResource.claimed_by).toBe(claimed.structuredContent.assignment.claimed_by);
+  for (const key of ['secret', 'secret_hash', 'proof_hash', 'work_key']) expect(assignmentResource[key]).toBeUndefined();
   expect((await candidate.request('tools/call', { name: 'read_context', arguments: {} })).structuredContent.work_package.id).toBe(wp);
+  const peer = processes.stdio('stdio-peer', { database: factory.database, surface: 'worker' });
+  await peer.request('initialize', initialize);
+  const reconnected = await peer.rawPayload([{ jsonrpc: '2.0', id: 901, method: 'tools/call', params: { name: 'claim_local_assignment', arguments: { work_package_id: wp } } }]);
+  expect(reconnected).toHaveLength(1);
+  expect(reconnected[0].result.structuredContent.assignment.grant_id).toBe(claimed.structuredContent.assignment.grant_id);
+  expect(reconnected[0].result.structuredContent.local_claim.claim_lease_action).toBe('heartbeat');
+  expect((await peer.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment.work_package_id).toBe(wp);
   const note = await candidate.rawRequest('tools/call', { name: 'add_work_request_comment', arguments: { work_request_id: request, body: 'Untrusted operator', created_by: 'stdio-worker' } });
   expect(note.error).toBeTruthy();
   expect((await architect.call('list_comments', { target_kind: 'work_request', target_id: request })).comments).toEqual([]);
@@ -212,16 +226,18 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   const batchTool = (id: number, name: string, args: object = {}) => ({ ...tool(name, args), id });
   const denied = await candidate.rawPayload([
     [{ jsonrpc: '2.0', id: 920, method: 'tools/list' }],
+    batchTool(929, 'claim_local_assignment', { work_package_id: first, unexpected: true }),
     batchTool(921, 'append_progress', { summary: 'Before claim', idempotency_key: 'batch-before' }),
     batchTool(922, 'claim_local_assignment', { work_package_id: first, claimed_by: 'batch-owner' }),
     batchTool(923, 'append_progress', { summary: 'After claim in same batch', idempotency_key: 'batch-after' }),
     batchTool(924, 'list_guidance_requests', { work_request_id: 'foreign' }),
   ]);
   expect(denied[0].error.data.reason).toBe('request_must_be_object');
-  expect(denied[1].error.data.reason).toBe('claim_required');
-  expect(denied[2].result.structuredContent.assignment.work_package_id).toBe(first);
-  expect(denied[3].error.data.reason).toBe('claim_required');
+  expect(denied[1].error.data.reason).toBe('unexpected_argument');
+  expect(denied[2].error.data.reason).toBe('claim_required');
+  expect(denied[3].result.structuredContent.assignment.work_package_id).toBe(first);
   expect(denied[4].error.data.reason).toBe('claim_required');
+  expect(denied[5].error.data.reason).toBe('claim_required');
   expect((await candidate.request('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } })).structuredContent.progress_events).toEqual([]);
   const switched = await candidate.rawPayload([
     batchTool(925, 'read_context'),

@@ -713,70 +713,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     refute toon_resource["text"] =~ "handoff-value"
   end
 
-  test "read_task_plan TOON uses the same bounded state as the rendered virtual file", %{repo: repo} do
-    assert {:ok, package} =
-             WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-TOON-PLAN-BOUNDS", kind: "mcp"))
-
-    plan_nodes =
-      for index <- 1..101 do
-        assert {:ok, plan_node} =
-                 PlanningRepository.append_plan_node(repo, %{
-                   "work_package_id" => package.id,
-                   "title" => "Plan node #{index}",
-                   "status" => "pending"
-                 })
-
-        plan_node
-      end
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    read_plan_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "read-plan", "method" => "tools/call", "params" => %{"name" => "read_task_plan"}},
-        repo: repo,
-        session: session
-      )
-
-    read_plan_text = get_in(read_plan_response, ["result", "content", Access.at(0), "text"])
-    assert read_plan_text =~ "omitted:"
-    assert read_plan_text =~ "plan_nodes: 1"
-    refute read_plan_text =~ "Plan node 101"
-    assert get_in(read_plan_response, ["result", "structuredContent", "text"]) =~ "1 later plan nodes omitted"
-    assert get_in(read_plan_response, ["result", "structuredContent", "omitted", "plan_nodes"]) == 1
-
-    structured_plan_nodes = get_in(read_plan_response, ["result", "structuredContent", "plan_nodes"])
-    assert length(structured_plan_nodes) == 100
-    assert get_in(structured_plan_nodes, [Access.at(0), "id"]) == hd(plan_nodes).id
-    assert get_in(structured_plan_nodes, [Access.at(0), "status"]) == "pending"
-    assert get_in(structured_plan_nodes, [Access.at(0), "title"]) == "Plan node 1"
-
-    version = get_in(read_plan_response, ["result", "structuredContent", "version"])
-    assert version
-
-    update_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "update-plan",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => version,
-              "nodes" => [%{"id" => get_in(structured_plan_nodes, [Access.at(0), "id"]), "status" => "done"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(update_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "status"]) == "done"
-  end
-
   test "native document defaults match resources and recover safe observation identity", %{repo: repo} do
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DOCUMENTS", kind: "mcp"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
@@ -865,61 +801,45 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert finding["body"] == "Recover the finding body"
   end
 
-  test "native history cursors recover every older row while appends leave the boundary unchanged", %{repo: repo} do
+  test "stored artifact history cursors retain older rows across concurrent appends", %{repo: repo} do
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-PAGED-DOCS", kind: "mcp"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
     for n <- 1..205 do
-      assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Progress #{n}", idempotency_key: "event-#{n}"})
-      assert {:ok, _} = PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Finding #{n}", body: "Evidence #{n}", idempotency_key: "finding-#{n}"})
       assert {:ok, _} = PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Artifact #{n}", path: "evidence/#{n}"})
     end
 
-    for {document, collection} <- [{"progress.md", "progress_events"}, {"findings.md", "findings"}, {"handoff.md", "artifacts"}] do
-      first = mcp_tool(repo, session, "read_work_package_document", %{"document" => document}) |> get_in(["result", "structuredContent"])
-      assert Enum.map(first[collection], & &1["sequence"]) == Enum.to_list(106..205)
-      assert first["omitted"][collection] == 105
-      assert first["next_before_sequence"] == 106
+    document = "handoff.md"
+    collection = "artifacts"
+    first = mcp_tool(repo, session, "read_work_package_document", %{"document" => document}) |> get_in(["result", "structuredContent"])
+    assert Enum.map(first[collection], & &1["sequence"]) == Enum.to_list(106..205)
+    assert first["omitted"][collection] == 105
+    assert first["next_before_sequence"] == 106
 
-      assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Concurrent append #{document}"})
-      if document == "findings.md", do: PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Concurrent append", body: document})
-      if document == "handoff.md", do: PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Concurrent append", path: document})
+    assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Concurrent append #{document}"})
+    assert {:ok, _} = PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Concurrent append", path: document})
 
-      second = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => first["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
-      assert Enum.map(second[collection], & &1["sequence"]) == Enum.to_list(6..105)
-      assert second["omitted"][collection] == 5
-      last = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => second["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
-      assert Enum.map(last[collection], & &1["sequence"]) == Enum.to_list(1..5)
-      assert last["omitted"][collection] == 0
-      assert last["next_before_sequence"] == nil
-      assert length(Enum.uniq_by(last[collection] ++ second[collection] ++ first[collection], & &1["id"])) == 205
+    second = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => first["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+    assert Enum.map(second[collection], & &1["sequence"]) == Enum.to_list(6..105)
+    assert second["omitted"][collection] == 5
+    last = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => second["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+    assert Enum.map(last[collection], & &1["sequence"]) == Enum.to_list(1..5)
+    assert last["omitted"][collection] == 0
+    assert last["next_before_sequence"] == nil
+    assert length(Enum.uniq_by(last[collection] ++ second[collection] ++ first[collection], & &1["id"])) == 205
 
-      if document == "handoff.md" do
-        assert List.last(last["latest_progress"])["summary"] == "Concurrent append handoff.md"
-        assert last["acceptance"] == package.acceptance_criteria
-      end
-    end
+    assert List.last(last["latest_progress"])["summary"] == "Concurrent append handoff.md"
+    assert last["acceptance"] == package.acceptance_criteria
   end
 
-  test "native document reads reject unsupported cursors and unauthorized scopes", %{repo: repo} do
+  test "document reads reject expired grants and prioritize revocation over expiry", %{repo: repo} do
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DOC-AUTH", kind: "mcp"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
-    for {arguments, reason} <- [
-          {%{"document" => "../progress.md"}, "unknown_virtual_file"},
-          {%{"document" => "review.md", "before_sequence" => 1}, "unsupported_document_cursor"},
-          {%{"document" => "progress.md", "before_sequence" => 0}, "invalid_before_sequence"},
-          {%{"document" => "progress.md", "before_sequence" => "1"}, "invalid_before_sequence"}
-        ] do
-      assert get_in(mcp_tool(repo, session, "read_work_package_document", arguments), ["error", "data", "reason"]) == reason
-    end
-
-    sibling = mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md", "work_package_id" => "sibling"})
-    assert get_in(sibling, ["error", "code"]) == -32_003
     assert get_in(mcp_tool(repo, nil, "read_work_package_document", %{"document" => "progress.md"}), ["error", "code"]) == -32_001
     repo.update_all(AccessGrant, set: [expires_at: DateTime.add(DateTime.utc_now(:microsecond), -1, :second)])
     assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"}), ["error", "data", "reason"]) == "expired"

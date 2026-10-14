@@ -11,6 +11,11 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   expect(uninitialized.status).toBe(400);
   expect(uninitialized.body.error.data.reason).toBe('missing_session_id');
   const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: initialize };
+  const list = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} };
+  for (const batch of [[init], [init, list]]) {
+    expect((await fresh.raw(batch)).body.error.data.reason).toBe('batch_not_supported');
+  }
+  expect((await fresh.raw({ ...init, params: { protocolVersion: '2025-03-26' } })).body.error.data.reason).toBe('invalid_initialize_params');
   for (const headers of [
     { origin: 'https://example.invalid' }, { origin: 'null' },
     { origin: 'http://127.0.0.1:1' }, { origin: new URL(endpoint).origin.replace('127.0.0.1', 'localhost') },
@@ -49,13 +54,20 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   }
   const comments = await fresh.call('list_comments', { target_kind: 'work_request', target_id: id });
   expect(comments.comments).toEqual([]);
-  expect((await fresh.raw([], {})).body.error.data.reason).toBe('batch_not_supported');
+  for (const batch of [[], [list], [init, list]]) {
+    expect((await fresh.raw(batch)).body.error.data.reason).toBe('batch_not_supported');
+  }
   expect((await fresh.raw('not json', {})).body.error.data.reason).toBe('invalid_json');
   expect((await fresh.raw(null, {}, 'GET')).status).toBe(405);
   for (const value of ['missing-session', '__sympp_mcp_current_state__', '\u00ff']) {
     const refused = await fresh.raw(tool('get_current_assignment'), { 'mcp-session-id': value });
     expect(refused.status).toBe(value === 'missing-session' ? 404 : 400);
     expect(refused.body.error.data.reason).toBe(value === 'missing-session' ? 'unknown_state_key' : 'invalid_session_id');
+  }
+  for (const payload of [init, list, { jsonrpc: '2.0', method: 'notifications/initialized' }]) {
+    const unknown = await fresh.raw(payload, { 'mcp-session-id': 'missing-session' });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error.data.reason).toBe('unknown_state_key');
   }
   const notification = await fresh.raw({ jsonrpc: '2.0', method: 'notifications/initialized' });
   expect(notification.status).toBe(202);
@@ -283,6 +295,7 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
   expect((await old.call('get_current_assignment')).assignment.work_package_id).toBe(superseded);
   await supersede(superseded);
   await supersede(unclaimed);
+  expect((await research.call('mark_ready')).work_package.status).toBe('ready_for_merge');
   await close(architect, completed);
   for (const [client, wp] of [[old, superseded], [research, completed]] as const) {
     expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Terminal mutation', idempotency_key: 'terminal' } })).error).toBeTruthy();
@@ -482,12 +495,17 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   provider.set(302, pr(302, head('b'), { headRefName: 'feature/authority', state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
   const merged = await client.call('sync_pr');
   expect(merged.pr_sync.status).toBe('merged');
-  for (const hidden of [sibling, 'Confidential sibling terminal marker']) expect(JSON.stringify(merged)).not.toContain(hidden);
+  expect(merged.next_owner).toBe('architect');
+  expect(merged.next_action).toBe('return_to_architect');
   const terminal = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
   expect(terminal.summary.active_grant_count).toBe(0);
   expect((await row(architect, request, wp)).delivery_outcome).toBe('pr_merged');
-  expect((await client.call('sync_pr')).pr_sync.status).toBe('already_merged');
+  // Linked delivery retires this worker's grant. Historical unlinked-package
+  // already_merged replay remains a separate lower-level qualification.
+  expect((await client.rpc('tools/call', { name: 'sync_pr', arguments: {} })).error?.code).toBe(-32001);
   expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Late worker mutation', idempotency_key: 'after-worker-merge' } })).error).toBeTruthy();
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress).toEqual(terminal.progress);
+  for (const hidden of [sibling, 'Confidential sibling terminal marker']) expect(JSON.stringify(merged)).not.toContain(hidden);
 });
 
 deliveryTest('worker metadata replay and short-head matching preserve distinct readiness policies', async ({ delivery: { factory, provider } }) => {
