@@ -1,4 +1,5 @@
 import { expect } from 'e2e';
+import { readFile } from 'node:fs/promises';
 import { contract } from '../support/factory.js';
 import { close, head, pr, prUrl, row, sync, test } from '../support/delivery.js';
 
@@ -114,6 +115,20 @@ test('provider errors and incomplete or wrong-head evidence cannot complete a di
   const wrong = await architect.rpc('tools/call', { name: 'sync_pr', arguments: { work_package_id: wp } });
   expect(wrong.error).toBeTruthy();
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
+  // Periodic observation persists the mismatched snapshot before refusing merge.
+  // Repeating that observation must never promote it to authoritative head evidence.
+  for (const changed of [true, false]) {
+    const observed = await architect.operator('/api/v1/sympp/operator/github/sync-prs', { mode: 'auto' });
+    expect(observed.status).toBe(200);
+    expect(observed.body.sync.merged_count).toBe(0);
+    expect(observed.body.sync.dashboard_changed).toBe(changed);
+    expect(observed.body.sync.results[0].reason).toBe('head_mismatch');
+    expect(observed.body.sync.results[0].expected_head_sha).toBe(head('a'));
+    const stored = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
+    expect(stored.progress.filter((event: any) => event.payload?.source_tool === 'sync_pr').at(-1).payload.head_sha).toBe(head('b'));
+    expect((await row(architect, request, wp)).raw_status).toBe('ready_for_merge');
+    expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
+  }
   for (const missing of [{ mergedAt: new Date().toISOString(), mergeCommit: null }, { mergedAt: null, mergeCommit: { oid: head('f') } }]) {
     provider.set(102, pr(102, head('a'), { state: 'MERGED', ...missing }));
     await architect.reject('sync_pr', { work_package_id: wp }, 'missing_strong_pr_evidence');
@@ -182,7 +197,8 @@ test('typed no-PR closeout resolves blockers once and terminal packages cannot r
     work_package_id: wp, outcome: 'completed_no_pr', idempotency_key: `close-${wp}`,
     evidence: { completed_no_pr: { no_pr_evidence: 'Replace original evidence' } },
   } });
-  expect(conflict.error).toBeTruthy();
+  expect(conflict.error?.data?.reason).toBe('delivery_outcome_conflict');
+  expect((await row(architect, request, wp)).delivery).toEqual(scoped.delivery);
   await close(architect, abandoned, 'abandoned', { abandoned_rationale: 'No implementation was started.' });
   for (const [id, status] of [[wp, 'closed'], [abandoned, 'abandoned']]) {
     const before = await row(architect, request, id);
@@ -231,4 +247,13 @@ test('blocked handoff accepts new PR and head observations without reviving an o
   await architect.call('resolve_blocker', { work_package_id: wp, blocker_id: 'scope', resolution: 'Already closed.', summary: 'Late resolution.', idempotency_key: 'late-resolution' });
   expect((await row(architect, request, wp)).raw_status).toBe('merged');
   expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeTruthy();
+  await factory.stop();
+  let disconnected: unknown;
+  try { await architect.rpc('tools/list'); } catch (error) { disconnected = error; }
+  expect(disconnected).toBeTruthy();
+  const receipts = (await readFile(factory.receipt, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  expect(receipts.at(-2).phase).toBe('request');
+  expect(receipts.at(-2).method).toBe('tools/list');
+  expect(receipts.at(-1).phase).toBe('failure');
+  expect(receipts.at(-1).error).toBe(String(disconnected));
 });

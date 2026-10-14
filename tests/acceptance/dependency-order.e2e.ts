@@ -29,7 +29,8 @@ test('all dependency endpoint combinations dispatch only after canonical deliver
   await architect.reject('dispatch_work_package', { work_package_id: next }, 'unmet_work_package_dependencies');
   const cancellation = (await architect.call('upsert_dependency', { dependent: endpoint(next), prerequisite: endpoint(cancelled), reason: 'Initially required scope.' })).dependency.id;
   await architect.call('skip_work_package', { work_package_id: cancelled, current_status: 'planned' });
-  await architect.reject('dispatch_work_package', { work_package_id: next }, 'unmet_work_package_dependencies');
+  const refusal = await architect.reject('dispatch_work_package', { work_package_id: next }, 'unmet_work_package_dependencies');
+  expect(refusal.prerequisite_work_package_ids.sort()).toEqual([direct, cancelled].sort());
   expect((await row(architect, request, cancelled)).raw_status).toBe('skipped');
   await architect.call('delete_dependency', { dependency_id: cancellation });
   // Retiring scope is not completion; only the delivered end of the chain satisfies it.
@@ -83,10 +84,10 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   expect(selection.candidate_head_sha).toBe(head('a'));
   expect(selection.candidate_state).toBe('current');
   expect(selection.selection_updated_at).toBeTruthy();
-  const contextBefore = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_edges.find((edge: any) => edge.id === pin);
+  const contextBefore = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
   const invalidContext = await architect.rpc('tools/call', { name: 'upsert_dependency', arguments: { ...pinned, dependency_id: pin, reason: '', decision_ref: {} } });
   expect(invalidContext.error).toBeTruthy();
-  const contextAfter = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_edges.find((edge: any) => edge.id === pin);
+  const contextAfter = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
   expect(contextAfter).toEqual(contextBefore);
   expect(contextAfter.decision_ref).toEqual({ id: decision.decision_log_entry.id });
   expect((await graph(architect, request)).effective_edges.find((edge: any) => edge.dependent_work_package_id === ui).constraints[0].candidate_head_sha).toBe(head('a'));
@@ -97,6 +98,14 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   await architect.reject('dispatch_work_package', { work_package_id: peer }, 'unmet_work_package_dependencies');
   expect((await graph(architect, request)).effective_edges[0].constraints[0].candidate_state).toBe('stale_head');
   await architect.call('attach_branch', { work_package_id: backend, branch: 'feature/delivery-201', head_sha: head('a') });
+  provider.set(201, pr(201, head('b')));
+  const observation = await architect.operator('/api/v1/sympp/operator/github/sync-prs', { mode: 'auto' });
+  expect(observation.status).toBe(200);
+  expect(observation.body.sync.results[0].reason).toBe('pr_not_merged');
+  await architect.reject('dispatch_work_package', { work_package_id: peer }, 'unmet_work_package_dependencies');
+  expect((await graph(architect, request)).effective_edges[0].constraints[0].candidate_state).toBe('stale_head');
+  provider.set(201, pr(201, head('a')));
+  await sync(architect, backend, 201, head('a'));
   expect((await architect.call('dispatch_work_package', { work_package_id: peer })).work_package.id).toBe(peer);
   provider.set(202, pr(202, head('c')));
   const staleInputs = await sync(architect, ui, 202, head('c'));

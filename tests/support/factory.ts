@@ -9,7 +9,7 @@ import { Candidate } from './candidate.js';
 // The dashboard origin skips UI asset construction; no browser is opened or used.
 export class Factory extends Candidate {
   readonly endpoint: Promise<string>;
-  private receipt: string;
+  readonly receipt: string;
 
   constructor(root: string, provider?: { bin: string; endpoint: string }) {
     super(root, 'factory', 'http', provider);
@@ -47,18 +47,40 @@ export class Client {
 
   constructor(private endpoint: string, private receipt?: string) {}
 
+  private async record(entry: object) {
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify(entry)}\n`);
+  }
+
+  private async exchange(url: string | URL, init: RequestInit, receipt: object) {
+    await this.record({ ...receipt, phase: 'request' });
+    let status: number | undefined;
+    let rawBody: string | undefined;
+    try {
+      const response = await fetch(url, init);
+      status = response.status;
+      rawBody = await response.text();
+      const body = JSON.parse(rawBody);
+      await this.record({ ...receipt, phase: 'response', status, response: body });
+      return { response, body };
+    } catch (error) {
+      try {
+        await this.record({ ...receipt, phase: 'failure', status, rawBody, error: String(error) });
+      } finally {
+        throw error;
+      }
+    }
+  }
+
   async rpc(method: string, params: object = {}) {
-    const response = await fetch(this.endpoint, {
+    const { response, body } = await this.exchange(this.endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}) },
       body: JSON.stringify({ jsonrpc: '2.0', id: ++this.sequence, method, params }),
       signal: AbortSignal.timeout(30_000),
-    });
+    }, { method, params });
     this.session = response.headers.get('mcp-session-id') ?? this.session;
-    const result = await response.json();
-    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method, params, status: response.status, response: result })}\n`);
     expect(response.status).toBe(200);
-    return result;
+    return body;
   }
 
   async call(name: string, args: object = {}) {
@@ -75,23 +97,19 @@ export class Client {
   }
 
   async operator(path: string, args: object) {
-    const response = await fetch(new URL(path, this.endpoint), {
+    const { response, body } = await this.exchange(new URL(path, this.endpoint), {
       method: 'POST', headers: { 'content-type': 'application/json', origin: new URL(this.endpoint).origin },
       body: JSON.stringify(args), signal: AbortSignal.timeout(30_000),
-    });
-    const body = await response.json();
-    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method: 'POST', path, args, status: response.status, response: body })}\n`);
+    }, { method: 'POST', path, args });
     return { status: response.status, body };
   }
 
   async inspect(path: string) {
-    const response = await fetch(new URL(path, this.endpoint), {
+    const { response, body } = await this.exchange(new URL(path, this.endpoint), {
       headers: { origin: new URL(this.endpoint).origin }, signal: AbortSignal.timeout(30_000),
-    });
-    const result = await response.json();
-    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify({ method: 'GET', path, status: response.status, response: result })}\n`);
+    }, { method: 'GET', path });
     expect(response.status).toBe(200);
-    return result;
+    return body;
   }
 
   async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta') {

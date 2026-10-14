@@ -88,6 +88,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
     assert repo.get!(WorkPackage, package.id).status == "merged"
   end
 
+  test "unchanged provider observation repairs a deleted PR artifact", %{repo: repo} do
+    assert {:ok, package} = create_package(repo, id: "SYMPP-GH-OPEN", status: "ready_for_merge")
+    append_pr_evidence(repo, package, 2, "head-a")
+    FakeGitHubClient.put_response("nextide/repo", 2, GitHubPullRequestFixtures.metadata(2, "head-a", merged?: false))
+
+    assert {:ok, _initial} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
+    assert {:ok, replay} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
+    refute replay.dashboard_changed
+
+    assert [artifact] = repo.all(Artifact)
+    repo.delete!(artifact)
+    assert {:ok, recovered} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
+    assert recovered.dashboard_changed
+    assert [_artifact] = repo.all(Artifact)
+    assert repo.get!(WorkPackage, package.id).status == "ready_for_merge"
+  end
+
   test "merge transition rolls back when merge evidence cannot be recorded", %{repo: repo} do
     assert {:ok, package} = create_package(repo, id: "SYMPP-GH-EVIDENCE-FAIL", status: "ready_for_merge")
     append_pr_evidence(repo, package, 9, "head-a")

@@ -382,7 +382,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       FakeGitHubClient.put_response("nextide/repo", 412, metadata)
       handoff = %{"work_package_id" => approved_slice.id, "url" => "https://github.com/nextide/repo/pull/412", "head_sha" => head}
 
-
       assert {:ok, other_owner} =
                ClaimLeaseService.claim(repo, approved_slice.id, %{"actor_kind" => "agent", "actor_id" => "another-worker"},
                  now: DateTime.add(DateTime.utc_now(:microsecond), -1, :hour),
