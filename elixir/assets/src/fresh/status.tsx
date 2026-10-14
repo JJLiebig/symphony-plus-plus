@@ -8,18 +8,23 @@ import { span, type GoalView } from "./model";
 // The first question, answered in one corner: am I needed? The dot sits at the edge and the tab icon repeats it.
 export function Status({ views }: { views: GoalView[] }) {
   const needed = views.filter((view) => view.ask).length;
-  const moving = views.reduce((sum, view) => sum + view.live.length, 0);
-  const goals = views.filter((view) => view.state === "live").length;
-
   return (
     <span className="flex shrink-0 items-center gap-3 text-sm">
-      <span className="hidden text-xs text-faint min-[1440px]:inline">
-        {moving} moving across {goals} {goals === 1 ? "goal" : "goals"}
-      </span>
+      <span className="hidden text-xs text-faint min-[1440px]:inline">{overview(views)}</span>
       <span className={needed > 0 ? "font-semibold text-you" : "text-dim"}>{needed > 0 ? `You are needed in ${needed}` : "You are not needed"}</span>
       <span className={`size-2 rounded-full ${needed > 0 ? "animate-pulse bg-you" : "bg-merge"}`} />
     </span>
   );
+}
+
+// Planned goals count too, so a board with work waiting never reads as empty.
+function overview(views: GoalView[]) {
+  const moving = views.reduce((sum, view) => sum + view.live.length, 0);
+  const goals = views.filter((view) => view.state === "live").length;
+  const waiting = views.filter((view) => view.state === "resting" && view.done.length === 0).length;
+  const now = moving > 0 ? `${moving} moving across ${goals} ${goals === 1 ? "goal" : "goals"}` : "Nothing moving";
+  if (waiting > 0) return `${now} · ${waiting} planned`;
+  return moving > 0 || views.some((view) => view.state !== "settled") ? now : "No open goals";
 }
 
 // Shown only while someone is waiting on the operator: each ask takes you to its goal.
