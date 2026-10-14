@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { request as httpRequest } from 'node:http';
 import { appendFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -67,7 +68,26 @@ export class Client {
     let status: number | undefined;
     let rawBody: string | undefined;
     try {
-      const response = await fetch(url, init);
+      // Node's native HTTP transport preserves explicit Host headers, which
+      // Fetch can replace. Origin/forwarding denial proof needs actual wire input.
+      const response = await new Promise<Response>((resolve, reject) => {
+        const request = httpRequest(url, {
+          method: init.method, headers: Object.fromEntries(new Headers(init.headers)), signal: init.signal ?? undefined,
+        }, (incoming) => {
+          const chunks: Buffer[] = [];
+          incoming.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+          incoming.on('error', reject);
+          incoming.on('end', () => {
+            const headers = new Headers();
+            for (const [name, value] of Object.entries(incoming.headers)) {
+              if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
+            }
+            resolve(new Response(Buffer.concat(chunks), { status: incoming.statusCode, headers }));
+          });
+        });
+        request.on('error', reject);
+        request.end(init.body);
+      });
       status = response.status;
       rawBody = await response.text();
       const body = rawBody === '' ? null : JSON.parse(rawBody);
@@ -94,7 +114,8 @@ export class Client {
       headers: { 'content-type': 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}), ...headers },
       ...(method === 'POST' ? { body: typeof payload === 'string' ? payload : JSON.stringify(payload) } : {}),
       signal: AbortSignal.timeout(30_000),
-    }, { method, payload, headerNames: Object.keys(headers) });
+    }, { method: typeof payload === 'object' && payload !== null && 'method' in payload ? payload.method : method,
+      payload, headerNames: Object.keys(headers) });
     this.session = response.headers.get('mcp-session-id') ?? this.session;
     return { status: response.status, body };
   }

@@ -1,6 +1,8 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { expect, test as base } from 'e2e';
 import { Candidate, type CandidateOptions } from './candidate.js';
 import { Client, Factory, contract } from './factory.js';
@@ -24,6 +26,28 @@ export async function packages(architect: Client, titles: string[]) {
   const ids = (await architect.call('slice_work_request', { work_packages: titles.map((title) => contract(title, { branch_pattern: 'feature/authority' })) })).work_package_ids;
   for (const id of ids) await architect.call('dispatch_work_package', { work_package_id: id });
   return ids as string[];
+}
+
+export async function snapshot(factory: Factory) {
+  const destination = join(factory.root, 'offline', 'ledger.sqlite3');
+  const args = [resolve('scripts/sympp_beta_snapshot.py'), 'snapshot', factory.database, destination,
+    '--sandbox-root', join(factory.root, 'offline'), '--migrate', 'mix', 'sympp.beta_migrate'];
+  // Exercise the supported snapshot operation; never patch the SQLite marker or
+  // historical authority rows ourselves. This function runs only in hosted CI.
+  let receipt: object;
+  try {
+    receipt = { command: 'python3', args, ...await promisify(execFile)('python3', args, {
+      cwd: resolve('elixir'), timeout: 60_000,
+      env: { PATH: process.env.PATH, HOME: factory.home, USERPROFILE: factory.home, TMPDIR: factory.root,
+        MIX_ENV: 'dev', MIX_HOME: process.env.MIX_HOME, MIX_ARCHIVES: process.env.MIX_ARCHIVES, LANG: 'C.UTF-8', ELIXIR_ERL_OPTIONS: '+S 2:2 +fnu' },
+    }), exitCode: 0 };
+  } catch (error: any) {
+    receipt = { command: 'python3', args, stdout: error.stdout, stderr: error.stderr, exitCode: error.code, error: String(error) };
+    throw error;
+  } finally {
+    await writeFile(join('.e2e', `${basename(factory.root)}-snapshot.json`), JSON.stringify(receipt!, null, 2));
+  }
+  return destination;
 }
 
 export const test = base.extend<{ processes: {

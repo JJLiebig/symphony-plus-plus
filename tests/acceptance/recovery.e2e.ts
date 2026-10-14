@@ -1,7 +1,7 @@
 import { expect } from 'e2e';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { Client } from '../support/factory.js';
-import { initialize, packages, test, tool, worker } from '../support/authority.js';
+import { initialize, packages, snapshot, test, tool, worker } from '../support/authority.js';
 
 test('competing real clients cannot steal claims and reconnect replay preserves one mutation', async ({ processes }) => {
   const factory = processes.factory();
@@ -34,6 +34,49 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   expect((await reconnected.call('append_progress', mutation)).progress_event.id).toBe(first.id);
 });
 
+test('a supported disposable offline snapshot denies MCP and dispatch without changing the source ledger', async ({ processes }) => {
+  const source = processes.factory();
+  const architect = await source.client();
+  const request = await architect.request('Offline denial');
+  const [wp] = await packages(architect, ['Snapshot work']);
+  await source.stop();
+  const database = await snapshot(source);
+  const offline = processes.factory('offline', { database, offline: true });
+  const client = new Client(await offline.endpoint, offline.receipt);
+  for (const payload of [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: initialize },
+    tool('claim_local_assignment', { work_package_id: wp }),
+    tool('add_work_request_comment', { work_request_id: request, body: 'Must not write', created_by: 'offline' }),
+  ]) {
+    const refused = await client.raw(payload);
+    expect(refused.status).toBe(403);
+    expect(refused.body.error.data.reason).toBe('offline_sandbox');
+  }
+  expect((await client.operator(`/api/v1/sympp/operator/work-requests/${request}/work-packages/${wp}/dispatch`, {})).status).toBe(403);
+  const restarted = processes.factory();
+  const original = architect.reconnect(await restarted.endpoint);
+  expect((await original.call('read_work_request', { work_request_id: request })).work_packages[0].status).toBe('ready_for_worker');
+  expect((await original.call('list_comments', { target_kind: 'work_request', target_id: request })).comments).toEqual([]);
+});
+
+test('independent architect clients preserve the owner through release reconnect and rejected scope rebinding', async ({ processes }) => {
+  const factory = processes.factory();
+  const owner = await factory.client();
+  const request = await owner.request('Architect claim continuity');
+  const peer = await factory.client();
+  const denied = await peer.rpc('tools/call', { name: 'claim_local_architect_assignment', arguments: { work_request_id: request, claimed_by: 'different-owner' } });
+  expect(denied.error).toBeTruthy();
+  expect((await owner.call('get_current_assignment')).assignment.claimed_by).toBe('acceptance-architect');
+  const reconnect = await factory.client();
+  const claimed = await reconnect.call('claim_local_architect_assignment', { work_request_id: request, claimed_by: 'acceptance-architect' });
+  expect(claimed.assignment.work_package_id).toBe((await owner.call('get_current_assignment')).assignment.work_package_id);
+  await reconnect.reject('claim_local_architect_assignment', { work_request_id: request, repo: 'foreign/service', claimed_by: 'acceptance-architect' }, 'repo_scope_mismatch');
+  expect((await reconnect.call('get_current_assignment')).assignment.work_package_id).toBe(claimed.assignment.work_package_id);
+  await reconnect.call('release_current_assignment', { reason: 'End current local session' });
+  expect((await reconnect.call('get_current_assignment')).assignment).toBeNull();
+  expect((await reconnect.call('claim_local_architect_assignment', { work_request_id: request, claimed_by: 'acceptance-architect' })).assignment.work_package_id).toBe(claimed.assignment.work_package_id);
+});
+
 test('backend restart recovers persisted bindings and work but a different ledger refuses them', async ({ processes }) => {
   const original = processes.factory();
   const architect = await original.client();
@@ -41,12 +84,14 @@ test('backend restart recovers persisted bindings and work but a different ledge
   const [wp] = await packages(architect, ['Survives restart']);
   const client = await worker(original, wp);
   const health = await client.call('sympp.health');
+  const ledgerPath = await realpath(original.database);
   const mutation = { title: 'Durable finding', body: 'Survives a real backend stop', idempotency_key: 'restart-once' };
   const finding = (await client.call('append_finding', mutation)).finding;
   await original.stop();
   const restarted = processes.factory('factory');
   const recovered = client.reconnect(await restarted.endpoint);
   expect((await recovered.call('sympp.health')).ledger.identity).toEqual(health.ledger.identity);
+  expect(await realpath(restarted.database)).toBe(ledgerPath);
   expect((await recovered.call('get_current_assignment')).assignment.work_package_id).toBe(wp);
   expect((await recovered.call('append_finding', mutation)).finding.id).toBe(finding.id);
   const owner = architect.reconnect(await restarted.endpoint);
@@ -57,7 +102,8 @@ test('backend restart recovers persisted bindings and work but a different ledge
   expect(denied.status).toBe(404);
   expect(denied.body.error.data.reason).toBe('unknown_state_key');
   const fresh = await outsider.client();
-  expect((await fresh.call('sympp.health')).ledger.identity).not.toEqual(health.ledger.identity);
+  expect(await realpath(outsider.database)).not.toBe(ledgerPath);
+  expect((await fresh.rpc('tools/call', { name: 'read_work_request', arguments: { work_request_id: request } })).error.data.reason).toBe('not_found');
   expect((await fresh.call('get_current_assignment')).assignment).toBeNull();
   expect((await recovered.call('read_work_package_document', { document: 'findings.md' })).findings.filter((entry: any) => entry.id === finding.id)).toHaveLength(1);
 });
@@ -66,7 +112,7 @@ test('failed-call capture is opt-in redacted and immediately disabled through op
   const factory = processes.factory();
   const client = await factory.client();
   const secret = 'Bearer synthetic-diagnostic-secret';
-  const payload = tool('sympp.health', { nested: { authorization: secret }, [secret]: secret });
+  const payload = tool('append_progress', { nested: { authorization: secret }, [secret]: secret });
   const disabled = await client.raw(payload);
   expect(disabled.body.error.data.diagnostic_id).toBeUndefined();
   expect((await readFile(factory.logPath, 'utf8')).includes('sympp_failed_mcp_call')).toBe(false);
