@@ -7,6 +7,86 @@ on:
       - main
 
 jobs:
+  browser-native-acceptance:
+    name: browser native acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SYMPP_BROWSER_ACCEPTANCE: '1'
+      E2E_OAUTH_CREDENTIALS: '{}'
+      E2E_TELEMETRY_DISABLED: '1'
+      DO_NOT_TRACK: '1'
+    steps:
+      - name: Checkout candidate combined tree
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Set up candidate toolchain
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - name: Select tool binaries and isolated build homes
+        working-directory: elixir
+        run: |
+          echo "$(mise where node)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where erlang)/bin" >> "$GITHUB_PATH"
+          echo "$(mise where elixir)/bin" >> "$GITHUB_PATH"
+          echo "MIX_HOME=$RUNNER_TEMP/sympp-browser-mix" >> "$GITHUB_ENV"
+          echo "MIX_ARCHIVES=$RUNNER_TEMP/sympp-browser-mix/archives" >> "$GITHUB_ENV"
+      - name: Record candidate identity
+        run: |
+          mkdir -p .e2e
+          git rev-parse HEAD > .e2e/browser-checkout-sha.txt
+          git show -s --format='%H %P' HEAD > .e2e/browser-checkout-parents.txt
+          echo "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Install locked native browser dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm exec -- e2e-web install chromium --with-deps
+      - name: Build candidate backend
+        working-directory: elixir
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          mix compile --warnings-as-errors
+      - name: Build candidate browser and inspector
+        working-directory: elixir/assets
+        run: |
+          npm ci
+          npm run build
+          npm run build:herdr
+      - name: Exercise live mechanical journeys and export actual GET observations
+        env:
+          SYMPP_BROWSER_MECHANICAL: '1'
+        run: |
+          npm exec -- e2e run --target browser --output .e2e/browser-mechanical
+          node tests/support/browser-report.ts mechanical
+      - name: Prove unrecorded model calls fail before transport
+        env:
+          SYMPP_BROWSER_NEGATIVE: '1'
+        run: |
+          set +e
+          npm exec -- e2e run --target browser --grep 'operator sees dependency' --output .e2e/browser-negative
+          result=$?
+          set -e
+          test "$result" -ne 0
+          node tests/support/browser-report.ts negative
+          mv .e2e/model-denials.jsonl .e2e/browser-negative/model-denials.jsonl
+      - name: Replay unchanged native recordings against live candidate
+        run: |
+          npm exec -- e2e run --target browser --output .e2e/browser-replay --strict-cache
+          node tests/support/browser-report.ts replay
+          test ! -f .e2e/model-denials.jsonl
+          git diff --exit-code -- .e2e/cache
+      - name: Retain all browser attempts and GET provenance
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-native-evidence
+          path: .e2e
+          include-hidden-files: true
+
   browser-candidate-artifact:
     name: browser candidate artifact
     runs-on: windows-latest
@@ -412,6 +492,7 @@ jobs:
   make-all:
     runs-on: ubuntu-latest
     needs:
+      - browser-native-acceptance
       - browser-candidate-artifact
       - native-acceptance
       - portable-skills
@@ -423,6 +504,10 @@ jobs:
     steps:
       - name: Verify split gates
         run: |
+          if [ "${{ needs.browser-native-acceptance.result }}" != "success" ]; then
+            echo "browser native acceptance result: ${{ needs.browser-native-acceptance.result }}"
+            exit 1
+          fi
           if [ "${{ needs.browser-candidate-artifact.result }}" != "success" ]; then
             echo "browser candidate artifact result: ${{ needs.browser-candidate-artifact.result }}"
             exit 1
