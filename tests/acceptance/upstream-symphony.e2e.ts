@@ -27,6 +27,7 @@ test('upstream polls pages, routes eligible issues and reconciles real workspace
   expect(poll.query).toContain('slugId');
   expect(poll.authenticated).toBe(true);
   expect(first.turns[0].params.input[0].text).toContain('Work OLD-1 / Deliver OLD-1 / upstream / attempt=');
+  expect(first.turns[0].params.input[0].text).toContain('created=2026-01-01T00:00:00Z');
 
   p.issues.find((r) => r.id === 'OLD-1').state.name = 'In Progress';
   await expect.poll(async () => (await u.state()).running[0]?.state).toBe('In Progress');
@@ -45,6 +46,8 @@ test('upstream polls pages, routes eligible issues and reconciles real workspace
   expect(await readFile(join(u.root, 'removed.txt'), 'utf8')).toContain('NEW-2');
   expect(p.workers).toHaveLength(2);
   expect(p.requests.find((r) => r.variables?.ids)?.query).toContain('[ID!]');
+  p.issues.find((r) => r.id === 'BLOCKED-1').inverseRelations.nodes[0].issue.state.name = 'Done';
+  await u.worker('BLOCKED-1');
 });
 
 test('upstream continues a thread, retries abnormal exits and recovers after restart', async ({ upstream: u }) => {
@@ -52,6 +55,7 @@ test('upstream continues a thread, retries abnormal exits and recovers after res
   p.issues = [issue('RETRY-1')];
   await u.start();
   const first = await u.worker('RETRY-1');
+  await writeFile(join(first.cwd, 'local-progress.txt'), 'preserve worker progress');
   p.send(first, { method: 'turn/completed', params: { threadId: first.id, turn: { id: 'turn-1', status: 'completed' } } });
   await u.worker('RETRY-1', 2);
   expect(first.turns[1].params.threadId).toBe(first.id);
@@ -77,6 +81,7 @@ test('upstream continues a thread, retries abnormal exits and recovers after res
   await expect.poll(() => p.workers.length).toBe(beforeRestart + 1);
   const recovered = await u.worker('RETRY-1');
   expect(recovered.cwd).toBe(first.cwd);
+  expect(await readFile(join(recovered.cwd, 'local-progress.txt'), 'utf8')).toBe('preserve worker progress');
   expect((await u.lifecycle('RETRY-1')).split('created\n')).toHaveLength(2);
 });
 
@@ -86,7 +91,7 @@ test('upstream reload keeps the last valid workflow and applies new prompts with
   await u.start();
   const first = await u.worker('RELOAD-1');
   await writeFile(u.workflow, '---\ntracker: [\n---\nBroken workflow\n');
-  await expect.poll(async () => readFile(u.logPath, 'utf8')).toContain('keeping last known good configuration');
+  await expect.poll(() => u.runtimeLog()).toContain('keeping last known good configuration');
   p.issues[0].state.name = 'Review';
   p.issues.push(issue('RELOAD-2'));
   const second = await u.worker('RELOAD-2');
@@ -111,4 +116,60 @@ test('upstream rejects unavailable workflow and missing operator acknowledgement
   await u.start(['--i-understand-that-this-will-be-running-without-the-usual-guardrails', join(u.root, 'missing.md')]);
   await expect.poll(() => u.process?.exitCode).toBe(1);
   expect(await readFile(u.logPath, 'utf8')).toContain('Workflow file not found');
+  await u.stop();
+  await writeFile(u.workflow, '---\n- invalid-front-matter\n---\nInvalid\n');
+  await u.start(['--i-understand-that-this-will-be-running-without-the-usual-guardrails', u.workflow]);
+  await expect.poll(() => u.process?.exitCode).toBe(1);
+  expect(await readFile(u.logPath, 'utf8')).toContain('Failed to start Symphony');
+  await u.stop();
+  await u.configure({}, '');
+  u.provider.issues = [issue('DEFAULT-1', { description: null })];
+  await u.start(['--i-understand-that-this-will-be-running-without-the-usual-guardrails', '--logs-root', u.root], true);
+  const worker = await u.worker('DEFAULT-1');
+  expect(worker.turns[0].params.input[0].text).toContain('DEFAULT-1');
+  expect(worker.turns[0].params.input[0].text).toContain('Deliver DEFAULT-1');
+  expect(await u.runtimeLog()).toContain('Running SymphonyElixirWeb.Endpoint');
+});
+
+test('upstream aborts failed bootstrap and run hooks, then recovers with safe cleanup', async ({ upstream: u }) => {
+  const p = u.provider;
+  p.issues = [issue('HOOK/1')];
+  await mkdir(u.workspaces, { recursive: true });
+  await writeFile(join(u.workspaces, 'HOOK_1'), 'stale non-directory workspace');
+  await u.configure({ hooks: { after_create: 'exit 17' } });
+  await u.start();
+  await expect.poll(async () => (await u.state()).retrying[0]?.error).toContain('workspace_hook_failed');
+  expect(p.workers).toHaveLength(0);
+  await u.configure({ hooks: { before_run: 'exit 18' } });
+  await expect.poll(async () => (await u.state()).retrying[0]?.error).toContain('before_run');
+  expect(p.workers).toHaveLength(0);
+  await u.configure({ hooks: { after_run: 'exit 19', before_remove: 'exit 20' } });
+  const worker = await u.worker('HOOK_1');
+  expect(worker.turns[0].params.title).toContain('HOOK/1');
+  p.issues[0].state.name = 'Done';
+  p.send(worker, { method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'completed' } } });
+  await expect.poll(async () => (await u.state()).counts.running).toBe(0);
+  // A terminal issue completed by its worker is swept on the next startup.
+  await u.stop();
+  await u.start();
+  await expect.poll(async () => stat(worker.cwd).then(() => true, () => false)).toBe(false);
+});
+
+test('upstream honors priority, age and state-specific capacity without duplicate dispatch', async ({ upstream: u }) => {
+  const p = u.provider;
+  await u.configure({ agent: { max_concurrent_agents: 2, max_concurrent_agents_by_state: { ' ToDo ': 1 } } });
+  p.issues = [issue('LOW-1', { priority: 3, createdAt: '2025-01-01T00:00:00Z' }),
+    issue('HIGH-NEW', { priority: 1, createdAt: '2026-02-01T00:00:00Z' }),
+    issue('HIGH-OLD', { priority: 1 }), issue('ACTIVE-1', { priority: 4, state: { name: 'In Progress' } })];
+  await u.start();
+  await u.worker('HIGH-OLD');
+  await u.worker('ACTIVE-1');
+  expect(p.workers).toHaveLength(2);
+  expect((await u.state()).counts.running).toBe(2);
+  p.issues.find((r) => r.id === 'HIGH-OLD').state.name = 'Review';
+  await u.worker('HIGH-NEW');
+  expect(p.workers).toHaveLength(3);
+  p.issues.find((r) => r.id === 'HIGH-NEW').state.name = 'Review';
+  await u.worker('LOW-1');
+  expect(p.workers).toHaveLength(4);
 });

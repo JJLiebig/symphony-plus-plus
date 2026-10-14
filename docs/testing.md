@@ -109,6 +109,8 @@ disposable workflow and home. Controlled Linear HTTP and app-server subprocess
 peers exercise polling, workspace hooks, reconciliation, retries, workflow reload,
 dynamic tools and status accounting. Public status reads and captured protocol
 traffic establish outcomes without ExUnit or injected orchestrator state.
+Public tracker API processes cover batched refresh and HTTP comment/state writes
+that have no daemon HTTP entrypoint.
 
 These journeys qualify adapter-owned behavior. Existing delivery journeys own
 the controlled GitHub CLI boundary. Real Linear, GitHub, model-provider and SSH

@@ -23,7 +23,10 @@ export class UpstreamProvider {
   pollFault?: Fault;
   refreshFault?: Fault;
   toolReply: Fault = { status: 200, body: { data: { viewer: { id: 'external-viewer' } } } };
+  mutationSuccess = true;
+  stateAvailable = true;
   pageSize = 2;
+  initializePadding = '';
   endpoint = '';
   private server = createServer((request, response) => {
     void (async () => {
@@ -53,6 +56,12 @@ export class UpstreamProvider {
           } } } };
         } else if (body.query.includes('SymphonyLinearViewer')) {
           result = { status: 200, body: { data: { viewer: { id: 'worker' } } } };
+        } else if (body.query.includes('SymphonyCreateComment')) {
+          result = { status: 200, body: { data: { commentCreate: { success: this.mutationSuccess } } } };
+        } else if (body.query.includes('SymphonyResolveStateId')) {
+          result = { status: 200, body: { data: { issue: { team: { states: { nodes: this.stateAvailable ? [{ id: 'resolved-state' }] : [] } } } } } };
+        } else if (body.query.includes('SymphonyUpdateIssueState')) {
+          result = { status: 200, body: { data: { issueUpdate: { success: this.mutationSuccess } } } };
         } else result = this.toolReply;
         this.record({ kind: 'graphql', request: receipt, response: result });
         reply(result.body, result.status);
@@ -77,7 +86,7 @@ export class UpstreamProvider {
           const message = body.message;
           worker.messages.push(message);
           this.record({ kind: 'worker_message', id: body.id, message });
-          if (message.method === 'initialize') reply([{ id: message.id, result: { userAgent: 'controlled-peer' } }]);
+          if (message.method === 'initialize') reply([{ id: message.id, result: { userAgent: 'controlled-peer' }, padding: this.initializePadding }]);
           else if (message.method === 'thread/start') reply([{ id: message.id, result: { thread: { id: worker.id } } }]);
           else if (message.method === 'turn/start') {
             worker.turns.push(message);

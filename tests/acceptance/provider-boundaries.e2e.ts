@@ -44,6 +44,8 @@ test('provider tools cross worker STDIO and Linear HTTP and recover from ordinar
 
 test('provider cumulative usage reaches public status once and survives stream noise', async ({ upstream: u }) => {
   const p = u.provider;
+  // Cross the Erlang port line limit during startup, not merely an OS write boundary.
+  p.initializePadding = 'x'.repeat(1_100_000);
   p.issues = [issue('USAGE-1')];
   await u.start();
   const worker = await u.worker('USAGE-1');
@@ -103,10 +105,35 @@ test('provider noninteractive approvals answer without stalling and safer policy
   await expect.poll(() => worker.messages.find((m) => m.id === 502)?.result.answers.choice.answers[0]).toContain('non-interactive');
   p.issues = [];
   await expect.poll(async () => (await u.state()).counts.running).toBe(0);
-  await u.configure({ codex: { approval_policy: 'on-request' } });
+  await u.configure({ codex: { approval_policy: undefined } });
   p.issues = [issue('POLICY-2')];
   const safer = await u.worker('POLICY-2');
+  expect(safer.messages[2].params.approvalPolicy).toEqual({ reject: { sandbox_approval: true, rules: true, mcp_elicitations: true } });
+  expect(safer.turns[0].params.sandboxPolicy.writableRoots).toEqual([safer.cwd]);
   p.send(safer, { id: 503, method: 'item/commandExecution/requestApproval', params: { command: 'echo controlled' } });
   await expect.poll(async () => (await u.state()).retrying[0]?.error).toContain('approval_required');
   expect(safer.messages.some((m) => m.id === 503)).toBe(false);
+  p.issues = [issue('INPUT-1')];
+  const input = await u.worker('INPUT-1');
+  p.send(input, { method: 'turn/input_required', params: { reason: 'Controlled input requirement' } });
+  await expect.poll(async () => (await u.state()).retrying.find((r) => r.issue_identifier === 'INPUT-1')?.error).toContain('turn_input_required');
+});
+
+test('provider public tracker API batches issue refresh and validates real HTTP writes', async ({ upstream: u }) => {
+  const p = u.provider;
+  p.issues = Array.from({ length: 55 }, (_, i) => issue(`BATCH-${i + 1}`));
+  const ids = p.issues.map((row) => row.id);
+  expect((await u.api('issues', ids)).issues.map((row) => row.id)).toEqual(ids);
+  const batches = p.requests.filter((r) => r.variables?.ids);
+  expect(batches.map((r) => r.variables.ids.length)).toEqual([50, 5]);
+  expect(batches.every((r) => r.authenticated && r.query.includes('[ID!]'))).toBe(true);
+  expect((await u.api('comment', ['BATCH-1', 'Provider acceptance comment'])).status).toBe('ok');
+  expect(p.requests.find((r) => r.query.includes('SymphonyCreateComment')).variables).toEqual({ issueId: 'BATCH-1', body: 'Provider acceptance comment' });
+  expect((await u.api('state', ['BATCH-1', 'Done'])).status).toBe('ok');
+  expect(p.requests.find((r) => r.query.includes('SymphonyUpdateIssueState')).variables).toEqual({ issueId: 'BATCH-1', stateId: 'resolved-state' });
+  p.mutationSuccess = false;
+  expect((await u.api('comment', ['BATCH-1', 'Refused'])).reason).toContain('comment_create_failed');
+  expect((await u.api('state', ['BATCH-1', 'Done'])).reason).toContain('issue_update_failed');
+  p.stateAvailable = false;
+  expect((await u.api('state', ['BATCH-1', 'Missing'])).reason).toContain('state_not_found');
 });
