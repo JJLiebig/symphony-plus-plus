@@ -35,6 +35,8 @@ process.on('SIGTERM', () => { void finish('sigterm', 0); });
 try {
   while (true) {
     const commands = await post('/worker/next', {});
+    // Recording a request at the provider precedes its acknowledgement on STDIO.
+    await pending;
     for (const command of commands) {
       if ('exit' in command) await finish('controlled_exit', command.exit);
       else if ('raw' in command) process.stdout.write(command.raw);

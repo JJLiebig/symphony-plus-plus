@@ -639,6 +639,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     refute issue.description =~ "\n[truncated]"
     assert Enum.all?(issue.labels, &(not String.contains?(&1, "\n")))
     assert Enum.any?(issue.labels, &String.ends_with?(&1, " [truncated]"))
+
+    long_text = String.duplicate("x", 20_000)
+    criteria = Enum.map(1..30, &"Criterion #{&1}")
+
+    bounded_issue =
+      TrackerAdapter.to_issue(
+        struct!(
+          WorkPackage,
+          WorkPackageFactory.attrs(
+            id: "SYMPP-LONG-TEXT",
+            kind: "adapter",
+            product_description: long_text,
+            engineering_scope: long_text,
+            acceptance_criteria: criteria
+          )
+        )
+      )
+
+    assert String.length(bounded_issue.description) <= 16_012
+    assert bounded_issue.description =~ "[truncated]"
+    assert bounded_issue.description =~ "5 acceptance criteria truncated"
   end
 
   test "configured dispatch filters exclude out-of-scope work packages", %{repo: repo} do
