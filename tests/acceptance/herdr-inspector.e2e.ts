@@ -17,7 +17,8 @@ test('compiled inspector binds and pins actual request detail without stealing f
     if (dependent === left) leftDependency = result.dependency.id;
   }
   await client.call('dispatch_work_package', { work_package_id: wp });
-  const other = await client.request('Other inspector request');
+  const otherClient = await factory!.client();
+  const other = await otherClient.request('Other inspector request');
   const owner = (paneId: string, workRequestId: string) => ({
     pane_id: paneId, tab_id: 'tab-a', workspace_id: 'space-a', agent_session: { agent: 'codex', value: `session-${paneId}` },
     tokens: { sympp_role: 'architect', sympp_show_inspector: 'true', sympp_work_request_id: workRequestId },
