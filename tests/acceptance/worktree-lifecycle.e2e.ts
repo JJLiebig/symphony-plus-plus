@@ -46,7 +46,7 @@ test('real worktree prepare and replay preserve branch scope and clean only the 
   expect(await readFile(join(clone, 'unrelated.txt'), 'utf8')).toBe('Keep foreign clone content\n');
   const cleaned = await client.call('cleanup_work_package_worktree', args);
   expect(cleaned.worktree.status).toBe('cleaned');
-  expect(cleaned.work_package.worktree_path).toBeNull();
+  expect(cleaned.work_package.worktree_path).toBeUndefined();
   expect(await exists(path)).toBe(false);
   expect(await readFile(join(clone, 'unrelated.txt'), 'utf8')).toBe('Keep foreign clone content\n');
   expect(await readFile(join(foreign.checkout, 'README.md'), 'utf8')).toBe('Initial fixture content\n');
@@ -82,11 +82,13 @@ test('outside-root path substitution is refused without deleting unrelated conte
   try {
     await client.reject('cleanup_work_package_worktree', args, 'unsafe_worktree_path');
     expect(await readFile(join(unrelated, 'keep.txt'), 'utf8')).toBe('Unrelated data\n');
-    expect((await client.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).work_package.worktree_path).toBe(path);
   } finally {
     await rm(path);
     await rename(saved, path);
   }
+  const replay = await client.call('prepare_work_package_worktree', args);
+  expect(replay.worktree.status).toBe('already_prepared');
+  expect(replay.worktree.path).toBe(path);
   expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('cleaned');
   expect(await exists(path)).toBe(false);
   expect(await readFile(join(unrelated, 'keep.txt'), 'utf8')).toBe('Unrelated data\n');
@@ -161,9 +163,10 @@ test('a real Git removal obstruction preserves the worktree and a later cleanup 
   const path = (await client.call('prepare_work_package_worktree', args)).worktree.path;
   await git(root, repo.checkout, 'worktree', 'lock', path);
   const failed = await client.rpc('tools/call', { name: 'cleanup_work_package_worktree', arguments: args });
-  expect(failed.error || failed.result?.structuredContent?.worktree?.status === 'cleanup_queued').toBeTruthy();
+  expect(failed.error).toBeUndefined();
+  expect(failed.result.structuredContent.worktree.status).toBe('cleanup_queued');
   expect(await exists(path)).toBe(true);
-  expect((await client.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).work_package.worktree_path).toBe(path);
+  expect(failed.result.structuredContent.work_package.worktree_path).toBe(path);
   await factory.stop();
   await git(root, repo.checkout, 'worktree', 'unlock', path);
   factory = processes.factory();
@@ -171,7 +174,7 @@ test('a real Git removal obstruction preserves the worktree and a later cleanup 
   await client.call('claim_local_architect_assignment', { work_request_id: (await client.call('list_work_requests')).work_requests[0].id, claimed_by: 'acceptance-architect' });
   const recovered = await client.call('cleanup_work_package_worktree', args);
   expect(['cleaned', 'already_clean']).toContain(recovered.worktree.status);
-  expect(recovered.work_package.worktree_path).toBeNull();
+  expect(recovered.work_package.worktree_path).toBeUndefined();
   expect(await exists(path)).toBe(false);
   expect(await readFile(join(repo.checkout, 'README.md'), 'utf8')).toBe('Initial fixture content\n');
 });

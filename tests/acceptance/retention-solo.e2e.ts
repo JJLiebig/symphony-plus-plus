@@ -8,13 +8,13 @@ test('never-started retention uses creation age and restore age without inventin
   let client = await factory.client();
   const old = await unstarted(client, 'Unstarted old goal');
   const fresh = await unstarted(client, 'Recent goal');
-  await client.call('add_work_request_comment', { work_request_id: old, body: 'History must survive archival.' });
+  await client.call('add_work_request_comment', { work_request_id: old, body: 'History must survive archival.', created_by: 'acceptance' });
   expect((await client.operator(`${requestPath(old)}/archive`, {})).body.error.code).toBe('not_completed');
   await ageHistory(factory, [{ table: 'sympp_work_requests', id: old, column: 'inserted_at', days: 31 }]);
   factory = processes.factory();
   client = await factory.client();
   // This edit is deliberately recent; it must not restart creation-age retention.
-  await client.call('add_work_request_comment', { work_request_id: old, body: 'Recent activity is not a restore.' });
+  await client.call('add_work_request_comment', { work_request_id: old, body: 'Recent activity is not a restore.', created_by: 'acceptance' });
   expect((await archives(client)).map((row: any) => row.id)).not.toContain(old);
   await retention(client);
   const archived = (await archives(client)).find((row: any) => row.id === old);
@@ -51,7 +51,7 @@ test('actual architect and dispatch evidence protect old goals while completed r
   await packages(client, ['Actually dispatched']);
   const finished = await unstarted(client, 'Finished goal');
   const unfinished = await unstarted(client, 'Unfinished comparison');
-  await client.call('add_work_request_comment', { work_request_id: finished, body: 'Keep until deliberate deletion.' });
+  await client.call('add_work_request_comment', { work_request_id: finished, body: 'Keep until deliberate deletion.', created_by: 'acceptance' });
   expect((await client.operator(`${requestPath(finished)}/state`, { state: 'completed' })).status).toBe(200);
   await ageHistory(factory, [
     ...[claimed, dispatched].map((id) => ({ table: 'sympp_work_requests' as const, id, column: 'inserted_at' as const, days: 90 })),
