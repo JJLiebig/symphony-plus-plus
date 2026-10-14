@@ -165,4 +165,14 @@ test('operator attention differs from explicit blockers and settings/archive act
   await browser.reload();
   await expect(goal).toContainText('All 1 packages have landed');
   expect((await client.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.archived_at).toBeNull();
+
+  const intake = await client.operator('/api/v1/sympp/operator/work-requests', {
+    title: 'Operator intake', repo: 'example/service', base_branch: 'beta', work_type: 'feature',
+    human_description: 'Synthetic operator intake.', desired_dispatch_shape: 'architect_led_feature_branch', constraints: {},
+  });
+  expect(intake.status).toBe(201);
+  const intakeId = intake.body.work_request.work_request.id;
+  await browser.reload();
+  await screen.getByText('Not started', { exact: false }).tap();
+  await expect(browser.locator(`[data-goal="${intakeId}"]`)).toContainText('Operator intake');
 });
