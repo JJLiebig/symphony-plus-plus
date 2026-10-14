@@ -1,17 +1,19 @@
 import { createInterface } from 'node:readline';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { expect, test as base } from 'e2e';
 import { Candidate } from './candidate.js';
 
 // The public cockpit owns trusted local HTTP initialization, sessions and SQLite.
 // The dashboard origin skips UI asset construction; no browser is opened or used.
-class Factory extends Candidate {
+export class Factory extends Candidate {
   readonly endpoint: Promise<string>;
+  readonly receipt: string;
 
-  constructor(root: string) {
-    super(root, 'factory', 'http');
+  constructor(root: string, provider?: { bin: string; endpoint: string }) {
+    super(root, 'factory', 'http', provider);
+    this.receipt = join('.e2e', `${basename(root)}-mcp.jsonl`);
     this.endpoint = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Candidate cockpit startup timed out')), 30_000);
       const lines = createInterface({ input: this.process.stdout });
@@ -25,7 +27,7 @@ class Factory extends Candidate {
   }
 
   async client() {
-    const client = new Client(await this.endpoint);
+    const client = new Client(await this.endpoint, this.receipt);
     const initialized = await client.rpc('initialize', {
       protocolVersion: '2025-03-26', capabilities: {},
       clientInfo: { name: 'factory-acceptance', version: '1.0.0' },
@@ -43,18 +45,42 @@ export class Client {
   private sequence = 0;
   private session?: string;
 
-  constructor(private endpoint: string) {}
+  constructor(private endpoint: string, private receipt?: string) {}
+
+  private async record(entry: object) {
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify(entry)}\n`);
+  }
+
+  private async exchange(url: string | URL, init: RequestInit, receipt: object) {
+    await this.record({ ...receipt, phase: 'request' });
+    let status: number | undefined;
+    let rawBody: string | undefined;
+    try {
+      const response = await fetch(url, init);
+      status = response.status;
+      rawBody = await response.text();
+      const body = JSON.parse(rawBody);
+      await this.record({ ...receipt, phase: 'response', status, response: body });
+      return { response, body };
+    } catch (error) {
+      try {
+        await this.record({ ...receipt, phase: 'failure', status, rawBody, error: String(error) });
+      } finally {
+        throw error;
+      }
+    }
+  }
 
   async rpc(method: string, params: object = {}) {
-    const response = await fetch(this.endpoint, {
+    const { response, body } = await this.exchange(this.endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}) },
       body: JSON.stringify({ jsonrpc: '2.0', id: ++this.sequence, method, params }),
       signal: AbortSignal.timeout(30_000),
-    });
-    expect(response.status).toBe(200);
+    }, { method, params });
     this.session = response.headers.get('mcp-session-id') ?? this.session;
-    return response.json();
+    expect(response.status).toBe(200);
+    return body;
   }
 
   async call(name: string, args: object = {}) {
@@ -71,11 +97,19 @@ export class Client {
   }
 
   async operator(path: string, args: object) {
-    const response = await fetch(new URL(path, this.endpoint), {
+    const { response, body } = await this.exchange(new URL(path, this.endpoint), {
       method: 'POST', headers: { 'content-type': 'application/json', origin: new URL(this.endpoint).origin },
       body: JSON.stringify(args), signal: AbortSignal.timeout(30_000),
-    });
-    return { status: response.status, body: await response.json() };
+    }, { method: 'POST', path, args });
+    return { status: response.status, body };
+  }
+
+  async inspect(path: string) {
+    const { response, body } = await this.exchange(new URL(path, this.endpoint), {
+      headers: { origin: new URL(this.endpoint).origin }, signal: AbortSignal.timeout(30_000),
+    }, { method: 'GET', path });
+    expect(response.status).toBe(200);
+    return body;
   }
 
   async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta') {

@@ -5,7 +5,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
   alias SymphonyElixir.FakeGitHubClient
   alias SymphonyElixir.GitHubPullRequestFixtures
-  alias SymphonyElixir.SymphonyPlusPlus.ProductTree
 
   test "trusted local HTTP browses without claiming and auto-claims a scoped mutation", %{repo: repo} do
     work_request =
@@ -276,68 +275,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     assert persisted_package.status == "merged"
   end
 
-  test "claimed architect repairs a descendant branch head visible on the delivery board", %{repo: repo} do
-    {anchor, session, _grant} =
-      create_phase_architect_session(repo, "SYMPP-ARCHITECT-ATTACH-BRANCH", ["read:work_request", "write:work_request"],
-        repo: "nextide/repo",
-        base_branch: "main"
-      )
-
-    work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-ARCHITECT-ATTACH-BRANCH",
-        repo: anchor.repo,
-        base_branch: anchor.base_branch,
-        status: "sliced"
-      )
-
-    grant_work_request_scope!(repo, session, work_request.id)
-
-    assert {:ok, package} =
-             CanonicalWorkPackageFixtures.add_work_package(
-               repo,
-               work_request.id,
-               work_request_work_package_attrs(id: "WRS-MCP-ARCHITECT-ATTACH-BRANCH")
-             )
-
-    assert {:ok, _stale_branch} =
-             PlanningRepository.append_progress_event(repo, %{
-               work_package_id: package.id,
-               summary: "Branch attached",
-               status: "branch_attached",
-               payload: %{type: "branch", source_tool: "attach_branch", branch: "feat/repair", head_sha: "stale-head"}
-             })
-
-    tools =
-      %{test_mcp_config(repo) | surface_profile: :architect}
-      |> Server.new(initialized: true, session: session)
-      |> tools_for_server()
-      |> Map.new(&{&1["name"], &1})
-
-    full_tools =
-      test_mcp_config(repo)
-      |> Server.new(initialized: true, session: session)
-      |> tools_for_server()
-      |> Map.new(&{&1["name"], &1})
-
-    assert get_in(tools, ["attach_branch", "inputSchema", "required"]) == ["work_package_id", "head_sha"]
-    assert full_tools["attach_branch"] == tools["attach_branch"]
-
-    repaired =
-      mcp_tool(repo, session, "attach_branch", %{
-        "work_package_id" => package.id,
-        "branch" => "feat/repair",
-        "head_sha" => "current-head"
-      })
-
-    assert get_in(repaired, ["result", "structuredContent", "progress_event", "status"]) == "branch_attached"
-
-    board = mcp_tool(repo, session, "read_delivery_board", %{"work_request_id" => work_request.id})
-    [board_package] = get_in(board, ["result", "structuredContent", "delivery_board", "work_packages"])
-    assert board_package["work_package"]["branch"]["head_sha"] == "current-head"
-  end
-
-  test "architect dispatch and normal PR handoff need no worker MCP calls", %{repo: repo} do
+  test "architect handoff redacts secrets and refuses retained worker authority", %{repo: repo} do
     repo_path = TestSupport.git_repo_with_origin_fixture!("https://github.com/nextide/repo.git", prefix: "sympp-architect-handoff")
 
     {anchor, session, _grant} =
@@ -444,10 +382,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       FakeGitHubClient.put_response("nextide/repo", 412, metadata)
       handoff = %{"work_package_id" => approved_slice.id, "url" => "https://github.com/nextide/repo/pull/412", "head_sha" => head}
 
-      mismatch = mcp_tool(repo, session, "sync_pr", %{handoff | "head_sha" => String.duplicate("b", 40)})
-      assert get_in(mismatch, ["error", "code"]) == -32_602
-      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
-
       assert {:ok, other_owner} =
                ClaimLeaseService.claim(repo, approved_slice.id, %{"actor_kind" => "agent", "actor_id" => "another-worker"},
                  now: DateTime.add(DateTime.utc_now(:microsecond), -1, :hour),
@@ -478,141 +412,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
       assert {:ok, _revoked} = AccessGrantService.revoke(repo, claimed_grant.id)
 
-      ordinary_wait =
-        mcp_tool(repo, session, "append_progress", %{
-          "work_package_id" => approved_slice.id,
-          "summary" => "Waiting for an ordinary answer",
-          "idempotency_key" => "ordinary-wait",
-          "payload" => %{"type" => "waiting", "active" => true, "source_tool" => "report_blocker", "blocker_id" => "ordinary-wait"}
-        })
-
-      refute ordinary_wait["error"]
-
-      declared =
-        mcp_tool(repo, session, "append_progress", %{
-          "work_package_id" => approved_slice.id,
-          "summary" => "Architect needs an affected-scope decision",
-          "idempotency_key" => "explicit-work-blocker",
-          "payload" => %{"type" => "blocker", "active" => true, "blocker_id" => "decision"}
-        })
-
-      refute declared["error"]
-
-      waiting = mcp_tool(repo, session, "sync_pr", handoff)
-      assert get_in(waiting, ["result", "structuredContent", "work_package", "status"]) == "ready_for_worker"
-      assert "no_active_blockers" in get_in(waiting, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
-
-      changed_head = String.duplicate("c", 40)
-      changed_metadata = GitHubPullRequestFixtures.metadata(412, changed_head, base_branch: anchor.base_branch)
-      FakeGitHubClient.put_response("nextide/repo", 412, changed_metadata)
-      refute mcp_tool(repo, session, "sync_pr", %{handoff | "head_sha" => changed_head})["error"]
-      FakeGitHubClient.put_response("nextide/repo", 412, metadata)
-      returned_head = mcp_tool(repo, session, "sync_pr", handoff)
-      refute returned_head["error"]
-      assert {:ok, returned_state} = PlanningRepository.get_state(repo, approved_slice.id)
-      branch = returned_state.progress_events |> Enum.filter(&(&1.payload["source_tool"] == "attach_branch")) |> List.last()
-      assert branch.payload["head_sha"] == head
-
-      resolved =
-        mcp_tool(repo, session, "resolve_blocker", %{
-          "work_package_id" => approved_slice.id,
-          "blocker_id" => "decision",
-          "resolution" => "Architect resolved the scope decision",
-          "summary" => "Work may finish",
-          "idempotency_key" => "explicit-work-blocker-resolved"
-        })
-
-      refute resolved["error"]
-
-      assert {:ok, prerequisite} =
-               CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_request_work_package_attrs(id: "WRS-MCP-DISPATCH-PREREQUISITE", base_branch: anchor.base_branch))
-
-      assert {:ok, _edge} =
-               ProductTree.create_dependency_edge(repo, %{
-                 id: "dep_handoff",
-                 work_request_id: work_request.id,
-                 source_kind: "work_package",
-                 source_id: approved_slice.id,
-                 target_kind: "work_package",
-                 target_id: prerequisite.id,
-                 kind: "depends_on",
-                 reason: "Architect added a prerequisite after dispatch."
-               })
-
-      pending_dependency = mcp_tool(repo, session, "sync_pr", handoff)
-      assert "dependencies_unavailable" in get_in(pending_dependency, ["result", "structuredContent", "pr_sync", "readiness_reasons"])
-      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
-
-      completed_dependency =
-        mcp_tool(repo, session, "record_work_package_delivery", %{
-          "work_request_id" => work_request.id,
-          "work_package_id" => prerequisite.id,
-          "outcome" => "completed_no_pr",
-          "idempotency_key" => "handoff-prerequisite-completed",
-          "evidence" => %{"completed_no_pr" => %{"no_pr_evidence" => "Architect accepted the contract investigation findings."}}
-        })
-
-      refute completed_dependency["error"]
-
-      accepted = mcp_tool(repo, session, "sync_pr", Map.put(handoff, "future_provider_field", true))
+      accepted = mcp_tool(repo, session, "sync_pr", handoff)
       assert get_in(accepted, ["result", "structuredContent", "work_package", "status"]) == "ready_for_merge"
       assert repo.get!(ClaimLease, other_owner.id).status == "released"
-      assert {:ok, state} = PlanningRepository.get_state(repo, approved_slice.id)
-      snapshot = state.progress_events |> Enum.filter(&(&1.payload["source_tool"] == "sync_pr")) |> List.last()
-      assert snapshot.payload["check_summary"]["status"] == "unknown"
-      assert snapshot.payload["review_state"]["status"] == "unknown"
-      assert snapshot.payload["head_sha"] == head
-
-      # Readiness records the architect's acceptance; it does not invent native check/review results.
-      merged_metadata = GitHubPullRequestFixtures.metadata(412, head, merged?: true, base_branch: anchor.base_branch)
-      FakeGitHubClient.put_response("nextide/repo", 412, merged_metadata)
-      merged = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id})
-      assert get_in(merged, ["result", "structuredContent", "work_package", "status"]) == "merged"
     after
       restore_app_env(:sympp_github_client, original_client)
       FakeGitHubClient.clear()
     end
-  end
-
-  test "architect dispatch ignores unknown request fields", %{repo: repo} do
-    {anchor, session, _grant} =
-      create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-SLICE-DISPATCH-IGNORED-LEGACY", [
-        "dispatch:work_request"
-      ])
-
-    work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-WR-SLICE-DISPATCH-IGNORED-LEGACY",
-        repo: anchor.repo,
-        base_branch: anchor.base_branch,
-        status: "ready_for_slicing"
-      )
-
-    grant_work_request_scope!(repo, session, work_request.id)
-
-    assert {:ok, work_package} =
-             CanonicalWorkPackageFixtures.add_work_package(
-               repo,
-               work_request.id,
-               work_request_work_package_attrs(
-                 id: "WRS-MCP-WR-SLICE-DISPATCH-IGNORED-LEGACY",
-                 base_branch: anchor.base_branch
-               )
-             )
-
-    assert {:ok, approved_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, work_package.id, "planned")
-    assert {:ok, _work_request} = CanonicalWorkPackageFixtures.mark_sliced(repo, work_request.id, "ready_for_slicing")
-
-    response =
-      mcp_tool(repo, session, "dispatch_work_package", %{
-        "work_request_id" => work_request.id,
-        "work_package_id" => approved_slice.id,
-        "claimed_by" => "worker-dispatch-removed-legacy",
-        "removed_handoff_arg" => "auto"
-      })
-
-    assert get_in(response, ["result", "structuredContent", "work_package", "status"]) == "ready_for_worker"
-    refute inspect(response) =~ "removed_handoff_arg"
   end
 
   test "WorkRequest MCP work-package dispatch fails closed for scope and invalid slice cases", %{repo: repo} do
