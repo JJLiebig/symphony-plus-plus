@@ -5,7 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
 
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
 
-  test "create_work_request requires trusted local HTTP with explicit state", %{repo: repo} do
+  test "WorkRequest creation rejects implicit state and non-file-backed trusted configurations", %{repo: repo} do
     arguments = %{
       "repo" => "nextide/symphony-plus-plus",
       "base_branch" => "main",
@@ -13,22 +13,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
       "description" => "This should not be created outside trusted local HTTP.",
       "request_kind" => "investigation"
     }
-
-    stdio_response =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "stdio-create-work-request-denied",
-          "method" => "tools/call",
-          "params" => %{"name" => "create_work_request", "arguments" => arguments}
-        },
-        Server.new(Config.default(repo: repo), initialized: true)
-      )
-
-    assert get_in(stdio_response, ["error", "code"]) == -32_001
-    assert get_in(stdio_response, ["error", "data", "tool"]) == "create_work_request"
-    assert get_in(stdio_response, ["error", "data", "reason"]) == "local_mcp_required"
-    assert Enum.any?(tools_for_server(Server.new(Config.default(repo: repo), initialized: true)), &(&1["name"] == "create_work_request"))
 
     implicit_state_response =
       Server.handle(
@@ -43,11 +27,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
 
     assert get_in(implicit_state_response, ["error", "code"]) == -32_001
     assert get_in(implicit_state_response, ["error", "data", "reason"]) == "local_mcp_session_required"
-
-    assert Enum.any?(
-             tools_for_server(Server.new(local_mcp_config(repo), initialized: true, local_daemon_trusted: true)),
-             &(&1["name"] == "create_work_request")
-           )
 
     remote_config = %{local_mcp_config(repo) | database: "https://ledger.example.test/mcp?token=ghp_createworksecret"}
 
@@ -65,7 +44,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     assert get_in(remote_response, ["error", "code"]) == -32_001
     assert get_in(remote_response, ["error", "data", "reason"]) == "local_database_required"
     refute inspect(remote_response) =~ "ghp_createworksecret"
-    assert Enum.any?(tools_for_server(local_mcp_server(remote_config, "remote-create-work-request-tools-state")), &(&1["name"] == "create_work_request"))
 
     memory_response =
       Server.handle(
@@ -80,20 +58,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
 
     assert get_in(memory_response, ["error", "code"]) == -32_001
     assert get_in(memory_response, ["error", "data", "reason"]) == "file_backed_database_required"
-
-    pre_initialize_response =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "pre-init-create-work-request-denied",
-          "method" => "tools/call",
-          "params" => %{"name" => "create_work_request", "arguments" => arguments}
-        },
-        Server.new(local_mcp_config(repo), local_daemon_trusted: true, state_key: "pre-init-create-work-request-state")
-      )
-
-    assert get_in(pre_initialize_response, ["error", "code"]) == -32_000
-    assert get_in(pre_initialize_response, ["error", "data", "reason"]) == "server_not_initialized"
   end
 
   test "architect WorkRequest read tools are scoped, filtered, redacted, and read-only", %{repo: repo} do

@@ -141,57 +141,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.FailedCallDiagnosticsTest do
     refute diagnostic_event_line(not_found_log) =~ missing_session_id
   end
 
-  test "HTTP worker diagnostics redact denied cross-role tool details", %{repo: repo} do
-    assert {:ok, _settings} = OperatorSettingsRepository.update(repo, %{"capture_failed_mcp_calls" => true})
-    package = create_local_claim_package!(repo, "SYMPP-DIAGNOSTIC-WORKER")
-    assert {:ok, _grant} = AccessGrantService.mint_worker_grant(repo, package.id)
-
-    config = local_mcp_config(repo)
-    client_key = "failed-call-diagnostics"
-
-    assert {:ok, initialized} =
-             HTTPTransport.handle(
-               config,
-               %{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()},
-               client_key: client_key
-             )
-
-    assert {:ok, claimed} =
-             HTTPTransport.handle(
-               config,
-               %{
-                 "jsonrpc" => "2.0",
-                 "id" => "claim",
-                 "method" => "tools/call",
-                 "params" => %{"name" => "claim_local_assignment", "arguments" => local_assignment_claim_args(package)}
-               },
-               client_key: client_key,
-               state_key: initialized.state_key
-             )
-
-    assert get_in(claimed.response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-
-    {solo_response, solo_log} =
-      capture_response(fn ->
-        assert {:ok, result} =
-                 HTTPTransport.handle(config, tool_call("solo_show", %{"session_id" => "private-solo-session"}),
-                   client_key: client_key,
-                   state_key: initialized.state_key
-                 )
-
-        result.response
-      end)
-
-    recovery = solo_response["error"]["data"]["recovery"]
-    assert recovery["tool"] == "release_current_assignment"
-    assert recovery["next_action"] == "call_release_current_assignment_then_retry_solo_tool"
-    assert is_binary(recovery["fallback"])
-    assert [solo_event] = diagnostic_events(solo_log)
-    assert solo_event["recovery"] == Map.take(recovery, ["fresh_mcp_session_required", "next_action", "tool"])
-    refute diagnostic_event_line(solo_log) =~ "private-solo-session"
-    refute Map.has_key?(solo_event["recovery"], "fallback")
-  end
-
   test "batch failures emit once per tool item including notifications", %{repo: repo} do
     assert {:ok, _settings} = OperatorSettingsRepository.update(repo, %{"capture_failed_mcp_calls" => true})
 

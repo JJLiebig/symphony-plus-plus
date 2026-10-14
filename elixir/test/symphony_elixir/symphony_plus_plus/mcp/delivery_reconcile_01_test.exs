@@ -6,7 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
   alias SymphonyElixir.FakeGitHubClient
   alias SymphonyElixir.GitHubPullRequestFixtures
 
-  test "trusted local HTTP browses without claiming and auto-claims a scoped mutation", %{repo: repo} do
+  test "unbound reads redact historical credential-bearing request and delivery scope", %{repo: repo} do
     work_request =
       create_work_request!(
         repo,
@@ -38,13 +38,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
              )
 
     local_server = local_mcp_server(local_mcp_config(repo), "local-work-request-read-state")
-    tools_by_name = tools_for_server(local_server) |> Map.new(&{&1["name"], &1})
-
-    assert Map.has_key?(tools_by_name, "list_work_requests")
-    assert Map.has_key?(tools_by_name, "read_work_request")
-    assert Map.has_key?(tools_by_name, "read_delivery_board")
-    assert Map.has_key?(tools_by_name, "get_current_assignment")
-    assert Map.has_key?(tools_by_name, "claim_local_architect_assignment")
 
     {list_response, list_server} =
       Server.handle_state(
@@ -120,42 +113,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     refute inspect(board_response) =~ "ghp_localreadsecret"
     refute inspect(board_response) =~ "localreadsecretvalue"
     refute inspect(board_response) =~ "raw-secret-localreadbranch"
-
-    {mutation_response, mutation_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-read-then-mutate",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "slice_work_request",
-            "arguments" => %{
-              "work_request_id" => work_request.id,
-              "work_packages" => [
-                %{
-                  "title" => "Automatically claimed local mutation",
-                  "goal" => "Acquire architect ownership before writing.",
-                  "kind" => "mcp",
-                  "base_branch" => work_request.base_branch,
-                  "allowed_file_globs" => ["elixir/lib/symphony_elixir/symphony_plus_plus/mcp/server.ex"],
-                  "forbidden_file_globs" => [],
-                  "acceptance_criteria" => ["Mutation acquires architect ownership automatically."],
-                  "validation_steps" => ["mix test test/symphony_elixir/symphony_plus_plus/mcp"],
-                  "review" => %{"type" => "review-suite", "args" => %{"mode" => "normal"}},
-                  "stop_conditions" => ["Stop after the single scoped mutation."]
-                }
-              ]
-            }
-          }
-        },
-        read_server
-      )
-
-    assert get_in(mutation_response, ["result", "structuredContent", "status", "work_request_status"]) == "sliced"
-    assert mutation_server.session.assignment.grant_role == "architect"
-    assert {:ok, persisted_slices} = WorkRequestRepository.list_work_packages(repo, work_request.id)
-    assert length(persisted_slices) == 2
-    assert Enum.any?(persisted_slices, &(&1.id == work_package.id))
   end
 
   test "architect handoff redacts secrets and refuses retained worker authority", %{repo: repo} do

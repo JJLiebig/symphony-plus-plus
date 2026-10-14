@@ -782,5 +782,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
       File.rm(second_database)
     end
   end
-
 end

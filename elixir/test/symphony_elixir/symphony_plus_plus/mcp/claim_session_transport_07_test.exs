@@ -34,6 +34,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport07Test do
       )
 
     state_key = init_result.state_key
+
     slice_arguments = %{
       "work_packages" => [
         %{

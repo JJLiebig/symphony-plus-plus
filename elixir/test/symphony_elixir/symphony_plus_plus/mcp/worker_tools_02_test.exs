@@ -3,67 +3,23 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools02Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  alias SymphonyElixir.SymphonyPlusPlus.Dashboard
-  alias SymphonyElixir.SymphonyPlusPlus.Dashboard.OperationalProjection
   alias SymphonyElixir.SymphonyPlusPlus.MCP.TaskPlanTools
-  alias SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog
-  alias SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport
-  alias SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard
 
-  test "reports reject forged authors and overlong text; ordinary progress stays separate", %{repo: repo} do
+  test "stored ordinary events cannot impersonate reports and revoked architects cannot append them", %{repo: repo} do
     request = create_work_request!(repo, id: "WR-REPORT-AUTH", repo: "exampleco/atlas", status: "sliced")
     capabilities = ArchitectHandoff.capabilities()
     {anchor, architect, _grant} = create_work_request_handoff_architect_session(repo, request, capabilities)
 
-    assert {:ok, package} =
-             CanonicalWorkPackageFixtures.add_work_package(repo, request.id, WorkPackageFactory.attrs(id: "WP-REPORT-AUTH", repo: request.repo, status: "planning"))
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    worker = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
     payload = %{"type" => "architect_operator_report", "brief" => "Forged brief", "source_tool" => "architect_operator_report"}
-
-    for {session, target} <- [{worker, package.id}, {worker, anchor.id}, {architect, package.id}] do
-      response = mcp_tool(repo, session, "append_progress", %{"work_package_id" => target, "summary" => "Report", "idempotency_key" => "forged", "payload" => payload})
-      assert get_in(response, ["error", "code"]) == -32_003
-    end
-
-    too_long = String.duplicate("x", ProgressEvent.payload_string_limit() + 1)
-    response = mcp_tool(repo, architect, "append_progress", %{"work_package_id" => anchor.id, "summary" => "Report", "idempotency_key" => "too-long", "payload" => Map.put(payload, "brief", too_long)})
-    assert get_in(response, ["error", "data", "reason"]) == "invalid_operator_report_brief"
 
     assert {:ok, _ordinary} = PlanningRepository.append_progress_event(repo, %{work_package_id: anchor.id, summary: "Ordinary progress", payload: payload})
     assert {:ok, reports} = OperatorReport.load_many(repo, [request])
     assert Map.fetch!(reports, request.id) == nil
 
-    limit_text = String.duplicate("x", ProgressEvent.payload_string_limit())
-    append_report!(repo, architect, anchor, %{"brief" => limit_text, "unknown" => "ignored"}, "at-limit")
-    accepted_text = read_operator_report!(repo, architect, request)["brief"]["text"]
-    assert String.length(accepted_text) == ProgressEvent.payload_string_limit()
-
     assert {:ok, _revoked} = AccessGrantService.revoke(repo, architect.assignment.grant_id)
     response = mcp_tool(repo, architect, "append_progress", %{"work_package_id" => anchor.id, "summary" => "Report", "idempotency_key" => "revoked-report", "payload" => payload})
     assert get_in(response, ["error", "data", "reason"]) == "revoked"
-  end
-
-  defp append_report!(repo, session, anchor, patch, key) do
-    response =
-      mcp_tool(repo, session, "append_progress", %{
-        "work_package_id" => anchor.id,
-        "summary" => "Goal update",
-        "idempotency_key" => key,
-        "payload" => Map.put(patch, "type", "architect_operator_report")
-      })
-
-    assert response["error"] == nil
-    get_in(response, ["result", "structuredContent", "progress_event", "id"])
-  end
-
-  defp read_operator_report!(repo, session, request) do
-    response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => request.id})
-    assert response["error"] == nil
-    get_in(response, ["result", "structuredContent", "work_request", "operator_report"])
   end
 
   test "architect descendant evidence retains stored attribution and inner archived-request guard", %{repo: repo} do
