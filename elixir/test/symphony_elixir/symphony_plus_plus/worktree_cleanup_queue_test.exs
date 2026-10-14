@@ -127,6 +127,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     assert File.dir?(package.worktree_path)
   end
 
+  test "active packages do not create cleanup obligations", %{repo: repo} do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-active")
+    codex_home = use_codex_home!(fixture.root)
+    package = prepared_package!(repo, fixture.repo_root, codex_home, "WP-CLEANUP-ACTIVE", "fix/cleanup-active")
+    active = repo.update!(Ecto.Changeset.change(package, status: "active"))
+
+    assert :ok = WorktreeCleanupQueue.enqueue_terminal(repo, active, codex_home: codex_home)
+    assert repo.all(Entry) == []
+    assert File.dir?(package.worktree_path)
+  end
+
   test "manual retryable cleanup persists its obligation before reporting queued", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-manual")
     codex_home = use_codex_home!(fixture.root)
