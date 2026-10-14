@@ -72,14 +72,14 @@ test('cockpit CLI refuses public hosts and remote origins before starting a ledg
   expect(fromEnv.output).toContain('loopback');
 });
 
-test('cockpit CLI opens only on opt-in and explicit disable overrides the environment', async ({ tasks }) => {
+test('cockpit CLI honors opener opt-in and explicit flags override the environment', async ({ tasks }) => {
   const log = join(tasks.root, 'opener.jsonl');
   const opener = join(tasks.bin, 'xdg-open');
   await writeFile(opener, '#!/bin/sh\nprintf "%s\\n" "$1" >> "$ACCEPTANCE_OPEN_LOG"\n');
   await chmod(opener, 0o755);
   for (const [name, flags, env, opens] of [
-    ['default', [], {}, false],
-    ['flag', ['--open-dashboard'], {}, true],
+    ['environment-disabled', [], { SYMPP_OPEN_DASHBOARD: '0' }, false],
+    ['flag', ['--open-dashboard'], { SYMPP_OPEN_DASHBOARD: '0' }, true],
     ['environment', [], { SYMPP_OPEN_DASHBOARD: '1' }, true],
     ['disabled', ['--no-open-dashboard'], { SYMPP_OPEN_DASHBOARD: '1' }, false],
   ] as const) {

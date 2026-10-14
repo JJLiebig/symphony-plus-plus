@@ -255,5 +255,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PlanningTest do
   end
 
   defp fenced_source_count(markdown), do: length(Regex.scan(~r/^```(?:text)?$/m, markdown))
-
 end
