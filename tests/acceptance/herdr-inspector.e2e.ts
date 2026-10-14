@@ -24,6 +24,9 @@ test('compiled inspector binds and pins actual request detail without stealing f
     await host.start(new URL(await factory!.endpoint).origin);
     await expect.poll(() => host.screen).toContain('Bound inspector request');
     await expect.poll(() => host.screen).toContain('Inspector findings');
+    expect(host.screen).toContain('Working now: Unknown');
+    expect(host.screen).toContain('Runtime observation unknown');
+    expect(host.screen).toContain('Worker pane missing');
     expect(host.screen).not.toContain('Other inspector request');
     expect(host.calls.filter((call) => call.method === 'pane.focus')).toEqual([]);
     expect(snapshot.focused_pane_id).toBe('owner-a');
