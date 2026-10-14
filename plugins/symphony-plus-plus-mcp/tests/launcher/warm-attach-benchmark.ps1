@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
 $pluginRoot = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp"
 $scriptsRoot = Join-Path $pluginRoot "scripts"
+. (Join-Path $scriptsRoot "sympp-mcp-launcher-helpers.ps1")
 $contractPath = Join-Path $repoRoot "elixir/priv/symphony_plus_plus/mcp_contract.json"
 $contract = [string]((Get-Content -LiteralPath $contractPath -Raw | ConvertFrom-Json).mcp_contract_fingerprint)
 $tempRoot = Join-Path $PSScriptRoot (".warm-production-" + [guid]::NewGuid().ToString("N"))
@@ -110,12 +111,14 @@ param([string]$McpUrl, [int]$TimeoutSec, [string]$ClientLeaseId, [int]$Heartbeat
 $ClientWatch.Stop()
 $Samples.Enqueue($ClientWatch.Elapsed.TotalMilliseconds)
 [void]$Ready.Signal()
-if (-not $Gate.Wait(30000)) { throw "Timed out holding concurrent warm bridges." }
+$Gate.Wait()
 '@
   $definitions["New-McpClientLeaseId"] = 'return [guid]::NewGuid().ToString("N")'
-  $definitions["Remove-BridgeLease"] += @'
+  $definitions["Remove-BridgeLease"] = $definitions["Remove-BridgeLease"].Replace(
+    'Remove-Item -LiteralPath $LeasePath -Force -ErrorAction SilentlyContinue',
+    'Remove-Item -LiteralPath $LeasePath -Force -ErrorAction SilentlyContinue -ErrorVariable leaseRemoveErrors') + @'
 if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
-  $detail = if ($Error.Count) { $Error[0].Exception.Message } else { "No deletion error was returned" }
+  $detail = if ($leaseRemoveErrors) { ($leaseRemoveErrors | ForEach-Object { "hresult=$($_.Exception.HResult) $($_.Exception.Message)" }) -join "; " } else { "No deletion error was returned" }
   $LeaseDeleteFailures.Enqueue(([IO.Path]::GetFileName($LeasePath) + ": " + $detail))
 }
 '@
@@ -137,8 +140,10 @@ if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
   $clientScript = {
     param($RuntimeFile, $PluginRoot, $Port)
     $ClientWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    [void](Invoke-WarmAttachFromRuntimeState -RuntimeFile $RuntimeFile -PluginRoot $PluginRoot -BackendPort $Port -DashboardPort 0 -BackendPortExplicit $true -DashboardPortExplicit $false -ConfiguredBackendUrl $null -ConfiguredDashboardOrigin $null -BridgeTimeout 30 -ClientHeartbeatInterval 5)
+    $attached = Invoke-WarmAttachFromRuntimeState -RuntimeFile $RuntimeFile -PluginRoot $PluginRoot -BackendPort $Port -DashboardPort 0 -BackendPortExplicit $true -DashboardPortExplicit $false -ConfiguredBackendUrl $null -ConfiguredDashboardOrigin $null -BridgeTimeout 30 -ClientHeartbeatInterval 5
+    if (-not $attached) { throw "Production warm attach rejected the fixture runtime." }
   }
+  $attachWatch = [Diagnostics.Stopwatch]::StartNew()
   foreach ($index in 1..$Clients) {
     $powershell = [powershell]::Create()
     $powershell.RunspacePool = $pool
@@ -146,11 +151,19 @@ if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
     $jobs.Add([pscustomobject]@{ shell = $powershell; result = $powershell.BeginInvoke() })
   }
 
-  if (-not $ready.Wait(30000)) { throw "Timed out waiting for $Clients production warm attaches. errors=$(@($jobs.shell.Streams.Error | ForEach-Object { $_.Exception.Message + ' command=' + $_.InvocationInfo.MyCommand.Name + ' position=' + $_.InvocationInfo.PositionMessage + ' stack=' + $_.ScriptStackTrace }) -join '; ')" }
+  $remainingMs = [Math]::Max(0, 30000 - [int]$attachWatch.ElapsedMilliseconds)
+  if (-not $ready.Wait($remainingMs)) { throw "Timed out waiting for $Clients production warm attaches. ready=$($Clients - $ready.CurrentCount) errors=$(@($jobs.shell.Streams.Error | ForEach-Object { $_.Exception.Message + ' command=' + $_.InvocationInfo.MyCommand.Name + ' position=' + $_.InvocationInfo.PositionMessage + ' stack=' + $_.ScriptStackTrace }) -join '; ')" }
   $leaseDir = Resolve-Path (Join-Path $tempRoot "codex-plugin-leases")
+  $owners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique)
+  if ($owners.Count -ne 1 -or [int]$owners[0] -ne $PID) { throw "Warm benchmark listener ownership changed during attachment." }
   $leasesPeak = @(Get-ChildItem -LiteralPath $leaseDir -Filter "bridge-*.json" -File).Count
   $gate.Set()
-  foreach ($job in $jobs) { [void]$job.shell.EndInvoke($job.result); $job.shell.Dispose() }
+  $workerErrors = [Collections.Generic.List[string]]::new()
+  foreach ($job in $jobs) {
+    [void]$job.shell.EndInvoke($job.result)
+    foreach ($workerError in $job.shell.Streams.Error) { $workerErrors.Add($workerError.Exception.Message) }
+    $job.shell.Dispose()
+  }
   $sorted = @($samples.ToArray() | Sort-Object)
   [pscustomobject]@{
     clients = $Clients
@@ -162,7 +175,7 @@ if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
     leases_after = @(Get-ChildItem -LiteralPath $leaseDir -Filter "bridge-*.json" -File -ErrorAction SilentlyContinue).Count
     remote_resolution_attempts = $remoteAttempts.Count
     lease_delete_failures = @($leaseDeleteFailures.ToArray())
-    worker_errors = @($jobs.shell.Streams.Error | ForEach-Object { $_.Exception.Message })
+    worker_errors = @($workerErrors)
   } | ConvertTo-Json -Compress
 } finally {
   $gate.Set()
