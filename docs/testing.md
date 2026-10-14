@@ -84,3 +84,20 @@ evidence, not current product guides.
 On workstations subject to the runtime execution prohibition, all code
 validation runs on GitHub-hosted CI. Local source/Git reads and edits remain
 available. Do not run tests, builds, formatters, launchers, or runtime probes.
+
+## Retention, Solo and worktrees (B2)
+
+Retention journeys use public operator settings and lifecycle actions against
+disposable candidate ledgers. Age fixtures stop the candidate before changing
+timestamps; they never manufacture completion, archive, claims or dispatch.
+Solo journeys exercise persistent entries, lifecycle, redaction and inactivity.
+Exact time boundaries, historical migrations and precise contention remain
+separate hosted storage checks.
+
+Worktree journeys use real disposable Git repositories. They prove preparation,
+replay, current remote bases, deliberate owned dirty cleanup, unsafe target
+refusal and explicit recovery after a queued removal failure and restart.
+The cockpit fixture does not start the background cleanup reconciler, so its
+startup, scheduling and detached deletion obligations retain dedicated hosted
+checks. Historical ownership, preflight persistence failure, Cargo target safety
+and Windows partial removal remain separate qualifications.

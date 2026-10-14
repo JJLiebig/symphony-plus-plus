@@ -3,14 +3,13 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.Service, as: ClaimLeaseService
   alias SymphonyElixir.SymphonyPlusPlus.MCP.SessionBinding
 
   @moduletag :ci_slow
 
-  test "WorkPackage worktree MCP tools prepare, audit, and cleanup a linked package", %{repo: repo} do
+  test "historical worktree roots and lease bindings preserve scoped cleanup and stored audit redaction", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("symphony-plus-plus/beta", prefix: "sympp-mcp-worktree")
     other_fixture = TestSupport.git_repo_fixture!("symphony-plus-plus/beta", prefix: "sympp-mcp-other-worktree")
     same_origin_repo_root = TestSupport.git_repo_with_origin_fixture!(fixture.origin, prefix: "sympp-mcp-same-origin-worktree")
@@ -74,86 +73,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     try do
       System.put_env("CODEX_HOME", codex_home)
 
-      assert {:ok, guarded_grant} = AccessGrantService.mint_worker_grant(repo, package.id)
-
-      assert {:ok, guarded_claim_lease} =
-               ClaimLeaseService.claim(
-                 repo,
-                 package.id,
-                 %{"actor_kind" => "agent", "actor_id" => "local:live-grant-cleanup", "actor_display_name" => "live-grant-cleanup"},
-                 stale_after_ms: 60_000
-               )
-
-      guarded_clean_response =
-        mcp_tool(
-          repo,
-          session,
-          "cleanup_work_package_worktree",
-          %{
-            "work_package_id" => package.id
-          },
-          config: config
-        )
-
-      guarded_clean_payload = get_in(guarded_clean_response, ["result", "structuredContent"])
-      assert guarded_clean_payload["worktree"]["status"] == "already_clean"
-      assert %ClaimLease{status: "active"} = repo.get!(ClaimLease, guarded_claim_lease.id)
-      assert {:ok, _released_guarded_claim} = ClaimLeaseService.release(repo, guarded_claim_lease.id, reason: "test cleanup")
-      assert {:ok, _revoked_guarded_grant} = AccessGrantService.revoke(repo, guarded_grant.grant.id)
-
-      assert {:ok, already_clean_claim_lease} =
-               ClaimLeaseService.claim(
-                 repo,
-                 package.id,
-                 %{"actor_kind" => "agent", "actor_id" => "local:already-clean", "actor_display_name" => "already-clean"},
-                 stale_after_ms: 60_000
-               )
-
-      already_clean_response =
-        mcp_tool(
-          repo,
-          session,
-          "cleanup_work_package_worktree",
-          %{
-            "work_package_id" => package.id
-          },
-          config: config
-        )
-
-      already_clean_payload = get_in(already_clean_response, ["result", "structuredContent"])
-      assert already_clean_payload["worktree"]["status"] == "already_clean"
-      assert already_clean_payload["work_package"]["worktree_path"] == nil
-      assert %ClaimLease{status: "released", release_reason: "work_request_runtime_cleanup"} = repo.get!(ClaimLease, already_clean_claim_lease.id)
-
-      scope_mismatch_response =
-        mcp_tool(
-          repo,
-          session,
-          "prepare_work_package_worktree",
-          %{
-            "work_package_id" => package.id,
-            "target_repo_root" => other_fixture.repo_root
-          },
-          config: config
-        )
-
-      assert get_in(scope_mismatch_response, ["error", "data", "reason"]) == "target_repo_root_scope_mismatch"
-
-      wrong_branch_response =
-        mcp_tool(
-          repo,
-          session,
-          "prepare_work_package_worktree",
-          %{
-            "work_package_id" => package.id,
-            "target_repo_root" => fixture.repo_root,
-            "branch" => "feat/wrong-base"
-          },
-          config: config
-        )
-
-      assert get_in(wrong_branch_response, ["error", "data", "reason"]) == "branch_scope_mismatch"
-
       prepare_response =
         mcp_tool(
           repo,
@@ -174,21 +93,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
       assert prepare_payload["worker_launch"]["instruction"] =~ "Use this worktree only"
       assert is_binary(prepare_payload["audit_event"]["id"])
       refute Map.has_key?(prepare_payload["audit_event"], "payload")
-      assert File.dir?(prepare_payload["worktree"]["path"])
-
-      same_origin_cleanup_response =
-        mcp_tool(
-          repo,
-          session,
-          "cleanup_work_package_worktree",
-          %{
-            "work_package_id" => package.id,
-            "target_repo_root" => same_origin_repo_root
-          },
-          config: config
-        )
-
-      assert get_in(same_origin_cleanup_response, ["error", "data", "reason"]) == "invalid_worktree_path"
       assert File.dir?(prepare_payload["worktree"]["path"])
 
       assert {:ok, _foreign_root_package} =
@@ -332,14 +236,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
           order_by: [asc: progress_event.sequence]
         )
       )
-
-    assert Enum.map(events, & &1.payload["source_tool"]) == [
-             "cleanup_work_request_work_package_runtime",
-             "prepare_work_package_worktree",
-             "cleanup_work_request_work_package_runtime",
-             "cleanup_work_package_worktree",
-             "cleanup_work_package_worktree"
-           ]
 
     assert %{
              "source_tool" => "prepare_work_package_worktree",
