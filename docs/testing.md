@@ -102,6 +102,33 @@ startup, scheduling and detached deletion obligations retain dedicated hosted
 checks. Historical ownership, preflight persistence failure, Cargo target safety
 and Windows partial removal remain separate qualifications.
 
+## Operator board and inspector (B3)
+
+The browser lane uses hosted-built candidate assets and real disposable candidate
+MCP state. Operator settings, intake, archive and restore use the live backend;
+restore currently has no board control. Controlled GitHub and review-status
+programs qualify discovery, command and parser behavior, not live providers or
+the owning package's actual FAST review. The same-origin asset proxy does not
+qualify origin denial; keep the endpoint's security checks.
+
+The assigned worker's bounded recording exception uses unchanged actual hosted
+GET captures for read/navigation only. It rejects mutations and never emulates
+state transitions. Luna low uses the existing login; generated native cache is
+committed unchanged. Final hosted replay loads no GET transcript and uses the
+live candidate backend. Native strict read-only cache and zero retries combine
+with a public model identity whose generation/stream methods throw before
+transport. Hosted replay constructs no provider or OAuth client. Require suite
+success, every required agent action self-finalized, zero model calls/tokens and
+unchanged cache. A native unrecorded goal must fail at the throwing descriptor;
+zero counters on that failed attempt alone are insufficient proof.
+
+The compiled inspector uses real request detail and invalidation with a synthetic
+Herdr socket host. It qualifies binding, graph navigation, pinning, unknown
+observations and refusal to focus an absent worker. It does not qualify a live
+desktop or positive worker focus. Keep exact focus identity/races, controller
+ownership, Windows protocols, terminal content isolation, review timing and
+historical storage/query budgets at their distinct hosted boundaries.
+
 ## Upstream Symphony and providers (B5)
 
 Upstream journeys launch the public Symphony CLI from candidate source with a

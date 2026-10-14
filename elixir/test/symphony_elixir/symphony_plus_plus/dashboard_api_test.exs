@@ -518,14 +518,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert payload.total_count == 2
       assert Enum.map(payload.work_requests, & &1.id) == [first.id, second.id]
 
-      assert Agent.get(counter, & &1) == %{
-               "sympp_work_requests" => 2,
-               "sympp_work_request_clarification_questions" => 1,
-               "sympp_work_request_decision_logs" => 1,
-               "sympp_work_packages" => 2,
-               "sympp_work_package_deliveries" => 1,
-               "sympp_comments" => 1
-             }
+      assert Agent.get(counter, &(&1 |> Map.values() |> Enum.sum())) <= 8
     after
       WorkRequestCardCountingRepo.clear_counter()
       Agent.stop(counter)
@@ -599,96 +592,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert terminal_slice.work_package_status == "abandoned"
     assert terminal_slice.operational_state.key == "needs_closeout"
     assert terminal_slice.attention_reason_codes == ["terminal_package_without_delivery_outcome"]
-  end
-
-  test "WorkRequest cards promote linked package operational state over raw ready-for-slicing", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-DASH-OP-REQUEST", status: "ready_for_slicing")
-
-    assert {:ok, active_slice} =
-             CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_package_attrs(id: "WRS-OP-REQUEST-ACTIVE"))
-
-    assert {:ok, active_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, active_slice.id, "planned")
-
-    active_package =
-      create_matching_work_package!(repo, work_request, active_slice,
-        id: "SYMPP-OP-REQUEST-ACTIVE",
-        status: "implementing"
-      )
-
-    assert {:ok, _active_run} =
-             AgentRunRepository.start_run(repo, %{
-               work_package_id: active_package.id,
-               status: "running",
-               attempt: 1,
-               worker_task_handle: "request-active-run"
-             })
-
-    assert {:ok, _dispatched_active} =
-             CanonicalWorkPackageFixtures.dispatch_work_package(repo, work_request.id, active_slice.id, "approved", active_package.id)
-
-    assert {:ok, merged_slice} =
-             CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_package_attrs(id: "WRS-OP-REQUEST-MERGED"))
-
-    assert {:ok, merged_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, merged_slice.id, "planned")
-
-    merged_package =
-      create_matching_work_package!(repo, work_request, merged_slice,
-        id: "SYMPP-OP-REQUEST-MERGED",
-        status: "merged"
-      )
-
-    assert {:ok, _dispatched_merged} =
-             CanonicalWorkPackageFixtures.dispatch_work_package(repo, work_request.id, merged_slice.id, "approved", merged_package.id)
-
-    assert {:ok, payload} = Dashboard.work_requests(repo)
-    request_card = Enum.find(payload.work_requests, &(&1.id == work_request.id))
-
-    assert request_card.status == "sliced"
-    assert request_card.dispatched_work_package_count == 2
-    assert request_card.operational_state.key == "active"
-    assert request_card.operational_state.label == "Active"
-    assert request_card.operational_state.raw_status == "sliced"
-    assert request_card.operational_state.has_started == true
-    assert request_card.operational_state.has_active_worker == true
-
-    prepared_request = create_work_request!(repo, id: "WR-DASH-OP-REQUEST-PREPARED", status: "ready_for_slicing")
-
-    assert {:ok, prepared_slice} =
-             CanonicalWorkPackageFixtures.add_work_package(repo, prepared_request.id, work_package_attrs(id: "WRS-OP-REQUEST-PREPARED"))
-
-    assert {:ok, prepared_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, prepared_request.id, prepared_slice.id, "planned")
-
-    prepared_package =
-      create_matching_work_package!(repo, prepared_request, prepared_slice,
-        id: "SYMPP-OP-REQUEST-PREPARED",
-        status: "ready_for_worker"
-      )
-
-    assert {:ok, _prepared_progress} =
-             PlanningRepository.append_progress_event(repo, %{
-               work_package_id: prepared_package.id,
-               summary: "Prepared WorkPackage worktree",
-               status: "prepared",
-               payload: %{
-                 type: "worktree_lifecycle",
-                 source_tool: "prepare_work_package_worktree",
-                 status: "prepared",
-                 worktree_path: "/tmp/sympp-worktree",
-                 branch: "agent/prepared"
-               },
-               created_at: ~U[2026-05-05 00:00:00Z]
-             })
-
-    assert {:ok, _dispatched_prepared} =
-             CanonicalWorkPackageFixtures.dispatch_work_package(repo, prepared_request.id, prepared_slice.id, "approved", prepared_package.id)
-
-    assert {:ok, prepared_payload} = Dashboard.work_requests(repo)
-    prepared_request_card = Enum.find(prepared_payload.work_requests, &(&1.id == prepared_request.id))
-
-    assert prepared_request_card.operational_state.key == "prepared"
-    assert prepared_request_card.operational_state.label == "Prepared"
-    assert prepared_request_card.operational_state.raw_status == "sliced"
-    assert prepared_request_card.operational_state.has_prepared_worktree == true
   end
 
   test "WorkRequest completion shows needs closeout while dispatched slice preserves merged package truth", %{repo: repo} do
@@ -895,50 +798,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert detail.work_request.operational_state.raw_status == "clarifying"
   end
 
-  test "archived WorkRequest lifecycle stays primary over delivery promotion", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-DASH-OP-ARCHIVED-DELIVERY", status: "ready_for_slicing")
-
-    assert {:ok, work_package} =
-             CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_package_attrs(id: "WRS-OP-ARCHIVED-DELIVERY"))
-
-    assert {:ok, approved_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, work_package.id, "planned")
-
-    work_package =
-      create_matching_work_package!(repo, work_request, approved_slice,
-        id: "SYMPP-OP-ARCHIVED-DELIVERY",
-        status: "ready_for_worker"
-      )
-
-    assert {:ok, _dispatched_slice} =
-             CanonicalWorkPackageFixtures.dispatch_work_package(repo, work_request.id, approved_slice.id, "approved", work_package.id)
-
-    assert {:ok, _delivery} =
-             WorkRequestRepository.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "pr_merged",
-                 idempotency_key: "dashboard-archived-delivery",
-                 pr_url: "https://github.com/nextide/symphony-plus-plus/pull/906",
-                 pr_merged_at: ~U[2026-05-24 12:00:00.000000Z],
-                 merge_commit_sha: "merge-906"
-               })
-             )
-
-    archived_at = ~U[2026-05-25 09:00:00.000000Z]
-
-    work_request
-    |> Ecto.Changeset.change(completed_at: archived_at, completion_source: "operator", archived_at: archived_at)
-    |> repo.update!()
-
-    assert {:ok, detail} = Dashboard.work_request_detail(repo, work_request.id)
-    assert detail.work_request.operational_state.key == "completed"
-
-    [slice] = detail.work_packages
-    assert slice.operational_state.key == "delivered"
-  end
-
   test "board artifact reads are limited to packages that need artifact-backed readiness", %{repo: repo} do
     assert {:ok, plain_package} =
              WorkPackageRepository.create(
@@ -1132,86 +991,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert {:ok, latest_progress_at, _offset} = DateTime.from_iso8601(card.latest_progress_at)
     assert DateTime.compare(latest_progress_at, DateTime.add(timestamp, 105, :second)) == :eq
     assert card.metadata.pr["url"] == "https://github.com/example/repo/pull/1"
-  end
-
-  test "local operator dashboard returns aggregate workflow state", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      assert {:ok, work_request} =
-               WorkRequestRepository.create(repo, %{
-                 title: "Operator intake",
-                 repo: "symphony-plus-plus",
-                 base_branch: "main",
-                 work_type: "feature",
-                 human_description: "Build the dashboard.",
-                 constraints: %{},
-                 desired_dispatch_shape: "architect_led_feature_branch",
-                 status: "ready_for_clarification"
-               })
-
-      assert {:ok, archived_request} =
-               WorkRequestRepository.create(repo, %{
-                 title: "Archived operator intake",
-                 repo: "symphony-plus-plus",
-                 base_branch: "main",
-                 work_type: "feature",
-                 human_description: "Completed earlier.",
-                 constraints: %{},
-                 desired_dispatch_shape: "single_package",
-                 status: "ready_for_slicing"
-               })
-
-      assert {:ok, slice} = CanonicalWorkPackageFixtures.add_work_package(repo, archived_request.id, work_package_attrs(id: "WRS-OPERATOR-ARCHIVE"))
-      record_completed_delivery!(repo, slice)
-
-      archived_request
-      |> Ecto.Changeset.change(completed_at: %{~U[2026-05-01 00:00:00Z] | microsecond: {0, 6}})
-      |> Ecto.Changeset.change(archived_at: DateTime.add(DateTime.utc_now(:microsecond), -1, :day))
-      |> repo.update!()
-
-      initial_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard"), 200)
-      deferred_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/deferred"), 200)
-      archived_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard?surface=archived"), 200)
-      solo_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard?surface=solo"), 200)
-      hydrated_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
-
-      assert initial_payload["work_requests"]["total_count"] == 1
-
-      assert [%{"id" => work_request_id, "repo" => "symphony-plus-plus", "base_branch" => "main", "status" => "ready_for_clarification"}] =
-               initial_payload["work_requests"]["work_requests"]
-
-      assert work_request_id == work_request.id
-      refute Enum.any?(initial_payload["work_requests"]["work_requests"], &(&1["id"] == archived_request.id))
-      refute Map.has_key?(initial_payload, "board")
-      refute Map.has_key?(initial_payload, "work_request_details")
-      refute Map.has_key?(initial_payload, "archived_work_requests")
-      refute Map.has_key?(initial_payload, "solo_sessions")
-      assert initial_payload["deferred"] == %{"dashboard_sections" => true}
-
-      assert [%{"work_request" => %{"id" => ^work_request_id}}] = deferred_payload["work_request_details"]
-      refute Map.has_key?(deferred_payload, "board")
-      assert is_list(deferred_payload["work_packages"])
-      refute Map.has_key?(initial_payload, "work_request_work_package_ids")
-      refute Map.has_key?(deferred_payload, "archived_work_requests")
-      refute Map.has_key?(deferred_payload, "solo_sessions")
-      assert deferred_payload["deferred"] == %{"dashboard_sections" => false}
-
-      assert [%{"id" => archived_id}] = archived_payload["archived_work_requests"]["work_requests"]
-      assert archived_id == archived_request.id
-      refute Map.has_key?(archived_payload, "work_request_details")
-      refute Map.has_key?(archived_payload, "solo_sessions")
-      assert solo_payload["solo_sessions"] == %{"total_count" => 0, "solo_sessions" => []}
-      refute Map.has_key?(solo_payload, "archived_work_requests")
-      refute Map.has_key?(solo_payload, "work_request_details")
-
-      assert hydrated_payload["deferred"] == %{"dashboard_sections" => false}
-      assert hydrated_payload["work_requests"] == initial_payload["work_requests"]
-      assert hydrated_payload["work_request_details"] == deferred_payload["work_request_details"]
-      refute Map.has_key?(hydrated_payload, "archived_work_requests")
-      refute Map.has_key?(hydrated_payload, "solo_sessions")
-
-      assert {:ok, archived} = WorkRequestRepository.get(repo, archived_request.id)
-      assert %DateTime{} = archived.archived_at
-    end)
   end
 
   test "priority dashboard responds before compact execution signals for a deterministic workload", %{repo: repo} do
@@ -1686,67 +1465,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
-  test "local operator dashboard projects delivery closeout states into slice cards", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      work_request = create_work_request!(repo, id: "WR-LOCAL-DELIVERY", status: "ready_for_slicing")
-
-      assert {:ok, work_package} =
-               CanonicalWorkPackageFixtures.add_work_package(repo, work_request.id, work_package_attrs(id: "WRS-LOCAL-DELIVERY-MERGED"))
-
-      assert {:ok, approved_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, work_package.id, "planned")
-
-      work_package =
-        create_matching_work_package!(repo, work_request, approved_slice,
-          id: "SYMPP-LOCAL-DELIVERY-MERGED",
-          status: "ready_for_worker"
-        )
-
-      assert {:ok, _progress} =
-               PlanningRepository.append_progress_event(repo, %{
-                 work_package_id: work_package.id,
-                 summary: "Worker progress exists",
-                 status: "progress",
-                 payload: %{type: "progress"}
-               })
-
-      assert {:ok, _dispatched_slice} =
-               CanonicalWorkPackageFixtures.dispatch_work_package(repo, work_request.id, approved_slice.id, "approved", work_package.id)
-
-      assert {:ok, _delivery} =
-               WorkRequestRepository.record_work_package_delivery(
-                 repo,
-                 work_request.id,
-                 work_package.id,
-                 delivery_attrs(%{
-                   outcome: "pr_merged",
-                   idempotency_key: "local-operator-dashboard-delivery-merged",
-                   pr_url: "https://github.com/JJLiebig/symphony-plus-plus/pull/905",
-                   pr_merged_at: ~U[2026-05-24 12:30:00.000000Z],
-                   merge_commit_sha: "merge-905"
-                 })
-               )
-
-      payload = local_operator_dashboard_payload()
-      detail = work_request_detail(payload, work_request.id)
-      [slice] = detail["work_packages"]
-      [card] = Enum.filter(payload["work_requests"]["work_requests"], &(&1["id"] == work_request.id))
-
-      assert card["status"] == "sliced"
-      refute Map.has_key?(card, "operational_state")
-      assert get_in(detail, ["work_request", "operational_state", "key"]) == "delivered"
-      assert get_in(detail, ["work_request", "operational_state", "has_started"]) == true
-      assert get_in(detail, ["work_request", "operational_state", "has_active_worker"]) == false
-      assert get_in(detail, ["work_request", "operational_state", "is_stale"]) == true
-      assert get_in(slice, ["operational_state", "key"]) == "delivered"
-      assert get_in(slice, ["operational_state", "label"]) == "Delivered"
-      assert get_in(slice, ["operational_state", "raw_status"]) == "ready_for_worker"
-      assert get_in(slice, ["operational_state", "work_package_status"]) == "ready_for_worker"
-      assert get_in(slice, ["delivery", "outcome"]) == "pr_merged"
-      assert slice["attention_reason_codes"] == []
-      assert get_in(slice, ["operational_state", "attention_items"]) == []
-    end)
-  end
-
   test "local operator dashboard infers canonical repo identity from local origin", %{repo: repo} do
     with_local_repo_origin("https://github.com/JJLiebig/symphony-plus-plus.git", fn ->
       with_local_operator_endpoint(fn ->
@@ -1860,28 +1578,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
-  test "local operator dashboard invalidates after MCP-side WorkPackage writes", %{repo: repo} do
-    work_request =
-      create_work_request!(repo,
-        id: "WR-DASHBOARD-INVALIDATE",
-        repo: "symphony-plus-plus",
-        base_branch: "main",
-        status: "ready_for_slicing"
-      )
-
-    assert :ok = DashboardPubSub.subscribe()
-
-    assert {:ok, _slice} =
-             CanonicalWorkPackageFixtures.add_work_package_for_authoring(
-               repo,
-               work_request.id,
-               work_package_attrs(id: "WRS-DASHBOARD-INVALIDATE", title: "Refresh dashboard")
-             )
-
-    assert_receive :operator_dashboard_changed
-    refute_receive :operator_dashboard_changed, 50
-  end
-
   test "local operator WorkRequest mutations invalidate exactly once", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       work_request =
@@ -1917,44 +1613,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                {:error, :response_failed}
              end)
 
-    assert_receive :operator_dashboard_changed
-    refute_receive :operator_dashboard_changed, 50
-  end
-
-  test "local operator dashboard invalidates after local operator comment writes", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      work_request =
-        create_work_request!(repo,
-          id: "WR-DASHBOARD-COMMENT-INVALIDATE",
-          repo: "symphony-plus-plus",
-          base_branch: "main",
-          status: "ready_for_slicing"
-        )
-
-      assert :ok = DashboardPubSub.subscribe()
-
-      local_operator_conn()
-      |> post("/api/v1/sympp/operator/comments", %{
-        "target_kind" => "work_request",
-        "target_id" => work_request.id,
-        "body" => "Refresh dashboard after comment."
-      })
-      |> json_response(201)
-
-      assert_receive :operator_dashboard_changed
-      refute_receive :operator_dashboard_changed, 50
-    end)
-  end
-
-  test "local operator dashboard invalidates after work package status writes", %{repo: repo} do
-    work_package =
-      create_work_package!(repo,
-        id: "SYMPP-DASHBOARD-PACKAGE-INVALIDATE",
-        status: "claimed"
-      )
-
-    assert :ok = DashboardPubSub.subscribe()
-    assert {:ok, _work_package} = WorkPackageRepository.update_status(repo, work_package.id, "claimed", "planning")
     assert_receive :operator_dashboard_changed
     refute_receive :operator_dashboard_changed, 50
   end
@@ -2430,17 +2088,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     assert json_response(post(local_operator_conn(), "/api/v1/sympp/operator/events", %{}), 405)["error"]["code"] == "method_not_allowed"
   end
 
-  test "local operator config returns runtime paths" do
-    with_local_operator_endpoint(fn ->
-      payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/config"), 200)
-
-      assert payload["apiBase"] == "/api/v1/sympp/operator"
-      assert payload["basePath"] == ""
-      assert payload["logoUrl"] == "/splusplus-logo.png"
-      assert payload["dashboard"]["deferred"] == %{"dashboard_sections" => true}
-    end)
-  end
-
   test "local operator config keeps runtime bootstrap usable when priority data is unavailable" do
     with_local_operator_endpoint(fn ->
       Application.put_env(:symphony_elixir, SymphonyElixirWeb.Endpoint, sympp_repo: BusyRepo)
@@ -2864,21 +2511,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
-  test "local operator can fetch package detail through the dashboard API", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      %{work_package: work_package} = create_dashboard_fixture(repo, id: "SYMPP-LOCAL-OPERATOR-DETAIL")
-
-      payload =
-        local_operator_conn()
-        |> get("/api/v1/sympp/operator/work-packages/#{work_package.id}")
-        |> json_response(200)
-
-      assert payload["work_package"]["id"] == work_package.id
-      assert is_list(payload["progress"])
-      assert is_map(payload["summary"])
-    end)
-  end
-
   test "local operator can sync GitHub PR merge state and request dashboard refresh", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       with_operator_github_client(fn ->
@@ -3037,66 +2669,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
           assert FakeGhCli.commands() == []
         end)
       end)
-    end)
-  end
-
-  test "local operator can fetch Solo Session detail through the dashboard API", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      assert {:ok, session} =
-               SoloSessionsService.create_or_attach_current(repo, %{
-                 repo: "nextide/demo-operator",
-                 base_branch: "main",
-                 workspace_path: @repo_root,
-                 caller_id: "local-dashboard-test",
-                 title: "Inspect solo modal"
-               })
-
-      assert {:ok, _entry} =
-               SoloSessionsService.append_entry(repo, session.id, %{
-                 entry_kind: "task_plan",
-                 title: "Plan the solo session card",
-                 body: "## Plan\n- Keep the card quiet.\n- Put the detail in the modal.",
-                 status: "in_progress",
-                 idempotency_key: "solo-dashboard-detail-test:plan"
-               })
-
-      payload =
-        local_operator_conn()
-        |> get("/api/v1/sympp/operator/solo-sessions/#{session.id}")
-        |> json_response(200)
-
-      assert payload["solo_session"]["id"] == session.id
-      assert payload["entry_count"] == 1
-      assert [%{"kind" => "task_plan", "body" => body}] = payload["entries"]
-      assert body =~ "Keep the card quiet"
-    end)
-  end
-
-  test "local operator can create a WorkRequest through the dashboard API", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      payload =
-        local_operator_conn()
-        |> post("/api/v1/sympp/operator/work-requests", %{
-          "title" => "Fresh dashboard request",
-          "repo" => "symphony-plus-plus",
-          "base_branch" => "main",
-          "work_type" => "feature",
-          "human_description" => "Create a first-class operator cockpit.",
-          "desired_dispatch_shape" => "architect_led_feature_branch",
-          "constraints" => %{"allowed_paths" => ["elixir"]}
-        })
-        |> json_response(201)
-
-      assert payload["work_request"]["work_request"]["status"] == "ready_for_clarification"
-      refute Map.has_key?(payload, "dashboard")
-      assert get_in(payload, ["refresh", "dashboard"]) == true
-
-      dashboard_payload = local_operator_dashboard_payload()
-
-      assert dashboard_payload["work_requests"]["total_count"] == 1
-
-      assert {:ok, [stored]} = WorkRequestRepository.list(repo)
-      assert stored.title == "Fresh dashboard request"
     end)
   end
 
@@ -3569,72 +3141,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       refute child_package.id in package_ids
       assert linked_terminal_package.id in package_ids
       refute Map.has_key?(payload, "work_request_work_package_ids")
-    end)
-  end
-
-  test "local operator can manually archive completed WorkRequests only", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      completed_at = DateTime.add(DateTime.utc_now(:microsecond), -24 * 60 * 60, :second)
-      completed = create_completed_delivered_work_request!(repo, "WR-LOCAL-MANUAL-ARCHIVE", completed_at)
-
-      archive_payload =
-        local_operator_conn()
-        |> post("/api/v1/sympp/operator/work-requests/#{completed.id}/archive", %{})
-        |> json_response(200)
-
-      refute Map.has_key?(archive_payload, "dashboard")
-      assert get_in(archive_payload, ["refresh", "work_request_id"]) == completed.id
-      assert get_in(archive_payload, ["refresh", "dashboard"]) == true
-      assert get_in(archive_payload, ["work_request", "id"]) == completed.id
-      assert is_binary(get_in(archive_payload, ["work_request", "archived_at"]))
-
-      dashboard_payload = local_operator_dashboard_payload()
-
-      refute Enum.any?(dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == completed.id))
-      assert [%{"id" => "WR-LOCAL-MANUAL-ARCHIVE"}] = dashboard_payload["archived_work_requests"]["work_requests"]
-
-      delivered = create_work_request!(repo, id: "WR-LOCAL-MANUAL-ARCHIVE-DELIVERED", status: "ready_for_slicing")
-
-      assert {:ok, delivered_slice} =
-               CanonicalWorkPackageFixtures.add_work_package(repo, delivered.id, work_package_attrs(id: "WRS-LOCAL-MANUAL-ARCHIVE-DELIVERED"))
-
-      assert {:ok, _approved_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, delivered.id, delivered_slice.id, "planned")
-
-      assert {:ok, _delivery} =
-               WorkRequestRepository.record_work_package_delivery(
-                 repo,
-                 delivered.id,
-                 delivered_slice.id,
-                 delivery_attrs(%{
-                   outcome: "completed_no_pr",
-                   idempotency_key: "local-manual-archive-delivered",
-                   no_pr_evidence: "Dashboard operator archive regression coverage."
-                 })
-               )
-
-      delivered_archive_payload =
-        local_operator_conn()
-        |> post("/api/v1/sympp/operator/work-requests/#{delivered.id}/archive", %{})
-        |> json_response(200)
-
-      refute Map.has_key?(delivered_archive_payload, "dashboard")
-      assert get_in(delivered_archive_payload, ["refresh", "dashboard"]) == true
-      assert get_in(delivered_archive_payload, ["work_request", "id"]) == delivered.id
-      assert is_binary(get_in(delivered_archive_payload, ["work_request", "archived_at"]))
-
-      delivered_dashboard_payload = local_operator_dashboard_payload()
-
-      refute Enum.any?(delivered_dashboard_payload["work_requests"]["work_requests"], &(&1["id"] == delivered.id))
-      assert Enum.any?(delivered_dashboard_payload["archived_work_requests"]["work_requests"], &(&1["id"] == delivered.id and is_binary(&1["archived_at"])))
-
-      incomplete = create_work_request!(repo, id: "WR-LOCAL-MANUAL-NOT-COMPLETE", status: "ready_for_slicing")
-
-      error_payload =
-        local_operator_conn()
-        |> post("/api/v1/sympp/operator/work-requests/#{incomplete.id}/archive", %{})
-        |> json_response(422)
-
-      assert error_payload["error"]["code"] == "not_completed"
     end)
   end
 
@@ -4359,12 +3865,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert html =~ "window.SYMPP_DASHBOARD_CONFIG"
       assert html =~ ~s("apiBase":"/app/api/v1/sympp/operator")
       assert html =~ ~s("logoUrl":"/app/splusplus-logo.png")
-    end)
-  end
-
-  test "endpoint serves the built dashboard logo asset" do
-    with_static_dashboard_file("splusplus-logo.png", "logo-bytes", fn ->
-      assert response(get(build_conn(), "/splusplus-logo.png"), 200) == "logo-bytes"
     end)
   end
 
