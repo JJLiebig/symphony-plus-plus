@@ -129,6 +129,7 @@ test('operator attention differs from explicit blockers and settings/archive act
   await app.open('/sympp/board');
   const goal = browser.locator(`[data-goal="${request}"]`);
   await expect(goal).toContainText('Approve the bounded scope?');
+  await expect(browser.locator('title')).toHaveText(/^\(1\)\s/);
   expect((await row(client, request, wp)).work_package.blocker_state['active?']).toBe(false);
   await client.call('append_progress', {
     work_package_id: wp, summary: 'Required schema missing.', idempotency_key: 'browser-blocker',
@@ -141,6 +142,7 @@ test('operator attention differs from explicit blockers and settings/archive act
   await candidate.capture('blocker-without-escalation');
   await browser.reload();
   await expect(goal).not.toContainText('Approve the bounded scope?');
+  await expect(browser.locator('title')).toHaveText(/^(?!\(\d+\))\S/);
   expect((await row(client, request, wp)).work_package.blocker_state['active?']).toBe(true);
 
   await screen.getByRole('button', 'S++ settings', { exact: true }).tap();

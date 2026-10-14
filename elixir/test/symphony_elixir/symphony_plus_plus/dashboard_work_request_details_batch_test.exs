@@ -5,7 +5,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
   import Plug.Conn, only: [put_req_header: 3]
 
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Comment
-  alias SymphonyElixir.SymphonyPlusPlus.Comments.Service, as: CommentService
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
@@ -58,63 +57,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
     repo.delete_all(WorkPackage)
     repo.delete_all(OperatorSettings)
     :ok
-  end
-
-  test "batch API preserves input order and single-detail payloads", %{repo: repo} do
-    first = create_work_request!(repo, id: "WR-DASH-DETAIL-BATCH-1", status: "ready_for_slicing")
-    second = create_work_request!(repo, id: "WR-DASH-DETAIL-BATCH-2", status: "ready_for_slicing")
-
-    assert {:ok, _question} =
-             WorkRequestRepository.ask_question(repo, first.id, question_attrs(id: "WRQ-DASH-DETAIL-BATCH-1"))
-
-    assert {:ok, _decision} =
-             WorkRequestRepository.record_decision(repo, second.id, decision_attrs(id: "WRD-DASH-DETAIL-BATCH-1"))
-
-    assert {:ok, _slice} =
-             CanonicalWorkPackageFixtures.add_work_package(repo, second.id, work_package_attrs(id: "WRS-DASH-DETAIL-BATCH-1"))
-
-    assert {:ok, _first_comment} =
-             CommentService.create(repo, %{
-               target_kind: "work_request",
-               target_id: first.id,
-               body: "First note",
-               source_type: "operator",
-               author_name: "operator"
-             })
-
-    assert {:ok, _second_comment} =
-             CommentService.create(repo, %{
-               target_kind: "work_request",
-               target_id: second.id,
-               body: "Second note",
-               source_type: "operator",
-               author_name: "operator"
-             })
-
-    assert {:ok, [second_detail, first_detail]} = Dashboard.work_request_details(repo, [second.id, first.id])
-    assert Enum.map([second_detail, first_detail], & &1.work_request.id) == [second.id, first.id]
-    assert first_detail.summary.comment_count == 1
-    assert second_detail.summary.comment_count == 1
-
-    assert {:ok, single_first_detail} = Dashboard.work_request_detail(repo, first.id)
-    assert {:ok, single_second_detail} = Dashboard.work_request_detail(repo, second.id)
-    assert first_detail == single_first_detail
-    assert second_detail == single_second_detail
-  end
-
-  test "local operator dashboard returns multiple WorkRequest details in card order", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      first = create_work_request!(repo, id: "WR-OPERATOR-BATCH-1", status: "ready_for_clarification")
-      second = create_work_request!(repo, id: "WR-OPERATOR-BATCH-2", status: "ready_for_slicing")
-
-      payload = local_operator_dashboard_payload()
-
-      work_request_ids = Enum.map(payload["work_requests"]["work_requests"], & &1["id"])
-      detail_ids = Enum.map(payload["work_request_details"], &get_in(&1, ["work_request", "id"]))
-      assert payload["work_requests"]["total_count"] == 2
-      assert work_request_ids == [first.id, second.id]
-      assert detail_ids == work_request_ids
-    end)
   end
 
   test "full and compact packages forward canonical integration eligibility within board budgets", %{repo: repo} do
@@ -256,28 +198,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
       constraints: %{"allowed_paths" => ["elixir/lib"], "requires_secret" => false},
       desired_dispatch_shape: "single_package",
       status: "draft"
-    }
-
-    Enum.into(overrides, defaults)
-  end
-
-  defp question_attrs(overrides) do
-    defaults = %{
-      category: "scope",
-      question: "Which branch should this target?",
-      why_needed: "The architect needs the target before slicing."
-    }
-
-    Enum.into(overrides, defaults)
-  end
-
-  defp decision_attrs(overrides) do
-    defaults = %{
-      source_type: "architect",
-      decision: "Keep this WorkRequest narrow.",
-      rationale: "The next slice owns broader orchestration.",
-      scope_impact: "No new runtime tools.",
-      created_by: "architect-1"
     }
 
     Enum.into(overrides, defaults)

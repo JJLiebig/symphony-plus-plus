@@ -34,10 +34,15 @@ jobs:
           echo "MIX_HOME=$RUNNER_TEMP/sympp-browser-mix" >> "$GITHUB_ENV"
           echo "MIX_ARCHIVES=$RUNNER_TEMP/sympp-browser-mix/archives" >> "$GITHUB_ENV"
       - name: Record candidate identity
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           mkdir -p .e2e
           git rev-parse HEAD > .e2e/browser-checkout-sha.txt
-          git show -s --format='%H %P' HEAD > .e2e/browser-checkout-parents.txt
+          git cat-file -p HEAD > .e2e/browser-checkout-commit.txt
+          git rev-parse 'HEAD^{tree}' > .e2e/browser-checkout-tree.txt
+          printf 'head=%s\nbase=%s\nrun=%s\n' "$HEAD_SHA" "$BASE_SHA" "$GITHUB_RUN_ID" > .e2e/browser-inputs.txt
           echo "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Install locked native browser dependencies
         run: |
@@ -124,11 +129,16 @@ jobs:
           npm run build
           npm run build:herdr
       - name: Package recording inputs without runtime credentials
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path .e2e/browser-candidate -Force | Out-Null
           git rev-parse HEAD | Set-Content .e2e/browser-candidate/checkout-sha.txt
-          git show -s --format='%H %P' HEAD | Set-Content .e2e/browser-candidate/checkout-parents.txt
+          git cat-file -p HEAD | Set-Content .e2e/browser-candidate/checkout-commit.txt
+          git rev-parse 'HEAD^{tree}' | Set-Content .e2e/browser-candidate/checkout-tree.txt
+          @("head=$env:HEAD_SHA", "base=$env:BASE_SHA", "run=$env:GITHUB_RUN_ID") | Set-Content .e2e/browser-candidate/inputs.txt
           tar -cf .e2e/browser-candidate/recording-dependencies.tar node_modules
           tar -cf .e2e/browser-candidate/browser-binaries.tar -C .e2e browser-binaries
           Copy-Item package-lock.json .e2e/browser-candidate/package-lock.json

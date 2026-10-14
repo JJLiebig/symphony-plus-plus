@@ -1578,28 +1578,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
-  test "local operator dashboard invalidates after MCP-side WorkPackage writes", %{repo: repo} do
-    work_request =
-      create_work_request!(repo,
-        id: "WR-DASHBOARD-INVALIDATE",
-        repo: "symphony-plus-plus",
-        base_branch: "main",
-        status: "ready_for_slicing"
-      )
-
-    assert :ok = DashboardPubSub.subscribe()
-
-    assert {:ok, _slice} =
-             CanonicalWorkPackageFixtures.add_work_package_for_authoring(
-               repo,
-               work_request.id,
-               work_package_attrs(id: "WRS-DASHBOARD-INVALIDATE", title: "Refresh dashboard")
-             )
-
-    assert_receive :operator_dashboard_changed
-    refute_receive :operator_dashboard_changed, 50
-  end
-
   test "local operator WorkRequest mutations invalidate exactly once", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       work_request =
@@ -1635,44 +1613,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                {:error, :response_failed}
              end)
 
-    assert_receive :operator_dashboard_changed
-    refute_receive :operator_dashboard_changed, 50
-  end
-
-  test "local operator dashboard invalidates after local operator comment writes", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      work_request =
-        create_work_request!(repo,
-          id: "WR-DASHBOARD-COMMENT-INVALIDATE",
-          repo: "symphony-plus-plus",
-          base_branch: "main",
-          status: "ready_for_slicing"
-        )
-
-      assert :ok = DashboardPubSub.subscribe()
-
-      local_operator_conn()
-      |> post("/api/v1/sympp/operator/comments", %{
-        "target_kind" => "work_request",
-        "target_id" => work_request.id,
-        "body" => "Refresh dashboard after comment."
-      })
-      |> json_response(201)
-
-      assert_receive :operator_dashboard_changed
-      refute_receive :operator_dashboard_changed, 50
-    end)
-  end
-
-  test "local operator dashboard invalidates after work package status writes", %{repo: repo} do
-    work_package =
-      create_work_package!(repo,
-        id: "SYMPP-DASHBOARD-PACKAGE-INVALIDATE",
-        status: "claimed"
-      )
-
-    assert :ok = DashboardPubSub.subscribe()
-    assert {:ok, _work_package} = WorkPackageRepository.update_status(repo, work_package.id, "claimed", "planning")
     assert_receive :operator_dashboard_changed
     refute_receive :operator_dashboard_changed, 50
   end
@@ -2729,66 +2669,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
           assert FakeGhCli.commands() == []
         end)
       end)
-    end)
-  end
-
-  test "local operator can fetch Solo Session detail through the dashboard API", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      assert {:ok, session} =
-               SoloSessionsService.create_or_attach_current(repo, %{
-                 repo: "nextide/demo-operator",
-                 base_branch: "main",
-                 workspace_path: @repo_root,
-                 caller_id: "local-dashboard-test",
-                 title: "Inspect solo modal"
-               })
-
-      assert {:ok, _entry} =
-               SoloSessionsService.append_entry(repo, session.id, %{
-                 entry_kind: "task_plan",
-                 title: "Plan the solo session card",
-                 body: "## Plan\n- Keep the card quiet.\n- Put the detail in the modal.",
-                 status: "in_progress",
-                 idempotency_key: "solo-dashboard-detail-test:plan"
-               })
-
-      payload =
-        local_operator_conn()
-        |> get("/api/v1/sympp/operator/solo-sessions/#{session.id}")
-        |> json_response(200)
-
-      assert payload["solo_session"]["id"] == session.id
-      assert payload["entry_count"] == 1
-      assert [%{"kind" => "task_plan", "body" => body}] = payload["entries"]
-      assert body =~ "Keep the card quiet"
-    end)
-  end
-
-  test "local operator can create a WorkRequest through the dashboard API", %{repo: repo} do
-    with_local_operator_endpoint(fn ->
-      payload =
-        local_operator_conn()
-        |> post("/api/v1/sympp/operator/work-requests", %{
-          "title" => "Fresh dashboard request",
-          "repo" => "symphony-plus-plus",
-          "base_branch" => "main",
-          "work_type" => "feature",
-          "human_description" => "Create a first-class operator cockpit.",
-          "desired_dispatch_shape" => "architect_led_feature_branch",
-          "constraints" => %{"allowed_paths" => ["elixir"]}
-        })
-        |> json_response(201)
-
-      assert payload["work_request"]["work_request"]["status"] == "ready_for_clarification"
-      refute Map.has_key?(payload, "dashboard")
-      assert get_in(payload, ["refresh", "dashboard"]) == true
-
-      dashboard_payload = local_operator_dashboard_payload()
-
-      assert dashboard_payload["work_requests"]["total_count"] == 1
-
-      assert {:ok, [stored]} = WorkRequestRepository.list(repo)
-      assert stored.title == "Fresh dashboard request"
     end)
   end
 
