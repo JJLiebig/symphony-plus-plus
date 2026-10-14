@@ -1,6 +1,16 @@
 import { expect } from 'e2e';
 import { contract, test } from '../support/factory.js';
 
+test('skipping every planned package leaves the goal unfinished in persisted and visible state', async ({ factory }) => {
+  const architect = await factory.client();
+  const request = await architect.request('Skipped scope');
+  const ids = (await architect.call('slice_work_request', { work_packages: [contract('Retired first scope'), contract('Retired second scope')] })).work_package_ids;
+  for (const work_package_id of ids) await architect.call('skip_work_package', { work_package_id, current_status: 'planned' });
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
+  const hydrated = await architect.inspect('/api/v1/sympp/operator/dashboard/hydrated');
+  expect(hydrated.work_request_details.find((detail: any) => detail.work_request.id === request).work_request.completed_at).toBeNull();
+});
+
 test('a clarified request becomes a revised plan and ordinary worker assignment', async ({ factory }) => {
   const architect = await factory.client();
   const id = await architect.request('Clarified planning', 'human_info_needed');

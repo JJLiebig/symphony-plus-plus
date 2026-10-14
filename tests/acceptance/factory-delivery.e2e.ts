@@ -23,6 +23,9 @@ test('deployment observations cover every delivered revision and preserve comple
   };
   await configure('unfinished.yml');
   expect((await hydrated()).deployments['example/service'].dev.reason).toBe('unfinished');
+  const question = (await architect.call('ask_question', { work_request_id: request, category: 'acceptance',
+    question: 'Has the delivered scope answered the remaining operator choice?', why_needed: 'Delivery alone must not close an unanswered goal.',
+  })).clarification_question.id;
   for (const [index, wp] of ids.entries()) {
     await architect.call('dispatch_work_package', { work_package_id: wp });
     const number = 710 + index;
@@ -30,6 +33,9 @@ test('deployment observations cover every delivered revision and preserve comple
     provider.set(number, pr(number, sha, { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: sha } }));
     await sync(architect, wp, number, sha);
   }
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
+  expect((await hydrated()).deployments['example/service'].dev.reason).toBe('unfinished');
+  await architect.call('close_question', { work_request_id: request, question_id: question, current_status: 'open' });
   const completed = (await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at;
   expect(completed).toBeTruthy();
   const run = (id: number, sha: string, conclusion: string | null, hour = 11, patch: object = {}) => ({

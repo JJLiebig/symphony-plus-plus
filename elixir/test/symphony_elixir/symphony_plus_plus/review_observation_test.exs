@@ -28,6 +28,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
     assert ReviewObservation.cached([package, frozen], opts) == observed
     assert ReviewObservation.observe([package, frozen], opts) == observed
     assert length(Agent.get(calls, & &1)) == 2
+
+    unobserved = %{frozen | id: "other", review_requirement: %{type: "review-suite", args: %{base: "beta"}}}
+    true = :ets.insert(opts[:cache_table], {:refreshing, self()})
+    assert ReviewObservation.observe([package, frozen, unobserved], opts) == observed
+    assert ReviewObservation.cached([unobserved], opts) == %{}
   end
 
   test "concurrent refreshes share one provider invocation", %{test: test} do
