@@ -431,6 +431,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
     {:error, -32_602, "Invalid params", data}
   end
 
+  defp stringify_keys(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp stringify_keys(%{} = map), do: Map.new(map, fn {key, value} -> {to_string(key), stringify_keys(value)} end)
   defp stringify_keys(values) when is_list(values), do: Enum.map(values, &stringify_keys/1)
   defp stringify_keys(value), do: value
