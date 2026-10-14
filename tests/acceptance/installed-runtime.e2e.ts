@@ -11,20 +11,28 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(process.platform).toBe('win32');
     expect(await installed.skills(['add', resolve('.'), '--list'])).toContain('symphony-plus-plus');
     const bundle = await installed.install('codex');
+    const claudeFile = join(installed.project, '.mcp.json');
+    await writeFile(claudeFile, JSON.stringify({ other: true, mcpServers: { notes: { command: 'notes.exe' } } }));
     expect(existsSync(installed.env.CODEX_HOME!)).toBe(false);
     expect((await installed.setup(bundle)).code).toBe(0);
     const configFile = join(installed.env.CODEX_HOME!, 'config.toml');
-    const claudeFile = join(installed.project, '.mcp.json');
     const unrelated = 'model = "example-model"\n';
     await writeFile(configFile, unrelated + await readFile(configFile, 'utf8'));
     const config = await readFile(configFile, 'utf8');
     const claude = await readFile(claudeFile, 'utf8');
+    const invalid = await installed.run(process.execPath, [join(bundle, 'scripts/setup-sympp.js'), '--hos', 'codex']);
+    expect(invalid.code).toBe(2);
+    expect(await readFile(configFile, 'utf8')).toBe(config);
+    expect(await readFile(claudeFile, 'utf8')).toBe(claude);
+    expect(JSON.parse(claude).mcpServers.notes.command).toBe('notes.exe');
+    expect(JSON.parse(claude).other).toBe(true);
     expect((await installed.setup(bundle)).code).toBe(0);
     expect(await readFile(configFile, 'utf8')).toBe(config);
     expect(await readFile(claudeFile, 'utf8')).toBe(claude);
     const registration = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
     expect(registration.transport.env.SYMPP_DATABASE).toBe(installed.env.SYMPP_DATABASE);
     expect(registration.transport.env.SYMPP_HOME).toBe(installed.env.SYMPP_HOME);
+    expect(registration.transport.env.SYMPP_RUNTIME_FILE).toBe(installed.env.SYMPP_RUNTIME_FILE);
 
     // A saved install must still run setup after the original is refreshed.
     const saved = join(installed.root, 'saved skill');
@@ -38,6 +46,9 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     const moved = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
     expect(moved.transport.args).toContain(join(copied, 'scripts/start-sympp-mcp-bridge.js'));
     expect((await readFile(configFile, 'utf8')).startsWith(unrelated)).toBe(true);
+    expect((await installed.setup(bundle)).code).toBe(0);
+    const restored = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
+    expect(restored.transport.args).toContain(join(bundle, 'scripts/start-sympp-mcp-bridge.js'));
 
     const foreignConfig = '[mcp_servers.symphony_plus_plus]\ncommand = "unrelated-owner.exe"\n';
     await writeFile(configFile, foreignConfig);
@@ -48,6 +59,14 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(await readFile(configFile, 'utf8')).toBe(foreignConfig);
     expect(await readFile(claudeFile, 'utf8')).toBe(beforeClaude);
 
+    const inline = 'mcp_servers = { notes = { command = "notes.exe" } }\n';
+    await writeFile(configFile, inline);
+    const inlineRefused = await installed.setup(copied);
+    expect(inlineRefused.code).toBe(1);
+    expect(inlineRefused.stdout).toContain('inline MCP table');
+    expect(await readFile(configFile, 'utf8')).toBe(inline);
+    expect(await readFile(claudeFile, 'utf8')).toBe(beforeClaude);
+
     await writeFile(configFile, config);
     const foreignClaude = JSON.stringify({ mcpServers: { symphony_plus_plus: { command: 'unrelated-owner.exe' } } });
     await writeFile(claudeFile, foreignClaude);
@@ -55,6 +74,11 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(await readFile(configFile, 'utf8')).toBe(config);
     expect(await readFile(claudeFile, 'utf8')).toBe(foreignClaude);
     expect(existsSync(installed.env.SYMPP_DATABASE!)).toBe(false);
+    for (const agent of ['codex', 'claude-code']) {
+      await installed.skills(['remove', 'symphony-plus-plus', '--agent', agent, '--yes']);
+      const remaining = JSON.parse(await installed.skills(['list', '--agent', agent, '--json']));
+      expect(remaining.every((skill: { agents: string[] }) => !skill.agents.includes(agent))).toBe(true);
+    }
   });
 
   test('Skills remote update keeps beta tracking for both native hosts', { timeout: 600_000 }, async ({ installed }) => {
@@ -92,8 +116,16 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     const before = await readFile(configFile, 'utf8');
     const refused = await installed.setup(bundle, 'codex');
     expect(refused.code).toBe(1);
-    expect(refused.stdout).toContain('marketplace plugin');
+    expect(/unmanaged MCP registration|marketplace plugin/.test(refused.stdout)).toBe(true);
     expect(await readFile(configFile, 'utf8')).toBe(before);
     expect(existsSync(installed.env.SYMPP_DATABASE!)).toBe(false);
+    // Disable the real installed companion through the host's documented TOML
+    // setting, then let native discovery decide whether Skills may own MCP.
+    const disabled = before.replace(/(\[plugins\."symphony-plus-plus-mcp@symphony-plus-plus"\][\s\S]*?enabled = )true/, '$1false');
+    expect(disabled).not.toBe(before);
+    await writeFile(configFile, disabled);
+    const afterDisable = JSON.parse(await installed.ok('codex.exe', ['plugin', 'list', '--marketplace', 'symphony-plus-plus', '--json']));
+    expect(afterDisable.installed.some((plugin: { name: string; enabled: boolean }) => plugin.name === 'symphony-plus-plus-mcp' && !plugin.enabled)).toBe(true);
+    expect((await installed.setup(bundle, 'codex')).code).toBe(0);
   });
 }

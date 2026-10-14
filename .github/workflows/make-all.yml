@@ -127,7 +127,7 @@ jobs:
         run: |
           npm exec -- e2e run tests/acceptance/installed-runtime.e2e.ts --target api
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node scripts/acceptance/check-report.mjs
+          node tests/support/installed-report.ts tests/acceptance/installed-runtime.e2e.ts
       - name: Require committed generated mirror
         run: git diff --exit-code -- skills/symphony-plus-plus
       - name: Retain installed acceptance evidence including failures
@@ -183,7 +183,7 @@ jobs:
       - name: Prove online copy and offline replacement boundaries
         run: |
           npm exec -- e2e run tests/acceptance/offline-copy.e2e.ts --target api
-          node scripts/acceptance/check-report.mjs
+          node tests/support/installed-report.ts tests/acceptance/offline-copy.e2e.ts
       - name: Retain offline acceptance evidence including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
