@@ -100,6 +100,13 @@ jobs:
           git cat-file -p HEAD > .e2e/checkout-commit.txt
           "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
           @{ head = $env:ACCEPTANCE_HEAD_SHA; base = $env:BASE_SHA; run = $env:GITHUB_RUN_ID } | ConvertTo-Json > .e2e/inputs.json
+          # Native marketplace clones fetch branch commits, not GitHub's synthetic merge ref.
+          git fetch --no-tags --depth=1 origin $env:ACCEPTANCE_HEAD_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch marketplace candidate head' }
+          $headTree = git rev-parse "$($env:ACCEPTANCE_HEAD_SHA)^{tree}"
+          $combinedTree = git rev-parse 'HEAD^{tree}'
+          @{ headTree = $headTree; combinedTree = $combinedTree } | ConvertTo-Json > .e2e/marketplace-tree-identity.json
+          if ($headTree -ne $combinedTree) { throw 'Refresh the branch from current beta before marketplace qualification' }
       - name: Generate portable bundle
         run: node scripts/package-portable-skills.mjs
       - name: Retain generated portable mirror
@@ -113,6 +120,7 @@ jobs:
           node scripts/package-portable-skills.mjs --check
           node plugins/symphony-plus-plus-mcp/tests/launcher/portable-install-tests.js
       - name: Install native configuration hosts
+        id: native-hosts
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP 'codex.zip'
@@ -129,8 +137,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/support/installed-report.ts tests/acceptance/installed-runtime.e2e.ts
       - name: Prove native registration and published runtime processes
+        if: ${{ !cancelled() && steps.native-hosts.outcome == 'success' }}
         run: node scripts/qualify-portable-skills.mjs
       - name: Require committed generated mirror
+        if: ${{ !cancelled() && steps.native-hosts.outcome == 'success' }}
         run: git diff --exit-code -- skills/symphony-plus-plus
       - name: Retain installed acceptance evidence including failures
         if: ${{ always() }}

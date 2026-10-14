@@ -97,8 +97,10 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
 
   test('native marketplace install and upgrade preserve the alternative route and refuse mixed Skills ownership', { timeout: 600_000 }, async ({ installed }) => {
     await mkdir(installed.env.CODEX_HOME!, { recursive: true });
-    await installed.ok('codex.exe', ['plugin', 'marketplace', 'add', 'https://github.com/JJLiebig/symphony-plus-plus', '--ref', process.env.ACCEPTANCE_CHECKOUT_SHA!]);
+    // The job requires this fetchable head's tree to equal the combined CI tree.
+    await installed.ok('codex.exe', ['plugin', 'marketplace', 'add', 'https://github.com/JJLiebig/symphony-plus-plus', '--ref', process.env.ACCEPTANCE_HEAD_SHA!]);
     await installed.ok('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
+    expect((await installed.ok('git', ['-C', join(installed.env.CODEX_HOME!, '.tmp/marketplaces/symphony-plus-plus'), 'rev-parse', 'HEAD'])).trim()).toBe(process.env.ACCEPTANCE_HEAD_SHA);
     await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus@symphony-plus-plus']);
     const companion = JSON.parse(await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus-mcp@symphony-plus-plus', '--json']));
     const launchable = await installed.ok('pwsh.exe', ['-NoProfile', '-File',
