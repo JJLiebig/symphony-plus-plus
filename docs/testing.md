@@ -101,3 +101,21 @@ The cockpit fixture does not start the background cleanup reconciler, so its
 startup, scheduling and detached deletion obligations retain dedicated hosted
 checks. Historical ownership, preflight persistence failure, Cargo target safety
 and Windows partial removal remain separate qualifications.
+
+## Upstream Symphony and providers (B5)
+
+Upstream journeys launch the public Symphony CLI from candidate source with a
+disposable workflow and home. Controlled Linear HTTP and app-server subprocess
+peers exercise polling, workspace hooks, reconciliation, retries, workflow reload,
+dynamic tools and status accounting. Public status reads and captured protocol
+traffic establish outcomes without ExUnit or injected orchestrator state.
+Public tracker API processes cover batched refresh and HTTP comment/state writes
+that have no daemon HTTP entrypoint.
+
+These journeys qualify adapter-owned behavior. Existing delivery journeys own
+the controlled GitHub CLI boundary. Real Linear, GitHub, model-provider and SSH
+compatibility remain separate opt-in qualifications; passing synthetic peers
+does not establish live compatibility. Preserve distinct path/SSH/Windows safety,
+simultaneous ownership and historical recovery checks where ordinary journeys
+cannot reach the failure. All candidate execution occurs on hosted CI when the
+workstation execution prohibition applies.
