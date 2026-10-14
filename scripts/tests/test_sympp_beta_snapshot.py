@@ -210,7 +210,10 @@ class InstalledSnapshotTest(unittest.TestCase):
                                     break
                             except (OSError, urllib.error.URLError):
                                 pass
-                            self.assertIsNone(viewer.poll(), output_file.read_text())
+                            if viewer.poll() is not None:
+                                logs = "\n".join(f"{log.name}:\n{log.read_text(errors='replace')}"
+                                                 for log in (viewer_home / "logs").glob("*.log"))
+                                self.fail("Offline viewer exited: " + output_file.read_text() + "\n" + logs)
                             time.sleep(0.3)
                         else:
                             self.fail("Offline board did not start: " + output_file.read_text() + "\n" + (viewer_home / "logs/viewer.log").read_text())

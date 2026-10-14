@@ -123,13 +123,13 @@ jobs:
           (Get-ChildItem $bin -Recurse -Filter codex.exe | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
           npm install --global @anthropic-ai/claude-code@2.1.292
           if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
-      - name: Prove native registration and published runtime processes
-        run: node scripts/qualify-portable-skills.mjs
       - name: Prove real Skills and marketplace user journeys
         run: |
           npm exec -- e2e run tests/acceptance/installed-runtime.e2e.ts --target api
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/support/installed-report.ts tests/acceptance/installed-runtime.e2e.ts
+      - name: Prove native registration and published runtime processes
+        run: node scripts/qualify-portable-skills.mjs
       - name: Require committed generated mirror
         run: git diff --exit-code -- skills/symphony-plus-plus
       - name: Retain installed acceptance evidence including failures
