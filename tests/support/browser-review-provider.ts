@@ -1,7 +1,6 @@
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import type { BrowserCandidate } from './browser-candidate.js';
-import { Client } from './factory.js';
 
 // Qualify only the public discovery/command/parser contract, not live Review Suite.
 export async function installReviewProvider(candidate: Pick<BrowserCandidate, 'root' | 'factory'>, status: object = {
@@ -28,9 +27,5 @@ if sys.argv[1:5] != ['--status', '--json', '--cd', sys.argv[4]]:
     raise SystemExit(1)
 print(${JSON.stringify(JSON.stringify(status))})
 `);
-  // Hydrated projection takes its graph snapshot before refreshing review status.
-  // Finish that public refresh during provider setup; first-read freshness is not
-  // qualified by these journeys. No cache/ledger injection or timing sleep.
-  await new Client(await candidate.factory!.endpoint).inspect('/api/v1/sympp/operator/dashboard/hydrated');
   return receipt;
 }

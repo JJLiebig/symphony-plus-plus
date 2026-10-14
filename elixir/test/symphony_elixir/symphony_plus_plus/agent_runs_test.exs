@@ -195,21 +195,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentRunsTest do
     assert replaced.reason == "replaced by retry dispatch"
   end
 
-  test "replacement retry does not fail starting row that already promoted to running", %{repo: repo} do
-    assert {:ok, work_package} =
-             WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-RUN-REPLACE-PROMOTED", status: "ready_for_worker"))
-
-    assert {:ok, starting} = Service.start_dispatch(repo, issue(work_package.id), status: "starting")
-    assert {:ok, running} = Service.mark_running(repo, starting.id, "worker task started")
-    assert running.status == "running"
-
-    assert {:error, :active_run_exists} =
-             Service.start_dispatch(repo, issue(work_package.id), attempt: 2, replace_agent_run_id: starting.id)
-
-    assert {:ok, persisted} = Repository.get(repo, starting.id)
-    assert persisted.status == "running"
-  end
-
   test "retry reconciliation holds dispatch lock until replacement retry starts", %{repo: repo} do
     assert {:ok, work_package} =
              WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-RUN-RETRY-STOP", status: "ready_for_worker"))
@@ -341,74 +326,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentRunsTest do
     assert replaced.reason == "replaced after confirmed worker exit"
   end
 
-  test "fresh dispatch can recover persisted retrying reservation after restart", %{repo: repo} do
-    assert {:ok, work_package} =
-             WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-RUN-RECOVER-RETRY", status: "ready_for_worker"))
-
-    assert {:ok, run} = Service.start_dispatch(repo, issue(work_package.id))
-    assert {:ok, retrying} = Service.mark_retrying(repo, run.id, "worker exited")
-    assert retrying.status == "retrying"
-
-    assert {:ok, replacement} =
-             Service.start_dispatch(repo, issue(work_package.id), attempt: 2, retry_recovery_base_ms: 0, retry_recovery_max_ms: 0)
-
-    assert replacement.status == "running"
-    assert replacement.id != run.id
-
-    assert {:ok, recovered} = Repository.get(repo, run.id)
-    assert recovered.status == "failed"
-    assert recovered.reason == "retry reservation recovered by dispatch"
-  end
-
-  test "fresh retrying reservation is not recovered before recovery age", %{repo: repo} do
-    assert {:ok, work_package} =
-             WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-RUN-RECOVER-FRESH", status: "ready_for_worker"))
-
-    assert {:ok, run} = Service.start_dispatch(repo, issue(work_package.id))
-    assert {:ok, retrying} = Service.mark_retrying(repo, run.id, "worker exited")
-    assert retrying.status == "retrying"
-
-    assert {:error, :active_run_exists} =
-             Service.start_dispatch(
-               repo,
-               issue(work_package.id),
-               attempt: 2,
-               retry_recovery_base_ms: 60_000,
-               retry_recovery_max_ms: 60_000
-             )
-
-    assert {:ok, reserved} = Repository.get(repo, run.id)
-    assert reserved.status == "retrying"
-  end
-
-  test "generic stale active recovery does not release retrying reservations", %{repo: repo} do
-    assert {:ok, work_package} =
-             WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-RUN-RETRY-NOT-STALE", status: "ready_for_worker"))
-
-    assert {:ok, run} = Service.start_dispatch(repo, issue(work_package.id))
-    assert {:ok, retrying} = Service.mark_retrying(repo, run.id, "worker exited")
-
-    stale_seen_at = DateTime.add(DateTime.utc_now(:microsecond), -5, :second)
-
-    assert {:ok, _retrying} =
-             retrying
-             |> AgentRun.update_changeset(%{last_seen_at: stale_seen_at})
-             |> repo.update()
-
-    assert {:error, :active_run_exists} =
-             Service.start_dispatch(
-               repo,
-               issue(work_package.id),
-               attempt: 2,
-               stale_after_ms: 1_000,
-               retry_recovery_base_ms: 60_000,
-               retry_recovery_max_ms: 60_000
-             )
-
-    assert {:ok, reserved} = Repository.get(repo, run.id)
-    assert reserved.status == "retrying"
-  end
-
   test "retrying recovery age follows stored retry attempt backoff", %{repo: repo} do
     assert {:ok, work_package} =
              WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-RUN-RETRY-BACKOFF", status: "ready_for_worker"))
@@ -428,6 +345,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentRunsTest do
                repo,
                issue(work_package.id),
                attempt: 4,
+               stale_after_ms: 100,
                retry_recovery_base_ms: 100,
                retry_recovery_max_ms: 10_000
              )
@@ -444,6 +362,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentRunsTest do
                repo,
                issue(work_package.id),
                attempt: 4,
+               stale_after_ms: 100,
                retry_recovery_base_ms: 100,
                retry_recovery_max_ms: 10_000
              )

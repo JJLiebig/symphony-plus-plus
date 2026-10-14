@@ -103,6 +103,9 @@ test('operator sees dependency ordering, pending qualification and actual delive
   const receipt = await installReviewProvider(candidate);
   const prepared = await reviewClient.call('prepare_work_package_worktree', { work_package_id: reviewWp, target_repo_root: reviewRepo.checkout });
   expect(prepared.worktree.status).toBe('prepared');
+  // Finish the public review refresh after its worktree becomes observable.
+  // The hydrated projection currently snapshots the graph before that refresh.
+  await reviewClient.inspect('/api/v1/sympp/operator/dashboard/hydrated');
   await candidate.capture('provider-review-wait');
   await browser.reload();
   await expect(browser.locator(`[data-goal="${reviewing}"] ol span.font-semibold`)).toContainText('Review');

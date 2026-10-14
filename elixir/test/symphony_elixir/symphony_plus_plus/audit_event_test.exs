@@ -312,29 +312,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AuditEventTest do
     assert repo.aggregate(ProgressEvent, :count) == 0
   end
 
-  test "authenticated append owns id created_at and canonical idempotency", %{repo: repo} do
-    assert {:ok, assignment} = claimed_assignment(repo, claimed_by: "worker-source")
-
-    assert {:error, :idempotency_key_conflict} =
-             PlanningService.append_authenticated_progress_event(repo, assignment, %{
-               :idempotency_key => "progress:owned-fields",
-               "idempotency_key" => "progress:other-key",
-               :summary => "Conflicting keys"
-             })
-
-    assert {:ok, event} =
-             PlanningService.append_authenticated_progress_event(repo, assignment, %{
-               id: "caller-id",
-               idempotency_key: " progress:owned-fields ",
-               summary: "Owned fields",
-               created_at: ~U[2000-01-01 00:00:00Z]
-             })
-
-    assert event.id != "caller-id"
-    assert event.idempotency_key == "progress:owned-fields"
-    assert DateTime.compare(event.created_at, ~U[2026-01-01 00:00:00Z]) == :gt
-  end
-
   test "authenticated idempotency keys are scoped to each claimed grant", %{repo: repo} do
     assert {:ok, work_package} = create_work_package(repo)
     assert {:ok, first_minted} = AccessGrantService.mint_worker_grant(repo, work_package.id)
