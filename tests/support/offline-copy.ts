@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { appendFile, chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, delimiter, join, resolve } from 'node:path';
 import { test as base } from 'e2e';
 import { Factory } from './factory.js';
 
@@ -47,7 +47,7 @@ export class OfflineCopy {
     const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolveResult, reject) => {
       const child = spawn('python3', [resolve('scripts/sympp_beta_snapshot.py'), ...args], {
         cwd: resolve('elixir'),
-        env: { PATH: process.env.PATH, HOME: this.home, USERPROFILE: this.home, TMPDIR: this.root,
+        env: { PATH: `${this.bin}${delimiter}${process.env.PATH}`, HOME: this.home, USERPROFILE: this.home, TMPDIR: this.root,
           SYMPP_OFFLINE_SANDBOX: '1', MIX_ENV: 'dev', MIX_HOME: process.env.MIX_HOME,
           MIX_ARCHIVES: process.env.MIX_ARCHIVES, LANG: 'C.UTF-8', ELIXIR_ERL_OPTIONS: '+S 2:2 +fnu' },
         timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'],

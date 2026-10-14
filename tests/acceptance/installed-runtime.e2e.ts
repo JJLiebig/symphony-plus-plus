@@ -11,6 +11,7 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(process.platform).toBe('win32');
     expect(await installed.skills(['add', resolve('.'), '--list'])).toContain('symphony-plus-plus');
     const bundle = await installed.install('codex');
+    installed.env.SYMPP_BACKEND_PORT = '21345';
     const claudeFile = join(installed.project, '.mcp.json');
     await writeFile(claudeFile, JSON.stringify({ other: true, mcpServers: { notes: { command: 'notes.exe' } } }));
     expect(existsSync(installed.env.CODEX_HOME!)).toBe(false);
@@ -33,6 +34,7 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(registration.transport.env.SYMPP_DATABASE).toBe(installed.env.SYMPP_DATABASE);
     expect(registration.transport.env.SYMPP_HOME).toBe(installed.env.SYMPP_HOME);
     expect(registration.transport.env.SYMPP_RUNTIME_FILE).toBe(installed.env.SYMPP_RUNTIME_FILE);
+    expect(registration.transport.env.SYMPP_BACKEND_PORT).toBe('21345');
 
     // A saved install must still run setup after the original is refreshed.
     const saved = join(installed.root, 'saved skill');
@@ -96,7 +98,7 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
 
   test('native marketplace install and upgrade preserve the alternative route and refuse mixed Skills ownership', { timeout: 600_000 }, async ({ installed }) => {
     await mkdir(installed.env.CODEX_HOME!, { recursive: true });
-    await installed.ok('codex.exe', ['plugin', 'marketplace', 'add', 'https://github.com/JJLiebig/symphony-plus-plus', '--ref', process.env.ACCEPTANCE_HEAD_SHA!]);
+    await installed.ok('codex.exe', ['plugin', 'marketplace', 'add', 'https://github.com/JJLiebig/symphony-plus-plus', '--ref', process.env.ACCEPTANCE_CHECKOUT_SHA!]);
     await installed.ok('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
     await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus@symphony-plus-plus']);
     const companion = JSON.parse(await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus-mcp@symphony-plus-plus', '--json']));
