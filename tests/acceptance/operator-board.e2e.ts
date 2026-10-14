@@ -68,6 +68,9 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await expect(browser.locator(`[data-goal="${request}"] ol span.font-semibold`)).toContainText('Checks');
   expect((await row(client, request, first)).delivery_outcome).toBeNull();
   expect((await client.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
+  await worker.call('release_current_assignment', { reason: 'End the synthetic worker session before architect acceptance.' });
+  await client.call('force_release_work_package_claim', { work_package_id: first, reason: 'Recycle the released synthetic worker reservation.' });
+  expect((await row(client, request, first)).work_package.runtime_state['active?']).toBe(false);
   provider!.set(401, pr(401, head('a')));
   await sync(client, first, 401, head('a'));
   await candidate.capture('qualified');

@@ -31,8 +31,6 @@ test('compiled inspector binds and pins actual request detail without stealing f
     await host.start(new URL(await factory!.endpoint).origin);
     await expect.poll(() => host.screen).toContain('Bound inspector request');
     await expect.poll(() => host.screen).toContain('Inspector findings');
-    expect(host.screen).toContain('Inspector API');
-    expect(host.screen).toContain('Inspector UI');
     expect(host.screen).toContain('Working now: Unknown');
     expect(host.screen).toContain('Runtime observation unknown');
     expect(host.screen).toContain('Worker pane missing');
@@ -42,6 +40,17 @@ test('compiled inspector binds and pins actual request detail without stealing f
     expect((await row(client, request, wp)).work_package.blocker_state['active?']).toBe(false);
     await app.open('/sympp/board');
     await expect(browser.locator(`[data-goal="${request}"]`)).toContainText('Inspector findings');
+
+    // The graph folds to the real terminal viewport. Inspect each branch by
+    // the native selection keys instead of assuming every card is on screen.
+    host.process!.stdin.write('j');
+    await expect.poll(() => host.screen).toContain('Inspector API');
+    host.process!.stdin.write('j');
+    await expect.poll(() => host.screen).toContain('Inspector UI');
+    host.process!.stdin.write('k');
+    await expect.poll(() => host.screen).toContain('Inspector API');
+    host.process!.stdin.write('k');
+    await expect.poll(() => host.screen).toContain('Inspector findings');
 
     // Backend writes must reach the compiled inspector through its real event
     // stream. Qualified dependent work is not mergeable before delivery.
@@ -62,6 +71,7 @@ test('compiled inspector binds and pins actual request detail without stealing f
     });
     await sync(client, left, 403, head('b'));
     expect((await row(client, request, left)).merge_eligibility.reason_codes).toContain('dependency_not_delivered');
+    host.process!.stdin.write('j');
     await expect.poll(() => host.screen).toContain('Qualified');
     provider!.set(402, pr(402, head('a'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
     await client.call('sync_pr', { work_package_id: wp });
