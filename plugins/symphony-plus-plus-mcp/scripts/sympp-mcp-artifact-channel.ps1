@@ -2,10 +2,14 @@ $ErrorActionPreference = "Stop"
 
 function Get-SymppRuntimeChannel([string]$PluginRoot) {
   if (Read-SymppPortableInstall $PluginRoot) {
-    if ($env:SYMPP_RUNTIME_CHANNEL -notin @("stable", "beta")) {
-      throw "Run Skills setup again to select this installation's runtime channel."
+    $channel = $env:SYMPP_RUNTIME_CHANNEL
+    if ([string]::IsNullOrWhiteSpace($channel)) {
+      # Standalone offline viewing uses the same owning lock as host setup.
+      $channel = & node -e "process.stdout.write(require(process.argv[1]).runtimeChannel())" (Join-Path $PluginRoot "scripts/setup-sympp.js")
+      if ($LASTEXITCODE -ne 0) { throw "Run Skills setup again to select this installation's runtime channel." }
     }
-    return $env:SYMPP_RUNTIME_CHANNEL
+    if ($channel -notin @("stable", "beta")) { throw "Select the stable or beta runtime channel." }
+    return $channel
   }
   $sourceRoot = Resolve-RepoRootFromMarketplaceCache $PluginRoot
   if (-not $sourceRoot) { return "stable" }

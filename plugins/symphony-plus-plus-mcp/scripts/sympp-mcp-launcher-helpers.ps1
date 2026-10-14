@@ -100,7 +100,10 @@ function Get-SymppPluginGenerationKey([string]$PluginRoot, [string]$SourceRoot) 
   if ($revision -notmatch "^[0-9a-f]{40}$" -or $contractFingerprint -notmatch "^[0-9a-fA-F]{64}$") {
     return $null
   }
-  return Get-SymppStringSha256 "$([System.IO.Path]::GetFullPath($PluginRoot).ToLowerInvariant())`n$($revision.ToLowerInvariant())`n$($contractFingerprint.ToLowerInvariant())"
+  $install = Get-Content -LiteralPath (Join-Path $SourceRoot ".codex-marketplace-install.json") -Raw | ConvertFrom-Json
+  $ref = [string](Get-JsonPropertyValue $install @("ref_name"))
+  $suffix = if ($ref -and $ref -ne "main") { "`n$ref" } else { "" }
+  return Get-SymppStringSha256 "$([System.IO.Path]::GetFullPath($PluginRoot).ToLowerInvariant())`n$($revision.ToLowerInvariant())`n$($contractFingerprint.ToLowerInvariant())$suffix"
 }
 
 function Get-SymppInstalledIdentityCachePath([string]$PluginRoot) {

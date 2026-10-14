@@ -90,8 +90,7 @@ keeps registration with that project. The absolute bridge path needs no source
 checkout or working directory. If a later upgrade changes the package version,
 register the new installed path before reopening Claude.
 
-The beta pointer is
-the recorded branch's floating channel (`stable` for main, `beta` for beta).
+The runtime follows the recorded branch's floating channel (`stable` for main, `beta` for beta).
 Branch pushes publish automatically; cold startup resolves the latest successfully
 published build, while healthy clients keep their current backend. Read actual
 health provenance before assuming a new source feature has reached the runtime.
@@ -100,7 +99,7 @@ health provenance before assuming a new source feature has reached the runtime.
 
 The first client starts the packaged runtime and dashboard. Other clients
 with matching settings attach; the backend stops after the last client closes.
-A clean next start reuses its verified artifact. Read the actual endpoints:
+A clean next start resolves its branch manifest and reuses unchanged verified archive bytes. Read the actual endpoints:
 
 ```powershell
 $symppRuntime = Get-Content (Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json') -Raw | ConvertFrom-Json

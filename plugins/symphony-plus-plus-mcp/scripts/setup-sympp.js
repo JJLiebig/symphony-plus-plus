@@ -130,4 +130,4 @@ function main(args) {
 if (require.main === module) {
   try { main(process.argv.slice(2)); } catch (error) { emit("error", error.message); emit("help", usage); process.exitCode = 1; }
 }
-module.exports = { codexConfig, claudeConfig, main };
+module.exports = { codexConfig, claudeConfig, runtimeChannel, main };

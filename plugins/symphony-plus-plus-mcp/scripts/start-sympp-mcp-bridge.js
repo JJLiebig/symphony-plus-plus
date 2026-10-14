@@ -294,7 +294,8 @@ function generationKey(pluginRoot, sourceRoot) {
     const revision = String(install && (install.revision || install.source_revision || install.sourceRevision) || "").toLowerCase();
     const fingerprint = String(contract && contract.mcp_contract_fingerprint || "").toLowerCase();
     if (!/^[0-9a-f]{40}$/.test(revision) || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
-    return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${revision}\n${fingerprint}`);
+    const ref = String(install.ref_name || "main");
+    return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${revision}\n${fingerprint}${ref === "main" ? "" : `\n${ref}`}`);
   } catch (_) {
     return null;
   }

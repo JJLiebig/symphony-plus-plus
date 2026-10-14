@@ -88,7 +88,7 @@ try {
   $skillRoot = Split-Path -Parent $PSScriptRoot
   $install = Read-SymppPortableInstall $skillRoot
   if (-not $install) { throw "Use sympp-offline.ps1 from an installed Symphony++ skill bundle." }
-  $prepared = Resolve-SymppPreparedArtifactRuntime $skillRoot $install.revision $install.contract_fingerprint -ValidateOnly -PrepareArtifact
+  $prepared = Resolve-SymppPreparedArtifactRuntime $skillRoot $null $install.contract_fingerprint -ValidateOnly -PrepareArtifact
   if ($prepared.status -ne "artifact_selected" -or -not $prepared.runtime) { throw "The installed runtime artifact is unavailable. Re-add the skill and retry." }
   $runtime = $prepared.runtime
   $release = Join-Path $runtime.root "bin/symphony_elixir.bat"
