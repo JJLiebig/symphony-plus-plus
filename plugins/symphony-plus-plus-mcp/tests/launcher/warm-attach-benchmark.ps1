@@ -54,6 +54,52 @@ try {
     Get-ChildItem -LiteralPath $scriptsRoot -Filter "*.ps1" -File | Sort-Object Name | Select-Object -ExpandProperty FullName
   )
   $definitions = Get-ScriptFunctionDefinitions $paths
+  # Hold the real lease reader in JSON conversion while another client detaches.
+  $leaseReadReady = [System.Threading.ManualResetEventSlim]::new($false)
+  $leaseReadRelease = [System.Threading.ManualResetEventSlim]::new($false)
+  $reader = $null
+  $readerRunspace = $null
+  $readerResult = $null
+  $probeLease = $null
+  try {
+    $readerState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    foreach ($entry in $definitions.GetEnumerator()) {
+      $readerState.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new($entry.Key, $entry.Value))
+    }
+    $readerState.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new("ConvertFrom-Json", @'
+param([Parameter(ValueFromPipeline = $true)]$InputObject)
+process {
+  $LeaseReadReady.Set()
+  $LeaseReadRelease.Wait()
+  Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject $InputObject
+}
+'@))
+    $readerState.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new("LeaseReadReady", $leaseReadReady, "lease reader barrier"))
+    $readerState.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new("LeaseReadRelease", $leaseReadRelease, "lease reader barrier"))
+    $readerRunspace = [runspacefactory]::CreateRunspace($readerState)
+    $readerRunspace.Open()
+    $reader = [powershell]::Create()
+    $reader.Runspace = $readerRunspace
+    $probePlan = [pscustomobject]@{ managed = $false; status = "external_loopback"; url = $url; source_revision = "b" * 40 }
+    $probeLease = New-BridgeLease $runtimeFile $probePlan $probePlan $runtimeKey
+    [void]$reader.AddScript('param($RuntimeFile) Get-ActiveBridgeLeases $RuntimeFile | Out-Null').AddArgument($runtimeFile)
+    $readerResult = $reader.BeginInvoke()
+    if (-not $leaseReadReady.Wait(10000)) { throw "Lease contention fixture did not reach the actual reader." }
+    $Error.Clear()
+    Remove-BridgeLease $probeLease
+    if ([IO.File]::Exists($probeLease)) {
+      $removalError = if ($Error.Count) { "hresult=$($Error[0].Exception.HResult) $($Error[0].Exception.Message)" } else { "no removal error captured" }
+      throw "Concurrent lease read prevented detach removal: $removalError"
+    }
+  } finally {
+    $leaseReadRelease.Set()
+    if ($readerResult) { [void]$reader.EndInvoke($readerResult) }
+    if ($reader) { $reader.Dispose() }
+    if ($readerRunspace) { $readerRunspace.Dispose() }
+    $leaseReadReady.Dispose()
+    $leaseReadRelease.Dispose()
+    if ($probeLease) { Remove-Item -LiteralPath $probeLease -Force -ErrorAction SilentlyContinue }
+  }
   $definitions["Write-Diagnostic"] = 'param([string]$Message)'
   $definitions["Get-SymppBackendHealthWithRetry"] = @'
 param([string]$Url, [int]$Attempts = 1, [int]$DelayMs = 1)
