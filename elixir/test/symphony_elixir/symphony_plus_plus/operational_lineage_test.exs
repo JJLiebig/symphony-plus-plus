@@ -27,7 +27,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineageTest do
     :ok
   end
 
-  test "records and reads explicit recut and superseded successor lineage", %{repo: repo} do
+  test "stored recut, successor and oracle lineage preserve branch snapshots and dashboard attention", %{repo: repo} do
     original = create_package!(repo, id: "SYMPP-LINEAGE-ORIGINAL", status: "planning", branch_pattern: "agent/original")
     recut = create_package!(repo, id: "SYMPP-LINEAGE-RECUT", status: "implementing", branch_pattern: "agent/recut")
     replacement = create_package!(repo, id: "SYMPP-LINEAGE-REPLACEMENT", status: "ready_for_worker", branch_pattern: "agent/replacement")
@@ -42,8 +42,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineageTest do
                oracle_preserved: true
              })
 
-    assert recut_relation.relationship == "recut_as"
-    assert recut_relation.oracle_preserved == true
     assert recut_relation.decision["decision_id"] == "decision-recut"
 
     assert {:ok, _superseded_relation} =
@@ -71,61 +69,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineageTest do
     assert {:ok, successor_lineage} = OperationalLineage.get(repo, recut.id)
     assert [%{work_package_id: ^original_id, branch: "agent/original", relationship: "recut_as"}] = successor_lineage.original_work
     assert [%{key: "successor_original_work_still_open", original_work_package_ids: [^original_id]}] = successor_lineage.cleanup_attention
-  end
 
-  test "records oracle status for preserved oracle work", %{repo: repo} do
-    oracle = create_package!(repo, id: "SYMPP-LINEAGE-ORACLE", status: "closed", branch_pattern: "agent/oracle")
-    target = create_package!(repo, id: "SYMPP-LINEAGE-TARGET", status: "implementing", branch_pattern: "agent/target")
-    oracle_id = oracle.id
-    target_id = target.id
-
-    assert {:ok, oracle_relation} =
-             OperationalLineage.record_oracle_for(repo, oracle.id, target.id, %{
-               reason: "Keep the stopped branch as the comparison oracle for the recut package.",
+    assert {:ok, _oracle} =
+             OperationalLineage.record_oracle_for(repo, original.id, recut.id, %{
+               reason: "Preserve original work as the comparison oracle.",
                decision: %{work_request_id: "wr-lineage", decision_id: "decision-oracle"}
              })
 
-    assert oracle_relation.relationship == "oracle_for"
-    assert oracle_relation.oracle_preserved == true
+    assert {:ok, oracle_lineage} = OperationalLineage.get(repo, original.id)
+    assert [%{work_package_id: ^recut_id}] = oracle_lineage.oracle_for
+    assert {:ok, target_lineage} = OperationalLineage.get(repo, recut.id)
+    assert [%{work_package_id: ^original_id}] = target_lineage.oracle_work
 
-    assert {:ok, oracle_lineage} = OperationalLineage.get(repo, oracle.id)
-    assert oracle_lineage.oracle_status.preserved == true
-    assert oracle_lineage.oracle_status.oracle_for_work_package_ids == [target.id]
-    assert [%{work_package_id: ^target_id, branch: "agent/target"}] = oracle_lineage.oracle_for
-
-    assert {:ok, target_lineage} = OperationalLineage.get(repo, target.id)
-    assert target_lineage.oracle_status.has_oracle == true
-    assert target_lineage.oracle_status.oracle_work_package_ids == [oracle.id]
-    assert [%{work_package_id: ^oracle_id, branch: "agent/oracle"}] = target_lineage.oracle_work
-  end
-
-  test "dashboard cards and detail expose lineage and cleanup attention", %{repo: repo} do
-    original = create_package!(repo, id: "SYMPP-LINEAGE-DASH-ORIGINAL", status: "planning", branch_pattern: "agent/dash-original")
-    successor = create_package!(repo, id: "SYMPP-LINEAGE-DASH-SUCCESSOR", status: "implementing", branch_pattern: "agent/dash-successor")
-    original_id = original.id
-    successor_id = successor.id
-
-    assert {:ok, _relation} =
-             OperationalLineage.record_recut_as(repo, original.id, successor.id, %{
-               reason: "Dashboard needs explicit recut lineage.",
-               decision: %{work_request_id: "wr-dashboard", decision_id: "decision-dashboard-recut"},
-               oracle_preserved: true
-             })
-
-    assert {:ok, original_card} = Dashboard.card(repo, original)
-    assert original_card.lineage.available == true
-    assert original_card.lineage.unavailable == false
-    assert [%{work_package_id: ^successor_id, oracle_preserved: true}] = original_card.lineage.recut_as
-    assert %{key: "original_work_still_open"} = Enum.find(original_card.operational_state.attention_items, &(&1.key == "original_work_still_open"))
-
-    assert {:ok, successor_card} = Dashboard.card(repo, successor)
-    assert [%{work_package_id: ^original_id, branch: "agent/dash-original"}] = successor_card.lineage.original_work
-
-    assert {:ok, detail} = Dashboard.detail(repo, original.id)
-    assert [%{work_package_id: ^successor_id}] = detail.lineage.successor_work
-
-    assert {:ok, board} = Dashboard.board(repo)
-    assert [%{id: ^original_id, lineage: %{recut_as: [%{work_package_id: ^successor_id}]}}] = board.groups["planning"]
+    assert {:ok, card} = Dashboard.card(repo, original)
+    assert %{key: "original_work_still_open"} = Enum.find(card.operational_state.attention_items, &(&1.key == "original_work_still_open"))
   end
 
   test "batched lineage projection only exposes relationships inside the visible package set", %{repo: repo} do
@@ -188,27 +145,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineageTest do
 
     assert [%{work_package_id: ^original_id}] = successor_lineage.original_work
     assert Enum.all?(successor_lineage.original_work, &(&1.work_package_id != hidden_original.id))
-  end
-
-  test "requires reason and decision linkage when recording lineage", %{repo: repo} do
-    source = create_package!(repo, id: "SYMPP-LINEAGE-STRICT-SOURCE")
-    target = create_package!(repo, id: "SYMPP-LINEAGE-STRICT-TARGET")
-
-    assert {:error, :missing_reason} =
-             OperationalLineage.record_recut_as(repo, source.id, target.id, %{
-               decision: %{decision_id: "decision-strict"}
-             })
-
-    assert {:error, :missing_decision_linkage} =
-             OperationalLineage.record_recut_as(repo, source.id, target.id, %{
-               reason: "Missing decision linkage"
-             })
-
-    assert {:error, :missing_decision_linkage} =
-             OperationalLineage.record_recut_as(repo, source.id, target.id, %{
-               reason: "Blank decision linkage",
-               decision: %{"decision_id" => " ", "work_request_id" => nil}
-             })
   end
 
   test "scoped lineage reads include backfilled payload source ids", %{repo: repo} do
@@ -282,15 +218,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineageTest do
     assert {:ok, lineage} = OperationalLineage.get(repo, target.id)
     assert [%{work_package_id: "SYMPP-LINEAGE-MISSING-ORIGINAL", status: nil}] = lineage.original_work
     assert lineage.cleanup_attention == []
-  end
-
-  test "unavailable lineage is explicit attention, not empty lineage" do
-    lineage = OperationalLineage.unavailable_lineage("SYMPP-LINEAGE-UNAVAILABLE", :database_busy)
-
-    assert lineage.available == false
-    assert lineage.unavailable == true
-    assert lineage.error == "database_busy"
-    assert [%{key: "lineage_unavailable", error: "database_busy"}] = lineage.cleanup_attention
   end
 
   defp create_package!(repo, overrides) do

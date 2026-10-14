@@ -12,6 +12,7 @@ type Reply = { stdout: string; exitCode: number };
 // invocation remain unchanged. This does not qualify gh or GitHub compatibility.
 export class Provider {
   readonly replies = new Map<number, Reply>();
+  readonly apiReplies = new Map<string, Reply>();
   readonly calls: { argv: string[]; reply: Reply }[] = [];
   readonly server = createServer(async (request, response) => {
     let body = '';
@@ -20,8 +21,11 @@ export class Provider {
     let reply: Reply = { stdout: 'Unexpected synthetic provider command', exitCode: 1 };
     if (JSON.stringify(argv) === JSON.stringify(['auth', 'status', '--hostname', 'github.com'])) {
       reply = { stdout: 'Synthetic protocol available', exitCode: 0 };
+    } else if (argv.length === 6 && JSON.stringify(argv.slice(0, 5)) ===
+      JSON.stringify(['api', '--hostname', 'github.com', '--method', 'GET'])) {
+      reply = this.apiReplies.get(argv[5]) ?? { stdout: 'HTTP 404 synthetic API not found', exitCode: 1 };
     } else if (argv.length === 7 && argv[0] === 'pr' && argv[1] === 'view' &&
-      /^\d+$/.test(argv[2]) && argv[3] === '--repo' && argv[4] === 'example/service' && argv[5] === '--json') {
+      /^\d+$/.test(argv[2]) && argv[3] === '--repo' && ['example/service', 'example/client'].includes(argv[4]) && argv[5] === '--json') {
       reply = this.replies.get(Number(argv[2])) ?? { stdout: 'HTTP 404 synthetic PR not found', exitCode: 1 };
     }
     this.calls.push({ argv, reply });

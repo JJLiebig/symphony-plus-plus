@@ -1,6 +1,16 @@
 import { expect } from 'e2e';
 import { contract, test } from '../support/factory.js';
 
+test('skipping every planned package leaves the goal unfinished in persisted and visible state', async ({ factory }) => {
+  const architect = await factory.client();
+  const request = await architect.request('Skipped scope');
+  const ids = (await architect.call('slice_work_request', { work_packages: [contract('Retired first scope'), contract('Retired second scope')] })).work_package_ids;
+  for (const work_package_id of ids) await architect.call('skip_work_package', { work_package_id, current_status: 'planned' });
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
+  const hydrated = await architect.inspect('/api/v1/sympp/operator/dashboard/hydrated');
+  expect(hydrated.work_request_details.find((detail: any) => detail.work_request.id === request).work_request.completed_at).toBeNull();
+});
+
 test('a clarified request becomes a revised plan and ordinary worker assignment', async ({ factory }) => {
   const architect = await factory.client();
   const id = await architect.request('Clarified planning', 'human_info_needed');
@@ -53,7 +63,16 @@ test('a clarified request becomes a revised plan and ordinary worker assignment'
   expect(reread.text).toContain('[x]');
   expect(reread.text).toContain('Deferred detail');
 
+  // Dispatch must preserve evidence beyond the virtual document's 100-row cap.
+  for (let index = 1; index <= 101; index++) await architect.call('append_finding', {
+    work_package_id: wp, title: `Prior finding ${index}`, body: `Prior evidence ${index}`,
+    idempotency_key: `prior-${index}`,
+  });
   const dispatched = await architect.call('dispatch_work_package', { work_package_id: wp });
+  const prior = dispatched.worker_bootstrap.assignment.prior_findings.findings;
+  expect(prior).toHaveLength(101);
+  expect(prior[0].body).toBe('Prior evidence 1');
+  expect(prior.at(-1).body).toBe('Prior evidence 101');
   expect(dispatched.work_package.id).toBe(wp);
   expect(dispatched.work_package.dispatched_at).toBeTruthy();
   const bootstrap = dispatched.worker_bootstrap;

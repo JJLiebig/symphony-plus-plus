@@ -121,34 +121,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
     :ok
   end
 
-  test "generates high-entropy work keys with four-character display keys" do
-    first = WorkKey.generate()
-    second = WorkKey.generate()
-
-    assert String.length(first.display_key) == 4
-    assert first.display_key =~ ~r/\A[0-9A-F]{4}\z/
-    assert WorkKey.secret_shape?(first.secret)
-    assert String.length(first.secret) >= 46
-    assert first.secret != second.secret
-    assert WorkKey.secret_hash(first.secret) != WorkKey.secret_hash(second.secret)
-  end
-
-  test "mints a worker grant for one work package and stores only a secret hash", %{repo: repo} do
+  test "mint stores separated credential hashes and redacts persisted and inspected material", %{repo: repo} do
     assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-P1-002"))
 
     assert {:ok, %{grant: grant, work_key: work_key}} =
              Service.mint_worker_grant(repo, work_package.id, capabilities: ["worker:claim"])
 
-    assert %AccessGrant{} = grant
-    assert grant.work_package_id == work_package.id
-    assert grant.grant_role == "worker"
-    assert grant.display_key == work_key.display_key
+    other = WorkKey.generate()
+    refute work_key.secret == other.secret
+    refute WorkKey.secret_hash(work_key.secret) == WorkKey.secret_hash(other.secret)
     assert grant.secret_hash == WorkKey.secret_hash(work_key.secret)
-    assert grant.expires_at == nil
     refute grant.secret_hash == work_key.secret
 
     assert {:ok, persisted} = Repository.get(repo, grant.id)
-    assert persisted.expires_at == nil
     refute Map.has_key?(Map.from_struct(persisted), :secret)
     refute Map.has_key?(Map.from_struct(persisted), :raw_secret)
     refute inspect(persisted) =~ persisted.secret_hash

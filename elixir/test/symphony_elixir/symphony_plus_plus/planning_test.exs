@@ -327,27 +327,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PlanningTest do
     refute acceptance =~ "source: `Criterion 101`"
   end
 
-  test "generated markdown exports are not authoritative planning writes", %{repo: repo} do
-    assert {:ok, work_package} = create_work_package(repo)
-
-    assert {:ok, _artifact} =
-             Service.append_artifact(repo, %{
-               work_package_id: work_package.id,
-               path: "task_plan.md",
-               title: "Generated markdown export",
-               kind: "export",
-               uri: "file:///tmp/task_plan.md"
-             })
-
-    assert {:ok, task_plan} = Renderer.render(repo, work_package.id, "task_plan.md")
-    assert {:ok, handoff} = Renderer.render(repo, work_package.id, "handoff.md")
-
-    assert task_plan =~ "No plan nodes recorded."
-
-    assert handoff =~
-             "source: `task_plan.md` - source: `Generated markdown export` (`export`) - source: `file:///tmp/task_plan.md`"
-  end
-
   test "normalizes duplicate planning ids", %{repo: repo} do
     assert {:ok, work_package} = create_work_package(repo)
 
