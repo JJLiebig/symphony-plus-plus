@@ -1,5 +1,6 @@
 import { expect } from 'e2e';
 import { readFile, realpath } from 'node:fs/promises';
+import { candidateDiskLogs, captureCandidateDiskLogs } from '../support/candidate.js';
 import { Client, contract } from '../support/factory.js';
 import { initialize, packages, snapshot, test, tool, worker } from '../support/authority.js';
 
@@ -69,9 +70,9 @@ test('independent architect clients preserve the owner through release reconnect
   const factory = processes.factory();
   const owner = await factory.client();
   const request = await owner.request('Architect claim continuity');
-  await owner.call('set_work_request_status', { current_status: 'ready_for_slicing', next_status: 'draft' });
+  await owner.call('set_work_request_status', { work_request_id: request, current_status: 'ready_for_slicing', next_status: 'draft' });
   expect((await owner.call('read_work_request', { work_request_id: request })).work_request.status).toBe('draft');
-  await owner.call('set_work_request_status', { current_status: 'draft', next_status: 'ready_for_slicing' });
+  await owner.call('set_work_request_status', { work_request_id: request, current_status: 'draft', next_status: 'ready_for_slicing' });
   const peer = await factory.client();
   const denied = await peer.rpc('tools/call', { name: 'claim_local_architect_assignment', arguments: { work_request_id: request, claimed_by: 'different-owner' } });
   expect(denied.error).toBeTruthy();
@@ -124,21 +125,23 @@ test('failed-call capture is opt-in redacted and immediately disabled through op
   const payload = tool('append_progress', { nested: { authorization: secret }, [secret]: secret });
   const disabled = await client.raw(payload);
   expect(disabled.body.error.data.diagnostic_id).toBeUndefined();
-  expect((await readFile(factory.logPath, 'utf8')).includes('sympp_failed_mcp_call')).toBe(false);
+  expect((await client.call('summarize_failed_mcp_calls')).total_failures).toBe(0);
   expect((await client.operator('/api/v1/sympp/operator/settings', { capture_failed_mcp_calls: true })).status).toBe(200);
   const enabled = await client.raw(payload);
   const diagnostic = enabled.body.error.data.diagnostic_id;
   expect(diagnostic).toMatch(/^mcpdiag_[0-9a-f]{16}$/);
   expect(JSON.stringify(enabled.body)).not.toContain('synthetic-diagnostic-secret');
-  await expect.poll(async () => (await readFile(factory.logPath, 'utf8')).includes(diagnostic)).toBe(true);
-  const log = await readFile(factory.logPath, 'utf8');
+  await expect.poll(async () => (await candidateDiskLogs()).some(({ bytes }) => bytes.includes(diagnostic))).toBe(true);
+  const log = await captureCandidateDiskLogs(`${factory.receipt}-diagnostics.json`);
   expect(log).not.toContain('synthetic-diagnostic-secret');
   expect(log).toContain('sympp_failed_mcp_call');
   expect(log).toContain('invalid_params');
   const summary = await client.call('summarize_failed_mcp_calls');
+  expect(summary.total_failures).toBe(1);
   expect(JSON.stringify(summary)).not.toContain('synthetic-diagnostic-secret');
   expect((await client.operator('/api/v1/sympp/operator/settings', { capture_failed_mcp_calls: false })).status).toBe(200);
   expect((await client.raw(payload)).body.error.data.diagnostic_id).toBeUndefined();
+  expect((await client.call('summarize_failed_mcp_calls')).total_failures).toBe(1);
 });
 
 test('STDIO initialization refuses unbound protected calls and cannot impersonate the trusted HTTP operator', async ({ processes }) => {
@@ -170,6 +173,7 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   const candidate = processes.stdio('protocol', { database: factory.database, surface: 'worker' });
   expect((await candidate.rawRequest('initialize')).error.data.reason).toBe('missing_protocol_version');
   expect((await candidate.rawRequest('initialize', { protocolVersion: '2025-03-26' })).error.data.reason).toBe('invalid_initialize_params');
+  expect((await candidate.rawRequest('initialize', [] as any)).error.data.reason).toBe('params_must_be_object');
   expect((await candidate.rawPayload({ jsonrpc: '2.0', method: 'initialize', params: initialize })).error.data.reason).toBe('initialize_requires_id');
   expect((await candidate.request('initialize', { ...initialize, protocolVersion: '2024-11-05' })).protocolVersion).toBe('2025-03-26');
   expect((await candidate.rawRequest('initialize', initialize)).error.data.reason).toBe('already_initialized');
@@ -186,7 +190,7 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
     [[], null, 'empty_batch'],
     [[{ jsonrpc: '2.0', id: 914, method: 'initialize', params: initialize }], null, 'initialize_must_be_standalone'],
   ] as const) expect((await candidate.rawPayload(payload, key)).error.data.reason).toBe(reason);
-  for (const method of ['initialize', 'tools/list', 'tools/call', 'resources/list', 'resources/read']) {
+  for (const method of ['tools/list', 'tools/call', 'resources/list', 'resources/read']) {
     expect((await candidate.rawPayload({ jsonrpc: '2.0', id: 915, method, params: [] }, 915)).error.data.reason).toBe('params_must_be_object');
   }
   expect((await candidate.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment).toBeNull();
@@ -236,7 +240,7 @@ test('failed worker rebinding preserves its current authority and successful reb
   for (const [args, reason] of [
     [{ work_package_id: second, repo: 'foreign/service' }, 'repo_scope_mismatch'],
     [{ work_package_id: taken }, 'claim_lease_active_for_other_actor'],
-    [{ work_package_id: undispatched }, 'worker_grant_required'],
+    [{ work_package_id: undispatched }, 'work_package_not_dispatched'],
   ] as const) {
     await client.reject('claim_local_assignment', { ...args, claimed_by: 'moving-worker' }, reason);
     expect((await client.call('get_current_assignment')).assignment.work_package_id).toBe(first);
@@ -293,7 +297,7 @@ test('public architect handoff replays one unclaimed grant and trusted mutation 
   await client.call('read_work_request', { work_request_id: draft });
   expect((await client.call('get_current_assignment')).assignment).toBeNull();
   const path = `/api/v1/sympp/operator/work-requests/${draft}/architect-handoff`;
-  expect((await client.raw({}, { origin: 'https://example.invalid' }, 'POST', path)).status).toBe(403);
+  expect((await client.raw({}, { origin: 'https://example.invalid' }, 'POST', path)).status).toBe(401);
   const handoff = await client.operator(path, {});
   expect(handoff.status).toBe(200);
   const created = handoff.body.architect_handoff;

@@ -39,7 +39,7 @@ export async function snapshot(factory: Factory) {
     receipt = { command: 'python3', args, ...await promisify(execFile)('python3', args, {
       cwd: resolve('elixir'), timeout: 60_000,
       env: { PATH: process.env.PATH, HOME: factory.home, USERPROFILE: factory.home, TMPDIR: factory.root,
-        MIX_ENV: 'dev', MIX_HOME: process.env.MIX_HOME, MIX_ARCHIVES: process.env.MIX_ARCHIVES, LANG: 'C.UTF-8', ELIXIR_ERL_OPTIONS: '+S 2:2 +fnu' },
+        SYMPP_OFFLINE_SANDBOX: '1', MIX_ENV: 'dev', MIX_HOME: process.env.MIX_HOME, MIX_ARCHIVES: process.env.MIX_ARCHIVES, LANG: 'C.UTF-8', ELIXIR_ERL_OPTIONS: '+S 2:2 +fnu' },
     }), exitCode: 0 };
   } catch (error: any) {
     receipt = { command: 'python3', args, stdout: error.stdout, stderr: error.stderr, exitCode: error.code, error: String(error) };

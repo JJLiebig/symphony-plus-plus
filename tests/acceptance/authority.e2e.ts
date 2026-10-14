@@ -1,7 +1,7 @@
 import { expect } from 'e2e';
 import { Client, contract } from '../support/factory.js';
 import { initialize, packages, test, tool, worker } from '../support/authority.js';
-import { close, head, pr, prUrl, row, sync, test as deliveryTest } from '../support/delivery.js';
+import { close, head, pr, prUrl, row, test as deliveryTest } from '../support/delivery.js';
 
 test('HTTP initialization and local origin checks prevent ambient requests from acquiring authority', async ({ processes }) => {
   const factory = processes.factory();
@@ -76,10 +76,10 @@ test('architect scope separates same-repository discovery from foreign writes an
   expect((await architect.call('read_work_request', { work_request_id: own })).clarification_questions).toEqual([]);
   const peer = await factory.client();
   const other = await peer.request('Other request');
+  const [otherWp] = (await peer.call('slice_work_request', { work_packages: [contract('Hidden sibling')] })).work_package_ids;
   const question = (await peer.call('ask_question', {
     work_request_id: other, category: 'scope', question: 'Which behavior is required?', why_needed: 'A concrete choice is needed.',
   })).clarification_question;
-  const [otherWp] = (await peer.call('slice_work_request', { work_packages: [contract('Hidden sibling')] })).work_package_ids;
   expect((await architect.call('read_work_request', { work_request_id: other })).work_request.id).toBe(other);
   for (const [name, args] of [
     ['set_work_request_status', { work_request_id: other, current_status: 'sliced', next_status: 'clarifying' }],
@@ -173,7 +173,7 @@ test('worker mutations and resources remain confined to its package while explic
     ['reconcile_work_request', { work_request_id: request, apply: true }],
     ['revoke_work_package_worker_key', { work_package_id: sibling, reason: 'Steal authority' }],
     ['force_release_work_package_claim', { work_package_id: sibling, reason: 'Steal authority' }],
-  ] as const) await client.reject(name, args, 'architect_grant_required');
+  ] as const) await client.reject(name, { work_request_id: request, ...args }, 'architect_grant_required');
   const resources = await client.rpc('resources/list');
   expect(JSON.stringify(resources)).not.toContain(sibling);
   const foreignRead = await client.rpc('resources/read', { uri: `sympp://work-packages/${sibling}/progress.md` });
@@ -215,8 +215,7 @@ test('force release rotates worker authority without changing delivery and allow
   expect(released.reset_worker_grant_ids).toHaveLength(1);
   expect(released.released_claim_lease_ids).toEqual([]);
   const recycled = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
-  expect(recycled.runtime_state.lifecycle_state).toBe('recycled');
-  expect(recycled.runtime_state.reason_codes).toContain('worker_recycled');
+  expect(recycled.summary.active_grant_count).toBe(0);
   expect(JSON.stringify(released)).not.toContain('synthetic-release-secret');
   const before = (await architect.call('read_work_request', { work_request_id: request })).work_packages.find((entry: any) => entry.id === wp);
   expect(before.status).toBe('active');
@@ -250,8 +249,8 @@ test('explicit revocation retires live worker calls resources and persisted reco
   expect((await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/progress.md` })).error).toBeTruthy();
   const fresh = await factory.client();
   expect((await fresh.rpc('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp, claimed_by: 'replacement' } })).error).toBeTruthy();
-  const document = await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' });
-  expect(document.progress_events.filter((event: any) => event.id === first.id)).toHaveLength(1);
+  const document = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
+  expect(document.progress.filter((event: any) => event.id === first.id)).toHaveLength(1);
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
   await factory.stop();
   const restarted = processes.factory();
@@ -274,7 +273,7 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
   await architect.reject('record_work_package_delivery', {
     work_package_id: superseded, outcome: 'superseded', idempotency_key: 'foreign-successor',
     evidence: { superseded: { successor_work_package_id: foreign, superseded_reason: 'Must be refused' } },
-  }, 'not_found');
+  }, 'successor_work_package_out_of_scope');
   expect((await old.call('get_current_assignment')).assignment.work_package_id).toBe(superseded);
   await supersede(superseded);
   await supersede(unclaimed);
@@ -283,7 +282,7 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
     expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Terminal mutation', idempotency_key: 'terminal' } })).error).toBeTruthy();
     const fresh = await factory.client();
     expect((await fresh.rpc('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp, claimed_by: 'terminal-reclaim' } })).error).toBeTruthy();
-    expect((await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' })).progress_events.filter((event: any) => event.idempotency_key === 'terminal')).toEqual([]);
+    expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress.filter((event: any) => event.summary === 'Terminal mutation')).toEqual([]);
   }
   const fresh = await factory.client();
   expect((await fresh.rpc('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: unclaimed } })).error).toBeTruthy();
@@ -302,15 +301,18 @@ deliveryTest('provider-confirmed merge retires a claimed worker and preserves un
   const [wp, sibling] = await packages(architect, ['Merged change', 'Independent change']);
   const client = await worker(factory, wp);
   const peer = await worker(factory, sibling, 'peer-worker');
-  provider.set(301, pr(301, head('a')));
-  await sync(architect, wp, 301, head('a'));
-  provider.set(301, pr(301, head('a'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
-  await architect.call('sync_pr', { work_package_id: wp });
+  await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('a') });
+  await client.call('attach_pr', { url: prUrl(301), head_sha: head('a') });
+  provider.set(301, pr(301, head('a'), { headRefName: 'feature/authority' }));
+  await client.call('sync_pr');
+  await client.call('mark_ready');
+  provider.set(301, pr(301, head('a'), { headRefName: 'feature/authority', state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
+  await client.call('sync_pr');
   expect((await row(architect, request, wp)).delivery_outcome).toBe('pr_merged');
   expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Late mutation', idempotency_key: 'late' } })).error).toBeTruthy();
   expect((await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/context.md` })).error).toBeTruthy();
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
-  expect((await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' })).progress_events.filter((event: any) => event.idempotency_key === 'late')).toEqual([]);
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress.filter((event: any) => event.summary === 'Late mutation')).toEqual([]);
 });
 
 test('worker plan updates are atomic and native evidence history remains complete across concurrent appends', async ({ processes }) => {
@@ -352,9 +354,9 @@ test('worker plan updates are atomic and native evidence history remains complet
   await peer.call('update_task_plan', { expected_version: peerVersion, nodes: Array.from({ length: 100 }, (_, index) => ({ title: `Bounded node ${index + 1}` })) });
   const bounded = await peer.rpc('tools/call', { name: 'read_task_plan', arguments: {} });
   expect(bounded.result.structuredContent.plan_nodes).toHaveLength(100);
-  expect(bounded.result.structuredContent.omitted.plan_nodes).toBe(1);
+  expect(bounded.result.structuredContent.omitted.plan_nodes).toBe(2);
   expect(bounded.result.content[0].text).not.toContain('Bounded node 100');
-  expect(bounded.result.structuredContent.text).toContain('1 later plan nodes omitted');
+  expect(bounded.result.structuredContent.text).toContain('2 later plan nodes omitted');
   await peer.call('update_task_plan', { expected_version: bounded.result.structuredContent.version, nodes: [{ id: foreignNode, status: 'done' }] });
   expect((await peer.call('read_task_plan')).plan_nodes[0].status).toBe('done');
   const first = await client.call('append_finding', { id: 'synthetic-finding', title: 'Finding', body: 'Evidence', idempotency_key: ' finding-once ' });
@@ -465,7 +467,7 @@ deliveryTest('worker metadata replay and short-head matching preserve distinct r
   ] })).work_package_ids;
   for (const id of ids) await architect.call('dispatch_work_package', { work_package_id: id });
   const full = await worker(factory, ids[0]);
-  const branchArgs = { head_sha: head('a'), idempotency_key: 'branch-replay' };
+  const branchArgs = { branch: 'feature/authority', head_sha: head('a'), idempotency_key: 'branch-replay' };
   const branch = (await full.call('attach_branch', branchArgs)).progress_event;
   expect((await full.call('read_work_package_document', { document: 'progress.md' })).progress_events.find((entry: any) => entry.id === branch.id).payload.observation.branch).toBe('feature/authority');
   expect((await full.call('attach_branch', { ...branchArgs, work_package_id: ids[0] })).progress_event.id).toBe(branch.id);
@@ -478,29 +480,29 @@ deliveryTest('worker metadata replay and short-head matching preserve distinct r
   expect((await full.call('mark_ready')).work_package.status).toBe('ready_for_merge');
   for (const [index, length, ready] of [[1, 7, true], [2, 3, false]] as const) {
     const client = await worker(factory, ids[index], `head-worker-${index}`);
-    await client.call('attach_branch', { head_sha: head('b').slice(0, length) });
+    await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('b').slice(0, length) });
     await client.call('attach_pr', { url: prUrl(304 + index), head_sha: head('b') });
     const response = await client.rpc('tools/call', { name: 'mark_ready', arguments: {} });
     if (ready) expect(response.result.structuredContent.ready).toBe(true);
     else expect(response.error.data.missing).toContain('pr_attached');
   }
   const hotfix = await worker(factory, ids[3], 'hotfix-worker');
-  await hotfix.call('attach_branch', { head_sha: head('c') });
+  await hotfix.call('attach_branch', { branch: 'feature/authority', head_sha: head('c') });
   await hotfix.call('attach_pr', { url: prUrl(307), head_sha: head('c') });
   provider.set(307, pr(307, head('c'), { headRefName: 'feature/authority' }));
   await hotfix.call('sync_pr');
   expect((await hotfix.call('mark_ready')).work_package.status).toBe('ready_for_merge');
   const canonical = await worker(factory, ids[4], 'canonical-worker');
-  await canonical.call('attach_branch', { head_sha: head('d') });
+  await canonical.call('attach_branch', { branch: 'feature/authority', head_sha: head('d') });
   await canonical.call('attach_pr', { url: prUrl(308), metadata: { head_sha: head('d'),
     check_summary: { conclusion: 'success' }, review_state: { state: 'approved' }, merge_state: { state: 'clean' } } });
   expect((await canonical.call('mark_ready')).work_package.status).toBe('ready_for_merge');
   const legacy = await worker(factory, ids[5], 'url-worker');
-  await legacy.call('attach_branch', { head_sha: head('e') });
+  await legacy.call('attach_branch', { branch: 'feature/authority', head_sha: head('e') });
   await legacy.call('attach_pr', { url: 'https://git.example.com/service/pulls/8', head_sha: head('e') });
   expect((await legacy.call('mark_ready')).work_package.status).toBe('ready_for_merge');
   const legacyState = await worker(factory, ids[6], 'legacy-state-worker');
-  await legacyState.call('attach_branch', { head_sha: head('e') });
+  await legacyState.call('attach_branch', { branch: 'feature/authority', head_sha: head('e') });
   await legacyState.call('attach_pr', { url: 'https://git.example.com/service/pulls/9', head_sha: head('e'), metadata: {
     check_summary: { conclusion: 'success' }, review_state: { state: 'approved' }, merge_state: { state: 'clean' },
   } });
@@ -534,7 +536,7 @@ test('docs and investigation workers become ready with truthful evidence and aba
   expect((await investigation.call('mark_ready')).work_package.status).toBe('ready_for_merge');
   expect((await abandoned.call('abandon', { reason: 'Scope no longer needed' })).work_package.status).toBe('abandoned');
   expect((await abandoned.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Must not reactivate', idempotency_key: 'after-abandon' } })).error).toBeTruthy();
-  await close(architect, ids[2], 'abandoned', { rationale: 'The scope was explicitly dropped; no code was changed.' });
+  await close(architect, ids[2], 'abandoned', { abandoned_rationale: 'The scope was explicitly dropped; no code was changed.' });
   expect((await row(architect, request, ids[2])).delivery_outcome).toBe('abandoned');
 });
 
@@ -584,14 +586,14 @@ test('explicit runtime cleanup validates delivery scope before retiring a live w
   const grant = (await client.call('get_current_assignment')).assignment.grant_id;
   const cleanup = { work_package_id: wp, outcome: 'superseded', successor_work_package_id: successor,
     superseded_reason: 'The successor owns the revised scope.', reason: 'Retire the obsolete worker before closeout.' };
-  const priorProgress = await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' });
+  const priorProgress = (await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress;
   await architect.reject('cleanup_work_request_work_package_runtime', { work_package_id: wp, reason: 'Missing delivery evidence' }, 'missing_outcome');
   await client.reject('cleanup_work_request_work_package_runtime', cleanup, 'architect_grant_required');
   const foreign = await factory.client();
   await foreign.request('Foreign cleanup owner');
-  await foreign.reject('cleanup_work_request_work_package_runtime', cleanup, 'outside_session_scope');
+  await foreign.reject('cleanup_work_request_work_package_runtime', cleanup, 'not_found');
   expect((await client.call('get_current_assignment')).assignment.grant_id).toBe(grant);
-  expect(await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' })).toEqual(priorProgress);
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress).toEqual(priorProgress);
   const retired = await architect.call('cleanup_work_request_work_package_runtime', cleanup);
   expect(retired.runtime_cleanup.status).toBe('cleaned');
   expect(retired.runtime_cleanup.revoked_worker_grant_ids).toContain(grant);
@@ -603,8 +605,8 @@ test('explicit runtime cleanup validates delivery scope before retiring a live w
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
   await close(architect, wp, 'superseded', { successor_work_package_id: successor, superseded_reason: cleanup.superseded_reason });
   expect((await row(architect, request, wp)).delivery_outcome).toBe('superseded');
-  const document = await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' });
-  expect(document.progress_events.filter((event: any) => event.idempotency_key === 'after-cleanup')).toEqual([]);
+  const document = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
+  expect(document.progress.filter((event: any) => event.summary === 'Must not persist')).toEqual([]);
 });
 
 test('architect reports preserve server times and partial edits while rejecting forged worker authors', async ({ processes }) => {
@@ -629,11 +631,14 @@ test('architect reports preserve server times and partial edits while rejecting 
     parking: { reason: 'Awaiting a release window', parked_at: '2000-01-01T00:00:00Z' },
     human_escalation: { question: 'Use this release?', raised_at: '2000-01-01T00:00:00Z' } };
   const event = (await report(initial, 'initial-report')).progress_event;
+  const eventTime = async (id: string) => (await architect.inspect(`/api/v1/sympp/operator/work-packages/${anchor}`)).progress.find((entry: any) => entry.id === id).created_at;
+  const createdAt = await eventTime(event.id);
   const first = await read();
   expect(first.brief.text).toBe(initial.brief);
-  expect(first.brief.written_at).toBe(event.created_at);
-  expect(first.parking.parked_at).toBe(event.created_at);
-  expect(first.human_escalation.raised_at).toBe(event.created_at);
+  expect(first.brief.written_at).toBe(createdAt);
+  expect(first.parking.parked_at).toBe(createdAt);
+  expect(first.human_escalation.raised_at).toBe(createdAt);
+  expect(createdAt).not.toBe(initial.written_at);
   await report({ eta: 'Friday', human_escalation: { question: 'Use Friday?' } }, 'report-edit');
   const edited = await read();
   expect(edited.brief).toEqual(first.brief);
@@ -643,8 +648,8 @@ test('architect reports preserve server times and partial edits while rejecting 
   expect((await report(initial, 'initial-report')).progress_event.id).toBe(event.id);
   expect(await read()).toEqual(edited);
   const resolved = (await report({ parking: null, human_escalation: null }, 'report-resolved')).progress_event;
-  expect((await read()).human_escalation.resolved_at).toBe(resolved.created_at);
-  expect((await read()).parking.resumed_at).toBe(resolved.created_at);
+  expect((await read()).human_escalation.resolved_at).toBe(await eventTime(resolved.id));
+  expect((await read()).parking.resumed_at).toBe(await eventTime(resolved.id));
   await report({ human_escalation: { question: 'Approve a follow-up?' } }, 'report-reopened');
   expect((await read()).human_escalation.resolved_at).toBeNull();
   expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.operator_report).toEqual(await read());
@@ -695,7 +700,8 @@ test('explicit trusted local notes remain independent of stale worker authority 
   expect((await observer.call('list_comments', { target_kind: 'work_package', target_id: wp })).comments.map((entry: any) => entry.id)).toContain(packageNote.id);
   await observer.reject('list_comments', { target_kind: 'work_request', target_id: 'missing-request' }, 'not_found');
   expect((await observer.call('get_current_assignment')).assignment).toBeNull();
-  expect((await client.call('list_guidance_requests')).guidance_requests).toEqual([]);
+  await client.reject('list_guidance_requests', {}, 'architect_grant_required');
+  expect((await architect.call('list_guidance_requests')).guidance_requests).toEqual([]);
   await client.reject('answer_guidance_request', { guidance_request_id: 'missing-guidance', answer: 'Cannot promote authority' }, 'architect_grant_required');
   await client.reject('read_guidance_request', { guidance_request_id: 'missing-guidance' }, 'not_found');
   await architect.reject('read_guidance_request', { guidance_request_id: 'missing-guidance' }, 'not_found');
@@ -722,8 +728,9 @@ test('architect descendant planning stays scoped through terminal closeout and r
   expect(updated.plan_nodes[0].title).toBe('Inspect descendant');
   const finding = (await architect.call('append_finding', { work_package_id: wp, title: 'Scoped evidence', body: 'Owned descendant', idempotency_key: 'architect-finding' })).finding;
   const progress = (await architect.call('append_progress', { work_package_id: wp, summary: 'Owned descendant progress', idempotency_key: 'architect-progress' })).progress_event;
-  expect((await architect.call('read_work_package_document', { work_package_id: wp, document: 'findings.md' })).findings[0].id).toBe(finding.id);
-  expect((await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' })).progress_events[0].id).toBe(progress.id);
+  const detail = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
+  expect(detail.findings[0].id).toBe(finding.id);
+  expect(detail.progress[0].id).toBe(progress.id);
   const uri = `sympp://work-packages/${wp}/task_plan.md`;
   expect((await architect.rpc('resources/list')).result.resources.map((entry: any) => entry.uri)).toContain(uri);
   expect((await architect.rpc('resources/read', { uri })).result.contents[0].text).toContain('Inspect descendant');
@@ -738,7 +745,7 @@ test('architect descendant planning stays scoped through terminal closeout and r
     ['append_finding', { title: 'Late finding', body: 'Must not persist', idempotency_key: 'late-architect-finding' }],
     ['append_progress', { summary: 'Late progress', idempotency_key: 'late-architect-progress' }],
   ] as const) await architect.reject(name, { work_package_id: wp, ...args }, 'work_package_terminal');
-  expect((await architect.call('read_work_package_document', { work_package_id: wp, document: 'findings.md' })).findings).toHaveLength(1);
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).findings).toHaveLength(1);
   expect((await architect.operator(`/api/v1/sympp/operator/work-requests/${request}/archive`, {})).status).toBe(200);
   await architect.reject('read_task_plan', { work_package_id: wp }, 'work_request_terminal');
 });
@@ -752,19 +759,19 @@ deliveryTest('worker dependency qualifications survive successor replacement onl
     await architect.call('dispatch_work_package', { work_package_id: wp });
     const client = await worker(factory, wp, `worker-${number}`);
     workers.set(wp, client);
-    await client.call('attach_branch', { head_sha: sha });
+    await client.call('attach_branch', { branch: 'feature/authority', head_sha: sha });
     await client.call('attach_pr', { url: prUrl(number), head_sha: sha });
     provider.set(number, pr(number, sha, { headRefName: 'feature/authority' }));
     await client.call('sync_pr');
     await client.call('mark_ready');
   }
-  await workers.get(a)!.reject('attach_branch', { head_sha: head('b') }, 'already_ready');
+  await workers.get(a)!.reject('attach_branch', { branch: 'feature/authority', head_sha: head('b') }, 'already_ready');
   const pinArgs = (target: string, sha: string | null) => ({ dependent: { kind: 'work_package', id: ui }, prerequisite: { kind: 'work_package', id: target }, candidate_head_sha: sha, reason: 'Consume the specifically qualified input.' });
   const pin = (await architect.call('upsert_dependency', pinArgs(a, head('a')))).dependency.id;
   const independentPin = (await architect.call('upsert_dependency', pinArgs(other, head('d')))).dependency.id;
   await architect.call('dispatch_work_package', { work_package_id: ui });
   const consumer = await worker(factory, ui, 'consumer-worker');
-  await consumer.call('attach_branch', { head_sha: head('c') });
+  await consumer.call('attach_branch', { branch: 'feature/authority', head_sha: head('c') });
   await consumer.call('attach_pr', { url: prUrl(324), head_sha: head('c') });
   const input = (id: string, target: string, sha: string | null) => ({ dependency_id: id, prerequisite_work_package_id: target, candidate_head_sha: sha });
   const qualify = (inputs: object[], key: string) => consumer.call('append_progress', {

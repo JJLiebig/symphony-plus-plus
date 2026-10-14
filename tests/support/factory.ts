@@ -4,7 +4,7 @@ import { appendFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { expect, test as base } from 'e2e';
-import { Candidate, type CandidateOptions } from './candidate.js';
+import { Candidate, captureCandidateDiskLogs, type CandidateOptions } from './candidate.js';
 
 // The public cockpit owns trusted local HTTP initialization, sessions and SQLite.
 // The dashboard origin skips UI asset construction; no browser is opened or used.
@@ -98,6 +98,7 @@ export class Client {
       rawBody = await response.text();
       const body = rawBody === '' ? null : JSON.parse(rawBody);
       await this.record({ ...receipt, phase: 'response', status, response: body });
+      if (status >= 500 && this.receipt) await captureCandidateDiskLogs(`${this.receipt}-server-error.json`);
       return { response, body };
     } catch (error) {
       try {
