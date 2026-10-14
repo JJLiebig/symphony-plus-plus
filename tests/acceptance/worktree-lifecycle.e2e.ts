@@ -1,7 +1,8 @@
 import { expect } from 'e2e';
 import { access, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { test } from '../support/authority.js';
+import { test, snapshot } from '../support/authority.js';
+import { Client } from '../support/factory.js';
 import { git, repository, workPackage } from '../support/worktree-git.js';
 import { requestPath } from '../support/retention-history.js';
 
@@ -151,6 +152,34 @@ test('deleting a goal preserves its cleanup obligation across a stopped backend 
   await expect.poll(() => exists(path), { timeout: 30_000 }).toBe(false);
   expect((await client.call('list_work_requests')).work_requests).toEqual([]);
   expect(await readFile(join(repo.checkout, 'README.md'), 'utf8')).toBe('Initial fixture content\n');
+});
+
+test('offline snapshot lifecycle changes leave copied live worktree paths and source history untouched', async ({ processes }) => {
+  const { root } = processes;
+  const repo = await repository(root, 'source');
+  const source = processes.factory();
+  const architect = await source.client();
+  const wp = await workPackage(architect, repo.origin, 'feature/offline');
+  const request = (await architect.call('list_work_requests')).work_requests[0].id;
+  const args = { work_package_id: wp, target_repo_root: repo.checkout };
+  const path = (await architect.call('prepare_work_package_worktree', args)).worktree.path;
+  await writeFile(join(path, 'keep.txt'), 'Source worktree content\n');
+  await git(root, repo.checkout, 'worktree', 'lock', path);
+  expect((await architect.call('cleanup_work_package_worktree', args)).worktree.status).toBe('cleanup_queued');
+  await source.stop();
+  const database = await snapshot(source);
+  const offline = processes.factory('offline', { database, offline: true });
+  const client = new Client(await offline.endpoint, offline.receipt);
+  for (const [action, body] of [['state', { state: 'completed' }], ['archive', {}], ['restore', {}], ['delete', {}]] as const) {
+    expect((await client.operator(`${requestPath(request)}/${action}`, body)).status).toBe(200);
+    expect(await readFile(join(path, 'keep.txt'), 'utf8')).toBe('Source worktree content\n');
+  }
+  await offline.stop();
+  const restarted = processes.factory();
+  const original = await restarted.client();
+  expect((await original.call('list_work_requests')).work_requests.map((row: any) => row.id)).toContain(request);
+  expect(await readFile(join(path, 'keep.txt'), 'utf8')).toBe('Source worktree content\n');
+  await git(root, repo.checkout, 'worktree', 'unlock', path);
 });
 
 test('a real Git removal obstruction preserves the worktree and a later cleanup recovers after restart', async ({ processes }) => {
