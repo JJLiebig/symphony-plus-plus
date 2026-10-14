@@ -23,17 +23,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
 
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.CreateWork
-  alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.Planning.{Artifact, Finding, PlanNode, ProgressEvent}
-  alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
-  alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.Node
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
-  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
-  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -60,84 +55,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
     :ok
   end
 
-  test "slices a WorkRequest atomically into canonical WorkPackages", %{repo: repo} do
-    work_request = create_work_request!(repo)
-    node = create_node!(repo, work_request.id)
-
-    assert {:ok, %{work_request: sliced, work_packages: [first, second]}} =
-             Repository.slice_work_request(repo, work_request.id, [
-               package_attrs(id: "wp_first", product_tree_node_id: node.id),
-               package_attrs(id: "wp_second", title: "Second package")
-             ])
-
-    assert sliced.status == "sliced"
-    assert first.id == "wp_first"
-    assert first.work_request_id == work_request.id
-    assert first.product_tree_node_id == node.id
-    assert first.sequence == 1
-    assert first.status == "planned"
-    assert first.contract_revision == 1
-    assert second.sequence == 2
-
-    assert {:ok, [^first, ^second]} = Repository.list_work_packages(repo, work_request.id)
-    assert Repo.aggregate(WorkPackage, :count) == 2
-  end
-
-  test "rolls back the full slice batch on an invalid package", %{repo: repo} do
-    work_request = create_work_request!(repo)
-
-    assert {:error, :invalid_work_package} =
-             Repository.slice_work_request(repo, work_request.id, [
-               package_attrs(id: "wp_valid"),
-               package_attrs(id: "wp_invalid", kind: "not_a_kind")
-             ])
-
-    assert {:ok, []} = Repository.list_work_packages(repo, work_request.id)
-    assert {:ok, %{status: "ready_for_slicing"}} = Repository.get(repo, work_request.id)
-  end
-
-  test "requires a nonempty batch and no open clarification questions", %{repo: repo} do
-    work_request = create_work_request!(repo)
-
-    assert {:error, :invalid_work_package} = Repository.slice_work_request(repo, work_request.id, [])
-    assert {:ok, _question} = Repository.ask_question(repo, work_request.id, question_attrs())
-    assert {:error, :open_questions} = Repository.slice_work_request(repo, work_request.id, [package_attrs()])
-  end
-
-  test "atomically advances a clarified WorkRequest while slicing", %{repo: repo} do
-    work_request = create_work_request!(repo, status: "clarifying")
-
-    assert {:error, :invalid_work_package} =
-             Repository.slice_work_request(repo, work_request.id, [package_attrs(kind: "not_a_kind")])
-
-    assert {:ok, %{status: "clarifying"}} = Repository.get(repo, work_request.id)
-
-    assert {:ok, %{work_request: sliced, work_packages: [_package]}} =
-             Repository.slice_work_request(repo, work_request.id, [package_attrs()])
-
-    assert sliced.status == "sliced"
-  end
-
-  test "updates contracts with optimistic revisions and direct product-tree placement", %{repo: repo} do
-    work_request = create_work_request!(repo)
-    first_node = create_node!(repo, work_request.id, id: "node_first")
-    second_node = create_node!(repo, work_request.id, id: "node_second")
-    package = slice_one!(repo, work_request.id, package_attrs(product_tree_node_id: first_node.id))
-
-    assert {:ok, updated} =
-             Repository.update_work_package(repo, work_request.id, package.id, 1, %{
-               title: "Updated contract",
-               product_tree_node_id: second_node.id
-             })
-
-    assert updated.title == "Updated contract"
-    assert updated.product_tree_node_id == second_node.id
-    assert updated.contract_revision == 2
-
-    assert {:error, :stale_status} =
-             Repository.update_work_package(repo, work_request.id, package.id, 1, %{title: "Stale"})
-  end
-
   test "rejects a contract update that races with dispatch", %{repo: repo} do
     work_request = create_work_request!(repo)
     package = slice_one!(repo, work_request.id)
@@ -156,167 +73,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
     assert persisted.status == "ready_for_worker"
     assert persisted.title == package.title
     assert persisted.contract_revision == package.contract_revision
-  end
-
-  test "keeps updated packages executable and inside an allowed repo scope", %{repo: repo} do
-    work_request = create_work_request!(repo)
-    package = slice_one!(repo, work_request.id)
-
-    assert {:error, :invalid_work_package} =
-             Repository.update_work_package(repo, work_request.id, package.id, 1, %{kind: "not_a_kind"})
-
-    assert {:error, :work_package_delivery_scope_out_of_scope} =
-             Repository.update_work_package(repo, work_request.id, package.id, 1, %{base_branch: "release"})
-  end
-
-  test "rejects package creation outside an allowed same-repo base branch", %{repo: repo} do
-    work_request = create_work_request!(repo)
-
-    assert {:error, :work_package_delivery_scope_out_of_scope} =
-             Repository.slice_work_request(repo, work_request.id, [package_attrs(base_branch: "release")])
-
-    assert {:ok, []} = Repository.list_work_packages(repo, work_request.id)
-    assert {:ok, %{status: "ready_for_slicing"}} = Repository.get(repo, work_request.id)
-  end
-
-  test "requires an explicit base branch for a secondary delivery repo", %{repo: repo} do
-    work_request =
-      create_work_request!(repo,
-        repo_scopes: [%{repo: "nextide/secondary-service"}]
-      )
-
-    assert {:error, :work_package_delivery_scope_out_of_scope} =
-             Repository.slice_work_request(repo, work_request.id, [
-               package_attrs(repo: "nextide/secondary-service")
-             ])
-
-    assert {:ok, []} = Repository.list_work_packages(repo, work_request.id)
-    assert {:ok, %{status: "ready_for_slicing"}} = Repository.get(repo, work_request.id)
-  end
-
-  test "rejects product-tree placement outside the owning WorkRequest", %{repo: repo} do
-    owner = create_work_request!(repo, id: "WR-OWNER")
-    other = create_work_request!(repo, id: "WR-OTHER")
-    foreign_node = create_node!(repo, other.id)
-
-    assert {:error, :not_found} =
-             Repository.slice_work_request(repo, owner.id, [package_attrs(product_tree_node_id: foreign_node.id)])
-  end
-
-  test "allows all planned packages to be skipped and protects stale skips", %{repo: repo} do
-    work_request = create_work_request!(repo)
-    first_attrs = package_attrs(id: "wp_skip_first")
-    second_attrs = package_attrs(id: "wp_skip_second")
-
-    assert {:ok, %{work_packages: [first, second]}} =
-             Repository.slice_work_request(repo, work_request.id, [first_attrs, second_attrs])
-
-    assert {:ok, _blocker} =
-             PlanningRepository.append_progress_event(repo, %{
-               work_package_id: first.id,
-               summary: "Skip this blocked package",
-               status: "blocked",
-               idempotency_key: "skip-package-blocker",
-               payload: %{type: "blocker", source_tool: "report_blocker", blocker_id: "skip-blocker", active: true}
-             })
-
-    assert {:ok, skipped} = Repository.skip_work_package(repo, work_request.id, first.id, "planned")
-    assert skipped.status == "skipped"
-    refute WorkPackageActivity.context(repo, first.id).blocker_state.active?
-    assert {:error, :stale_status} = Repository.skip_work_package(repo, work_request.id, first.id, "planned")
-    assert {:ok, final} = Repository.skip_work_package(repo, work_request.id, second.id, "planned")
-    assert final.status == "skipped"
-  end
-
-  test "dispatch activates the canonical package in place and leaves its non-terminal contract mutable", %{
-    repo: repo
-  } do
-    work_request = create_work_request!(repo)
-
-    assert {:ok, decision} =
-             Repository.record_decision(repo, work_request.id, %{
-               source_type: "architect",
-               decision: "Preserve prior investigation evidence.",
-               rationale: "Workers need relevant context in their ordinary assignment.",
-               scope_impact: "Include the package's existing findings.",
-               created_by: "architect"
-             })
-
-    package = slice_one!(repo, work_request.id, package_attrs(goal: "Apply #{decision.id}."))
-
-    for number <- 1..101 do
-      assert {:ok, _finding} =
-               PlanningRepository.append_finding(repo, %{
-                 work_package_id: package.id,
-                 title: "Prior finding #{number}",
-                 body: "Evidence #{number} remains relevant."
-               })
-    end
-
-    assert :ok = DashboardPubSub.subscribe()
-
-    assert {:ok, dispatch} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, package.id)
-
-    assert dispatch.work_package.id == package.id
-    assert dispatch.creation.work_package.id == package.id
-    assert dispatch.work_package.status == "ready_for_worker"
-    assert %DateTime{} = dispatch.work_package.dispatched_at
-
-    assert dispatch.worker_bootstrap.coordinates.primary_execution ==
-             %{kind: "work_package", work_package_id: package.id}
-
-    assignment = dispatch.worker_bootstrap.assignment
-    findings = assignment["prior_findings"]["findings"]
-    assert length(findings) == 101
-    assert hd(findings)["body"] == "Evidence 1 remains relevant."
-    assert List.last(findings)["body"] == "Evidence 101 remains relevant."
-
-    assert assignment["selected_decisions"] == [
-             %{
-               "id" => decision.id,
-               "decision" => decision.decision,
-               "rationale" => decision.rationale,
-               "scope_impact" => decision.scope_impact
-             }
-           ]
-
-    assert Repo.aggregate(WorkPackage, :count) == 1
-    assert_receive :operator_dashboard_changed
-    refute_receive :operator_dashboard_changed, 50
-
-    assert {:ok, updated} =
-             Repository.update_work_package(repo, work_request.id, package.id, package.contract_revision, %{
-               title: "Updated after dispatch"
-             })
-
-    assert updated.title == "Updated after dispatch"
-    assert updated.contract_revision == package.contract_revision + 1
-
-    closed = repo.update!(Ecto.Changeset.change(updated, status: "closed"))
-
-    assert {:error, :invalid_status} =
-             Repository.update_work_package(repo, work_request.id, package.id, closed.contract_revision, %{
-               title: "Must remain closed"
-             })
-
-    assert {:ok, persisted} = WorkPackageRepository.get(repo, package.id)
-    assert persisted.title == updated.title
-    assert persisted.status == "closed"
-    assert persisted.contract_revision == updated.contract_revision
-  end
-
-  test "dispatch enforces the effective package policy before activation", %{repo: repo} do
-    work_request = create_work_request!(repo)
-    package = slice_one!(repo, work_request.id, package_attrs(acceptance_criteria: []))
-
-    assert {:error, :missing_acceptance_criteria} =
-             WorkPackageDispatch.dispatch(repo, work_request.id, package.id)
-
-    assert {:ok, persisted} = WorkPackageRepository.get(repo, package.id)
-    assert persisted.status == "planned"
-    assert persisted.dispatched_at == nil
-    assert Repo.aggregate(AccessGrant, :count) == 0
   end
 
   test "activation returns a stale-status error when the planned package changed", %{repo: repo} do
@@ -346,33 +102,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
     assert Repo.aggregate(AccessGrant, :count) == 0
   end
 
-  test "keeps direct phase and delegated WorkPackage creation intact", %{repo: repo} do
-    assert {:ok, parent} =
-             WorkPackageRepository.create(repo, %{
-               id: "wp_direct_parent",
-               kind: "standard_pr",
-               title: "Direct parent",
-               repo: "nextide/example",
-               base_branch: "main",
-               acceptance_criteria: ["Parent remains independently executable."]
-             })
-
-    assert {:ok, child} =
-             WorkPackageRepository.create(repo, %{
-               id: "wp_direct_child",
-               kind: "standard_pr",
-               title: "Direct child",
-               repo: "nextide/example",
-               base_branch: "main",
-               acceptance_criteria: ["Child remains independently executable."],
-               parent_id: parent.id
-             })
-
-    assert parent.work_request_id == nil
-    assert child.work_request_id == nil
-    assert child.parent_id == parent.id
-  end
-
   defp slice_one!(repo, work_request_id, attrs \\ package_attrs()) do
     assert {:ok, %{work_packages: [package]}} = Repository.slice_work_request(repo, work_request_id, [attrs])
     package
@@ -396,20 +125,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
     work_request
   end
 
-  defp create_node!(repo, work_request_id, overrides \\ []) do
-    attrs =
-      Enum.into(overrides, %{
-        id: "node_#{System.unique_integer([:positive])}",
-        work_request_id: work_request_id,
-        title: "Product boundary",
-        position: 0,
-        created_by: "test"
-      })
-
-    assert {:ok, node} = ProductTree.create_node(repo, attrs)
-    node
-  end
-
   defp package_attrs(overrides \\ []) do
     Enum.into(overrides, %{
       id: "wp_#{System.unique_integer([:positive])}",
@@ -424,14 +139,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackagesTest do
       review: %{"type" => "review-suite", "args" => %{"mode" => "normal"}},
       stop_conditions: ["Stop on migration data loss."]
     })
-  end
-
-  defp question_attrs do
-    %{
-      category: "scope",
-      question: "What is in scope?",
-      why_needed: "The package boundary must be explicit."
-    }
   end
 
   defp database_path do

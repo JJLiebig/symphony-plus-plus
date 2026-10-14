@@ -656,10 +656,13 @@ test('worker plan updates are atomic and native evidence history remains complet
       }
     }
   }
-  const redacted = await client.rpc('tools/call', { name: 'append_progress', arguments: {
-    summary: 'Recorded progress sk-synthetic-progress-token', idempotency_key: 'redacted-progress',
+  await client.reject('append_progress', {
+    summary: 'Cannot forge audit identity', idempotency_key: 'forged-audit',
     id: 'caller-progress-id', created_at: '2000-01-01T00:00:00Z', actor_id: 'forged-worker',
     actor_type: 'architect', access_grant_id: 'forged-grant', agent_run_id: 'forged-run',
+  }, 'unexpected_argument');
+  const redacted = await client.rpc('tools/call', { name: 'append_progress', arguments: {
+    summary: 'Recorded progress sk-synthetic-progress-token', idempotency_key: 'redacted-progress',
     payload: { accessKey: 'synthetic-access-value', apiKey: 'synthetic-api-value', grant_verifier: 'synthetic-verifier-value', private_payload: { path: 'synthetic-private-path' }, safe: 'unprojected-safe-value' },
   } });
   expect(redacted.result.structuredContent.progress_event.summary).toContain('[REDACTED]');
@@ -669,6 +672,7 @@ test('worker plan updates are atomic and native evidence history remains complet
   const audit = explicitProgress.result.structuredContent.progress_events.find((entry: any) => entry.id === redacted.result.structuredContent.progress_event.id);
   expect(Date.parse(audit.created_at)).toBeGreaterThan(Date.parse('2026-01-01T00:00:00Z'));
   for (const forged of ['forged-worker', 'forged-grant', 'forged-run']) expect(JSON.stringify(audit)).not.toContain(forged);
+  expect(explicitProgress.result.structuredContent.progress_events.some((entry: any) => entry.summary === 'Cannot forge audit identity')).toBe(false);
   expect(explicitProgress.result.content[0].text).toBe(projected.result.contents[0].text);
   for (const value of ['sk-synthetic-progress-token', 'synthetic-access-value', 'synthetic-api-value', 'synthetic-verifier-value', 'synthetic-private-path', 'unprojected-safe-value']) {
     expect(redacted.result.content[0].text).not.toContain(value);

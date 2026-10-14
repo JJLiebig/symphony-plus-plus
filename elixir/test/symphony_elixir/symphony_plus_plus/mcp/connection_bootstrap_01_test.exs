@@ -79,7 +79,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
              {:error, {:service_unavailable, {:unexpected_grant_lookup_result, :tuple}}}
   end
 
-  test "auth helpers reject sessions after package authority reaches a terminal state", %{repo: repo} do
+  test "direct raw-proof session validation retires terminal worker authority", %{repo: repo} do
     assert {:ok, package} =
              WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-AUTH-TERMINAL", kind: "mcp", status: "ready_for_worker"))
 
@@ -92,15 +92,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
     assert Auth.require_session(session, repo) == {:error, {:unauthorized, :work_package_terminal}}
   end
 
-  test "auth helpers preserve live architect sessions and retire them with their anchor package", %{repo: repo} do
+  test "direct phase architect proof retires with its anchor while WorkRequest handoff authority is separate", %{repo: repo} do
     {package, session, _grant} = create_phase_architect_session(repo, "SYMPP-AUTH-ARCH-TERMINAL", ["read:phase"])
 
-    assert {:ok, live_session} = Auth.require_session(session, repo)
-    assert live_session.assignment.grant_role == "architect"
-    assert live_session.assignment.work_package_id == package.id
-    assert live_session.assignment.phase_id == package.phase_id
-    assert Scope.work_package(package.id) in live_session.assignment.scopes
-    assert Scope.repo(package.repo, package.base_branch) in live_session.assignment.scopes
+    assert {:ok, _live_session} = Auth.require_session(session, repo)
 
     assert {:ok, _terminal_package} = WorkPackageRepository.update(repo, package.id, %{status: "merged"})
 

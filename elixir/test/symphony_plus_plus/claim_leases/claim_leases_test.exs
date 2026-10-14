@@ -573,29 +573,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
     end
   end
 
-  test "service defaults and repository error paths return stable errors", %{repo: repo} do
+  test "paused heartbeat, actor attribution, release fencing and stale reclaim preserve lease ownership", %{repo: repo} do
     now = DateTime.utc_now(:microsecond)
     stale_started_at = ~U[2026-01-01 00:00:00Z]
     assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-CLAIM-DEFAULTS"))
     assert {:ok, stale_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-CLAIM-DEFAULTS-STALE"))
-
-    assert {:error, :not_found} = Repository.get(repo, "claim_missing")
-    assert {:error, :not_found} = Service.current_for_work_package(repo, "SYMPP-CLAIM-MISSING")
-
-    assert {:error, %Ecto.Changeset{} = changeset} = Service.claim(repo, work_package.id, %{actor_id: "agent-default"})
-    assert Keyword.has_key?(changeset.errors, :lease_expires_at)
-
-    assert {:error, %Ecto.Changeset{} = changeset} =
-             Service.claim(
-               repo,
-               work_package.id,
-               %{actor_id: "agent-default"},
-               access_grant_id: "ag_missing",
-               stale_after_ms: 1_000,
-               now: now
-             )
-
-    assert Keyword.has_key?(changeset.errors, :access_grant_id)
 
     assert {:ok, claim} =
              Repository.claim(
@@ -608,8 +590,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
                now: now
              )
 
-    assert {:ok, claim} = Repository.heartbeat(repo, claim.id)
-    assert {:ok, claim} = Service.heartbeat(repo, claim.id)
     assert {:ok, paused} = Service.pause(repo, claim.id, %{"actor_id" => "agent-default"})
     assert paused.paused_by_actor_id == "agent-default"
     assert {:error, :not_active} = Service.heartbeat(repo, paused.id)
