@@ -9,19 +9,23 @@ import { test as base } from 'e2e';
 
 type RpcResponse = { id: number; result?: any; error?: unknown };
 
+export type CandidateOptions = { database?: string; offline?: boolean; surface?: 'worker' | 'architect' };
+
 // A real candidate process, not the installed plugin or an in-process test harness.
 export class Candidate {
   readonly database: string;
   readonly home: string;
+  readonly logPath: string;
   readonly process: ChildProcessWithoutNullStreams;
   private sequence = 0;
   private pending = new Map<number, { resolve: (response: any) => void; reject: (error: Error) => void }>();
   private log;
 
-  constructor(root: string, name: string, private transport: 'stdio' | 'http' = 'stdio', provider?: { bin: string; endpoint: string }) {
+  constructor(root: string, name: string, private transport: 'stdio' | 'http' = 'stdio', provider?: { bin: string; endpoint: string }, options: CandidateOptions = {}) {
     this.home = join(root, name);
-    this.database = join(this.home, 'ledger.sqlite3');
-    this.log = createWriteStream(resolve('.e2e', `${basename(root)}-${name}.log`));
+    this.database = options.database ?? join(this.home, 'ledger.sqlite3');
+    this.logPath = resolve('.e2e', `${basename(root)}-${name}-${Date.now()}.log`);
+    this.log = createWriteStream(this.logPath);
     const args = transport === 'stdio'
       ? ['sympp.mcp', '--database', this.database, '--repo-root', resolve('.')]
       : ['sympp.cockpit', '--database', this.database, '--port', '0', '--no-open-dashboard',
@@ -32,6 +36,8 @@ export class Candidate {
       env: {
         PATH: provider ? `${provider.bin}${delimiter}${process.env.PATH}` : process.env.PATH,
         ...(provider ? { ACCEPTANCE_PROVIDER: provider.endpoint } : {}),
+        ...(options.offline ? { SYMPP_OFFLINE_SANDBOX: '1' } : {}),
+        ...(options.surface ? { SYMPP_MCP_SURFACE_PROFILE: options.surface } : {}),
         HOME: this.home,
         USERPROFILE: this.home,
         TMPDIR: root,
@@ -54,8 +60,7 @@ export class Candidate {
       const request = this.pending.get(response.id);
       if (!request) return;
       this.pending.delete(response.id);
-      if (response.error) request.reject(new Error(JSON.stringify(response.error)));
-      else request.resolve(response.result);
+      request.resolve(response);
     });
     this.process.on('error', (error) => this.fail(error));
     this.process.on('exit', (code, signal) => this.fail(new Error(`Candidate exited: ${code ?? signal}`)));
@@ -67,6 +72,12 @@ export class Candidate {
   }
 
   async request(method: string, params: object = {}) {
+    const response = await this.rawRequest(method, params);
+    if (response.error) throw new Error(JSON.stringify(response.error));
+    return response.result;
+  }
+
+  async rawRequest(method: string, params: object = {}) {
     const id = ++this.sequence;
     return new Promise<any>((resolve, reject) => {
       const timer = setTimeout(() => {

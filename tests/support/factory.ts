@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { expect, test as base } from 'e2e';
-import { Candidate } from './candidate.js';
+import { Candidate, type CandidateOptions } from './candidate.js';
 
 // The public cockpit owns trusted local HTTP initialization, sessions and SQLite.
 // The dashboard origin skips UI asset construction; no browser is opened or used.
@@ -11,8 +11,8 @@ export class Factory extends Candidate {
   readonly endpoint: Promise<string>;
   readonly receipt: string;
 
-  constructor(root: string, provider?: { bin: string; endpoint: string }) {
-    super(root, 'factory', 'http', provider);
+  constructor(readonly root: string, provider?: { bin: string; endpoint: string }, options: CandidateOptions & { name?: string } = {}) {
+    super(root, options.name ?? 'factory', 'http', provider, options);
     this.receipt = join('.e2e', `${basename(root)}-mcp.jsonl`);
     this.endpoint = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Candidate cockpit startup timed out')), 30_000);
@@ -47,8 +47,19 @@ export class Client {
 
   constructor(private endpoint: string, private receipt?: string) {}
 
+  reconnect(endpoint: string) {
+    const client = new Client(endpoint, this.receipt);
+    client.session = this.session;
+    return client;
+  }
+
   private async record(entry: object) {
-    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify(entry)}\n`);
+    // Assertions inspect the actual response. Evidence never persists proof or
+    // synthetic secret values deliberately submitted by the redaction journeys.
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify(entry, (key, value) => {
+      if (/^(secret|secret_hash|proof_hash|token|authorization|work_key)$/i.test(key)) return '[REDACTED]';
+      return typeof value === 'string' ? value.replace(/Bearer\s+[^\s"\\]+/gi, 'Bearer [REDACTED]').replace(/sk-[a-zA-Z0-9_-]+/g, '[REDACTED]') : value;
+    })}\n`);
   }
 
   private async exchange(url: string | URL, init: RequestInit, receipt: object) {
@@ -59,7 +70,7 @@ export class Client {
       const response = await fetch(url, init);
       status = response.status;
       rawBody = await response.text();
-      const body = JSON.parse(rawBody);
+      const body = rawBody === '' ? null : JSON.parse(rawBody);
       await this.record({ ...receipt, phase: 'response', status, response: body });
       return { response, body };
     } catch (error) {
@@ -72,15 +83,20 @@ export class Client {
   }
 
   async rpc(method: string, params: object = {}) {
-    const { response, body } = await this.exchange(this.endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}) },
-      body: JSON.stringify({ jsonrpc: '2.0', id: ++this.sequence, method, params }),
-      signal: AbortSignal.timeout(30_000),
-    }, { method, params });
-    this.session = response.headers.get('mcp-session-id') ?? this.session;
-    expect(response.status).toBe(200);
+    const { status, body } = await this.raw({ jsonrpc: '2.0', id: ++this.sequence, method, params });
+    expect(status).toBe(200);
     return body;
+  }
+
+  async raw(payload: unknown, headers: Record<string, string> = {}, method = 'POST') {
+    const { response, body } = await this.exchange(this.endpoint, {
+      method,
+      headers: { 'content-type': 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}), ...headers },
+      ...(method === 'POST' ? { body: typeof payload === 'string' ? payload : JSON.stringify(payload) } : {}),
+      signal: AbortSignal.timeout(30_000),
+    }, { method, payload, headerNames: Object.keys(headers) });
+    this.session = response.headers.get('mcp-session-id') ?? this.session;
+    return { status: response.status, body };
   }
 
   async call(name: string, args: object = {}) {
@@ -112,9 +128,9 @@ export class Client {
     return body;
   }
 
-  async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta') {
+  async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta', repo = 'example/service') {
     const created = await this.call('create_work_request', {
-      repo: 'example/service', base_branch: baseBranch, title,
+      repo, base_branch: baseBranch, title,
       description: 'Synthetic acceptance request; no external work is executed.',
       request_kind: 'feature', status, claimed_by: 'acceptance-architect',
       repo_scopes: [{ repo: 'example/client', base_branch: 'integration' }],
