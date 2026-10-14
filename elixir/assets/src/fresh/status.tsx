@@ -23,7 +23,7 @@ function overview(views: GoalView[]) {
   const goals = views.filter((view) => view.state === "live").length;
   const waiting = views.filter((view) => view.state === "resting" && view.done.length === 0).length;
   const now = moving > 0 ? `${moving} moving across ${goals} ${goals === 1 ? "goal" : "goals"}` : "Nothing moving";
-  if (waiting > 0) return `${now} · ${waiting} not started`;
+  if (waiting > 0) return `${now} · ${waiting} planned`;
   return moving > 0 || views.some((view) => view.state !== "settled") ? now : "No open goals";
 }
 
