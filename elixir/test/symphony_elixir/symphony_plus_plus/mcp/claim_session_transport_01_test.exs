@@ -440,45 +440,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
            ) == 0
   end
 
-  test "claim_local_assignment reconnects implicit same owner across local MCP states", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-LOCAL-IMPLICIT-CALLER")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    arguments = package |> local_assignment_claim_args() |> Map.delete("caller_id")
-    config = local_mcp_config(repo)
-
-    {claim_response, _claimed_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-implicit-caller-initial",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => arguments}
-        },
-        local_mcp_server(config, "local-implicit-caller-initial-state")
-      )
-
-    assert get_in(claim_response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "created"
-    initial_caller_id = get_in(claim_response, ["result", "structuredContent", "local_claim", "caller_id"])
-
-    {other_state_response, _server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-implicit-caller-other",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => arguments}
-        },
-        local_mcp_server(config, "local-implicit-caller-other-state")
-      )
-
-    assert get_in(other_state_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert get_in(other_state_response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "heartbeat"
-    other_caller_id = get_in(other_state_response, ["result", "structuredContent", "local_claim", "caller_id"])
-    assert is_binary(initial_caller_id)
-    assert is_binary(other_caller_id)
-    refute initial_caller_id == other_caller_id
-  end
-
   test "claim_local_assignment rejects active orphaned claim lease before grant binding", %{repo: repo} do
     package = create_local_claim_package!(repo, "SYMPP-LOCAL-CALLER-IN-FLIGHT")
     assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)

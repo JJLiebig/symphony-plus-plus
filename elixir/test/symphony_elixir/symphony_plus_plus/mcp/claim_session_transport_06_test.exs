@@ -11,43 +11,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport06Test do
     def get(_schema, _id), do: raise(RuntimeError, "grant lookup unavailable")
   end
 
-  test "batch claim releases the earlier claim before binding a later claim", %{repo: repo} do
-    first_package = create_local_claim_package!(repo, "SYMPP-BATCH-FIRST-CLAIM")
-    second_package = create_local_claim_package!(repo, "SYMPP-BATCH-SECOND-CLAIM")
-    assert {:ok, _first_minted} = AccessGrantService.mint_worker_grant(repo, first_package.id)
-    assert {:ok, _second_minted} = AccessGrantService.mint_worker_grant(repo, second_package.id)
-
-    {responses, server} =
-      Server.handle_state(
-        [
-          %{
-            "jsonrpc" => "2.0",
-            "id" => "claim-first",
-            "method" => "tools/call",
-            "params" => %{"name" => "claim_local_assignment", "arguments" => local_assignment_claim_args(first_package)}
-          },
-          %{
-            "jsonrpc" => "2.0",
-            "id" => "claim-second",
-            "method" => "tools/call",
-            "params" => %{
-              "name" => "claim_local_assignment",
-              "arguments" => local_assignment_claim_args(second_package, %{"claimed_by" => "worker-2"})
-            }
-          }
-        ],
-        local_mcp_server(local_mcp_config(repo), "local-batch-double-claim-state")
-      )
-
-    first_response = Enum.at(responses, 0)
-    second_response = Enum.at(responses, 1)
-
-    assert get_in(first_response, ["result", "structuredContent", "assignment", "work_package_id"]) == first_package.id
-    assert get_in(second_response, ["result", "structuredContent", "assignment", "work_package_id"]) == second_package.id
-    assert {:error, :not_found} = ClaimLeaseService.current_for_work_package(repo, first_package.id)
-    assert server.session.assignment.work_package_id == second_package.id
-  end
-
   test "claim_local_assignment reclaims a stale bound local session for the same package with a new owner label", %{repo: repo} do
     package = create_local_claim_package!(repo, "SYMPP-STALE-BOUND-WORKER")
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
@@ -86,43 +49,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport06Test do
     assert get_in(reclaim_response, ["result", "structuredContent", "assignment", "claimed_by"]) == "worker-after-reboot"
     assert get_in(reclaim_response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "reclaimed"
     assert reclaimed_server.session.assignment.work_package_id == package.id
-  end
-
-  test "claim_local_assignment keeps active same-package owners protected when owner labels differ", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-ACTIVE-BOUND-WORKER")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-
-    {_claim_response, claimed_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "claim-active-bound-worker",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_assignment",
-            "arguments" => local_assignment_claim_args(package, %{"claimed_by" => "worker-before-reboot"})
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "claim-active-bound-worker-state")
-      )
-
-    {response, server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "reclaim-active-bound-worker",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_assignment",
-            "arguments" => local_assignment_claim_args(package, %{"claimed_by" => "worker-after-reboot"})
-          }
-        },
-        claimed_server
-      )
-
-    assert get_in(response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
-    assert server.session.assignment.work_package_id == package.id
-    assert server.session.assignment.claimed_by == "worker-before-reboot"
   end
 
   test "claim_local_assignment does not recover unrelated active worker grants after stale lease reclaim", %{repo: repo} do

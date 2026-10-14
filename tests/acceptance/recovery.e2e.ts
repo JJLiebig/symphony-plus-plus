@@ -15,6 +15,10 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   const winners = results.map((result, index) => ({ result, index })).filter(({ result }) => result.result?.structuredContent?.assignment);
   expect(winners).toHaveLength(1);
   const winner = clients[winners[0].index];
+  const winningClaim = winners[0].result.result.structuredContent;
+  expect(winningClaim.local_claim.mode).toBe('local-http');
+  expect(winningClaim.local_claim.claim_lease_action).toBe('created');
+  for (const key of ['grant_id', 'claim_lease_id', 'caller_id']) expect(winners[0].result.result.content[0].text).not.toContain(key);
   const loser = clients[1 - winners[0].index];
   expect(results[1 - winners[0].index].error).toBeTruthy();
   expect((await loser.call('get_current_assignment')).assignment).toBeNull();
@@ -25,6 +29,8 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   const reconnectClaim = await reconnected.call('claim_local_assignment', { work_package_id: wp, claimed_by: `contender-${winners[0].index}`, caller_id: 'synthetic-new-caller' });
   expect(reconnectClaim.local_claim.caller_id).toBe('synthetic-new-caller');
   expect(reconnectClaim.local_claim.claim_lease_action).toBe('heartbeat');
+  expect(reconnectClaim.local_claim.claim_lease_id).toBe(winningClaim.local_claim.claim_lease_id);
+  expect(reconnectClaim.assignment.grant_id).toBe(winningClaim.assignment.grant_id);
   expect((await reconnected.call('append_progress', mutation)).progress_event.id).toBe(first.id);
   const implicitFirst = await factory.client();
   const implicitSecond = await factory.client();
@@ -34,6 +40,7 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   expect(secondClaim.assignment.claimed_by).toBe(firstClaim.assignment.claimed_by);
   expect(firstClaim.local_claim.claim_lease_action).toBe('created');
   expect(secondClaim.local_claim.claim_lease_action).toBe('heartbeat');
+  expect(secondClaim.local_claim.claim_lease_id).toBe(firstClaim.local_claim.claim_lease_id);
   expect(secondClaim.local_claim.caller_id).not.toBe(firstClaim.local_claim.caller_id);
   await reconnected.reject('append_progress', { ...mutation, summary: 'Conflicting replay' }, 'idempotency_conflict');
   const document = await reconnected.call('read_work_package_document', { document: 'progress.md' });
@@ -82,9 +89,11 @@ test('independent architect clients preserve the owner through release reconnect
   const denied = await peer.rpc('tools/call', { name: 'claim_local_architect_assignment', arguments: { work_request_id: request, claimed_by: 'different-owner' } });
   expect(denied.error).toBeTruthy();
   expect((await owner.call('get_current_assignment')).assignment.claimed_by).toBe('acceptance-architect');
-  expect((await owner.call('claim_local_architect_assignment', { work_request_id: request })).assignment.claimed_by).toBe('acceptance-architect');
+  const current = await owner.call('claim_local_architect_assignment', { work_request_id: request });
+  expect(current.assignment.claimed_by).toBe('acceptance-architect');
   const reconnect = await factory.client();
   const claimed = await reconnect.call('claim_local_architect_assignment', { work_request_id: request, claimed_by: 'acceptance-architect' });
+  expect(claimed.local_claim.claim_lease_id).toBe(current.local_claim.claim_lease_id);
   expect(claimed.assignment.work_package_id).toBe((await owner.call('get_current_assignment')).assignment.work_package_id);
   await reconnect.reject('claim_local_architect_assignment', { work_request_id: request, repo: 'foreign/service', claimed_by: 'acceptance-architect' }, 'repo_scope_mismatch');
   expect((await reconnect.call('get_current_assignment')).assignment.work_package_id).toBe(claimed.assignment.work_package_id);
@@ -164,6 +173,7 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   expect(initialized.serverInfo.version).toBeTruthy();
   expect(initialized.capabilities.tools).toEqual({});
   expect(initialized.capabilities.resources).toEqual({});
+  expect((await candidate.rawRequest('tools/call', { name: 'attach_branch', arguments: { branch: 'feature/authority', head_sha: 'a'.repeat(40) } })).error.data.reason).toBe('claim_required');
   expect((await candidate.rawRequest('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } })).error.data.reason).toBe('claim_required');
   for (const uri of ['sympp://assignment/current', `sympp://work-packages/${wp}/task_plan.md`]) {
     const unbound = await candidate.rawRequest('resources/read', { uri });

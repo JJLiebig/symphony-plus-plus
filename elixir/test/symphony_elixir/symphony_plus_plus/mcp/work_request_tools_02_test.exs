@@ -242,27 +242,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     refute inspect(list_response) =~ sibling.id
   end
 
-  test "WorkRequest MCP tools remain scoped when handoff WorkRequest moves to draft", %{repo: repo} do
-    handoff_work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-WR-HANDOFF-INELIGIBLE",
-        repo: "nextide/symphony-plus-plus",
-        base_branch: "main",
-        status: "ready_for_slicing"
-      )
-
-    {_anchor, session, _grant} =
-      create_work_request_handoff_architect_session(repo, handoff_work_request, [
-        "read:work_request"
-      ])
-
-    assert {:ok, _draft} = WorkRequestRepository.update_status(repo, handoff_work_request.id, "ready_for_slicing", "draft")
-
-    read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => handoff_work_request.id})
-    assert get_in(read_response, ["result", "structuredContent", "work_request", "id"]) == handoff_work_request.id
-    assert get_in(read_response, ["result", "structuredContent", "work_request", "status"]) == "draft"
-  end
-
   test "architect WorkRequest mutation tools update scoped clarification state and redact responses", %{repo: repo} do
     {anchor, session, _grant} =
       create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-MUTATE", [

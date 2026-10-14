@@ -58,35 +58,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport05Test do
     assert get_in(reconnect_response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "heartbeat"
   end
 
-  test "batch local claim does not bind sibling batch items", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-LOCAL-BATCH-THREAD")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-
-    {responses, _server} =
-      Server.handle_response_state(
-        [
-          tool_call("invalid-local-claim", "claim_local_assignment", Map.put(local_assignment_claim_args(package), "unexpected", "value")),
-          tool_call("progress-before-claim", "append_progress", %{
-            "summary" => "should not append",
-            "idempotency_key" => "progress-before-local-claim"
-          }),
-          tool_call("valid-local-claim", "claim_local_assignment", local_assignment_claim_args(package)),
-          tool_call("progress-after-claim", "append_progress", %{
-            "summary" => "should append",
-            "idempotency_key" => "progress-after-local-claim"
-          }),
-          tool_call("architect-after-worker-claim", "list_guidance_requests", %{"work_request_id" => "WR-NOT-A-WORKER-PROMOTION"})
-        ],
-        local_mcp_server(local_mcp_config(repo), "local-batch-thread-state")
-      )
-
-    assert get_in(Enum.at(responses, 0), ["error", "data", "reason"]) == "unexpected_argument"
-    assert get_in(Enum.at(responses, 1), ["error", "data", "reason"]) == "claim_required"
-    assert get_in(Enum.at(responses, 2), ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert get_in(Enum.at(responses, 3), ["error", "data", "reason"]) == "claim_required"
-    assert get_in(Enum.at(responses, 4), ["error", "data", "reason"]) == "claim_required"
-  end
-
   test "single-item batch preserves local claim session for later requests", %{repo: repo} do
     package = create_local_claim_package!(repo, "SYMPP-LOCAL-SINGLE-BATCH")
     assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
@@ -110,36 +81,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport05Test do
     assert [claim_response] = responses
     assert get_in(claim_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
     assert get_in(read_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-  end
-
-  test "batch calls persist local claim session only after the batch completes", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-LOCAL-BATCH-NO-LEAK")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    server = local_mcp_server(local_mcp_config(repo), make_ref())
-
-    {responses, claimed_server} =
-      Server.handle_response_state(
-        [
-          tool_call("batch-claim", "claim_local_assignment", local_assignment_claim_args(package)),
-          tool_call("batch-progress", "append_progress", %{
-            "summary" => "in-batch progress",
-            "idempotency_key" => "local-batch-progress"
-          })
-        ],
-        server
-      )
-
-    assignment_response =
-      Server.handle(
-        %{"jsonrpc" => "2.0", "id" => "assignment-outside-batch", "method" => "tools/call", "params" => %{"name" => "get_current_assignment", "arguments" => %{}}},
-        server
-      )
-
-    assert get_in(Enum.at(responses, 0), ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert get_in(Enum.at(responses, 1), ["error", "data", "reason"]) == "claim_required"
-    assert claimed_server.session.assignment.work_package_id == package.id
-    assert get_in(assignment_response, ["result", "structuredContent", "assignment"]) == nil
-    assert get_in(assignment_response, ["result", "structuredContent", "binding", "state"]) == "unbound"
   end
 
   defp tool_call(id, name, arguments) do

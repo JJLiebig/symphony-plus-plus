@@ -149,48 +149,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
     assert is_list(get_in(tools_response, ["result", "tools"]))
   end
 
-  test "HTTP transport preserves distinct sessions across concurrent initialization", %{repo: repo} do
-    config = local_mcp_config(repo)
-    client_key = "concurrent-initialize-client"
-
-    initialized =
-      1..20
-      |> Task.async_stream(
-        fn index ->
-          HTTPTransport.handle(
-            config,
-            %{"jsonrpc" => "2.0", "id" => "init-#{index}", "method" => "initialize", "params" => initialize_params()},
-            client_key: client_key
-          )
-        end,
-        max_concurrency: 20,
-        ordered: true,
-        timeout: 30_000
-      )
-      |> Enum.map(fn {:ok, {:ok, result}} -> result end)
-
-    state_keys = Enum.map(initialized, & &1.state_key)
-    assert length(Enum.uniq(state_keys)) == 20
-
-    initialized
-    |> Task.async_stream(
-      fn init_result ->
-        HTTPTransport.handle(
-          config,
-          %{"jsonrpc" => "2.0", "id" => "tools", "method" => "tools/list", "params" => %{}},
-          client_key: client_key,
-          state_key: init_result.state_key
-        )
-      end,
-      max_concurrency: 20,
-      ordered: false,
-      timeout: 30_000
-    )
-    |> Enum.each(fn {:ok, {:ok, result}} ->
-      assert is_list(get_in(result.response, ["result", "tools"]))
-    end)
-  end
-
   test "response-only handle namespaces explicit state keys by config", %{repo: repo} do
     state_key = make_ref()
 
@@ -315,44 +273,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
     assert Map.has_key?(fresh_tools_by_name, "claim_local_architect_assignment")
     assert Map.has_key?(fresh_tools_by_name, "solo_attach")
     assert Map.has_key?(fresh_tools_by_name, "get_current_assignment")
-  end
-
-  test "explicit state key duplicate initialize preserves active live session", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-STATE-LIVE-DUP")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    state_key = make_ref()
-
-    {_init_response, initialized_server} =
-      Server.handle_response_state(
-        %{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()},
-        Server.new(local_mcp_config(repo), state_key: state_key)
-      )
-
-    {_claim_response, claimed_server} =
-      Server.handle_response_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "claim",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => local_assignment_claim_args(package)}
-        },
-        initialized_server
-      )
-
-    {duplicate_init_response, duplicate_server} =
-      Server.handle_response_state(
-        %{"jsonrpc" => "2.0", "id" => "init-again", "method" => "initialize", "params" => initialize_params()},
-        claimed_server
-      )
-
-    {assignment_response, _server} =
-      Server.handle_response_state(
-        %{"jsonrpc" => "2.0", "id" => "assignment-after-duplicate", "method" => "tools/call", "params" => %{"name" => "get_current_assignment"}},
-        duplicate_server
-      )
-
-    assert get_in(duplicate_init_response, ["error", "data", "reason"]) == "already_initialized"
-    assert get_in(assignment_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
   end
 
   test "bound notification tool calls skip fresh and refresh aging current claim leases", %{repo: repo} do
@@ -1081,45 +1001,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
     assert updated_server.session == nil
     assert updated_server.session_refresh_required == true
     assert {:ok, []} = PlanningRepository.list_progress_events(repo, package.id)
-  end
-
-  test "HTTP local assignment recovery rehydrates a worker session", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-HTTP-LOCAL-RECOVERY")
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    config = local_mcp_config(repo)
-    client_key = "client-http-local-recovery"
-
-    {:ok, init_result} =
-      HTTPTransport.handle(config, %{"jsonrpc" => "2.0", "id" => "init-local-recovery", "method" => "initialize", "params" => initialize_params()}, client_key: client_key)
-
-    {:ok, claim_result} =
-      HTTPTransport.handle(
-        config,
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "claim-local-recovery",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => local_assignment_claim_args(package)}
-        },
-        client_key: client_key,
-        state_key: init_result.state_key
-      )
-
-    assert get_in(claim_result.response, ["result", "structuredContent", "assignment", "grant_id"]) == minted.grant.id
-
-    HTTPStateStore.reset!()
-
-    {:ok, assignment_result} =
-      HTTPTransport.handle(
-        config,
-        %{"jsonrpc" => "2.0", "id" => "assignment-after-reset", "method" => "tools/call", "params" => %{"name" => "get_current_assignment", "arguments" => %{}}},
-        client_key: client_key,
-        state_key: init_result.state_key
-      )
-
-    assert get_in(assignment_result.response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert %Server{session: %Session{assignment: %{work_package_id: package_id}}} = HTTPStateStore.get(config, client_key, init_result.state_key)
-    assert package_id == package.id
   end
 
   defp capture_queries(repo, fun) do

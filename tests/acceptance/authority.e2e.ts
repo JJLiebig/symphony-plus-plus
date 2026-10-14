@@ -208,6 +208,114 @@ test('architect scope separates same-repository discovery from foreign writes an
   }
 });
 
+test('plan views preserve complete authoring and confine partial readers to visible groups and dependencies', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Plan projection authority');
+  const reader = await factory.client();
+  await reader.request('Secondary plan reader', 'ready_for_slicing', 'integration', 'example/client');
+  const views = ['groups_only', 'groups_with_work_package_refs', 'groups_with_work_packages'];
+  const read = async (client: Client, view: string) => (await client.call('read_plan', { work_request_id: request, view })).product_tree;
+  const group = async (title: string, parent?: string) => (await architect.call('upsert_group', {
+    title, ...(parent ? { parent_group_id: parent } : {}),
+  })).group.id as string;
+  const empty = await group('Empty authoring group');
+  const hiddenRoot = await group('Hidden root');
+  const hiddenGroup = await group('Hidden package group', hiddenRoot);
+  const emptyDescendant = await group('Empty hidden descendant', hiddenGroup);
+  const ancestor = await group('Necessary visible ancestor');
+  const visibleGroup = await group('Visible package group', ancestor);
+  const mixed = await group('Mixed membership');
+  const allGroups = [empty, hiddenRoot, hiddenGroup, emptyDescendant, ancestor, visibleGroup, mixed].sort();
+  // Empty equals empty: both callers can see a complete pre-package authoring plan.
+  for (const client of [architect, reader]) for (const view of views) {
+    const plan = await read(client, view);
+    expect(plan.groups.map((entry: any) => entry.id).sort()).toEqual(allGroups);
+    expect(plan.summary.work_package_count).toBe(0);
+  }
+  const hidden = (await architect.call('slice_work_request', { work_packages: [
+    contract('Hidden contract', { group_id: hiddenGroup }),
+    contract('Hidden ancestor membership', { group_id: ancestor }),
+    contract('Hidden mixed membership', { group_id: mixed }),
+    contract('Hidden terminal contract', { group_id: hiddenGroup, kind: 'docs' }),
+  ] })).work_package_ids as string[];
+  for (const view of views) {
+    const plan = await read(reader, view);
+    expect(plan.groups).toEqual([]);
+    expect(plan.root_group_ids).toEqual([]);
+    expect(plan.root_work_package_ids).toEqual([]);
+    expect(plan.summary.work_package_count).toBe(0);
+    expect(plan.summary.group_count).toBe(0);
+    for (const id of [...hidden, ...allGroups]) expect(JSON.stringify(plan)).not.toContain(id);
+  }
+  const secondary = { repo: 'example/client', base_branch: 'integration' };
+  const [planned, mixedMember, terminal, rootMember] = (await architect.call('slice_work_request', { work_packages: [
+    contract('Visible planned contract', { ...secondary, group_id: visibleGroup }),
+    contract('Visible mixed contract', { ...secondary, group_id: mixed }),
+    contract('Visible terminal contract', { ...secondary, group_id: visibleGroup, kind: 'docs' }),
+    contract('Visible root contract', secondary),
+  ] })).work_package_ids;
+  const visible = [planned, mixedMember, terminal, rootMember].sort();
+  const dependency = async (dependent: string, prerequisite: string, kind = 'work_package') =>
+    (await architect.call('upsert_dependency', {
+      dependent: { kind, id: dependent }, prerequisite: { kind, id: prerequisite }, reason: 'Required bounded scope',
+    })).dependency.id as string;
+  const visibleEdge = await dependency(planned, terminal);
+  const groupEdge = await dependency(mixed, visibleGroup, 'group');
+  const hiddenEdge = await dependency(planned, hidden[0]);
+  const hiddenGroupEdge = await dependency(mixed, hiddenGroup, 'group');
+  const assertPartial = async (terminalStatus: string) => {
+    for (const view of views) {
+      const plan = await read(reader, view);
+      expect(plan.groups.map((entry: any) => entry.id).sort()).toEqual([ancestor, visibleGroup, mixed].sort());
+      expect(plan.root_group_ids.sort()).toEqual([ancestor, mixed].sort());
+      expect(plan.summary.work_package_count).toBe(4);
+      expect(plan.summary.group_count).toBe(3);
+      const mixedRow = plan.groups.find((entry: any) => entry.id === mixed);
+      expect(mixedRow.work_package_count).toBe(1);
+      for (const id of [...hidden, empty, hiddenRoot, hiddenGroup, emptyDescendant, hiddenEdge, hiddenGroupEdge]) expect(JSON.stringify(plan)).not.toContain(id);
+      expect(JSON.stringify(plan)).not.toContain('Hidden contract');
+      expect(JSON.stringify(plan)).not.toContain('Hidden terminal contract');
+      if (view === 'groups_only') {
+        expect(plan.root_work_package_ids).toEqual([]);
+        expect(mixedRow.work_package_ids).toBeUndefined();
+        expect(plan.work_packages).toBeUndefined();
+        expect(plan.work_package_refs).toBeUndefined();
+        expect(plan.omitted_work_package_count).toBe(4);
+        expect(plan.execution_graph.omitted_work_package_count).toBe(4);
+        expect(plan.dependency_intents.map((entry: any) => entry.id)).toEqual([groupEdge]);
+      } else {
+        expect(plan.root_work_package_ids).toEqual([rootMember]);
+        expect(mixedRow.work_package_ids).toEqual([mixedMember]);
+        expect(plan.groups.find((entry: any) => entry.id === ancestor).work_package_ids).toEqual([]);
+        const members = view === 'groups_with_work_packages' ? plan.work_packages : plan.work_package_refs;
+        expect(members.map((entry: any) => entry.id).sort()).toEqual(visible);
+        expect(members.find((entry: any) => entry.id === planned).status).toBe('planned');
+        expect(members.find((entry: any) => entry.id === terminal).status).toBe(terminalStatus);
+        expect(plan.execution_graph.work_package_ids.sort()).toEqual(visible);
+        expect(plan.dependency_intents.map((entry: any) => entry.id).sort()).toEqual([visibleEdge, groupEdge].sort());
+        expect(plan.execution_graph.effective_edges.map((entry: any) => [entry.prerequisite_work_package_id, entry.dependent_work_package_id]).sort())
+          .toEqual([[terminal, planned], [planned, mixedMember], [terminal, mixedMember]].sort());
+      }
+    }
+  };
+  await assertPartial('planned');
+  for (const wp of [hidden[3], terminal]) {
+    await architect.call('dispatch_work_package', { work_package_id: wp });
+    await (await worker(factory, wp)).call('mark_ready');
+    await close(architect, wp);
+  }
+  await assertPartial('closed');
+  for (const view of views) {
+    const plan = await read(architect, view);
+    expect(plan.groups.map((entry: any) => entry.id).sort()).toEqual(allGroups);
+    expect(plan.summary.work_package_count).toBe(8);
+    if (view === 'groups_with_work_packages') {
+      expect(plan.work_packages.find((entry: any) => entry.id === hidden[3]).status).toBe('closed');
+    }
+  }
+});
+
 test('worker mutations and resources remain confined to its package while explicit local notes preserve provenance', async ({ processes }) => {
   const factory = processes.factory();
   const architect = await factory.client();
@@ -553,6 +661,7 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   const request = await architect.request('Worker provider evidence');
   const [wp, sibling] = (await architect.call('slice_work_request', { work_packages: [contract('Provider-qualified work', {
     kind: 'mcp', policy_template: 'mcp_current_pr_state', branch_pattern: 'feature/authority',
+    review: { type: 'review_suite', args: { mode: 'fast' } },
   }), contract('Confidential sibling terminal marker')] })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: wp });
   let client = await worker(factory, wp);
@@ -620,6 +729,8 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
     observed_at: '', provider_reference: 'synthetic-import-302', check_summary: { status: 'passing' }, review_state: { status: 'approved' }, merge_state: { status: 'clean', merged: false } };
   const beforeImport = provider.calls.length;
   const imported = (await client.call('sync_pr', { recovery, idempotency_key: 'recovery-once' })).progress_event;
+  await client.call('release_current_assignment', { reason: 'Reconnect imported observation' });
+  client = await worker(factory, wp);
   const importedHistory = await client.call('read_work_package_document', { document: 'progress.md' });
   expect(importedHistory.progress_events.find((entry: any) => entry.id === imported.id).payload.observation.provider_reference).toBe('synthetic-import-302');
   expect((await client.call('sync_pr', { recovery, idempotency_key: 'recovery-once' })).progress_event.id).toBe(imported.id);
@@ -895,7 +1006,8 @@ test('architect question and decision mutations preserve provenance and redact c
   const request = await architect.request('Redacted clarification authority', 'ready_for_clarification');
   const status = await architect.call('set_work_request_status', { work_request_id: request, current_status: 'ready_for_clarification', next_status: 'clarifying' });
   expect(status.work_request.status).toBe('clarifying');
-  expect(status.scope).toEqual({ repo: 'example/service', base_branch: 'beta' });
+  expect(status.scope.repo).toBe('example/service');
+  expect(status.scope.base_branch).toBe('beta');
   const ask = await architect.call('ask_question', { work_request_id: request, category: 'scope',
     question: 'Avoid Bearer raw_secret_synthetic', why_needed: 'Keep raw_secret_synthetic out of responses.',
     asked_by_agent_run_id: 'raw_secret_synthetic', decision_prompt: { tl_dr: 'Choose scope', details: 'A bounded decision is required.',

@@ -6,40 +6,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{ProgressEvents, WorktreeScope}
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
 
-  test "worker tools update only the scoped planning state and deny sibling mutations", %{repo: repo} do
+  test "stored worker evidence preserves cross-grant identity and secret normalization", %{repo: repo} do
     assert {:ok, own_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-WORKER-OWN", kind: "adapter"))
-    assert {:ok, sibling_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-WORKER-SIBLING", kind: "adapter"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, own_package.id)
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    read_plan_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "read-plan", "method" => "tools/call", "params" => %{"name" => "read_task_plan"}},
-        repo: repo,
-        session: session
-      )
-
-    plan_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "plan",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => get_in(read_plan_response, ["result", "structuredContent", "version"]),
-              "nodes" => [%{"title" => "Implement MCP worker tools", "status" => "done"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(plan_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "status"]) == "done"
-    assert get_in(plan_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "id"]) =~ ~r/^plan_/
 
     finding_response =
       MCPHarness.request(
@@ -219,40 +190,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     assert get_in(conflicting_finding_response, ["error", "data", "reason"]) == "idempotency_conflict"
 
-    progress_args = %{"summary" => "Progress", "idempotency_key" => "worker-progress-1", "body" => "Done"}
-
-    progress_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "progress", "method" => "tools/call", "params" => %{"name" => "append_progress", "arguments" => progress_args}},
-        repo: repo,
-        session: session
-      )
-
-    replay_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "progress-replay", "method" => "tools/call", "params" => %{"name" => "append_progress", "arguments" => progress_args}},
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(progress_response, ["result", "structuredContent", "progress_event", "id"]) ==
-             get_in(replay_response, ["result", "structuredContent", "progress_event", "id"])
-
-    whitespace_progress_replay_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "progress-whitespace-replay",
-          "method" => "tools/call",
-          "params" => %{"name" => "append_progress", "arguments" => %{progress_args | "idempotency_key" => " worker-progress-1 "}}
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(whitespace_progress_replay_response, ["result", "structuredContent", "progress_event", "id"]) ==
-             get_in(progress_response, ["result", "structuredContent", "progress_event", "id"])
-
     redacted_progress_args = %{
       "summary" => "Redacted progress",
       "idempotency_key" => "worker-progress-redacted",
@@ -334,47 +271,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     assert get_in(redacted_replay_response, ["result", "structuredContent", "progress_event", "id"]) ==
              get_in(redacted_progress_response, ["result", "structuredContent", "progress_event", "id"])
-
-    conflicting_progress_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "progress-conflict",
-          "method" => "tools/call",
-          "params" => %{"name" => "append_progress", "arguments" => Map.put(progress_args, "summary", "Different progress")}
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(conflicting_progress_response, ["error", "data", "reason"]) == "idempotency_conflict"
-
-    denied_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "denied",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => get_in(plan_response, ["result", "structuredContent", "version"]),
-              "work_package_id" => sibling_package.id,
-              "nodes" => [%{"title" => "Mutate sibling"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(denied_response, ["error", "code"]) == -32_003
-    assert get_in(denied_response, ["error", "data", "reason"]) == "outside_session_scope"
-
-    assert {:ok, own_nodes} = PlanningRepository.list_plan_nodes(repo, own_package.id)
-    assert {:ok, sibling_nodes} = PlanningRepository.list_plan_nodes(repo, sibling_package.id)
-    assert length(own_nodes) == 1
-    assert sibling_nodes == []
   end
 
   test "compact worker metadata calls infer current package targets and keep verbose compatibility", %{repo: repo} do
@@ -489,7 +385,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert get_in(invalid_inferred_branch_response, ["error", "data", "validation_errors", Access.at(0), "field"]) == "branch_pattern"
   end
 
-  test "worker-facing WorkPackage tools and resources emit TOON agent text without changing JSON structured content", %{repo: repo} do
+  test "stored worker context and progress payloads retain redaction at read time", %{repo: repo} do
     leaked_secret = WorkKey.generate().secret
     api_token = "sk-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
     api_key = "plain-api-key-value"
@@ -512,18 +408,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
-    assignment_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "assignment", "method" => "tools/call", "params" => %{"name" => "get_current_assignment"}},
-        repo: repo,
-        session: session
-      )
-
-    assignment_text = get_in(assignment_response, ["result", "content", Access.at(0), "text"])
-    assert assignment_text =~ "assignment:"
-    assert get_in(assignment_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    refute assignment_text =~ minted.work_key.secret
-
     context_response =
       MCPHarness.request(
         %{"jsonrpc" => "2.0", "id" => "context", "method" => "tools/call", "params" => %{"name" => "read_context"}},
@@ -537,116 +421,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert context_text =~ "[REDACTED]"
     assert get_in(context_response, ["result", "structuredContent", "text"]) =~ "# source: `Emit TOON worker context`"
     refute context_text =~ leaked_secret
-
-    acceptance_resource =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "acceptance-resource",
-          "method" => "resources/read",
-          "params" => %{"uri" => "sympp://work-packages/#{package.id}/acceptance.md"}
-        },
-        repo: repo,
-        session: session
-      )
-
-    acceptance_contents = get_in(acceptance_resource, ["result", "contents"])
-    assert [%{"mimeType" => "text/vnd.toon"} = acceptance_toon_resource] = acceptance_contents
-
-    resource_list =
-      MCPHarness.request(%{"jsonrpc" => "2.0", "id" => "resources", "method" => "resources/list"}, repo: repo, session: session)
-
-    listed_acceptance = Enum.find(get_in(resource_list, ["result", "resources"]), &(&1["uri"] == acceptance_toon_resource["uri"]))
-    assert listed_acceptance["mimeType"] == acceptance_toon_resource["mimeType"]
-    assert acceptance_toon_resource["text"] =~ "acceptance[1]{source}:"
-    assert acceptance_toon_resource["text"] =~ "Do not invent completion state"
-    refute acceptance_toon_resource["text"] =~ "done"
-
-    http_acceptance_resource =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "http-acceptance-resource",
-          "method" => "resources/read",
-          "params" => %{"uri" => "sympp://work-packages/#{package.id}/acceptance.md"}
-        },
-        config: Config.default(repo: repo, mode: :http, surface_profile: :full),
-        session: session
-      )
-
-    assert [%{"mimeType" => "text/vnd.toon", "text" => http_acceptance_text}] =
-             get_in(http_acceptance_resource, ["result", "contents"])
-
-    assert http_acceptance_text == acceptance_toon_resource["text"]
-
-    read_plan_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "read-plan", "method" => "tools/call", "params" => %{"name" => "read_task_plan"}},
-        repo: repo,
-        session: session
-      )
-
-    read_plan_text = get_in(read_plan_response, ["result", "content", Access.at(0), "text"])
-    assert read_plan_text =~ "plan_nodes[0]:"
-    assert get_in(read_plan_response, ["result", "structuredContent", "text"]) =~ "# Task Plan"
-
-    update_plan_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "update-plan",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => get_in(read_plan_response, ["result", "structuredContent", "version"]),
-              "nodes" => [%{"title" => "Verify TOON worker context", "status" => "done"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    update_plan_text = get_in(update_plan_response, ["result", "content", Access.at(0), "text"])
-    assert update_plan_text =~ "plan_nodes[1]"
-    assert update_plan_text =~ "Verify TOON worker context"
-    assert get_in(update_plan_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "id"]) =~ ~r/^plan_/
-
-    finding_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "finding",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "append_finding",
-            "arguments" => %{"title" => "TOON visible", "body" => "Finding body", "idempotency_key" => "toon-finding"}
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(finding_response, ["result", "content", Access.at(0), "text"]) =~ "finding:"
-    assert get_in(finding_response, ["result", "structuredContent", "finding", "title"]) == "TOON visible"
-
-    findings_resource =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "findings-resource",
-          "method" => "resources/read",
-          "params" => %{"uri" => "sympp://work-packages/#{package.id}/findings.md"}
-        },
-        repo: repo,
-        session: session
-      )
-
-    findings_contents = get_in(findings_resource, ["result", "contents"])
-    assert [%{"mimeType" => "text/vnd.toon"} = findings_toon_resource] = findings_contents
-    assert findings_toon_resource["text"] =~ "findings[1]"
-    assert findings_toon_resource["text"] =~ "TOON visible"
 
     progress_response =
       MCPHarness.request(

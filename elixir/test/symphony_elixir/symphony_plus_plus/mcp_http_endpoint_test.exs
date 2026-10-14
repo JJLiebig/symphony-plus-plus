@@ -262,20 +262,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert queries == []
   end
 
-  test "POST /mcp/client-lease attaches and detaches launcher clients" do
-    on_exit(fn -> ClientLeases.detach("endpoint-client") end)
-
-    attach = post_json(%{"client_id" => "endpoint-client", "action" => "attach"}, [], path: "/mcp/client-lease")
-    assert %{"status" => "ok", "active_client_count" => count} = json_response(attach, 200)
-    assert count >= 1
-
-    heartbeat = post_json(%{"client_id" => "endpoint-client", "action" => "heartbeat"}, [], path: "/mcp/client-lease")
-    assert %{"status" => "ok"} = json_response(heartbeat, 200)
-
-    detach = post_json(%{"client_id" => "endpoint-client", "action" => "detach"}, [], path: "/mcp/client-lease")
-    assert %{"status" => "ok"} = json_response(detach, 200)
-  end
-
   test "POST /mcp/client-lease restarts a missing lease worker" do
     on_exit(fn -> ClientLeases.detach("restarted-endpoint-client") end)
 
@@ -307,34 +293,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
              "data",
              "reason"
            ]) == "origin_not_allowed"
-  end
-
-  test "POST /mcp tools/list uses Mcp-Session-Id continuity" do
-    init = post_json(initialize_request("init"))
-    [session_id] = get_resp_header(init, "mcp-session-id")
-
-    conn = post_json(tools_list_request("tools"), [{"mcp-session-id", session_id}])
-
-    assert [^session_id] = get_resp_header(conn, "mcp-session-id")
-
-    names = tool_names(json_response(conn, 200))
-    assert length(names) == length(Enum.uniq(names))
-
-    for tool <- [
-          "sympp.health",
-          "get_current_assignment",
-          "claim_local_assignment",
-          "claim_local_architect_assignment",
-          "solo_attach",
-          "create_work_request",
-          "add_work_request_comment"
-        ] do
-      assert tool in names
-    end
-
-    for tool <- ["read_context", "read_work_request", "list_work_requests"] do
-      assert tool in names
-    end
   end
 
   test "POST /mcp exposes and runs local operator WorkRequest note tools on loopback" do

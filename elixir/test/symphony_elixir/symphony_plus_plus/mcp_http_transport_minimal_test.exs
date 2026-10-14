@@ -464,17 +464,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert %Server{initialized: true} = HTTPStateStore.get(config, "client-a", init.state_key)
   end
 
-  test "same client follow-up without state key does not use a current alias", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, headerless_tools} = HTTPTransport.handle(config, tools_list_request("headerless-tools"), client_key: "client-a")
-
-    assert headerless_tools.status == :error
-    assert headerless_tools.state_key == nil
-    assert get_in(headerless_tools.response, ["error", "data", "reason"]) == "server_not_initialized"
-    assert %Server{initialized: true} = HTTPStateStore.get(config, "client-a", init.state_key)
-  end
-
   test "batch transport observes each failed tool item once without retaining values", %{config: config} do
     assert {:ok, _settings} = OperatorSettingsRepository.update(config.repo, %{"capture_failed_mcp_calls" => true})
     {:ok, init} = HTTPTransport.handle(config, initialize_request("batch-failure-init"), client_key: "batch-failure-client")
@@ -499,28 +488,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     refute log =~ "private-request-id"
     refute log =~ "request-secret"
     refute log =~ "notification-secret"
-  end
-
-  test "invalid JSON-RPC shapes return controlled errors without creating HTTP state", %{config: config} do
-    assert {:ok, invalid_body} = HTTPTransport.handle(config, "not-a-json-rpc-object", client_key: "client-a")
-
-    assert invalid_body.status == :error
-    assert invalid_body.state_key == nil
-    assert get_in(invalid_body.response, ["error", "code"]) == -32_600
-    assert get_in(invalid_body.response, ["error", "data", "reason"]) == "request_must_be_object"
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-
-    assert {:ok, invalid_initialize} =
-             HTTPTransport.handle(
-               config,
-               %{"jsonrpc" => "2.0", "id" => "bad-init", "method" => "initialize", "params" => %{"protocolVersion" => "2025-03-26"}},
-               client_key: "client-a"
-             )
-
-    assert invalid_initialize.status == :error
-    assert invalid_initialize.state_key == nil
-    assert get_in(invalid_initialize.response, ["error", "data", "reason"]) == "invalid_initialize_params"
-    assert :sys.get_state(HTTPStateStore).entries == %{}
   end
 
   test "batched initialize requests are rejected without creating HTTP state", %{config: config} do
