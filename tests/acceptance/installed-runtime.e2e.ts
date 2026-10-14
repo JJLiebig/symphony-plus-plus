@@ -78,9 +78,8 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(existsSync(installed.env.SYMPP_DATABASE!)).toBe(false);
     for (const agent of ['codex', 'claude-code']) {
       await installed.skills(['remove', 'symphony-plus-plus', '--agent', agent, '--yes']);
-      const remaining = JSON.parse(await installed.skills(['list', '--agent', agent, '--json']));
-      expect(remaining.every((skill: { agents: string[] }) => !skill.agents.includes(agent))).toBe(true);
     }
+    expect(JSON.parse(await installed.skills(['list', '--json']))).toEqual([]);
   });
 
   test('Skills remote update keeps beta tracking for both native hosts', { timeout: 600_000 }, async ({ installed }) => {
