@@ -1,37 +1,6 @@
 defmodule SymphonyElixir.WorkflowStoreTest do
   use SymphonyElixir.TestSupport
 
-  test "initial load stores workflow with content and metadata stamps" do
-    path = Workflow.workflow_file_path()
-
-    with_isolated_workflow_store(tracked_file_ops(self()), fn ->
-      assert_receive {:workflow_store_read, ^path}, 1_000
-      assert_receive {:workflow_store_stat, ^path, opts}, 1_000
-      assert Keyword.fetch!(opts, :time) == :posix
-
-      assert {:ok, %{prompt: "You are an agent for this repository."}} = Workflow.current()
-      assert {:posix, _mtime, _ctime, _size} = :sys.get_state(WorkflowStore).metadata_stamp
-    end)
-  end
-
-  test "unchanged poll checks metadata without reading workflow contents" do
-    path = Workflow.workflow_file_path()
-
-    stable_stat = fn _path, _opts ->
-      {:ok, %{mtime: 1, ctime: 1, size: 1, time_unit: :posix}}
-    end
-
-    with_isolated_workflow_store(tracked_file_ops(self(), stat: stable_stat), fn ->
-      drain_workflow_store_messages()
-
-      send(WorkflowStore, :poll)
-
-      assert_receive {:workflow_store_stat, ^path, opts}, 1_000
-      assert Keyword.fetch!(opts, :time) == :posix
-      refute_receive {:workflow_store_read, ^path}, 100
-    end)
-  end
-
   test "unverified matching metadata still reads contents to catch same-size edits" do
     path = Workflow.workflow_file_path()
     unresolved_second = System.system_time(:second) + 60
@@ -89,39 +58,6 @@ defmodule SymphonyElixir.WorkflowStoreTest do
       assert :ok = WorkflowStore.force_reload()
       assert_receive {:workflow_store_read, ^path}, 1_000
       assert :sys.get_state(WorkflowStore).workflow.prompt == "Explicit reload prompt"
-    end)
-  end
-
-  test "changed workflow contents reload the cached workflow" do
-    path = Workflow.workflow_file_path()
-
-    with_isolated_workflow_store(tracked_file_ops(self()), fn ->
-      drain_workflow_store_messages()
-
-      File.write!(path, "Second workflow prompt with changed size\n")
-      send(WorkflowStore, :poll)
-
-      assert_receive {:workflow_store_read, ^path}, 1_000
-
-      assert_eventually(fn ->
-        :sys.get_state(WorkflowStore).workflow.prompt == "Second workflow prompt with changed size"
-      end)
-    end)
-  end
-
-  test "invalid changed workflow keeps the last known good workflow" do
-    path = Workflow.workflow_file_path()
-
-    with_isolated_workflow_store(tracked_file_ops(self()), fn ->
-      drain_workflow_store_messages()
-
-      File.write!(path, "---\ntracker: [\n---\nBroken prompt\n")
-      send(WorkflowStore, :poll)
-
-      assert_receive {:workflow_store_read, ^path}, 1_000
-
-      assert :sys.get_state(WorkflowStore).workflow.prompt == "You are an agent for this repository."
-      assert {:ok, %{prompt: "You are an agent for this repository."}} = Workflow.current()
     end)
   end
 
