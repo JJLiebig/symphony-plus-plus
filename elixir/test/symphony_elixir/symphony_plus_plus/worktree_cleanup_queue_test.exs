@@ -127,6 +127,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     assert File.dir?(package.worktree_path)
   end
 
+  test "manual retryable cleanup persists its obligation before reporting queued", %{repo: repo} do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-manual")
+    codex_home = use_codex_home!(fixture.root)
+    package = prepared_package!(repo, fixture.repo_root, codex_home, "WP-CLEANUP-MANUAL", "fix/cleanup-manual")
+    failure = {:git_failed, 1, %{stage: "git_worktree_remove", rule: "durable_preflight_proof"}}
+
+    assert {:ok, queued} = WorktreeCleanupQueue.queue_retryable_cleanup(repo, package, failure, codex_home: codex_home)
+    assert queued.status == "cleanup_queued"
+    assert [%Entry{work_package_id: package_id, worktree_path: worktree_path}] = repo.all(Entry)
+    assert package_id == package.id
+    assert worktree_path == package.worktree_path
+  end
+
   test "offline background reconciliation preserves existing cleanup obligations and source trees", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-offline-cleanup")
     codex_home = use_codex_home!(fixture.root)

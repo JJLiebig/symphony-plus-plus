@@ -117,7 +117,10 @@ test('Solo evidence survives restart and lifecycle transitions without creating 
   expect((await client.call('solo_attach', scope)).solo_session.id).toBe(id);
   await client.call('solo_append_progress', { session_id: id, summary: 'Paused observation', idempotency_key: 'paused-once' });
   expect((await client.call('solo_resume', { session_id: id })).solo_session.status).toBe('active');
-  expect((await client.call('solo_complete', { session_id: id })).solo_session.status).toBe('completed');
+  const completed = (await client.call('solo_complete', { session_id: id })).solo_session;
+  expect(completed.status).toBe('completed');
+  await client.reject('solo_resume', { session_id: id }, 'invalid_transition');
+  expect((await client.call('solo_complete', { session_id: id })).solo_session.last_activity_at).toBe(completed.last_activity_at);
   expect((await client.call('solo_append_progress', progress)).entry.id).toBe(first.id);
   const denied = await client.rpc('tools/call', { name: 'solo_append_progress', arguments: { session_id: id, summary: 'Late write' } });
   expect(denied.error).toBeTruthy();

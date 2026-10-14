@@ -369,6 +369,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SoloSessionsTest do
     |> repo.update!()
   end
 
+  test "entry text and nested payload are redacted in SQLite before any MCP rendering", %{repo: repo} do
+    assert {:ok, session} = Service.create_or_attach_current(repo, session_attrs())
+
+    assert {:ok, entry} =
+             Service.append_entry(repo, session.id, %{
+               entry_kind: "progress",
+               title: "Plan bearer abcdefghijkl",
+               body: "Use ghp_abcdefgh as a fake token",
+               payload: %{token: "ghp_abcdefgh", nested: [%{url: "https://example.test/path?token=ghp_abcdefgh"}]}
+             })
+
+    stored = repo.get!(SoloSessionEntry, entry.id)
+    assert stored.title == "Plan [REDACTED]"
+    assert stored.body == "Use [REDACTED] as a fake token"
+    assert stored.payload["token"] == "[REDACTED]"
+    assert stored.payload["nested"] == [%{"url" => "https://example.test/path?token=[REDACTED]"}]
+  end
+
   defp session_attrs(overrides \\ []) do
     defaults = %{
       repo: "nextide/example",
@@ -394,5 +412,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SoloSessionsTest do
       end)
     end)
   end
-
 end

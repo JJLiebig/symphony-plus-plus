@@ -1,7 +1,7 @@
 import { expect } from 'e2e';
 import { access, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { test, snapshot } from '../support/authority.js';
+import { test, snapshot, worker } from '../support/authority.js';
 import { Client } from '../support/factory.js';
 import { git, repository, workPackage } from '../support/worktree-git.js';
 import { requestPath } from '../support/retention-history.js';
@@ -26,6 +26,13 @@ test('real worktree prepare and replay preserve branch scope and clean only the 
   const client = await factory.client();
   const wp = await workPackage(client, repo.origin, 'feature/owned');
   const args = { work_package_id: wp, target_repo_root: repo.checkout };
+  const assigned = await worker(factory, wp);
+  const grant = (await assigned.call('get_current_assignment')).assignment.grant_id;
+  expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('already_clean');
+  const stillAssigned = (await assigned.call('get_current_assignment')).assignment;
+  expect(stillAssigned.work_package_id).toBe(wp);
+  expect(stillAssigned.grant_id).toBe(grant);
+  await assigned.call('release_current_assignment');
   await client.reject('prepare_work_package_worktree', { ...args, target_repo_root: foreign.checkout }, 'target_repo_root_scope_mismatch');
   await client.reject('prepare_work_package_worktree', { ...args, branch: 'feature/wrong' }, 'branch_scope_mismatch');
   const prepared = await client.call('prepare_work_package_worktree', args);
