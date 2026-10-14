@@ -43,14 +43,16 @@ test('compiled inspector binds and pins actual request detail without stealing f
 
     // The graph folds to the real terminal viewport. Inspect each branch by
     // the native selection keys instead of assuming every card is on screen.
-    host.process!.stdin.write('j');
-    await expect.poll(() => host.screen).toContain('Inspector API');
-    host.process!.stdin.write('j');
-    await expect.poll(() => host.screen).toContain('Inspector UI');
-    host.process!.stdin.write('k');
-    await expect.poll(() => host.screen).toContain('Inspector API');
-    host.process!.stdin.write('k');
-    await expect.poll(() => host.screen).toContain('Inspector findings');
+    const press = async (key: string) => {
+      const frame = host.frames;
+      host.process!.stdin.write(key);
+      await expect.poll(() => host.frames).toBeGreaterThan(frame);
+    };
+    await press('j');
+    expect(host.screen).toContain('Inspector API');
+    expect(host.screen).toContain('Inspector UI');
+    await press('k');
+    expect(host.screen).toContain('Inspector findings');
 
     // Backend writes must reach the compiled inspector through its real event
     // stream. Qualified dependent work is not mergeable before delivery.
@@ -71,7 +73,7 @@ test('compiled inspector binds and pins actual request detail without stealing f
     });
     await sync(client, left, 403, head('b'));
     expect((await row(client, request, left)).merge_eligibility.reason_codes).toContain('dependency_not_delivered');
-    host.process!.stdin.write('j');
+    await press('j');
     await expect.poll(() => host.screen).toContain('Qualified');
     provider!.set(402, pr(402, head('a'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
     await client.call('sync_pr', { work_package_id: wp });

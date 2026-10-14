@@ -94,18 +94,19 @@ test('operator sees dependency ordering, pending qualification and actual delive
   expect((await client.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeTruthy();
 
   const reviewRepo = await repository(candidate.root, 'browser-review');
-  const reviewing = await client.request('Provider-reported review wait', 'ready_for_slicing', 'beta', reviewRepo.origin);
-  const [reviewWp] = (await client.call('slice_work_request', {
+  const reviewClient = await candidate.factory!.client();
+  const reviewing = await reviewClient.request('Provider-reported review wait', 'ready_for_slicing', 'beta', reviewRepo.origin);
+  const [reviewWp] = (await reviewClient.call('slice_work_request', {
     work_packages: [contract('Review provider findings', { review: { type: 'review-suite', args: { mode: 'fast' } } })],
   })).work_package_ids;
-  await client.call('dispatch_work_package', { work_package_id: reviewWp });
+  await reviewClient.call('dispatch_work_package', { work_package_id: reviewWp });
   const receipt = await installReviewProvider(candidate);
-  const prepared = await client.call('prepare_work_package_worktree', { work_package_id: reviewWp, target_repo_root: reviewRepo.checkout });
+  const prepared = await reviewClient.call('prepare_work_package_worktree', { work_package_id: reviewWp, target_repo_root: reviewRepo.checkout });
   expect(prepared.worktree.status).toBe('prepared');
   await candidate.capture('provider-review-wait');
   await browser.reload();
   await expect(browser.locator(`[data-goal="${reviewing}"] ol span.font-semibold`)).toContainText('Review');
-  expect((await row(client, reviewing, reviewWp)).delivery_outcome).toBeNull();
+  expect((await row(reviewClient, reviewing, reviewWp)).delivery_outcome).toBeNull();
   const commands = (await readFile(receipt, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   expect(commands.some((entry) => entry.command === 'codex' && JSON.stringify(entry.argv) === JSON.stringify(['plugin', 'list', '--json']))).toBe(true);
   expect(commands.some((entry) => entry.command === 'python' && JSON.stringify(entry.argv.slice(1)) === JSON.stringify(['--status', '--json', '--cd', prepared.worktree.path, '--base', 'origin/beta']))).toBe(true);
