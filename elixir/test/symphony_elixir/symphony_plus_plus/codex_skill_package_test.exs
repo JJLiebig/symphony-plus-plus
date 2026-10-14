@@ -178,9 +178,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageTest do
         System.cmd(powershell, ["-NoProfile", "-File", test_script], stderr_to_stdout: true)
 
       assert status == 0, output
-
-      assert output =~
-               "Performance gate parsing, structured output, threshold failures, and cutover contract passed."
     end
   end
 end

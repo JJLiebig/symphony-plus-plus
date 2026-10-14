@@ -24,7 +24,10 @@ Run the repository gate from the root:
 make all
 ```
 
-For the fast Elixir-only loop, run `make -C elixir all`.
+For Elixir static checks and the retained qualification suite, run
+`make -C elixir all`. `make -C elixir ci-full` also runs Dialyzer. The hosted
+`make-all` workflow additionally requires candidate API/browser, installed/offline,
+Windows and frontend qualifications described in [Testing](testing.md).
 
 Frontend-only iteration can use:
 

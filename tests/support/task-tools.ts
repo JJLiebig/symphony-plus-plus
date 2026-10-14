@@ -27,7 +27,7 @@ class TaskProcess {
     this.process.stderr.on('data', (chunk) => { this.output += chunk.toString(); });
     this.exited = new Promise((resolve, reject) => {
       this.process.once('error', reject);
-      this.process.once('exit', async (code, signal) => {
+      this.process.once('close', async (code, signal) => {
         try {
           await appendFile(receipt, `${JSON.stringify({ args, code, signal, output: this.output })}\n`);
           resolve(code);
@@ -37,7 +37,10 @@ class TaskProcess {
   }
 
   async stop() {
-    if (this.process.exitCode !== null || this.process.signalCode !== null) return;
+    if (this.process.exitCode !== null || this.process.signalCode !== null) {
+      await this.exited;
+      return;
+    }
     const exited = once(this.process, 'exit');
     this.process.kill('SIGTERM');
     const timer = setTimeout(() => this.process.kill('SIGKILL'), 5_000);
