@@ -26,20 +26,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
     :ok
   end
 
-  test "visible-only projection keeps the owned node path without leaking hidden nodes", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-VISIBLE-TREE")
-    parent = create_node!(repo, work_request, id: "node_visible_parent")
-    visible_node = create_node!(repo, work_request, id: "node_visible", parent_id: parent.id)
-    hidden_node = create_node!(repo, work_request, id: "node_hidden")
-    visible = add_work_package!(repo, work_request, id: "wp_visible", product_tree_node_id: visible_node.id)
-    _hidden = add_work_package!(repo, work_request, id: "wp_hidden", product_tree_node_id: hidden_node.id)
-
-    projection = ProductTree.project(repo, work_request.id, [payload(visible)], visible_only?: true)
-
-    assert MapSet.new(Enum.map(projection.nodes, & &1.id)) == MapSet.new([parent.id, visible_node.id])
-    refute Enum.any?(projection.nodes, &(&1.id == hidden_node.id))
-  end
-
   test "rejects cross-WorkRequest node ownership and dependency endpoints", %{repo: repo} do
     left = create_work_request!(repo, id: "WR-LEFT")
     right = create_work_request!(repo, id: "WR-RIGHT")

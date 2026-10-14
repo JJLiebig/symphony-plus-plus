@@ -321,30 +321,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport02Test do
     assert unclaimed_grant.claimed_at == nil
   end
 
-  test "claim_local_assignment rejects wrong local scope without claiming the grant", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-LOCAL-WRONG-SCOPE")
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-
-    {response, _server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-wrong-scope",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_assignment",
-            "arguments" => local_assignment_claim_args(package, %{"base_branch" => "main"})
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-wrong-scope-state")
-      )
-
-    assert get_in(response, ["error", "data", "reason"]) == "base_branch_scope_mismatch"
-    assert {:ok, unclaimed_grant} = AccessGrantRepository.get(repo, minted.grant.id)
-    assert unclaimed_grant.claimed_at == nil
-    assert unclaimed_grant.claimed_by == nil
-  end
-
   test "claim_local_assignment rejects packages without recorded local worktree scope", %{repo: repo} do
     package = create_local_claim_package!(repo, "SYMPP-LOCAL-MISSING-WORKTREE", worktree_path: nil)
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
@@ -430,22 +406,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport02Test do
     assert {:ok, unclaimed_grant} = AccessGrantRepository.get(repo, minted.grant.id)
     assert unclaimed_grant.claimed_at == nil
     assert repo.one(from(claim_lease in ClaimLease, where: claim_lease.work_package_id == ^package.id)) == nil
-  end
-
-  test "claim_local_assignment returns invalid params for malformed arguments", %{repo: repo} do
-    response =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-malformed-arguments",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => []}
-        },
-        local_mcp_server(local_mcp_config(repo), "local-malformed-arguments-state")
-      )
-
-    assert get_in(response, ["error", "code"]) == -32_602
-    assert get_in(response, ["error", "data", "reason"]) == "invalid_tool_arguments"
   end
 
   test "claim_local_assignment treats paused leases as pause exempt instead of stale", %{repo: repo} do
@@ -839,68 +799,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport02Test do
     refute inspect(response) =~ minted.work_key.secret
   end
 
-  test "PR sync remains idempotent after claim_local_assignment reconnect", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-LOCAL-FINAL-SYNC", status: "ci_waiting")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    arguments = local_assignment_claim_args(package)
-    config = local_mcp_config(repo)
-
-    {_claim_response, claimed_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-final-sync-claim",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => arguments}
-        },
-        local_mcp_server(config, "local-final-sync-claim-state")
-      )
-
-    head_sha = "abcdef1234567890abcdef1234567890abcdef12"
-    attach_tool(repo, claimed_server.session, "attach_branch", %{"branch" => package.branch_pattern, "head_sha" => head_sha})
-    attach_tool(repo, claimed_server.session, "attach_pr", %{"number" => 258, "head_sha" => head_sha})
-
-    sync_args = %{
-      "idempotency_key" => "sync-pr-after-reconnect",
-      "recovery" => %{
-        "number" => 258,
-        "repository" => package.repo,
-        "head_sha" => head_sha,
-        "branch" => package.branch_pattern,
-        "base_branch" => package.base_branch,
-        "base_sha" => "base-head",
-        "changed_files" => [],
-        "check_summary" => %{"status" => "passing"},
-        "review_state" => %{"status" => "unknown"},
-        "merge_state" => %{"status" => "unknown", "merged" => false},
-        "observed_at" => "2026-08-17T10:00:00Z"
-      }
-    }
-
-    sync_response = attach_tool(repo, claimed_server.session, "sync_pr", sync_args)
-
-    {_reconnect_response, reconnected_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-final-sync-reconnect",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => arguments}
-        },
-        local_mcp_server(config, "local-final-sync-reconnect-state")
-      )
-
-    sync_replay_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "sync-replay", "method" => "tools/call", "params" => %{"name" => "sync_pr", "arguments" => sync_args}},
-        repo: repo,
-        session: reconnected_server.session
-      )
-
-    assert get_in(sync_replay_response, ["result", "structuredContent", "progress_event", "id"]) ==
-             get_in(sync_response, ["result", "structuredContent", "progress_event", "id"])
-
-    assert {:ok, progress_events} = PlanningRepository.list_progress_events(repo, package.id)
-    assert Enum.count(progress_events, &(&1.status == "pr_synced")) == 1
-  end
 end

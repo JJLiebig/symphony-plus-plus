@@ -282,6 +282,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
 
     released_at = DateTime.add(now, 500, :millisecond)
     assert {:ok, _released} = Service.release(repo, first.id, now: released_at, reason: "worker finished")
+
     assert {:ok, second} =
              Repository.claim(
                repo,

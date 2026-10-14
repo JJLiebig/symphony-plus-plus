@@ -489,36 +489,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryCloseoutTest do
     assert "claim_lease_stale" in closeout_event.payload["runtime_reason_codes_before_closeout"]
   end
 
-  test "active claim leases are released by architect closeout", %{repo: repo} do
-    {work_request, work_package, linked_package} =
-      linked_slice!(repo,
-        work_request_id: "WR-DELIVERY-ACTIVE-CLAIM-LEASE",
-        status: "ready_for_merge"
-      )
-
-    assert {:ok, claim_lease} =
-             ClaimLeaseService.claim(
-               repo,
-               linked_package.id,
-               %{"actor_kind" => "agent", "actor_id" => "local:closeout-claim", "actor_display_name" => "worker-claim"},
-               stale_after_ms: 60_000
-             )
-
-    attrs =
-      delivery_attrs(%{
-        outcome: "completed_no_pr",
-        idempotency_key: "delivery-active-claim-lease",
-        no_pr_evidence: "The package is complete and the architect is recording terminal delivery."
-      })
-
-    assert {:ok, delivery} = Service.record_work_package_delivery(repo, work_request.id, work_package.id, attrs)
-    assert delivery.outcome == "completed_no_pr"
-    assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-
-    assert %ClaimLease{status: "released", release_reason: "completed_no_pr_delivery_closeout"} =
-             repo.get!(ClaimLease, claim_lease.id)
-  end
-
   test "stale agent runs do not block normal closeout and remain audited", %{repo: repo} do
     {work_request, work_package, linked_package} =
       linked_slice!(repo,

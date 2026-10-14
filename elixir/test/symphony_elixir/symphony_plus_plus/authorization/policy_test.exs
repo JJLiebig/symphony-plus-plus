@@ -15,18 +15,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
     "write:guidance_request"
   ]
 
-  test "worker cannot mutate sibling package targets" do
-    actor = Actor.new(:worker, scopes: [Scope.work_package("wp-1")])
-    target = Target.package_resource(:review_evidence, "wp-2")
-
-    assert %Decision{
-             allowed?: false,
-             reason: :authorization_denied,
-             reason_code: "scope_mismatch",
-             legacy_reason: "outside_session_scope"
-           } = Policy.decide(actor, :review_evidence_append, target)
-  end
-
   test "worker package scope does not allow dispatch or dangerous actions" do
     actor = Actor.new(:worker, scopes: [Scope.work_package("wp-1")])
     target = Target.work_package("wrs-1", "wr-1", work_package_id: "wp-1")

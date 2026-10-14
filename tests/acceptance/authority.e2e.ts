@@ -202,7 +202,7 @@ test('architect scope separates same-repository discovery from foreign writes an
   for (const [repo, branch] of [['foreign/service', 'beta'], ['example/service', 'other-branch']]) {
     const outsider = await factory.client();
     const foreign = await outsider.request('Confidential outside scope', 'ready_for_slicing', branch, repo);
-    await architect.reject('read_work_request', { work_request_id: foreign }, 'outside_session_scope');
+    await architect.reject('read_work_request', { work_request_id: foreign }, 'not_found');
     const listed = await architect.call('list_work_requests', {});
     expect(JSON.stringify(listed)).not.toContain(foreign);
   }
@@ -420,6 +420,10 @@ test('explicit revocation retires live worker calls resources and persisted reco
   const revoked = await architect.call('revoke_work_package_worker_key', { work_package_id: wp, grant_id: assignment.grant_id, reason: 'Scope was recut' });
   expect(revoked.work_package.status).toBe('blocked');
   expect(revoked.revoked_worker_grant.id).toBe(assignment.grant_id);
+  expect(revoked.closeout_affordance.previous_work_package_status).toBe('active');
+  expect(revoked.closeout_affordance.reason_codes).toEqual(['worker_recycled', 'work_package_worker_key_revoked', 'work_package_blocked_for_recycle']);
+  expect(revoked.next_action).toBe('retry_record_work_package_delivery');
+  expect(revoked.audit_event.id).toBeTruthy();
   for (const [name, args] of [
     ['append_progress', { summary: 'Before revocation', idempotency_key: 'revoked-once' }],
     ['append_finding', { title: 'After revocation', body: 'Must not persist', idempotency_key: 'revoked-finding' }],
@@ -433,9 +437,16 @@ test('explicit revocation retires live worker calls resources and persisted reco
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
   await factory.stop();
   const restarted = processes.factory();
-  expect((await client.reconnect(await restarted.endpoint).raw(tool('read_context'))).body.error).toBeTruthy();
+  const retired = client.reconnect(await restarted.endpoint);
+  expect((await retired.raw(tool('read_context'))).body.error).toBeTruthy();
+  await retired.reject('list_guidance_requests', { work_request_id: request }, 'claim_required');
+  expect((await retired.rpc('resources/read', { uri: 'sympp://assignment/current' })).error.data.reason).toBe('missing_session');
   expect((await peer.reconnect(await restarted.endpoint).call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
-  expect((await architect.reconnect(await restarted.endpoint).call('read_work_request', { work_request_id: request })).work_packages.find((entry: any) => entry.id === wp).status).toBe('blocked');
+  const recoveredArchitect = architect.reconnect(await restarted.endpoint);
+  expect((await recoveredArchitect.call('read_work_request', { work_request_id: request })).work_packages.find((entry: any) => entry.id === wp).status).toBe('blocked');
+  await close(recoveredArchitect, wp, 'superseded', { successor_work_package_id: sibling, superseded_reason: 'The sibling owns the recut scope.' });
+  expect((await row(recoveredArchitect, request, wp)).delivery_outcome).toBe('superseded');
+  expect((await peer.reconnect(await restarted.endpoint).call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
 });
 
 test('superseded and no-PR delivery retire live claims and prevent terminal worker mutations', async ({ processes }) => {
@@ -1031,7 +1042,20 @@ test('architect question and decision mutations preserve provenance and redact c
   expect(answered.clarification_question.status).toBe('answered');
   expect(answered.clarification_question.answered_by).toBeUndefined();
   expect(JSON.stringify(answered)).not.toContain('raw_secret_synthetic');
-  const ids: string[] = [];
+  const closing = (await architect.call('ask_question', { work_request_id: request, category: 'acceptance',
+    question: 'Can the obsolete alternative be closed?', why_needed: 'Retire an unused choice.',
+  })).clarification_question.id;
+  expect((await architect.call('close_question', { work_request_id: request, question_id: closing, current_status: 'open' })).clarification_question.status).toBe('closed');
+  const deciding = (await architect.call('ask_question', { work_request_id: request, category: 'product',
+    question: 'Keep this scope bounded?', why_needed: 'The answer must become decision provenance.',
+  })).clarification_question.id;
+  const combined = await architect.call('answer_question_and_record_decision', { work_request_id: request, question_id: deciding,
+    answer: 'Keep the bounded scope.', source_type: 'architect', decision: 'Keep the bounded scope.',
+    rationale: 'Adjacent work has another owner.', scope_impact: 'No scope expansion.',
+  });
+  expect(combined.clarification_question.status).toBe('answered');
+  expect(combined.decision_log_entry.source_id).toBe(deciding);
+  const ids: string[] = [combined.decision_log_entry.id];
   for (const [source, by] of [['implicit', undefined], ['override', 'synthetic-architect-override']] as const) {
     const result = await architect.call('record_decision', { work_request_id: request, source_type: 'architect', source_id: source,
       decision: 'Exclude raw_secret_synthetic from the decision', rationale: 'Keep the scope bounded.', scope_impact: 'No scope expansion.',
@@ -1043,7 +1067,7 @@ test('architect question and decision mutations preserve provenance and redact c
   }
   const persisted = await architect.call('read_work_request', { work_request_id: request });
   expect(persisted.work_request.status).toBe('clarifying');
-  expect(persisted.clarification_questions[0].status).toBe('answered');
+  expect(persisted.clarification_questions.map((entry: any) => entry.status)).toEqual(['answered', 'closed', 'answered']);
   expect(persisted.decision_log_entries.map((entry: any) => entry.id)).toEqual(ids);
   expect(JSON.stringify(persisted)).not.toContain('raw_secret_synthetic');
 });

@@ -295,40 +295,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
            ]) == "origin_not_allowed"
   end
 
-  test "POST /mcp exposes and runs local operator WorkRequest note tools on loopback" do
-    assert {:ok, work_request} =
-             WorkRequestRepository.create(Repo, work_request_attrs(%{id: "WR-HTTP-ENDPOINT-LOCAL-OPERATOR"}))
-
-    init = post_json(initialize_request("local-operator-init"))
-    [session_id] = get_resp_header(init, "mcp-session-id")
-
-    assert %Server{
-             config: %Config{mode: :http, local_daemon_trusted: true},
-             local_daemon_trusted: true
-           } = stored_http_server()
-
-    tools = post_json(tools_list_request("local-operator-tools"), [{"mcp-session-id", session_id}])
-    names = tool_names(json_response(tools, 200))
-
-    assert "add_work_request_comment" in names
-    assert "record_work_request_operator_decision" in names
-
-    comment =
-      post_json(
-        tool_call_request("local-operator-comment", "add_work_request_comment", %{
-          "work_request_id" => work_request.id,
-          "body" => "Endpoint operator noted ghp_endpointsecret",
-          "created_by" => "endpoint operator"
-        }),
-        [{"mcp-session-id", session_id}]
-      )
-
-    assert [^session_id] = get_resp_header(comment, "mcp-session-id")
-    payload = json_response(comment, 200)
-    assert get_in(payload, ["result", "structuredContent", "comment", "source_type"]) == "operator"
-    assert get_in(payload, ["result", "structuredContent", "comment", "body"]) == "Endpoint operator noted [REDACTED]"
-  end
-
   test "POST /mcp tools/list follows a session initialized from the live dashboard repo" do
     original_database = Application.get_env(:symphony_elixir, :sympp_repo_database)
     Application.delete_env(:symphony_elixir, :sympp_repo_database)

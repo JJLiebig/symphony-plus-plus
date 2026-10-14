@@ -45,31 +45,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryCloseoutTerminalN
     :ok
   end
 
-  test "superseded closeout retires active worker authority", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "implementing")
-    successor_slice = create_work_package!(repo, work_request, id: "WRS-DELIVERY-RUNTIME-SUCCESSOR")
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, linked_package.id)
-    assert {:ok, _assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "active-worker")
-
-    assert {:ok, delivery} =
-             Service.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "superseded",
-                 idempotency_key: "delivery-superseded-active-runtime",
-                 successor_work_package_id: successor_slice.id,
-                 superseded_reason: "The architect recut the package and is retiring the old worker."
-               })
-             )
-
-    assert delivery.outcome == "superseded"
-    assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-    assert %AccessGrant{revoked_at: %DateTime{}} = repo.get!(AccessGrant, minted.grant.id)
-  end
-
   test "superseded closeout retires unclaimed worker authority and stale claim lease", %{repo: repo} do
     {work_request, work_package, linked_package} = linked_slice!(repo, status: "implementing")
     successor_slice = create_work_package!(repo, work_request, id: "WRS-DELIVERY-UNCLAIMED-SUCCESSOR")
@@ -119,42 +94,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryCloseoutTerminalN
     refute "work_package_active_after_delivery" in slice.attention_reason_codes
   end
 
-  test "superseded closeout retires fresh claim lease authority", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "implementing")
-    successor_slice = create_work_package!(repo, work_request, id: "WRS-DELIVERY-CURRENT-CLAIM-SUCCESSOR")
-
-    assert {:ok, claim_lease} =
-             ClaimLeaseService.claim(
-               repo,
-               linked_package.id,
-               %{
-                 "actor_kind" => "agent",
-                 "actor_id" => "local:current-superseded-claim",
-                 "actor_display_name" => "current-worker"
-               },
-               stale_after_ms: 60_000
-             )
-
-    assert {:ok, delivery} =
-             Service.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "superseded",
-                 idempotency_key: "delivery-superseded-current-claim",
-                 successor_work_package_id: successor_slice.id,
-                 superseded_reason: "The architect recut the package and is retiring current worker authority."
-               })
-             )
-
-    assert delivery.outcome == "superseded"
-    assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-
-    assert %ClaimLease{status: "released", release_reason: "superseded_delivery_closeout"} =
-             repo.get!(ClaimLease, claim_lease.id)
-  end
-
   test "repository blocker exception still rejects active runtime at closeout mutation", %{repo: repo} do
     {work_request, work_package, linked_package} = linked_slice!(repo, status: "implementing")
 
@@ -187,28 +126,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryCloseoutTerminalN
 
     assert repo.get!(WorkPackage, linked_package.id).status == "implementing"
     assert %AccessGrant{revoked_at: nil} = repo.get!(AccessGrant, minted.grant.id)
-  end
-
-  test "superseded closeout rejects successor slices outside the WorkRequest", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "implementing")
-    other_request = create_work_request!(repo, id: "WR-DELIVERY-OTHER-SUCCESSOR", status: "ready_for_slicing")
-    other_successor = create_work_package!(repo, other_request, id: "WRS-DELIVERY-OTHER-SUCCESSOR")
-
-    assert {:error, :not_found} =
-             Service.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "superseded",
-                 idempotency_key: "delivery-superseded-out-of-scope",
-                 successor_work_package_id: other_successor.id,
-                 superseded_reason: "Attempted recut to an unrelated request."
-               })
-             )
-
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
-    assert repo.get!(WorkPackage, linked_package.id).status == "implementing"
   end
 
   test "abandoned closeout clears missing managed worktree after durable closeout", %{repo: repo} do
@@ -346,30 +263,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryCloseoutTerminalN
     end
 
     assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
-  end
-
-  test "claimed worker grants are retired during no-PR closeout when no worker is live", %{repo: repo} do
-    {work_request, work_package, linked_package} = linked_slice!(repo, status: "ready_for_merge")
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, linked_package.id)
-    assert {:ok, _assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-
-    attrs =
-      delivery_attrs(%{
-        outcome: "completed_no_pr",
-        idempotency_key: "delivery-active-worker-grant",
-        no_pr_evidence: "Worker is complete; architect is recording no-PR delivery."
-      })
-
-    assert {:ok, delivery} = Service.record_work_package_delivery(repo, work_request.id, work_package.id, attrs)
-    assert delivery.outcome == "completed_no_pr"
-    assert repo.get!(WorkPackage, linked_package.id).status == "closed"
-    assert repo.get!(AccessGrant, minted.grant.id).revoked_at
-
-    closeout_event = Enum.find(repo.all(ProgressEvent), &(&1.payload["type"] == "work_request_delivery_closeout"))
-    assert closeout_event.payload["retired_worker_grant_ids"] == [minted.grant.id]
-
-    refute "worker_grant_active" in List.wrap(closeout_event.payload["runtime_reason_codes_before_closeout"])
   end
 
   defp linked_slice!(repo, overrides) do

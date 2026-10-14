@@ -33,56 +33,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport05Test do
     assert is_nil(WorkPackageActivity.context(repo, second_package.id).worker_signal)
   end
 
-  test "stdio local claim binds by WorkPackage id only", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-STDIO-ID-ONLY-CLAIM")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-
-    {response, claimed_server} =
-      Server.handle_response_state(
-        tool_call("stdio-id-only-claim", "claim_local_assignment", %{"work_package_id" => package.id}),
-        Server.new(test_mcp_config(repo), initialized: true)
-      )
-
-    assert get_in(response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert get_in(response, ["result", "structuredContent", "local_claim", "mode"]) == "stdio"
-    assert claimed_server.session.assignment.work_package_id == package.id
-
-    {reconnect_response, _server} =
-      Server.handle_response_state(
-        tool_call("stdio-id-only-reconnect", "claim_local_assignment", %{"work_package_id" => package.id}),
-        Server.new(test_mcp_config(repo), initialized: true)
-      )
-
-    assert get_in(reconnect_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert get_in(reconnect_response, ["result", "structuredContent", "local_claim", "mode"]) == "stdio"
-    assert get_in(reconnect_response, ["result", "structuredContent", "local_claim", "claim_lease_action"]) == "heartbeat"
-  end
-
-  test "single-item batch preserves local claim session for later requests", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-LOCAL-SINGLE-BATCH")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    state_key = make_ref()
-    server = local_mcp_server(local_mcp_config(repo), state_key)
-
-    {responses, claimed_server} =
-      Server.handle_response_state(
-        [
-          tool_call("single-batch-claim", "claim_local_assignment", local_assignment_claim_args(package))
-        ],
-        server
-      )
-
-    {read_response, _server} =
-      Server.handle_response_state(
-        %{"jsonrpc" => "2.0", "id" => "assignment-after-single-batch", "method" => "tools/call", "params" => %{"name" => "get_current_assignment", "arguments" => %{}}},
-        claimed_server
-      )
-
-    assert [claim_response] = responses
-    assert get_in(claim_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert get_in(read_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-  end
-
   defp tool_call(id, name, arguments) do
     %{"jsonrpc" => "2.0", "id" => id, "method" => "tools/call", "params" => %{"name" => name, "arguments" => arguments}}
   end

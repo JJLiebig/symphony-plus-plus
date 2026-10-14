@@ -194,6 +194,15 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   expect(assignmentResource.work_package_id).toBe(wp);
   expect(assignmentResource.claimed_by).toBe(claimed.structuredContent.assignment.claimed_by);
   for (const key of ['secret', 'secret_hash', 'proof_hash', 'work_key']) expect(assignmentResource[key]).toBeUndefined();
+  const health = (await candidate.request('tools/call', { name: 'sympp.health', arguments: {} })).structuredContent;
+  expect(health.status).toBe('ok');
+  expect(health.ledger.reachable).toBe(true);
+  expect(health.ledger.identity.kind).toBe('sqlite');
+  expect(health.ledger.identity.source).toBe('explicit');
+  const progress = (await candidate.request('tools/call', { name: 'append_progress', arguments: {
+    summary: 'STDIO health and claim use this ledger', idempotency_key: 'stdio-ledger',
+  } })).structuredContent.progress_event;
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress.map((entry: any) => entry.id)).toContain(progress.id);
   expect((await candidate.request('tools/call', { name: 'read_context', arguments: {} })).structuredContent.work_package.id).toBe(wp);
   const peer = processes.stdio('stdio-peer', { database: factory.database, surface: 'worker' });
   await peer.request('initialize', initialize);
@@ -391,6 +400,7 @@ test('HTTP location metadata follows successful authority and cannot be refreshe
   const stale = await client.raw(tool('get_current_assignment'));
   expect(stale.body.result.structuredContent.assignment).toBeNull();
   expect(stale.body.result.structuredContent.binding.state).toBe('stale');
+  expect(stale.body.result.structuredContent.recovery.tools).toEqual(['claim_local_assignment']);
   expect(stale.binding).toBe('clear');
   const planner = await factory.client();
   const plannerClaim = await planner.raw(located('claim_local_architect_assignment', {
@@ -400,6 +410,7 @@ test('HTTP location metadata follows successful authority and cannot be refreshe
   const plannerBinding = JSON.parse(Buffer.from(plannerClaim.binding!, 'base64url').toString('utf8'));
   expect(plannerBinding.role).toBe('architect');
   expect(plannerBinding.work_request_id).toBe(followup);
+  expect(plannerBinding.work_package_id).toBe(plannerClaim.body.result.structuredContent.assignment.work_package_id);
   expect(plannerBinding.show_inspector).toBe(true);
   const plannerLocation = (await detail(followup)).work_request.architect_session_location;
   expect(plannerLocation.source).toBe('agent');
