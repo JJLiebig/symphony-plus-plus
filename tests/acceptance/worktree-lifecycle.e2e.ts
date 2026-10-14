@@ -54,6 +54,15 @@ test('real worktree prepare and replay preserve branch scope and clean only the 
   const again = await client.call('prepare_work_package_worktree', args);
   expect(again.worktree.status).toBe('prepared');
   expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('cleaned');
+  await git(root, repo.checkout, 'checkout', 'feature/owned');
+  await writeFile(join(repo.checkout, 'stale.txt'), 'Preserve divergent local work\n');
+  await git(root, repo.checkout, 'add', 'stale.txt');
+  await git(root, repo.checkout, 'commit', '-m', 'Local divergent work');
+  const divergent = await git(root, repo.checkout, 'rev-parse', 'HEAD');
+  await git(root, repo.checkout, 'checkout', 'beta');
+  await client.reject('prepare_work_package_worktree', args, 'stale_existing_branch');
+  expect(await git(root, repo.checkout, 'rev-parse', 'feature/owned')).toBe(divergent);
+  expect(await exists(path)).toBe(false);
 });
 
 test('outside-root path substitution is refused without deleting unrelated content and recovery cleans the owned path', async ({ processes }) => {
@@ -73,7 +82,7 @@ test('outside-root path substitution is refused without deleting unrelated conte
   try {
     await client.reject('cleanup_work_package_worktree', args, 'unsafe_worktree_path');
     expect(await readFile(join(unrelated, 'keep.txt'), 'utf8')).toBe('Unrelated data\n');
-    expect((await client.call('read_work_package', { work_package_id: wp })).work_package.worktree_path).toBe(path);
+    expect((await client.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).work_package.worktree_path).toBe(path);
   } finally {
     await rm(path);
     await rename(saved, path);
@@ -91,7 +100,11 @@ test('missing metadata recovery refuses unrelated non-Git contents and preserves
   const wp = await workPackage(client, repo.origin, 'feature/metadata');
   const args = { work_package_id: wp, target_repo_root: repo.checkout };
   const path = (await client.call('prepare_work_package_worktree', args)).worktree.path;
+  const clone = join(root, 'same-name', 'source');
+  await git(root, root, 'clone', '--branch', 'beta', repo.origin, clone);
   await rm(path, { recursive: true });
+  await client.reject('cleanup_work_package_worktree', { ...args, target_repo_root: clone }, 'invalid_worktree_path');
+  expect(await git(root, repo.checkout, 'worktree', 'list', '--porcelain')).toContain(path);
   await mkdir(path);
   await client.reject('prepare_work_package_worktree', args, 'invalid_worktree_path');
   await writeFile(join(path, 'unrelated.txt'), 'Not disposable Git content\n');
@@ -150,7 +163,7 @@ test('a real Git removal obstruction preserves the worktree and a later cleanup 
   const failed = await client.rpc('tools/call', { name: 'cleanup_work_package_worktree', arguments: args });
   expect(failed.error || failed.result?.structuredContent?.worktree?.status === 'cleanup_queued').toBeTruthy();
   expect(await exists(path)).toBe(true);
-  expect((await client.call('read_work_package', { work_package_id: wp })).work_package.worktree_path).toBe(path);
+  expect((await client.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).work_package.worktree_path).toBe(path);
   await factory.stop();
   await git(root, repo.checkout, 'worktree', 'unlock', path);
   factory = processes.factory();
