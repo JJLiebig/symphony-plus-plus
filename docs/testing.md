@@ -60,10 +60,13 @@ guidance, stored authority, and transaction qualifications. A repository-backed
 failed-call journey does not qualify health calls that lack the selected ledger
 context. Report that diagnostic limitation separately.
 
-The `native acceptance` job is an explicit dependency of `make-all`. Legacy
-checks remain required until the owning acceptance journey replaces their
-guarantees. Preserve unique storage, concurrency, authority, process, and live
-provider contracts; live external qualification remains opt-in. Define expected
+The `make-all` workflow requires native API acceptance, unchanged-cache browser
+replay, installed Windows runtime, offline copy, Windows launcher/snapshot and
+frontend builds, static checks, Dialyzer, and the complete retained ExUnit suite.
+Its final job rejects any missing, skipped, cancelled or failed required job.
+Retained ExUnit qualifications run once without partitions or coverage thresholds;
+live external qualification remains opt-in. Preserve unique storage, concurrency,
+authority, process, and live provider contracts. Define expected
 outcomes from requirements or external contracts before writing replacements.
 Remove implementation-shape assertions and same-guarantee duplicates only with
 their owning conversion.
@@ -84,6 +87,21 @@ evidence, not current product guides.
 On workstations subject to the runtime execution prohibition, all code
 validation runs on GitHub-hosted CI. Local source/Git reads and edits remain
 available. Do not run tests, builds, formatters, launchers, or runtime probes.
+
+Task acceptance invokes the candidate's actual Mix CLIs with disposable homes,
+databases and controlled external commands. It proves missing-spec rejection and
+specific exemptions, demo no-force preservation and explicit force replacement,
+cockpit loopback/origin refusal and opener overrides, and workspace hook branch
+selection and provider failures. It does not infer live GitHub compatibility.
+Keep embedded task ownership checks where a fresh process cannot reproduce an
+already-running supervisor or endpoint, deliberately absent toolchain PATH,
+historical retention timing, or alternate offline entrypoints.
+
+The committed MCP manifest is compared with the real bootstrap health response.
+Installed launcher's contract mismatch refusal is a separate compatibility check.
+The Windows launcher job also checks performance-threshold subprocess exits and
+the transport's installed-source classifier; this does not run or qualify the
+full release performance benchmark.
 
 ## Retention, Solo and worktrees (B2)
 

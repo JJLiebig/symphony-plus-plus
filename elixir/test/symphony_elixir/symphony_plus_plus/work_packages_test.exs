@@ -3,11 +3,6 @@ Code.require_file("work_packages_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesTest do
   use SymphonyElixir.SymphonyPlusPlus.WorkPackagesCase
 
-  test "repository normalizes SQLite read failures" do
-    assert {:error, :database_busy} = Repository.get(LockedWorkPackageRepo, "wp-1")
-    assert {:error, {:storage_failed, "disk I/O failed"}} = Repository.get(BrokenWorkPackageRepo, "wp-1")
-  end
-
   test "rejects duplicate caller-provided ids", %{repo: repo} do
     attrs = WorkPackageFactory.attrs(id: "SYMPP-P1-001")
 

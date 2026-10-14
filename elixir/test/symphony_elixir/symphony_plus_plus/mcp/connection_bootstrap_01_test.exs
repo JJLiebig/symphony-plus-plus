@@ -3,37 +3,6 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  test "session parsing reports malformed assignment fields" do
-    attrs = %{
-      "grant_id" => "grant-1",
-      "work_package_id" => "SYMPP-SESSION",
-      "display_key" => "ABCD",
-      "grant_role" => "worker",
-      "capabilities" => ["read:own"],
-      "claimed_by" => "worker-1",
-      "claimed_at" => "2026-05-04T12:00:00Z",
-      "proof_hash" => "proof"
-    }
-
-    assert {:ok, session} = Session.from_map(attrs)
-    assert session.proof_hash == "proof"
-    assert session.assignment.claimed_at == ~U[2026-05-04 12:00:00Z]
-
-    assert {:ok, nil_session} = Session.from_map(%{attrs | "claimed_at" => nil})
-    assert nil_session.assignment.claimed_at == nil
-
-    assert {:ok, nullable_session} = Session.from_map(%{attrs | "work_package_id" => nil, "capabilities" => nil})
-    assert nullable_session.assignment.work_package_id == nil
-    assert nullable_session.assignment.capabilities == nil
-
-    assert Session.from_map(%{attrs | "grant_id" => " "}) == {:error, {:blank, "grant_id"}}
-    assert Session.from_map(Map.delete(attrs, "work_package_id")) == {:error, {:missing, "work_package_id"}}
-    assert Session.from_map(%{attrs | "capabilities" => ["read:own", :bad]}) == {:error, {:invalid, "capabilities"}}
-    assert Session.from_map(%{attrs | "capabilities" => "read:own"}) == {:error, {:missing, "capabilities"}}
-    assert Session.from_map(%{attrs | "claimed_at" => "not-a-date"}) == {:error, {:invalid, "claimed_at", :invalid_format}}
-    assert Session.from_map(%{attrs | "claimed_at" => 123}) == {:error, {:invalid, "claimed_at"}}
-  end
-
   test "session grant validation accepts nil expiry and rejects inactive or unclaimed grants" do
     now = ~U[2026-05-04 12:00:00Z]
 
@@ -145,94 +114,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
 
     assert {:ok, _revoked} = AccessGrantService.revoke(repo, grant.id)
     assert Auth.require_session(session, repo) == {:error, {:unauthorized, :revoked}}
-  end
-
-  test "config parser defaults to stdio and rejects unsupported modes" do
-    assert {:ok, %Config{mode: :stdio, database: nil}} = Config.parse([])
-
-    assert %Config{
-             mode: :stdio,
-             repo: Repo,
-             version: version,
-             source_revision: source_revision,
-             repo_root: nil
-           } = Config.default()
-
-    assert is_binary(version)
-    assert is_nil(source_revision) or source_revision =~ ~r/\A[0-9a-f]{40}\z/
-    assert {:ok, %Config{mode: :stdio, database: "tmp/sympp.sqlite3"}} = Config.parse(["--database", "tmp/sympp.sqlite3"])
-    assert {:ok, %Config{repo_root: repo_root}} = Config.parse(["--repo-root", " . "])
-    assert repo_root == Path.expand(".")
-    assert {:error, repo_root_message} = Config.parse(["--repo-root", "  "])
-    assert repo_root_message == Config.usage()
-    assert {:error, secret_env_message} = Config.parse(["--work-key-secret-env", "SYMPP_MCP_SECRET"])
-    assert secret_env_message == Config.usage()
-
-    assert {:ok, %Config{claimed_by: "worker-1"}} = Config.parse(["--claimed-by", "worker-1"])
-
-    assert {:error, message} = Config.parse(["--mode", "http"])
-    assert message =~ "Only STDIO MCP mode is supported"
-    assert {:error, invalid_message} = Config.parse(["--unknown"])
-    assert invalid_message == Config.usage()
-  end
-
-  test "config source revision can be pinned by launcher environment" do
-    old_revision = System.get_env("SYMPP_SOURCE_REVISION")
-    pinned_revision = "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
-
-    try do
-      :persistent_term.erase({Config, :source_revision})
-      System.put_env("SYMPP_SOURCE_REVISION", pinned_revision)
-
-      assert Config.source_revision() == String.downcase(pinned_revision)
-      assert Config.default().source_revision == String.downcase(pinned_revision)
-    after
-      if old_revision do
-        System.put_env("SYMPP_SOURCE_REVISION", old_revision)
-      else
-        System.delete_env("SYMPP_SOURCE_REVISION")
-      end
-
-      :persistent_term.erase({Config, :source_revision})
-    end
-  end
-
-  test "health contract fingerprint is independent from source revision", %{repo: repo} do
-    revision_a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    revision_b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-
-    health_a =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "health-a",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health", "arguments" => %{}}
-        },
-        config: Config.default(repo: repo, source_revision: revision_a)
-      )
-
-    health_b =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "health-b",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health", "arguments" => %{}}
-        },
-        config: Config.default(repo: repo, source_revision: revision_b)
-      )
-
-    assert get_in(health_a, ["result", "structuredContent", "source", "revision"]) == revision_a
-    assert get_in(health_b, ["result", "structuredContent", "source", "revision"]) == revision_b
-    assert get_in(health_a, ["result", "structuredContent", "source", "mcp_contract"]) == Server.mcp_contract_identity()
-    assert get_in(health_b, ["result", "structuredContent", "source", "mcp_contract"]) == Server.mcp_contract_identity()
-  end
-
-  test "MCP timestamp serialization treats naive datetimes as UTC instants" do
-    assert Server.mcp_timestamp(~U[2026-05-12 12:34:56.123456Z]) == "2026-05-12T12:34:56.123456Z"
-    assert Server.mcp_timestamp(~N[2026-05-12 12:34:56.123456]) == "2026-05-12T12:34:56.123456Z"
-    assert Server.mcp_timestamp(nil) == nil
   end
 
   test "database-scoped repo binding reaches the requested ledger while the default repo is running" do

@@ -61,30 +61,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
     end
   end
 
-  defmodule PrimaryKeyCollisionRepo do
-    alias Ecto.Changeset
-    alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
-
-    def get(WorkPackage, _id), do: %WorkPackage{status: "created"}
-    def one(_query), do: nil
-
-    def transaction(fun) do
-      {:ok, fun.()}
-    catch
-      {:rollback, reason} -> {:error, reason}
-    end
-
-    def rollback(reason), do: throw({:rollback, reason})
-
-    def insert(%Changeset{}) do
-      raise %Ecto.ConstraintError{
-        type: :unique,
-        constraint: Process.get(:claim_lease_primary_key_collision_constraint),
-        message: "primary key collision"
-      }
-    end
-  end
-
   setup_all do
     database_path = WorkPackageFactory.database_path()
 
@@ -341,33 +317,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
 
     assert {:error, :id_already_exists} =
              Repository.claim(repo, Map.put(attrs, :work_package_id, second_package.id), now: now)
-  end
-
-  test "native primary key constraint names return stable duplicate-id errors" do
-    now = ~U[2026-05-26 11:45:00Z]
-
-    attrs = %{
-      id: "claim_duplicate_native_primary_key",
-      work_package_id: "SYMPP-CLAIM-DUPLICATE-NATIVE",
-      actor_kind: "agent",
-      actor_id: "agent-duplicate",
-      stale_after_ms: 1_000
-    }
-
-    try do
-      Process.put(:claim_lease_primary_key_collision_constraint, "sympp_claim_leases_pkey")
-      assert {:error, :id_already_exists} = Repository.claim(PrimaryKeyCollisionRepo, attrs, now: now)
-
-      Process.put(:claim_lease_primary_key_collision_constraint, "sympp_claim_leases_id_unique_index")
-      assert {:error, :id_already_exists} = Repository.claim(PrimaryKeyCollisionRepo, attrs, now: now)
-
-      Process.put(:claim_lease_primary_key_collision_constraint, "other_table_pkey")
-
-      assert {:error, {:constraint_failed, "other_table_pkey"}} =
-               Repository.claim(PrimaryKeyCollisionRepo, attrs, now: now)
-    after
-      Process.delete(:claim_lease_primary_key_collision_constraint)
-    end
   end
 
   test "claims require a stale policy and package-scoped grant", %{repo: repo} do

@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
-import { realpath } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from 'e2e';
 import { test } from '../support/candidate.js';
 
 test('fresh candidate bootstrap reports healthy isolated ledgers through its real API', async ({ candidates }) => {
+  const contract = JSON.parse(await readFile('elixir/priv/symphony_plus_plus/mcp_contract.json', 'utf8'));
   const identities: string[] = [];
   for (const candidate of [candidates.primary, candidates.peer]) {
     const initialized = await candidate.request('initialize', {
@@ -33,6 +34,7 @@ test('fresh candidate bootstrap reports healthy isolated ledgers through its rea
 
     // Revision comes from the candidate checkout, not an injected runtime label.
     expect(health.source.revision).toBe(process.env.ACCEPTANCE_CHECKOUT_SHA);
+    expect(health.source.mcp_contract.fingerprint).toBe(contract.mcp_contract_fingerprint);
     const version = await candidate.request('resources/read', { uri: 'sympp://health/version' });
     expect(JSON.parse(version.contents[0].text).source.revision).toBe(process.env.ACCEPTANCE_CHECKOUT_SHA);
     expect(existsSync(join(candidate.home, '.agents', 'splusplus', 'symphony_plus_plus.sqlite3'))).toBe(false);

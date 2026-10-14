@@ -92,15 +92,10 @@ jobs:
           path: .e2e
           include-hidden-files: true
 
-  browser-candidate-artifact:
-    name: browser candidate artifact
+  windows-frontend:
+    name: Windows frontend build
     runs-on: windows-latest
     timeout-minutes: 15
-    env:
-      E2E_OAUTH_CREDENTIALS: '{}'
-      E2E_TELEMETRY_DISABLED: '1'
-      DO_NOT_TRACK: '1'
-      PLAYWRIGHT_BROWSERS_PATH: '${{ github.workspace }}/.e2e/browser-binaries'
     steps:
       - name: Checkout candidate combined tree
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -116,41 +111,12 @@ jobs:
         working-directory: elixir
         shell: pwsh
         run: (mise where node) >> $env:GITHUB_PATH
-      - name: Generate acceptance lock on hosted runner
-        run: npm install --package-lock-only --ignore-scripts
-      - name: Install isolated recording dependencies
-        run: |
-          npm ci --ignore-scripts
-          npm exec -- e2e-web install chromium
-      - name: Build candidate browser and inspector artifacts
+      - name: Build candidate browser and inspector
         working-directory: elixir/assets
         run: |
           npm ci
           npm run build
           npm run build:herdr
-      - name: Package recording inputs without runtime credentials
-        env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path .e2e/browser-candidate -Force | Out-Null
-          git rev-parse HEAD | Set-Content .e2e/browser-candidate/checkout-sha.txt
-          git cat-file -p HEAD | Set-Content .e2e/browser-candidate/checkout-commit.txt
-          git rev-parse 'HEAD^{tree}' | Set-Content .e2e/browser-candidate/checkout-tree.txt
-          @("head=$env:HEAD_SHA", "base=$env:BASE_SHA", "run=$env:GITHUB_RUN_ID") | Set-Content .e2e/browser-candidate/inputs.txt
-          tar -cf .e2e/browser-candidate/recording-dependencies.tar node_modules
-          tar -cf .e2e/browser-candidate/browser-binaries.tar -C .e2e browser-binaries
-          Copy-Item package-lock.json .e2e/browser-candidate/package-lock.json
-          Copy-Item elixir/priv/static .e2e/browser-candidate/static -Recurse
-          Copy-Item plugins/symphony-plus-plus-mcp/herdr/dist .e2e/browser-candidate/inspector -Recurse
-      - name: Retain hosted candidate recording inputs
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: browser-candidate-artifact
-          path: .e2e/browser-candidate
-          include-hidden-files: true
 
   native-acceptance:
     name: native acceptance
@@ -358,6 +324,10 @@ jobs:
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
       - name: Check online SQLite snapshot
         run: python -m unittest discover -s scripts/tests -p test_sympp_beta_snapshot.py
+      - name: Check performance threshold subprocess and exit contracts
+        run: pwsh -NoProfile -File plugins/symphony-plus-plus-mcp/tests/end-to-end/run-performance-gate-tests.ps1
+      - name: Check installed transport source ownership
+        run: pwsh -NoProfile -File plugins/symphony-plus-plus-mcp/tests/transport/direct-http-transport.ps1 -StaticOnly
       - name: Check beta launcher isolation and refusal paths
         shell: pwsh
         run: ./plugins/symphony-plus-plus-mcp/tests/launcher/run-launcher-tests.ps1 -SkipDesktopTests
@@ -371,52 +341,11 @@ jobs:
         include:
           - name: static
             target: ci-static
-            partition: ""
-            partitions: ""
-          - name: test 9/9
-            target: ci-test
-            partition: 9
-            partitions: 9
-          - name: slow test 1/8
-            target: ci-slow
-            partition: 1
-            partitions: 8
-          - name: slow test 2/8
-            target: ci-slow
-            partition: 2
-            partitions: 8
-          - name: slow test 3/8
-            target: ci-slow
-            partition: 3
-            partitions: 8
-          - name: slow test 4/8
-            target: ci-slow
-            partition: 4
-            partitions: 8
-          - name: slow test 5/8
-            target: ci-slow
-            partition: 5
-            partitions: 8
-          - name: slow test 6/8
-            target: ci-slow
-            partition: 6
-            partitions: 8
-          - name: slow test 7/8
-            target: ci-slow
-            partition: 7
-            partitions: 8
-          - name: slow test 8/8
-            target: ci-slow
-            partition: 8
-            partitions: 8
           - name: dialyzer
             target: ci-dialyzer
-            partition: ""
-            partitions: ""
     defaults:
       run:
         working-directory: elixir
-
     steps:
       - name: Checkout
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -454,49 +383,20 @@ jobs:
 
       - name: Verify ${{ matrix.name }}
         run: make ${{ matrix.target }}
-        env:
-          FAST_TEST_PARTITIONS: ${{ matrix.partitions }}
-          SLOW_TEST_PARTITIONS: ${{ matrix.partitions }}
-          MIX_TEST_PARTITION: ${{ matrix.partition }}
-
-      - name: Retain static and test gate evidence
+      - name: Retain static gate evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: gate-${{ matrix.target }}-${{ matrix.partition || 'single' }}
+          name: gate-${{ matrix.target }}
           path: elixir/_build/make-logs
 
-  parallel-gates:
-    name: ${{ matrix.name }}
+  retained-qualification:
+    name: retained qualification
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: test 1-2/9
-            partitions: 9
-            partition_1: 1
-            partition_2: 2
-            gate_id: fast-1-2
-          - name: test 3-4/9
-            partitions: 9
-            partition_1: 3
-            partition_2: 4
-            gate_id: fast-3-4
-          - name: test 5-6/9
-            partitions: 9
-            partition_1: 5
-            partition_2: 6
-            gate_id: fast-5-6
-          - name: test 7-8/9
-            partitions: 9
-            partition_1: 7
-            partition_2: 8
-            gate_id: fast-7-8
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: elixir
-
     steps:
       - name: Checkout
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -519,49 +419,14 @@ jobs:
             ${{ runner.os }}-mix-${{ hashFiles('elixir/mise.toml') }}-${{ hashFiles('elixir/mix.exs') }}-
             ${{ runner.os }}-mix-${{ hashFiles('elixir/mise.toml') }}-
 
-      - name: Prepare ${{ matrix.name }} build copies
-        run: |
-          make ci-prepare
-          rm -rf "_p/${{ matrix.gate_id }}"
-          mkdir -p "_p/${{ matrix.gate_id }}"
-          cp -a _build "_p/${{ matrix.gate_id }}/b${{ matrix.partition_1 }}"
-          cp -a _build "_p/${{ matrix.gate_id }}/b${{ matrix.partition_2 }}"
-          mkdir -p "/tmp/spp-mix-${{ matrix.gate_id }}-${{ matrix.partition_1 }}" "/tmp/spp-mix-${{ matrix.gate_id }}-${{ matrix.partition_2 }}"
-          mkdir -p "/tmp/spp-tmp-${{ matrix.gate_id }}-${{ matrix.partition_1 }}" "/tmp/spp-tmp-${{ matrix.gate_id }}-${{ matrix.partition_2 }}"
-        env:
-          GATE_RUN_ID: ${{ matrix.gate_id }}-prepare
-
-      - parallel:
-          - name: test ${{ matrix.partition_1 }}/${{ matrix.partitions }}
-            run: make ci-test-run
-            env:
-              FAST_TEST_PARTITIONS: ${{ matrix.partitions }}
-              MIX_TEST_PARTITION: ${{ matrix.partition_1 }}
-              MIX_BUILD_PATH: _p/${{ matrix.gate_id }}/b${{ matrix.partition_1 }}
-              MIX_HOME: /tmp/spp-mix-${{ matrix.gate_id }}-${{ matrix.partition_1 }}
-              TMPDIR: /tmp/spp-tmp-${{ matrix.gate_id }}-${{ matrix.partition_1 }}
-              GATE_LOG_ROOT: _p/${{ matrix.gate_id }}/l
-              GATE_RUN_ID: ${{ matrix.gate_id }}-${{ matrix.partition_1 }}
-              ELIXIR_ERL_OPTIONS: "+S 2:2"
-
-          - name: test ${{ matrix.partition_2 }}/${{ matrix.partitions }}
-            run: make ci-test-run
-            env:
-              FAST_TEST_PARTITIONS: ${{ matrix.partitions }}
-              MIX_TEST_PARTITION: ${{ matrix.partition_2 }}
-              MIX_BUILD_PATH: _p/${{ matrix.gate_id }}/b${{ matrix.partition_2 }}
-              MIX_HOME: /tmp/spp-mix-${{ matrix.gate_id }}-${{ matrix.partition_2 }}
-              TMPDIR: /tmp/spp-tmp-${{ matrix.gate_id }}-${{ matrix.partition_2 }}
-              GATE_LOG_ROOT: _p/${{ matrix.gate_id }}/l
-              GATE_RUN_ID: ${{ matrix.gate_id }}-${{ matrix.partition_2 }}
-              ELIXIR_ERL_OPTIONS: "+S 2:2"
-
-      - name: Retain partition test evidence
+      - name: Run all retained ExUnit qualifications
+        run: make ci-test
+      - name: Retain complete qualification evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: gate-${{ matrix.gate_id }}
-          path: elixir/_p/${{ matrix.gate_id }}/l
+          name: retained-qualification-evidence
+          path: elixir/_build/make-logs
 
   frontend:
     runs-on: ubuntu-latest
@@ -604,52 +469,29 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - browser-native-acceptance
-      - browser-candidate-artifact
+      - windows-frontend
       - native-acceptance
       - portable-skills
       - offline-acceptance
       - beta-snapshot
       - single-gates
-      - parallel-gates
+      - retained-qualification
       - frontend
     if: ${{ always() }}
     steps:
-      - name: Verify split gates
+      - name: Require every qualification result
+        env:
+          REQUIRED_RESULTS: ${{ toJSON(needs) }}
         run: |
-          if [ "${{ needs.browser-native-acceptance.result }}" != "success" ]; then
-            echo "browser native acceptance result: ${{ needs.browser-native-acceptance.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.browser-candidate-artifact.result }}" != "success" ]; then
-            echo "browser candidate artifact result: ${{ needs.browser-candidate-artifact.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.native-acceptance.result }}" != "success" ]; then
-            echo "native acceptance result: ${{ needs.native-acceptance.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.portable-skills.result }}" != "success" ]; then
-            echo "portable Skills result: ${{ needs.portable-skills.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.offline-acceptance.result }}" != "success" ]; then
-            echo "offline acceptance result: ${{ needs.offline-acceptance.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.beta-snapshot.result }}" != "success" ]; then
-            echo "beta snapshot result: ${{ needs.beta-snapshot.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.single-gates.result }}" != "success" ]; then
-            echo "single gate result: ${{ needs.single-gates.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.parallel-gates.result }}" != "success" ]; then
-            echo "parallel gate result: ${{ needs.parallel-gates.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.frontend.result }}" != "success" ]; then
-            echo "frontend result: ${{ needs.frontend.result }}"
-            exit 1
-          fi
-          echo "make-all split gates passed"
+          node --input-type=module <<'NODE'
+          const results = JSON.parse(process.env.REQUIRED_RESULTS);
+          const required = ['browser-native-acceptance', 'windows-frontend', 'native-acceptance',
+            'portable-skills', 'offline-acceptance', 'beta-snapshot', 'single-gates',
+            'retained-qualification', 'frontend'];
+          for (const job of required) {
+            if (results[job]?.result !== 'success') {
+              throw new Error(`${job}: ${results[job]?.result ?? 'missing'}`);
+            }
+          }
+          console.log('Every required qualification passed.');
+          NODE

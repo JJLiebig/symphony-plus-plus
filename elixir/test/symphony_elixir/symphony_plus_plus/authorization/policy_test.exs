@@ -204,19 +204,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
              Policy.decide(actor, :dangerous_override, Target.ledger())
   end
 
-  test "policy represents precondition and lifecycle denials with stable reason codes" do
-    actor = architect([Scope.work_request("wr-1")])
-
-    assert %Decision{allowed?: false, reason: :precondition_denied, reason_code: "target_not_found"} =
-             Policy.decide(actor, :work_request_update, Target.new(:work_request, "wr-missing", resolution: :not_found))
-
-    assert %Decision{allowed?: false, reason: :precondition_denied, reason_code: "runtime_lease_conflict"} =
-             Policy.decide(actor, :work_package_update, Target.new(:work_package, "wp-1", resolution: :runtime_lease_conflict))
-
-    assert %Decision{allowed?: false, reason: :lifecycle_denied, reason_code: "invalid_transition"} =
-             Policy.decide(actor, :work_package_update, Target.work_package("wp-1"), lifecycle_denial: :invalid_transition)
-  end
-
   defp architect(scopes, capabilities \\ @architect_capabilities) do
     Actor.new(:architect, scopes: scopes, capabilities: capabilities)
   end

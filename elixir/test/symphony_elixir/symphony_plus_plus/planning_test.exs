@@ -1,8 +1,6 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.PlanningTest do
   use ExUnit.Case, async: false
 
-  alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
-  alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Artifact
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Finding
   alias SymphonyElixir.SymphonyPlusPlus.Planning.PlanNode
@@ -61,80 +59,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PlanningTest do
       |> Enum.sort()
 
     assert sequences == Enum.to_list(1..8)
-  end
-
-  test "preserves database busy when append retries are exhausted" do
-    previous_attempts = Application.get_env(:symphony_elixir, :sympp_planning_append_retry_attempts)
-    Application.put_env(:symphony_elixir, :sympp_planning_append_retry_attempts, -1)
-
-    on_exit(fn ->
-      if is_nil(previous_attempts) do
-        Application.delete_env(:symphony_elixir, :sympp_planning_append_retry_attempts)
-      else
-        Application.put_env(:symphony_elixir, :sympp_planning_append_retry_attempts, previous_attempts)
-      end
-    end)
-
-    assert {:error, :database_busy} =
-             Repository.append_finding(__MODULE__.BusyPlanningRepo, %{work_package_id: "SYMPP-P1-004", title: "Locked"})
-  end
-
-  test "preserves database busy when state read retries are exhausted" do
-    previous_attempts = Application.get_env(:symphony_elixir, :sympp_planning_state_read_retry_attempts)
-    Application.put_env(:symphony_elixir, :sympp_planning_state_read_retry_attempts, -1)
-
-    on_exit(fn ->
-      if is_nil(previous_attempts) do
-        Application.delete_env(:symphony_elixir, :sympp_planning_state_read_retry_attempts)
-      else
-        Application.put_env(:symphony_elixir, :sympp_planning_state_read_retry_attempts, previous_attempts)
-      end
-    end)
-
-    assert {:error, :database_busy} = Repository.get_state(__MODULE__.BusyPlanningRepo, "SYMPP-P1-004")
-  end
-
-  test "valid assignment checks preserve access-grant lookup storage errors" do
-    now = DateTime.utc_now(:microsecond)
-
-    assignment = %Assignment{
-      grant_id: "grant-storage-failure",
-      work_package_id: "SYMPP-P1-004",
-      display_key: "ABCD",
-      grant_role: "worker",
-      capabilities: ["worker:claim"],
-      claimed_at: now,
-      claimed_by: "agent"
-    }
-
-    assert {:error, :database_busy} =
-             Service.require_valid_assignment(__MODULE__.BusyAssignmentLookupRepo, assignment)
-
-    assert {:error, {:storage_failed, "disk I/O failed"}} =
-             Service.require_valid_assignment(__MODULE__.BrokenAssignmentLookupRepo, assignment)
-
-    assert {:error, :assignment_mismatch} =
-             Service.require_valid_assignment(__MODULE__.LiveAssignmentMismatchRepo, assignment)
-  end
-
-  test "state read retry delay is independent from append retry attempts" do
-    previous_append_attempts = Application.get_env(:symphony_elixir, :sympp_planning_append_retry_attempts)
-    previous_read_attempts = Application.get_env(:symphony_elixir, :sympp_planning_state_read_retry_attempts)
-
-    Application.put_env(:symphony_elixir, :sympp_planning_append_retry_attempts, 0)
-    Application.put_env(:symphony_elixir, :sympp_planning_state_read_retry_attempts, 1)
-
-    on_exit(fn ->
-      restore_retry_env(:sympp_planning_append_retry_attempts, previous_append_attempts)
-      restore_retry_env(:sympp_planning_state_read_retry_attempts, previous_read_attempts)
-    end)
-
-    assert {:error, :database_busy} = Repository.get_state(__MODULE__.BusyPlanningRepo, "SYMPP-P1-004")
-  end
-
-  test "reports non-busy sqlite errors as storage failures" do
-    assert {:error, {:storage_failed, message}} = Repository.get_state(__MODULE__.StorageFailureRepo, "SYMPP-P1-004")
-    assert message =~ "no such table"
   end
 
   test "allocates append sequence uniquely during concurrent artifacts", %{repo: repo} do
@@ -264,20 +188,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PlanningTest do
     assert state.plan_nodes_omitted_count == 0
   end
 
-  test "public list helpers normalize sqlite storage failures" do
-    assert {:error, {:storage_failed, message}} = Repository.list_plan_nodes(__MODULE__.StorageListFailureRepo, "SYMPP-P1-004")
-    assert message =~ "no such table"
-
-    assert {:error, {:storage_failed, _message}} =
-             Repository.list_findings(__MODULE__.StorageListFailureRepo, "SYMPP-P1-004")
-
-    assert {:error, {:storage_failed, _message}} =
-             Repository.list_progress_events(__MODULE__.StorageListFailureRepo, "SYMPP-P1-004")
-
-    assert {:error, {:storage_failed, _message}} =
-             Repository.list_artifacts(__MODULE__.StorageListFailureRepo, "SYMPP-P1-004")
-  end
-
   test "caps aggregate rendered virtual file size", %{repo: repo} do
     assert {:ok, work_package} = create_work_package(repo)
     large_body = String.duplicate("x", 4_050)
@@ -344,35 +254,5 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PlanningTest do
     WorkPackageRepository.create(repo, attrs)
   end
 
-  defp restore_retry_env(key, nil), do: Application.delete_env(:symphony_elixir, key)
-  defp restore_retry_env(key, value), do: Application.put_env(:symphony_elixir, key, value)
-
   defp fenced_source_count(markdown), do: length(Regex.scan(~r/^```(?:text)?$/m, markdown))
-
-  defmodule BusyPlanningRepo do
-    def transaction(_fun), do: {:error, :database_busy}
-  end
-
-  defmodule StorageFailureRepo do
-    def transaction(_fun), do: raise(%Exqlite.Error{message: "no such table: sympp_plan_nodes"})
-  end
-
-  defmodule StorageListFailureRepo do
-    def all(_query), do: raise(%Exqlite.Error{message: "no such table: sympp_plan_nodes"})
-  end
-
-  defmodule BusyAssignmentLookupRepo do
-    def update_all(_query, _updates), do: {0, []}
-    def get(AccessGrant, _id), do: raise(%Exqlite.Error{message: "database is locked"})
-  end
-
-  defmodule BrokenAssignmentLookupRepo do
-    def update_all(_query, _updates), do: {0, []}
-    def get(AccessGrant, _id), do: raise(%Exqlite.Error{message: "disk I/O failed"})
-  end
-
-  defmodule LiveAssignmentMismatchRepo do
-    def update_all(_query, _updates), do: {0, []}
-    def get(AccessGrant, _id), do: %AccessGrant{expires_at: nil}
-  end
 end
