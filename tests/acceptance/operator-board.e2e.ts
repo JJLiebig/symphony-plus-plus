@@ -61,6 +61,11 @@ test('operator sees dependency ordering, pending qualification and actual delive
   expect((await row(client, request, first)).delivery_outcome).toBeNull();
   provider!.set(401, pr(401, head('a'), { reviewDecision: 'REVIEW_REQUIRED' }));
   await sync(client, first, 401, head('a'));
+  // A pending GitHub decision is not a native reviewer observation. Exercise
+  // the actual worker's reported reviewing state through its claimed scope.
+  const reviewer = await candidate.factory!.client();
+  await reviewer.call('claim_local_assignment', { work_package_id: first, claimed_by: 'browser-review-worker' });
+  await reviewer.call('append_progress', { status: 'reviewing', summary: 'Reviewing the bounded synthetic acceptance findings.', idempotency_key: 'browser-review-start' });
   await candidate.capture('review-wait');
   await browser.reload();
   await expect(browser.locator(`[data-goal="${request}"] ol span.font-semibold`)).toContainText('Review');
