@@ -1,7 +1,7 @@
 import { expect } from 'e2e';
 import { test } from '../support/browser-candidate.js';
 import { contract } from '../support/factory.js';
-import { close, head, pr, row, sync } from '../support/delivery.js';
+import { close, head, pr, prUrl, row, sync } from '../support/delivery.js';
 import { installReviewProvider } from '../support/browser-review-provider.js';
 import { repository } from '../support/worktree-git.js';
 import { readFile } from 'node:fs/promises';
@@ -59,7 +59,9 @@ test('operator sees dependency ordering, pending qualification and actual delive
   provider!.set(401, pr(401, head('a'), {
     statusCheckRollup: [{ name: 'required', status: 'IN_PROGRESS', conclusion: null }], reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED',
   }));
-  await sync(worker, first, 401, head('a'));
+  await worker.call('attach_branch', { branch: 'feature/delivery-401', head_sha: head('a') });
+  await worker.call('attach_pr', { url: prUrl(401), head_sha: head('a') });
+  await worker.call('sync_pr', { url: prUrl(401) });
   await candidate.capture('ci-wait');
   await browser.reload();
   await screen.getByRole('button', 'Expanded', { exact: true }).tap();
