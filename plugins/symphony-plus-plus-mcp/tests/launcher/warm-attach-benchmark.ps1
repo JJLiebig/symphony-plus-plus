@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
 $pluginRoot = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp"
 $scriptsRoot = Join-Path $pluginRoot "scripts"
+. (Join-Path $scriptsRoot "sympp-mcp-launcher-helpers.ps1")
 $contractPath = Join-Path $repoRoot "elixir/priv/symphony_plus_plus/mcp_contract.json"
 $contract = [string]((Get-Content -LiteralPath $contractPath -Raw | ConvertFrom-Json).mcp_contract_fingerprint)
 $tempRoot = Join-Path $PSScriptRoot (".warm-production-" + [guid]::NewGuid().ToString("N"))
@@ -54,6 +55,52 @@ try {
     Get-ChildItem -LiteralPath $scriptsRoot -Filter "*.ps1" -File | Sort-Object Name | Select-Object -ExpandProperty FullName
   )
   $definitions = Get-ScriptFunctionDefinitions $paths
+  # Hold the real lease reader in JSON conversion while another client detaches.
+  $leaseReadReady = [System.Threading.ManualResetEventSlim]::new($false)
+  $leaseReadRelease = [System.Threading.ManualResetEventSlim]::new($false)
+  $reader = $null
+  $readerRunspace = $null
+  $readerResult = $null
+  $probeLease = $null
+  try {
+    $readerState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    foreach ($entry in $definitions.GetEnumerator()) {
+      $readerState.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new($entry.Key, $entry.Value))
+    }
+    $readerState.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new("ConvertFrom-Json", @'
+param([Parameter(ValueFromPipeline = $true)]$InputObject)
+process {
+  $LeaseReadReady.Set()
+  $LeaseReadRelease.Wait()
+  Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject $InputObject
+}
+'@))
+    $readerState.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new("LeaseReadReady", $leaseReadReady, "lease reader barrier"))
+    $readerState.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new("LeaseReadRelease", $leaseReadRelease, "lease reader barrier"))
+    $readerRunspace = [runspacefactory]::CreateRunspace($readerState)
+    $readerRunspace.Open()
+    $reader = [powershell]::Create()
+    $reader.Runspace = $readerRunspace
+    $probePlan = [pscustomobject]@{ managed = $false; status = "external_loopback"; url = $url; source_revision = "b" * 40 }
+    $probeLease = New-BridgeLease $runtimeFile $probePlan $probePlan $runtimeKey
+    [void]$reader.AddScript('param($RuntimeFile) Get-ActiveBridgeLeases $RuntimeFile | Out-Null').AddArgument($runtimeFile)
+    $readerResult = $reader.BeginInvoke()
+    if (-not $leaseReadReady.Wait(10000)) { throw "Lease contention fixture did not reach the actual reader." }
+    $Error.Clear()
+    Remove-BridgeLease $probeLease
+    if ([IO.File]::Exists($probeLease)) {
+      $removalError = if ($Error.Count) { "hresult=$($Error[0].Exception.HResult) $($Error[0].Exception.Message)" } else { "no removal error captured" }
+      throw "Concurrent lease read prevented detach removal: $removalError"
+    }
+  } finally {
+    $leaseReadRelease.Set()
+    if ($readerResult) { [void]$reader.EndInvoke($readerResult) }
+    if ($reader) { $reader.Dispose() }
+    if ($readerRunspace) { $readerRunspace.Dispose() }
+    $leaseReadReady.Dispose()
+    $leaseReadRelease.Dispose()
+    if ($probeLease) { Remove-Item -LiteralPath $probeLease -Force -ErrorAction SilentlyContinue }
+  }
   $definitions["Write-Diagnostic"] = 'param([string]$Message)'
   $definitions["Get-SymppBackendHealthWithRetry"] = @'
 param([string]$Url, [int]$Attempts = 1, [int]$DelayMs = 1)
@@ -64,12 +111,14 @@ param([string]$McpUrl, [int]$TimeoutSec, [string]$ClientLeaseId, [int]$Heartbeat
 $ClientWatch.Stop()
 $Samples.Enqueue($ClientWatch.Elapsed.TotalMilliseconds)
 [void]$Ready.Signal()
-if (-not $Gate.Wait(30000)) { throw "Timed out holding concurrent warm bridges." }
+$Gate.Wait()
 '@
   $definitions["New-McpClientLeaseId"] = 'return [guid]::NewGuid().ToString("N")'
-  $definitions["Remove-BridgeLease"] += @'
+  $definitions["Remove-BridgeLease"] = $definitions["Remove-BridgeLease"].Replace(
+    'Remove-Item -LiteralPath $LeasePath -Force -ErrorAction SilentlyContinue',
+    'Remove-Item -LiteralPath $LeasePath -Force -ErrorAction SilentlyContinue -ErrorVariable leaseRemoveErrors') + @'
 if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
-  $detail = if ($Error.Count) { $Error[0].Exception.Message } else { "No deletion error was returned" }
+  $detail = if ($leaseRemoveErrors) { ($leaseRemoveErrors | ForEach-Object { "hresult=$($_.Exception.HResult) $($_.Exception.Message)" }) -join "; " } else { "No deletion error was returned" }
   $LeaseDeleteFailures.Enqueue(([IO.Path]::GetFileName($LeasePath) + ": " + $detail))
 }
 '@
@@ -91,8 +140,10 @@ if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
   $clientScript = {
     param($RuntimeFile, $PluginRoot, $Port)
     $ClientWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    [void](Invoke-WarmAttachFromRuntimeState -RuntimeFile $RuntimeFile -PluginRoot $PluginRoot -BackendPort $Port -DashboardPort 0 -BackendPortExplicit $true -DashboardPortExplicit $false -ConfiguredBackendUrl $null -ConfiguredDashboardOrigin $null -BridgeTimeout 30 -ClientHeartbeatInterval 5)
+    $attached = Invoke-WarmAttachFromRuntimeState -RuntimeFile $RuntimeFile -PluginRoot $PluginRoot -BackendPort $Port -DashboardPort 0 -BackendPortExplicit $true -DashboardPortExplicit $false -ConfiguredBackendUrl $null -ConfiguredDashboardOrigin $null -BridgeTimeout 30 -ClientHeartbeatInterval 5
+    if (-not $attached) { throw "Production warm attach rejected the fixture runtime." }
   }
+  $attachWatch = [Diagnostics.Stopwatch]::StartNew()
   foreach ($index in 1..$Clients) {
     $powershell = [powershell]::Create()
     $powershell.RunspacePool = $pool
@@ -100,11 +151,19 @@ if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
     $jobs.Add([pscustomobject]@{ shell = $powershell; result = $powershell.BeginInvoke() })
   }
 
-  if (-not $ready.Wait(30000)) { throw "Timed out waiting for $Clients production warm attaches. errors=$(@($jobs.shell.Streams.Error | ForEach-Object { $_.Exception.Message + ' command=' + $_.InvocationInfo.MyCommand.Name + ' position=' + $_.InvocationInfo.PositionMessage + ' stack=' + $_.ScriptStackTrace }) -join '; ')" }
+  $remainingMs = [Math]::Max(0, 30000 - [int]$attachWatch.ElapsedMilliseconds)
+  if (-not $ready.Wait($remainingMs)) { throw "Timed out waiting for $Clients production warm attaches. ready=$($Clients - $ready.CurrentCount) errors=$(@($jobs.shell.Streams.Error | ForEach-Object { $_.Exception.Message + ' command=' + $_.InvocationInfo.MyCommand.Name + ' position=' + $_.InvocationInfo.PositionMessage + ' stack=' + $_.ScriptStackTrace }) -join '; ')" }
   $leaseDir = Resolve-Path (Join-Path $tempRoot "codex-plugin-leases")
+  $owners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique)
+  if ($owners.Count -ne 1 -or [int]$owners[0] -ne $PID) { throw "Warm benchmark listener ownership changed during attachment." }
   $leasesPeak = @(Get-ChildItem -LiteralPath $leaseDir -Filter "bridge-*.json" -File).Count
   $gate.Set()
-  foreach ($job in $jobs) { [void]$job.shell.EndInvoke($job.result); $job.shell.Dispose() }
+  $workerErrors = [Collections.Generic.List[string]]::new()
+  foreach ($job in $jobs) {
+    [void]$job.shell.EndInvoke($job.result)
+    foreach ($workerError in $job.shell.Streams.Error) { $workerErrors.Add($workerError.Exception.Message) }
+    $job.shell.Dispose()
+  }
   $sorted = @($samples.ToArray() | Sort-Object)
   [pscustomobject]@{
     clients = $Clients
@@ -116,7 +175,7 @@ if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
     leases_after = @(Get-ChildItem -LiteralPath $leaseDir -Filter "bridge-*.json" -File -ErrorAction SilentlyContinue).Count
     remote_resolution_attempts = $remoteAttempts.Count
     lease_delete_failures = @($leaseDeleteFailures.ToArray())
-    worker_errors = @($jobs.shell.Streams.Error | ForEach-Object { $_.Exception.Message })
+    worker_errors = @($workerErrors)
   } | ConvertTo-Json -Compress
 } finally {
   $gate.Set()

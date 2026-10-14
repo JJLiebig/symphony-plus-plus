@@ -441,7 +441,13 @@ function Get-ActiveBridgeLeases([string]$RuntimeFile) {
   foreach ($leasePath in @(Get-ChildItem -LiteralPath $leaseDir -Filter "bridge-*.json" -File -ErrorAction SilentlyContinue)) {
     $lease = $null
     try {
-      $lease = Get-Content -LiteralPath $leasePath.FullName -Raw | ConvertFrom-Json
+      # Another client may detach while this Windows reader is still open.
+      $reader = [IO.StreamReader]::new([IO.File]::Open($leasePath.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)))
+      try {
+        $lease = $reader.ReadToEnd() | ConvertFrom-Json
+      } finally {
+        $reader.Dispose()
+      }
     } catch {
     }
     $candidates.Add([pscustomobject]@{ path = $leasePath.FullName; lease = $lease })
