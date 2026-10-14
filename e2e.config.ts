@@ -4,6 +4,7 @@ import { appendFileSync } from 'node:fs';
 
 const browser = process.env.SYMPP_BROWSER_ACCEPTANCE === '1';
 const recording = browser && process.env.SYMPP_BROWSER_RECORDING === '1';
+const recordingModel = recording && process.env.B3_BROWSER_READ_ONLY_REPLAY !== '1';
 if (recording && process.env.CI) throw new Error('Browser model recording is local-only');
 const disabledModel = {
   specificationVersion: 'v4' as const,
@@ -20,7 +21,7 @@ const disabledModel = {
   },
 };
 // Hosted replay never imports or constructs a provider/OAuth client.
-const model = recording ? (await import('e2e/oauth/chatgpt')).chatgpt('gpt-6-luna') : disabledModel;
+const model = recordingModel ? (await import('e2e/oauth/chatgpt')).chatgpt('gpt-6-luna') : disabledModel;
 
 export default {
   tests: browser
@@ -31,7 +32,7 @@ export default {
     : [{ name: 'api', platform: 'api' }],
   workers: 1,
   retries: 0,
-  cache: { mode: recording ? 'read-write' : 'read-only', strict: !recording },
+  cache: { mode: recordingModel ? 'read-write' : 'read-only', strict: !recordingModel },
   timeout: 120_000,
   cleanupTimeout: 30_000,
   trace: 'on',

@@ -40,8 +40,9 @@ test('operator sees dependency ordering, pending qualification and actual delive
   }
   if (process.env.SYMPP_BROWSER_MECHANICAL === '1') {
     await screen.getByRole('button', 'Expanded', { exact: true }).tap();
-    await screen.getByRole('button', 'See all 2 packages', { exact: true }).tap();
-  } else await agent.act('Show all packages for Browser delivery, including those queued');
+  } else await agent.act('Select Expanded in the Show navigation');
+  await expect(screen.getByRole('button', 'See all 2 packages', { exact: true })).toBeVisible();
+  await screen.getByRole('button', 'See all 2 packages', { exact: true }).tap();
   await expect(goal).toContainText('Service prerequisite');
   await expect(goal).toContainText('Dependent findings');
   await expect(goal).toContainText('queued');
@@ -94,7 +95,7 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await client.call('dispatch_work_package', { work_package_id: reviewWp });
   const receipt = await installReviewProvider(candidate);
   const prepared = await client.call('prepare_work_package_worktree', { work_package_id: reviewWp, target_repo_root: repository });
-  expect(prepared.status).toBe('prepared');
+  expect(prepared.worktree.status).toBe('prepared');
   await candidate.capture('provider-review-wait');
   await browser.reload();
   await expect(browser.locator(`[data-goal="${reviewing}"] ol span.font-semibold`)).toContainText('Review');

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-14T15:30:03.412Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Expanded\"",
+        "target": {
+          "role": "button",
+          "name": "Expanded"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "tests/acceptance/operator-board.e2e.ts::operator%20sees%20dependency%20ordering%2C%20pending%20qualification%20and%20actual%20delivered%20completion",
+      "targetId": "browser",
+      "instructionDigest": "4f6bb69c6c881db5a425f81ccaf214032fa36c4dd442789b557611816211db43",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "Selected Expanded in the Show navigation; the Expanded view opened and now shows the Up next and Queued packages sections.",
+    "startPath": "/sympp/board",
+    "endPath": "/sympp/board",
+    "endAnchors": [
+      {
+        "text": "Up next"
+      },
+      {
+        "text": "Queued packages"
+      },
+      {
+        "text": "0/1"
+      },
+      {
+        "role": "button",
+        "name": "See all 2 packages"
+      },
+      {
+        "role": "button",
+        "name": "Queued packages 0/1"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "button",
+        "name": "1 up next · show"
+      }
+    ],
+    "endWaitMs": 11753
+  }
+}
