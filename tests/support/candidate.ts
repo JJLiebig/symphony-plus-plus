@@ -7,8 +7,6 @@ import { basename, delimiter, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { test as base } from 'e2e';
 
-type RpcResponse = { id: number; result?: any; error?: unknown };
-
 export type CandidateOptions = { database?: string; offline?: boolean; surface?: 'worker' | 'architect' };
 
 // A real candidate process, not the installed plugin or an in-process test harness.
@@ -18,7 +16,7 @@ export class Candidate {
   readonly logPath: string;
   readonly process: ChildProcessWithoutNullStreams;
   private sequence = 0;
-  private pending = new Map<number, { resolve: (response: any) => void; reject: (error: Error) => void }>();
+  private pending = new Map<number | string | null, { resolve: (response: any) => void; reject: (error: Error) => void }>();
   private log;
 
   constructor(root: string, name: string, private transport: 'stdio' | 'http' = 'stdio', provider?: { bin: string; endpoint: string }, options: CandidateOptions = {}) {
@@ -54,12 +52,13 @@ export class Candidate {
     lines.on('line', (line) => {
       this.log.write(`${line}\n`);
       // Mix/log output is not a protocol response. Unknown response fields are tolerated.
-      if (!line.startsWith('{')) return;
-      let response: RpcResponse;
+      if (!line.startsWith('{') && !line.startsWith('[')) return;
+      let response: any;
       try { response = JSON.parse(line); } catch { return; }
-      const request = this.pending.get(response.id);
+      const key = Array.isArray(response) ? 'batch' : response.id;
+      const request = this.pending.get(key);
       if (!request) return;
-      this.pending.delete(response.id);
+      this.pending.delete(key);
       request.resolve(response);
     });
     this.process.on('error', (error) => this.fail(error));
@@ -79,16 +78,22 @@ export class Candidate {
 
   async rawRequest(method: string, params: object = {}) {
     const id = ++this.sequence;
+    return this.rawPayload({ jsonrpc: '2.0', id, method, params }, id);
+  }
+
+  // Serial protocol fixtures can submit malformed requests and whole batches.
+  // Responses still come exclusively from the candidate's actual stdout.
+  async rawPayload(payload: unknown, key: number | string | null = Array.isArray(payload) ? 'batch' : null) {
     return new Promise<any>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Candidate ${method} response timed out`));
+        this.pending.delete(key);
+        reject(new Error('Candidate protocol response timed out'));
       }, 30_000);
-      this.pending.set(id, {
+      this.pending.set(key, {
         resolve: (value) => { clearTimeout(timer); resolve(value); },
         reject: (error) => { clearTimeout(timer); reject(error); },
       });
-      this.process.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`, (error) => {
+      this.process.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
         if (error) this.fail(error);
       });
     });

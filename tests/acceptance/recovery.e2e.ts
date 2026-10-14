@@ -1,6 +1,6 @@
 import { expect } from 'e2e';
 import { readFile, realpath } from 'node:fs/promises';
-import { Client } from '../support/factory.js';
+import { Client, contract } from '../support/factory.js';
 import { initialize, packages, snapshot, test, tool, worker } from '../support/authority.js';
 
 test('competing real clients cannot steal claims and reconnect replay preserves one mutation', async ({ processes }) => {
@@ -148,4 +148,91 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   const note = await candidate.rawRequest('tools/call', { name: 'add_work_request_comment', arguments: { work_request_id: request, body: 'Untrusted operator', created_by: 'stdio-worker' } });
   expect(note.error).toBeTruthy();
   expect((await architect.call('list_comments', { target_kind: 'work_request', target_id: request })).comments).toEqual([]);
+});
+
+test('STDIO protocol errors and batches cannot smuggle authority across requests', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  await architect.request('Batch authority');
+  const [first, second] = await packages(architect, ['First batch claim', 'Second batch claim']);
+  const candidate = processes.stdio('protocol', { database: factory.database, surface: 'worker' });
+  expect((await candidate.rawRequest('initialize')).error.data.reason).toBe('missing_protocol_version');
+  expect((await candidate.rawRequest('initialize', { protocolVersion: '2025-03-26' })).error.data.reason).toBe('invalid_initialize_params');
+  expect((await candidate.rawPayload({ jsonrpc: '2.0', method: 'initialize', params: initialize })).error.data.reason).toBe('initialize_requires_id');
+  expect((await candidate.request('initialize', { ...initialize, protocolVersion: '2024-11-05' })).protocolVersion).toBe('2025-03-26');
+  expect((await candidate.rawRequest('initialize', initialize)).error.data.reason).toBe('already_initialized');
+  for (const [payload, key, reason] of [
+    [{ jsonrpc: '1.0', id: 910 }, 910, 'invalid_jsonrpc_version'],
+    [{ jsonrpc: '2.0', id: 911 }, 911, 'missing_method'],
+    [{ jsonrpc: '2.0', id: {}, method: 'tools/call', params: { name: 'claim_local_assignment', arguments: { work_package_id: first } } }, null, 'invalid_request_id'],
+    [{ jsonrpc: '2.0', id: [], method: 'tools/list' }, null, 'invalid_request_id'],
+    [{ jsonrpc: '2.0', id: 912, method: 42 }, 912, 'invalid_method'],
+    [{ jsonrpc: '2.0', id: 913, method: 'tools/list', params: 'bad' }, 913, 'params_must_be_object_or_array'],
+    [[], null, 'empty_batch'],
+    [[{ jsonrpc: '2.0', id: 914, method: 'initialize', params: initialize }], null, 'initialize_must_be_standalone'],
+  ] as const) expect((await candidate.rawPayload(payload, key)).error.data.reason).toBe(reason);
+  for (const method of ['initialize', 'tools/list', 'tools/call', 'resources/list', 'resources/read']) {
+    expect((await candidate.rawPayload({ jsonrpc: '2.0', id: 915, method, params: [] }, 915)).error.data.reason).toBe('params_must_be_object');
+  }
+  expect((await candidate.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment).toBeNull();
+  const catalog = await candidate.request('tools/list');
+  const batchTool = (id: number, name: string, args: object = {}) => ({ ...tool(name, args), id });
+  const denied = await candidate.rawPayload([
+    [{ jsonrpc: '2.0', id: 920, method: 'tools/list' }],
+    batchTool(921, 'append_progress', { summary: 'Before claim', idempotency_key: 'batch-before' }),
+    batchTool(922, 'claim_local_assignment', { work_package_id: first, claimed_by: 'batch-owner' }),
+    batchTool(923, 'append_progress', { summary: 'After claim in same batch', idempotency_key: 'batch-after' }),
+    batchTool(924, 'list_guidance_requests', { work_request_id: 'foreign' }),
+  ]);
+  expect(denied[0].error.data.reason).toBe('request_must_be_object');
+  expect(denied[1].error.data.reason).toBe('claim_required');
+  expect(denied[2].result.structuredContent.assignment.work_package_id).toBe(first);
+  expect(denied[3].error.data.reason).toBe('claim_required');
+  expect(denied[4].error.data.reason).toBe('claim_required');
+  expect((await candidate.request('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } })).structuredContent.progress_events).toEqual([]);
+  const switched = await candidate.rawPayload([
+    batchTool(925, 'read_context'),
+    batchTool(926, 'claim_local_assignment', { work_package_id: first, claimed_by: 'batch-owner' }),
+    batchTool(927, 'claim_local_assignment', { work_package_id: second, claimed_by: 'second-owner' }),
+    { jsonrpc: '2.0', id: 928, method: 'tools/list' },
+  ]);
+  expect(switched[0].result.structuredContent.work_package.id).toBe(first);
+  expect(switched[1].result.structuredContent.assignment.work_package_id).toBe(first);
+  expect(switched[2].result.structuredContent.assignment.work_package_id).toBe(second);
+  expect((await candidate.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment.work_package_id).toBe(second);
+  expect(await candidate.request('tools/list')).toEqual(catalog);
+  // A following response is the barrier: blank/CRLF lines and notifications
+  // must neither emit replies nor stop processing the stream.
+  const before = (await readFile(candidate.logPath, 'utf8')).split('\n').filter((line) => line.startsWith('{') || line.startsWith('[')).length;
+  candidate.process.stdin.write('\r\n' + JSON.stringify([{ jsonrpc: '2.0', method: 'notifications/initialized' }, { jsonrpc: '2.0', method: 'notifications/cancelled' }]) + '\r\n');
+  await candidate.request('tools/list');
+  await expect.poll(async () => (await readFile(candidate.logPath, 'utf8')).split('\n').filter((line) => line.startsWith('{') || line.startsWith('[')).length).toBe(before + 1);
+});
+
+test('failed worker rebinding preserves its current authority and successful rebinding releases only its lease', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Atomic worker rebind');
+  const [first, second, taken] = await packages(architect, ['Original work', 'Next work', 'Other owner']);
+  const [undispatched] = (await architect.call('slice_work_request', { work_packages: [contract('Unclaimed plan')] })).work_package_ids;
+  const client = await worker(factory, first, 'moving-worker');
+  const peer = await worker(factory, taken, 'peer-worker');
+  const catalog = await client.rpc('tools/list');
+  for (const [args, reason] of [
+    [{ work_package_id: second, repo: 'foreign/service' }, 'repo_scope_mismatch'],
+    [{ work_package_id: taken }, 'claim_lease_active_for_other_actor'],
+    [{ work_package_id: undispatched }, 'worker_grant_required'],
+  ] as const) {
+    await client.reject('claim_local_assignment', { ...args, claimed_by: 'moving-worker' }, reason);
+    expect((await client.call('get_current_assignment')).assignment.work_package_id).toBe(first);
+  }
+  await client.reject('claim_local_architect_assignment', { work_request_id: request }, 'tool_not_callable');
+  await client.call('claim_local_assignment', { work_package_id: second, claimed_by: 'moving-worker' });
+  expect((await client.call('get_current_assignment')).assignment.work_package_id).toBe(second);
+  expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(taken);
+  const recovered = await worker(factory, first, 'moving-worker');
+  expect((await recovered.call('append_progress', { summary: 'Original reservation recovered', idempotency_key: 'rebound' })).progress_event.work_package_id).toBe(first);
+  await client.call('release_current_assignment');
+  expect((await client.call('release_current_assignment')).binding_cleared).toBe(false);
+  expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
 });

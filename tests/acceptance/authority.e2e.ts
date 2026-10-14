@@ -397,3 +397,135 @@ test('claim scope hints reject different repository branch and request before gr
     [{ architect_anchor_work_package_id: wp }, 'architect_anchor_scope_mismatch'],
   ] as const) await wrongArchitect.reject('claim_local_architect_assignment', { work_request_id: request, claimed_by: 'scope-attacker', ...hints }, reason);
 });
+
+test('explicit runtime cleanup validates delivery scope before retiring a live worker binding', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Explicit authority cleanup');
+  const [wp, successor, sibling] = await packages(architect, ['Obsolete scope', 'Successor scope', 'Unaffected scope']);
+  const client = await worker(factory, wp);
+  const peer = await worker(factory, sibling, 'peer-worker');
+  const grant = (await client.call('get_current_assignment')).assignment.grant_id;
+  const cleanup = { work_package_id: wp, outcome: 'superseded', successor_work_package_id: successor,
+    superseded_reason: 'The successor owns the revised scope.', reason: 'Retire the obsolete worker before closeout.' };
+  await architect.reject('cleanup_work_request_work_package_runtime', { work_package_id: wp, reason: 'Missing delivery evidence' }, 'missing_outcome');
+  await client.reject('cleanup_work_request_work_package_runtime', cleanup, 'architect_grant_required');
+  const foreign = await factory.client();
+  await foreign.request('Foreign cleanup owner');
+  await foreign.reject('cleanup_work_request_work_package_runtime', cleanup, 'outside_session_scope');
+  expect((await client.call('get_current_assignment')).assignment.grant_id).toBe(grant);
+  expect((await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' })).progress_events).toEqual([]);
+  const retired = await architect.call('cleanup_work_request_work_package_runtime', cleanup);
+  expect(retired.runtime_cleanup.status).toBe('cleaned');
+  expect(retired.runtime_cleanup.revoked_worker_grant_ids).toContain(grant);
+  expect(retired.runtime_cleanup.released_claim_lease_ids).toHaveLength(1);
+  expect(retired.runtime_cleanup.cleared_mcp_session_binding_ids).toHaveLength(1);
+  expect(retired.work_package.status).toBe('active');
+  expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
+  expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Must not persist', idempotency_key: 'after-cleanup' } })).error).toBeTruthy();
+  expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
+  await close(architect, wp, 'superseded', { successor_work_package_id: successor, superseded_reason: cleanup.superseded_reason });
+  expect((await row(architect, request, wp)).delivery_outcome).toBe('superseded');
+  const document = await architect.call('read_work_package_document', { work_package_id: wp, document: 'progress.md' });
+  expect(document.progress_events.filter((event: any) => event.idempotency_key === 'after-cleanup')).toEqual([]);
+});
+
+test('architect reports preserve server times and partial edits while rejecting forged worker authors', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Truthful operator reports');
+  const [wp] = await packages(architect, ['Worker report boundary']);
+  const client = await worker(factory, wp);
+  const anchor = (await architect.call('get_current_assignment')).assignment.work_package_id;
+  const report = (patch: object, key: string) => architect.call('append_progress', {
+    work_package_id: anchor, summary: 'Operator update', idempotency_key: key,
+    payload: { type: 'architect_operator_report', ...patch },
+  });
+  const read = async () => (await architect.call('read_work_request', { work_request_id: request })).work_request.operator_report;
+  for (const [author, target] of [[client, wp], [client, anchor], [architect, wp]] as const) {
+    expect((await author.rpc('tools/call', { name: 'append_progress', arguments: {
+      work_package_id: target, summary: 'Forged report', idempotency_key: 'forged-report',
+      payload: { type: 'architect_operator_report', brief: 'Forged brief' },
+    } })).error).toBeTruthy();
+  }
+  const initial = { brief: 'Core work is ready.', eta: 'After review', written_at: '2000-01-01T00:00:00Z',
+    parking: { reason: 'Awaiting a release window', parked_at: '2000-01-01T00:00:00Z' },
+    human_escalation: { question: 'Use this release?', raised_at: '2000-01-01T00:00:00Z' } };
+  const event = (await report(initial, 'initial-report')).progress_event;
+  const first = await read();
+  expect(first.brief.text).toBe(initial.brief);
+  expect(first.brief.written_at).toBe(event.created_at);
+  expect(first.parking.parked_at).toBe(event.created_at);
+  expect(first.human_escalation.raised_at).toBe(event.created_at);
+  await report({ eta: 'Friday', human_escalation: { question: 'Use Friday?' } }, 'report-edit');
+  const edited = await read();
+  expect(edited.brief).toEqual(first.brief);
+  expect(edited.parking).toEqual(first.parking);
+  expect(edited.eta.text).toBe('Friday');
+  expect(edited.human_escalation.raised_at).toBe(first.human_escalation.raised_at);
+  expect((await report(initial, 'initial-report')).progress_event.id).toBe(event.id);
+  expect(await read()).toEqual(edited);
+  const resolved = (await report({ parking: null, human_escalation: null }, 'report-resolved')).progress_event;
+  expect((await read()).human_escalation.resolved_at).toBe(resolved.created_at);
+  expect((await read()).parking.resumed_at).toBe(resolved.created_at);
+  await report({ human_escalation: { question: 'Approve a follow-up?' } }, 'report-reopened');
+  expect((await read()).human_escalation.resolved_at).toBeNull();
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.operator_report).toEqual(await read());
+  expect((await architect.call('read_work_request', { work_request_id: request })).work_request.status).toBe('sliced');
+});
+
+test('worker context exposes selected decisions and direct dependencies without sibling contracts', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Scoped decision context');
+  const decision = async (text: string) => (await architect.call('record_decision', {
+    work_request_id: request, source_type: 'architect', decision: text, rationale: 'Required context', scope_impact: 'Assigned scope only',
+  })).decision_log_entry;
+  const selected = await decision('Use the direct dependency contract.');
+  const referenced = await decision('Keep referenced decisions available.');
+  const hidden = await decision('Confidential sibling-only decision.');
+  const [dependency, wp, sibling] = (await architect.call('slice_work_request', { work_packages: [
+    contract('Delivered prerequisite'), contract('Scoped worker', { acceptance_criteria: [`Honor ${referenced.id}.`] }),
+    contract('Confidential sibling', { engineering_scope: 'Private sibling implementation notes' }),
+  ] })).work_package_ids;
+  await architect.call('upsert_dependency', { dependent: { kind: 'work_package', id: wp }, prerequisite: { kind: 'work_package', id: dependency }, reason: 'Read prerequisite context.', decision_ref: { id: selected.id } });
+  await close(architect, dependency);
+  await architect.call('dispatch_work_package', { work_package_id: wp });
+  const client = await worker(factory, wp);
+  const context = await client.call('read_context');
+  expect(context.parent_work_request.id).toBe(request);
+  expect(context.direct_dependencies.map((entry: any) => entry.id)).toEqual([dependency]);
+  expect(context.selected_decisions.map((entry: any) => entry.id).sort()).toEqual([selected.id, referenced.id].sort());
+  for (const value of [sibling, hidden.id, 'Private sibling implementation notes', 'Confidential sibling-only decision.']) expect(JSON.stringify(context)).not.toContain(value);
+});
+
+test('explicit trusted local notes remain independent of stale worker authority and guidance capabilities stay scoped', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Local operator notes');
+  const [wp] = await packages(architect, ['Worker note author']);
+  const client = await worker(factory, wp);
+  const assignment = (await client.call('get_current_assignment')).assignment;
+  const decisionArgs = { work_request_id: request, decision: 'Use sk-synthetic-note-decision',
+    rationale: 'Context sk-synthetic-note-rationale', scope_impact: 'Bounded sk-synthetic-note-scope' };
+  const note = await client.call('record_work_request_operator_decision', decisionArgs);
+  expect(note.decision_log_entry.source_type).toBe('operator');
+  expect(note.decision_log_entry.created_by).toBe('acceptance-worker');
+  expect(note.decision_log_entry.decision).toBe('Use [REDACTED]');
+  expect(JSON.stringify(note)).not.toContain('sk-synthetic');
+  expect((await client.call('list_guidance_requests')).guidance_requests).toEqual([]);
+  await client.reject('answer_guidance_request', { guidance_request_id: 'missing-guidance', answer: 'Cannot promote authority' }, 'architect_grant_required');
+  await client.reject('read_guidance_request', { guidance_request_id: 'missing-guidance' }, 'not_found');
+  await architect.reject('read_guidance_request', { guidance_request_id: 'missing-guidance' }, 'not_found');
+  await architect.reject('answer_guidance_request', { guidance_request_id: 'missing-guidance', answer: 'No historical fixture' }, 'not_found');
+  await architect.call('revoke_work_package_worker_key', { work_package_id: wp, grant_id: assignment.grant_id, reason: 'Retire worker authority' });
+  const comment = await client.call('add_work_request_comment', { work_request_id: request, body: 'Explicit local note after revocation', created_by: 'operator sk-synthetic-note-author' });
+  expect(comment.comment.source_type).toBe('operator');
+  expect(comment.comment.author_name).toBe('operator [REDACTED]');
+  expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Still denied', idempotency_key: 'revoked-note' } })).error).toBeTruthy();
+  const persisted = await architect.call('read_work_request', { work_request_id: request });
+  const stored = persisted.decision_log_entries.find((entry: any) => entry.id === note.decision_log_entry.id);
+  expect(stored.decision).toBe('Use [REDACTED]');
+  expect(JSON.stringify(stored)).not.toContain('sk-synthetic');
+  expect((await architect.call('list_comments', { target_kind: 'work_request', target_id: request })).comments.map((entry: any) => entry.id)).toContain(comment.comment.id);
+});

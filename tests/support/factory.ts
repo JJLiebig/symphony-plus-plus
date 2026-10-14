@@ -57,10 +57,16 @@ export class Client {
   private async record(entry: object) {
     // Assertions inspect the actual response. Evidence never persists proof or
     // synthetic secret values deliberately submitted by the redaction journeys.
-    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify(entry, (key, value) => {
-      if (/^(secret|secret_hash|proof_hash|token|authorization|work_key)$/i.test(key)) return '[REDACTED]';
-      return typeof value === 'string' ? value.replace(/Bearer\s+[^\s"\\]+/gi, 'Bearer [REDACTED]').replace(/sk-[a-zA-Z0-9_-]+/g, '[REDACTED]') : value;
-    })}\n`);
+    const text = (value: string) => value.replace(/Bearer\s+[^\s"\\]+/gi, 'Bearer [REDACTED]').replace(/sk-[a-zA-Z0-9_-]+/g, '[REDACTED]');
+    const redact = (value: any): any => {
+      if (typeof value === 'string') return text(value);
+      if (Array.isArray(value)) return value.map(redact);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+        text(key), /^(secret|secret_hash|proof_hash|token|authorization|work_key)$/i.test(key) ? '[REDACTED]' : redact(item),
+      ]));
+      return value;
+    };
+    if (this.receipt) await appendFile(this.receipt, `${JSON.stringify(redact(entry))}\n`);
   }
 
   private async exchange(url: string | URL, init: RequestInit, receipt: object) {
