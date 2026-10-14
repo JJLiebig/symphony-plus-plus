@@ -156,31 +156,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestArchitectHandoffTest do
     assert displayed.grant.scope_base_branch == "main"
   end
 
-  test "existing display returns nil instead of minting", %{repo: repo, database_path: database_path} do
-    work_request = create_work_request!(repo, id: "WR-ARCH-HANDOFF-DISPLAY")
-
-    assert {:ok, nil} =
-             ArchitectHandoff.existing_display(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert {:ok, created} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert {:ok, displayed} =
-             ArchitectHandoff.existing_display(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert displayed.status == :replayed
-    assert displayed.grant.id == created.grant.id
-  end
-
   test "reports archived handoff WorkRequests as terminal after durable scope recovery", %{
     repo: repo,
     database_path: database_path

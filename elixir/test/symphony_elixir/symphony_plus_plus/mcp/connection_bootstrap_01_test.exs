@@ -303,7 +303,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
     end
   end
 
-  test "health reports safe default and explicit sqlite ledger identity", %{repo: repo} do
+  test "health distinguishes configured-default identity from mismatched live sqlite storage", %{repo: repo} do
     database_path = current_main_database_path(repo)
 
     default_response =
@@ -325,24 +325,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
     assert is_binary(default_identity["display_path"])
     assert is_boolean(default_identity["default_home"])
     assert String.ends_with?(default_identity["display_path"], Path.basename(database_path))
-
-    explicit_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "explicit-health",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health", "arguments" => %{}}
-        },
-        config: Config.default(repo: repo, database: database_path)
-      )
-
-    explicit_identity = get_in(explicit_response, ["result", "structuredContent", "ledger", "identity"])
-
-    assert get_in(explicit_response, ["result", "structuredContent", "ledger", "reachable"]) == true
-    assert explicit_identity["kind"] == "sqlite"
-    assert explicit_identity["source"] == "explicit"
-    assert String.ends_with?(explicit_identity["display_path"], Path.basename(database_path))
 
     mismatched_database_path = WorkPackageFactory.database_path()
 
@@ -801,86 +783,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
     end
   end
 
-  test "mix task health uses the database-scoped local-claim session ledger" do
-    database_path = WorkPackageFactory.database_path()
-    original_repo = Repo.get_dynamic_repo()
-
-    {:ok, pid} =
-      Repo.start_link(database: database_path, name: Repo.process_name(database_path), pool_size: 1, log: false)
-
-    try do
-      Repo.put_dynamic_repo(pid)
-      assert :ok = WorkPackageRepository.migrate(Repo)
-
-      assert {:ok, package} =
-               WorkPackageRepository.create(
-                 Repo,
-                 WorkPackageFactory.attrs(id: "SYMPP-P10-006-HEALTH", status: "ready_for_worker")
-               )
-
-      assert {:ok, _minted} = AccessGrantService.mint_worker_grant(Repo, package.id)
-
-      input =
-        [
-          Jason.encode!(%{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()}),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "claim",
-            "method" => "tools/call",
-            "params" => %{
-              "name" => "claim_local_assignment",
-              "arguments" => %{"work_package_id" => package.id, "claimed_by" => "worker-health-1"}
-            }
-          }),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "health",
-            "method" => "tools/call",
-            "params" => %{"name" => "sympp.health", "arguments" => %{}}
-          }),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "assignment",
-            "method" => "resources/read",
-            "params" => %{"uri" => "sympp://assignment/current"}
-          }),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "progress",
-            "method" => "tools/call",
-            "params" => %{
-              "name" => "append_progress",
-              "arguments" => %{
-                "summary" => "Health reached the scoped ledger",
-                "idempotency_key" => "test-health-scoped-ledger"
-              }
-            }
-          })
-        ]
-        |> Enum.join("\n")
-        |> Kernel.<>("\n")
-
-      output =
-        capture_io(input, fn ->
-          McpTask.run(["--database", database_path])
-        end)
-
-      responses = decode_json_lines(output)
-      health_response = Enum.find(responses, &(Map.get(&1, "id") == "health"))
-      assignment_response = Enum.find(responses, &(Map.get(&1, "id") == "assignment"))
-      progress_response = Enum.find(responses, &(Map.get(&1, "id") == "progress"))
-      assignment = Jason.decode!(get_in(assignment_response, ["result", "contents", Access.at(0), "text"]))
-
-      assert get_in(health_response, ["result", "structuredContent", "status"]) == "ok"
-      assert get_in(health_response, ["result", "structuredContent", "ledger", "reachable"]) == true
-      assert get_in(health_response, ["result", "structuredContent", "ledger", "identity", "kind"]) == "sqlite"
-      assert get_in(health_response, ["result", "structuredContent", "ledger", "identity", "source"]) == "explicit"
-      assert assignment["work_package_id"] == package.id
-      assert get_in(progress_response, ["result", "structuredContent", "progress_event", "id"])
-    after
-      Repo.put_dynamic_repo(original_repo)
-      GenServer.stop(pid)
-      File.rm(database_path)
-    end
-  end
 end

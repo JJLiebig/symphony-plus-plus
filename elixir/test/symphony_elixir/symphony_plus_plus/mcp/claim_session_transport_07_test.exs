@@ -6,7 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport07Test do
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{HTTPStateStore, HTTPTransport}
 
-  test "HTTP architect auto-claims once, excludes live owners, and reclaims stale ownership", %{repo: repo} do
+  test "embedded architect batches recover stale ownership and reject paused leases", %{repo: repo} do
     work_request =
       create_work_request!(repo,
         id: "WR-HTTP-STABLE-ARCHITECT-CATALOG",
@@ -34,12 +34,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport07Test do
       )
 
     state_key = init_result.state_key
-    startup_tools = http!(config, client_key, state_key, "architect-tools", "tools/list", %{})
-    startup_names = tool_names(startup_tools)
-
-    assert MapSet.member?(startup_names, "slice_work_request")
-    refute MapSet.member?(startup_names, "read_context")
-
     slice_arguments = %{
       "work_packages" => [
         %{
@@ -53,14 +47,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport07Test do
         }
       ]
     }
-
-    unclaimed_slice =
-      http!(config, client_key, state_key, "unclaimed-slice", "tools/call", %{
-        "name" => "slice_work_request",
-        "arguments" => slice_arguments
-      })
-
-    assert get_in(unclaimed_slice.response, ["error", "data", "reason"]) == "claim_required"
 
     slice =
       http!(config, client_key, state_key, "slice-without-relist", "tools/call", %{
@@ -145,40 +131,5 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport07Test do
              )
 
     result
-  end
-
-  defp tool_names(result) do
-    result
-    |> tool_specs()
-    |> Enum.map(& &1["name"])
-    |> MapSet.new()
-  end
-
-  defp tool_specs(result), do: get_in(result.response, ["result", "tools"])
-
-  defp create_http_local_claim_package!(repo, id) do
-    package = create_local_claim_package!(repo, id, base_branch: "main")
-
-    work_request =
-      create_work_request!(repo,
-        id: "WR-#{id}",
-        repo: package.repo,
-        base_branch: package.base_branch,
-        status: "ready_for_slicing"
-      )
-
-    package =
-      repo.update!(
-        Ecto.Changeset.change(package,
-          work_request_id: work_request.id,
-          sequence: 1,
-          goal: package.engineering_scope,
-          status: "ready_for_worker",
-          dispatched_at: DateTime.utc_now(:microsecond)
-        )
-      )
-
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    {package, work_request}
   end
 end

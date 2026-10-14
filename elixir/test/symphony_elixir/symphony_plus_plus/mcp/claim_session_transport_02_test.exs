@@ -798,5 +798,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport02Test do
     assert claimed_grant.claimed_at != nil
     refute inspect(response) =~ minted.work_key.secret
   end
-
 end

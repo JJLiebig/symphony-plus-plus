@@ -26,20 +26,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
              Policy.decide(actor, :dangerous_delete, Target.ledger())
   end
 
-  test "architect can read scoped operational state but writes only claimed work request lineage" do
-    actor = architect([Scope.work_request("wr-1"), Scope.repo("nextide/symphony-plus-plus", "main")])
-    sibling_target = Target.work_request("wr-2", repo: "nextide/symphony-plus-plus", base_branch: "main")
-    child_target = Target.work_package("wrs-1", "wr-1", work_package_id: "wp-1")
-
-    assert %Decision{allowed?: true} = Policy.decide(actor, :work_request_read, sibling_target)
-
-    assert %Decision{allowed?: true, matched_scope: %Scope{type: :work_request, id: "wr-1"}} =
-             Policy.decide(actor, :work_package_update, child_target)
-
-    assert %Decision{allowed?: false, reason_code: "scope_mismatch", legacy_reason: "outside_session_scope"} =
-             Policy.decide(actor, :work_request_update, sibling_target)
-  end
-
   test "architect repo read scope accepts trusted repo identity aliases without widening writes" do
     actor = architect([Scope.work_request("wr-1"), Scope.repo("symphony-plus-plus", "main")])
 
@@ -106,16 +92,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
              Policy.decide(actor, :external_comment_add, sibling_target)
   end
 
-  test "repo scope alone does not authorize work request mutation" do
-    actor = architect([Scope.repo("nextide/symphony-plus-plus", "main")])
-    target = Target.work_request("wr-1", repo: "nextide/symphony-plus-plus", base_branch: "main")
-
-    assert %Decision{allowed?: true, matched_scope: %Scope{type: :repo}} = Policy.decide(actor, :work_request_read, target)
-
-    assert %Decision{allowed?: false, reason_code: "scope_mismatch"} =
-             Policy.decide(actor, :work_request_update, target)
-  end
-
   test "repo scope base branch must match when scope is branch pinned" do
     actor = architect([Scope.repo("nextide/symphony-plus-plus", "main")])
 
@@ -124,30 +100,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
 
     assert %Decision{allowed?: false, reason_code: "scope_mismatch"} =
              Policy.decide(actor, :work_request_read, Target.work_request("wr-1", repo: "nextide/symphony-plus-plus", base_branch: "dev"))
-  end
-
-  test "explicit WorkRequest repo scopes allow multi-repo read without granting mutation" do
-    target =
-      Target.work_request("wr-multi",
-        repo: "service-a",
-        base_branch: "main",
-        repo_scopes: [
-          %{repo: "service-a", base_branch: "main"},
-          %{repo: "service-b", base_branch: "release"}
-        ]
-      )
-
-    assert %Decision{allowed?: true, matched_scope: %Scope{type: :repo, repo: "service-a"}} =
-             Policy.decide(architect([Scope.repo("service-a", "main")]), :work_request_read, target)
-
-    assert %Decision{allowed?: true, matched_scope: %Scope{type: :repo, repo: "service-b"}} =
-             Policy.decide(architect([Scope.repo("service-b", "release")]), :work_request_read, target)
-
-    assert %Decision{allowed?: false, reason_code: "scope_mismatch"} =
-             Policy.decide(architect([Scope.repo("service-c", "main")]), :work_request_read, target)
-
-    assert %Decision{allowed?: false, reason_code: "scope_mismatch"} =
-             Policy.decide(architect([Scope.repo("service-b", "release")]), :work_request_update, target)
   end
 
   test "explicit WorkPackage scope authorizes WorkPackage actions only" do

@@ -155,9 +155,27 @@ test('failed-call capture is opt-in redacted and immediately disabled through op
   const summary = await client.call('summarize_failed_mcp_calls');
   expect(summary.total_failures).toBe(1);
   expect(JSON.stringify(summary)).not.toContain('synthetic-diagnostic-secret');
+  const architect = await factory.client();
+  await architect.request('Diagnostic role boundary');
+  const [wp] = await packages(architect, ['Diagnostic worker']);
+  const scoped = await worker(factory, wp);
+  const crossRole = await scoped.raw(tool('solo_show', { session_id: 'synthetic-private-session' }));
+  const recovery = crossRole.body.error.data.recovery;
+  expect(recovery.tool).toBe('release_current_assignment');
+  expect(recovery.next_action).toBe('call_release_current_assignment_then_retry_solo_tool');
+  const crossRoleId = crossRole.body.error.data.diagnostic_id;
+  expect(crossRoleId).toMatch(/^mcpdiag_[0-9a-f]{16}$/);
+  await expect.poll(async () => (await readFile(factory.logPath, 'utf8')).includes(crossRoleId)).toBe(true);
+  const eventLine = (await readFile(factory.logPath, 'utf8')).split('\n').find((line) => line.includes(crossRoleId))!;
+  const event = JSON.parse(eventLine.slice(eventLine.indexOf('{')));
+  expect(event.recovery.tool).toBe(recovery.tool);
+  expect(event.recovery.next_action).toBe(recovery.next_action);
+  expect(event.recovery.fallback).toBeUndefined();
+  expect(eventLine).not.toContain('synthetic-private-session');
+  expect((await client.call('summarize_failed_mcp_calls')).total_failures).toBe(2);
   expect((await client.operator('/api/v1/sympp/operator/settings', { capture_failed_mcp_calls: false })).status).toBe(200);
   expect((await client.raw(payload)).body.error.data.diagnostic_id).toBeUndefined();
-  expect((await client.call('summarize_failed_mcp_calls')).total_failures).toBe(1);
+  expect((await client.call('summarize_failed_mcp_calls')).total_failures).toBe(2);
 });
 
 test('STDIO initialization refuses unbound protected calls and cannot impersonate the trusted HTTP operator', async ({ processes }) => {
@@ -204,8 +222,11 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   } })).structuredContent.progress_event;
   expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress.map((entry: any) => entry.id)).toContain(progress.id);
   expect((await candidate.request('tools/call', { name: 'read_context', arguments: {} })).structuredContent.work_package.id).toBe(wp);
-  const peer = processes.stdio('stdio-peer', { database: factory.database, surface: 'worker' });
+  const peer = processes.stdio('stdio-peer', { database: factory.database });
+  const createArgs = { repo: 'example/service', base_branch: 'beta', title: 'Unauthorized STDIO goal', request_kind: 'feature', description: 'Must not be created.' };
+  expect((await peer.rawRequest('tools/call', { name: 'create_work_request', arguments: createArgs })).error.data.reason).toBe('server_not_initialized');
   await peer.request('initialize', initialize);
+  expect((await peer.rawRequest('tools/call', { name: 'create_work_request', arguments: createArgs })).error.data.reason).toBe('local_mcp_required');
   const reconnected = await peer.rawPayload([{ jsonrpc: '2.0', id: 901, method: 'tools/call', params: { name: 'claim_local_assignment', arguments: { work_package_id: wp } } }]);
   expect(reconnected).toHaveLength(1);
   expect(reconnected[0].result.structuredContent.assignment.grant_id).toBe(claimed.structuredContent.assignment.grant_id);
@@ -390,7 +411,7 @@ test('HTTP location metadata follows successful authority and cannot be refreshe
   await client.call('add_work_request_comment', { work_request_id: followup, body: 'Keep coordinator attribution.' });
   const refreshed = (await detail(followup)).work_request.architect_session_location;
   expect(refreshed.role).toBe('coordinator');
-  expect(Date.parse(refreshed.last_seen_at)).toBeGreaterThanOrEqual(Date.parse(creator.last_seen_at));
+  expect(refreshed.last_seen_at > creator.last_seen_at).toBe(true);
   expect(await packageLocation()).toEqual(location);
   expect((await client.raw(located('not_a_tool', {}, 'synthetic-failed-client', 'synthetic-failed-machine'))).body.error).toBeTruthy();
   expect(await packageLocation()).toEqual(location);
@@ -416,8 +437,34 @@ test('HTTP location metadata follows successful authority and cannot be refreshe
   expect(plannerLocation.source).toBe('agent');
   expect(plannerLocation.description).toBe('Synthetic planning terminal');
   await planner.raw(located('read_work_request', { work_request_id: followup }, 'synthetic-architect-client', 'synthetic-planning-machine'));
-  expect((await detail(followup)).work_request.architect_session_location.description).toBe(plannerLocation.description);
+  const plannerRefreshed = (await detail(followup)).work_request.architect_session_location;
+  expect(plannerRefreshed.description).toBe(plannerLocation.description);
+  expect(plannerRefreshed.last_seen_at > plannerLocation.last_seen_at).toBe(true);
   expect((await planner.raw(tool('release_current_assignment'))).binding).toBe('clear');
+  const coordinator = await factory.client();
+  const create = (title: string, description?: string) => located('create_work_request', {
+    repo: 'example/service', base_branch: 'beta', title, request_kind: 'feature', description: 'Synthetic coordinator attribution.',
+    ...(description ? { session_description: description } : {}),
+  }, 'synthetic-coordinator-client', 'synthetic-coordinator-machine');
+  const goal = (await coordinator.raw(create('Coordinator goal', 'Synthetic planning window'))).body.result.structuredContent.work_request.id;
+  const originalLocation = (await detail(goal)).work_request.architect_session_location;
+  expect(originalLocation.role).toBe('coordinator');
+  expect(originalLocation.description).toBe('Synthetic planning window');
+  const reader = await factory.client();
+  const otherRead = await reader.raw(located('read_work_request', { work_request_id: goal }, 'synthetic-other-client', 'synthetic-other-machine'));
+  expect(otherRead.body.result.structuredContent.work_request.id).toBe(goal);
+  expect(JSON.parse(Buffer.from(otherRead.binding!, 'base64url').toString('utf8'))).toEqual({ role: 'coordinator', show_inspector: true, work_request_id: goal });
+  expect((await detail(goal)).work_request.architect_session_location).toEqual(originalLocation);
+  const ownRead = await coordinator.raw(located('read_work_request', { work_request_id: goal }, 'synthetic-coordinator-client', 'synthetic-coordinator-machine'));
+  expect(ownRead.body.error).toBeUndefined();
+  const currentLocation = (await detail(goal)).work_request.architect_session_location;
+  expect(currentLocation.description).toBe(originalLocation.description);
+  expect(currentLocation.last_seen_at > originalLocation.last_seen_at).toBe(true);
+  const secondGoal = (await coordinator.raw(create('Next coordinator goal'))).body.result.structuredContent.work_request.id;
+  expect((await detail(secondGoal)).work_request.architect_session_location.description).toBe(originalLocation.description);
+  const missing = await coordinator.raw(tool('read_work_request', { work_request_id: 'missing-request' }));
+  expect(missing.body.error).toBeTruthy();
+  expect(missing.binding).toBeNull();
 });
 
 test('HTTP client attachment telemetry and readiness preserve local request boundaries', async ({ processes }) => {

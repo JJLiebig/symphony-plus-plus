@@ -192,6 +192,8 @@ test('architect scope separates same-repository discovery from foreign writes an
   await sameRepoReader.request('Same repository different delivery base', 'ready_for_slicing', 'integration');
   const [alternateBase] = (await architect.call('slice_work_request', { work_packages: [contract('Alternate delivery base', { base_branch: 'integration' })] })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: alternateBase });
+  const alternateWorker = await worker(factory, alternateBase, 'alternate-base-worker');
+  expect((await alternateWorker.call('read_context')).work_package.base_branch).toBe('integration');
   const baseBoard = (await sameRepoReader.call('read_delivery_board', { work_request_id: own })).delivery_board;
   expect(baseBoard.work_packages.find((entry: any) => entry.id === alternateBase).work_package.id).toBe(alternateBase);
   expect(baseBoard.work_packages.find((entry: any) => entry.id === ownWp).work_package).toBeNull();
@@ -424,8 +426,10 @@ test('explicit revocation retires live worker calls resources and persisted reco
   expect(revoked.closeout_affordance.reason_codes).toEqual(['worker_recycled', 'work_package_worker_key_revoked', 'work_package_blocked_for_recycle']);
   expect(revoked.next_action).toBe('retry_record_work_package_delivery');
   expect(revoked.audit_event.id).toBeTruthy();
+  const staleMutation = await client.raw(tool('append_progress', { summary: 'Before revocation', idempotency_key: 'revoked-once' }));
+  expect(staleMutation.body.error).toBeTruthy();
+  expect(staleMutation.binding).toBe('clear');
   for (const [name, args] of [
-    ['append_progress', { summary: 'Before revocation', idempotency_key: 'revoked-once' }],
     ['append_finding', { title: 'After revocation', body: 'Must not persist', idempotency_key: 'revoked-finding' }],
     ['read_work_package_document', { document: 'context.md' }],
   ] as const) expect((await client.rpc('tools/call', { name, arguments: args })).error).toBeTruthy();
@@ -976,6 +980,12 @@ test('architect reports preserve server times and partial edits while rejecting 
       payload: { type: 'architect_operator_report', brief: 'Forged brief' },
     } })).error).toBeTruthy();
   }
+  await report({ brief: 'x'.repeat(4000), unknown: 'ignored' }, 'report-text-limit');
+  expect((await read()).brief.text).toHaveLength(4000);
+  await architect.reject('append_progress', { work_package_id: anchor, summary: 'Too long', idempotency_key: 'report-too-long',
+    payload: { type: 'architect_operator_report', brief: 'x'.repeat(4001) },
+  }, 'invalid_operator_report_brief');
+  expect((await read()).brief.text).toHaveLength(4000);
   const initial = { brief: 'Core work is ready.', eta: 'After review', written_at: '2000-01-01T00:00:00Z',
     parking: { reason: 'Awaiting a release window', parked_at: '2000-01-01T00:00:00Z' },
     human_escalation: { question: 'Use this release?', raised_at: '2000-01-01T00:00:00Z' }, active: true, blocker_id: 'not-a-blocker' };

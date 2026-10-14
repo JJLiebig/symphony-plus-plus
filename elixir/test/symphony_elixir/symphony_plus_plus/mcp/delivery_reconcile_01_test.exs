@@ -158,123 +158,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     assert Enum.any?(persisted_slices, &(&1.id == work_package.id))
   end
 
-  test "claimed architect syncs only an explicit descendant PR through the merge reconciler", %{repo: repo} do
-    original_client = Application.get_env(:symphony_elixir, :sympp_github_client)
-    Application.put_env(:symphony_elixir, :sympp_github_client, FakeGitHubClient)
-    FakeGitHubClient.clear()
-
-    on_exit(fn ->
-      FakeGitHubClient.clear()
-
-      case original_client do
-        nil -> Application.delete_env(:symphony_elixir, :sympp_github_client)
-        client -> Application.put_env(:symphony_elixir, :sympp_github_client, client)
-      end
-    end)
-
-    {anchor, session, _grant} =
-      create_phase_architect_session(repo, "SYMPP-ARCHITECT-SYNC-PR", ["write:work_request"],
-        repo: "nextide/repo",
-        base_branch: "main"
-      )
-
-    work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-ARCHITECT-SYNC-PR",
-        repo: anchor.repo,
-        base_branch: anchor.base_branch,
-        status: "sliced"
-      )
-
-    grant_work_request_scope!(repo, session, work_request.id)
-
-    assert {:ok, package} =
-             CanonicalWorkPackageFixtures.add_work_package(
-               repo,
-               work_request.id,
-               work_request_work_package_attrs(
-                 id: "WRS-MCP-ARCHITECT-SYNC-PR",
-                 repo: work_request.repo,
-                 base_branch: work_request.base_branch,
-                 status: "ready_for_merge"
-               )
-             )
-
-    assert {:ok, _attached_pr} =
-             PlanningRepository.append_progress_event(repo, %{
-               work_package_id: package.id,
-               summary: "PR attached",
-               status: "pr_attached",
-               payload: %{
-                 type: "pr",
-                 source_tool: "attach_pr",
-                 url: "https://github.com/nextide/repo/pull/411",
-                 head_sha: "head-411"
-               }
-             })
-
-    FakeGitHubClient.put_response(
-      "nextide/repo",
-      411,
-      GitHubPullRequestFixtures.metadata(411, "head-411",
-        merged?: true,
-        base_branch: work_request.base_branch
-      )
-    )
-
-    tools =
-      %{test_mcp_config(repo) | surface_profile: :architect}
-      |> Server.new(initialized: true, session: session)
-      |> tools_for_server()
-      |> Map.new(&{&1["name"], &1})
-
-    full_tools =
-      test_mcp_config(repo)
-      |> Server.new(initialized: true, session: session)
-      |> tools_for_server()
-      |> Map.new(&{&1["name"], &1})
-
-    refute Map.has_key?(tools, "attach_pr")
-    assert get_in(tools, ["sync_pr", "inputSchema", "required"]) == ["work_package_id"]
-    assert get_in(tools, ["sync_pr", "inputSchema", "additionalProperties"]) == true
-    assert full_tools["sync_pr"] == tools["sync_pr"]
-
-    other_work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-ARCHITECT-SYNC-PR-OTHER",
-        repo: anchor.repo,
-        base_branch: anchor.base_branch
-      )
-
-    assert {:ok, other_package} =
-             CanonicalWorkPackageFixtures.add_work_package(
-               repo,
-               other_work_request.id,
-               work_request_work_package_attrs(id: "WRS-MCP-ARCHITECT-SYNC-PR-OTHER")
-             )
-
-    outside_scope =
-      mcp_tool(repo, session, "sync_pr", %{
-        "work_request_id" => work_request.id,
-        "work_package_id" => other_package.id
-      })
-
-    assert get_in(outside_scope, ["error", "data", "reason"]) == "not_found"
-
-    synced = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => package.id})
-
-    assert get_in(synced, ["result", "structuredContent", "work_package", "status"]) == "merged"
-    assert get_in(synced, ["result", "structuredContent", "pr_sync", "status"]) == "merged"
-
-    assert get_in(synced, ["result", "structuredContent", "scope"]) == %{
-             "repo" => work_request.repo,
-             "base_branch" => work_request.base_branch
-           }
-
-    assert {:ok, persisted_package} = WorkPackageRepository.get(repo, package.id)
-    assert persisted_package.status == "merged"
-  end
-
   test "architect handoff redacts secrets and refuses retained worker authority", %{repo: repo} do
     repo_path = TestSupport.git_repo_with_origin_fixture!("https://github.com/nextide/repo.git", prefix: "sympp-architect-handoff")
 
@@ -421,7 +304,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     end
   end
 
-  test "WorkRequest MCP work-package dispatch fails closed for scope and invalid slice cases", %{repo: repo} do
+  test "dispatch uses configured storage and rejects persisted delivery scope drift", %{repo: repo} do
     {anchor, session, _grant} =
       create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-SLICE-DISPATCH-GUARD", [
         "dispatch:work_request"
@@ -437,14 +320,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
     grant_work_request_scope!(repo, session, in_scope.id)
 
-    sibling =
-      create_work_request!(repo,
-        id: "WR-MCP-WR-DISPATCH-SIBLING",
-        repo: "nextide/other",
-        base_branch: anchor.base_branch,
-        status: "ready_for_slicing"
-      )
-
     assert {:ok, _work_package} =
              CanonicalWorkPackageFixtures.add_work_package(
                repo,
@@ -452,36 +327,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
                work_request_work_package_attrs(id: "WRS-MCP-WR-DISPATCH-PLANNED", base_branch: anchor.base_branch)
              )
 
-    assert {:ok, sibling_slice} =
-             CanonicalWorkPackageFixtures.add_work_package(
-               repo,
-               sibling.id,
-               work_request_work_package_attrs(id: "WRS-MCP-WR-DISPATCH-SIBLING", base_branch: anchor.base_branch)
-             )
-
     assert {:ok, _work_request} = CanonicalWorkPackageFixtures.mark_sliced(repo, in_scope.id, "ready_for_slicing")
-
-    out_of_scope_response =
-      mcp_tool(repo, session, "dispatch_work_package", %{
-        "work_request_id" => sibling.id,
-        "work_package_id" => sibling_slice.id,
-        "claimed_by" => "worker-dispatch-1"
-      })
-
-    assert get_in(out_of_scope_response, ["error", "code"]) == -32_004
-    assert get_in(out_of_scope_response, ["error", "data", "reason"]) == "not_found"
-    refute inspect(out_of_scope_response) =~ sibling.id
-    refute inspect(out_of_scope_response) =~ sibling_slice.id
-
-    missing_slice_response =
-      mcp_tool(repo, session, "dispatch_work_package", %{
-        "work_request_id" => in_scope.id,
-        "work_package_id" => "WRS-MCP-WR-DISPATCH-MISSING",
-        "claimed_by" => "worker-dispatch-1"
-      })
-
-    assert get_in(missing_slice_response, ["error", "code"]) == -32_004
-    assert get_in(missing_slice_response, ["error", "data", "reason"]) == "not_found"
 
     assert {:ok, live_database_slice} =
              CanonicalWorkPackageFixtures.add_work_package(

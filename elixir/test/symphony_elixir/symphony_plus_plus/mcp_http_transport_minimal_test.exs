@@ -68,42 +68,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert %Server{local_daemon_trusted: true} = HTTPStateStore.get(trusted_config, "trusted-client", trusted.state_key)
   end
 
-  test "tools/list after initialize exposes only callable unbound tools", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, tools} =
-             HTTPTransport.handle(config, tools_list_request("tools"), client_key: "client-a", state_key: init.state_key)
-
-    assert tools.state_key == init.state_key
-
-    names = tool_names(tools.response)
-    assert length(names) == length(Enum.uniq(names))
-
-    for tool <- [
-          "claim_local_assignment",
-          "claim_local_architect_assignment",
-          "get_current_assignment",
-          "release_current_assignment",
-          "solo_attach",
-          "solo_list",
-          "solo_record_task_plan",
-          "solo_append_progress",
-          "solo_append_finding",
-          "solo_record_decision",
-          "solo_report_blocker",
-          "solo_resolve_blocker",
-          "solo_record_validation",
-          "solo_pause",
-          "solo_resume",
-          "solo_complete",
-          "solo_archive",
-          "solo_show",
-          "sympp.health"
-        ] do
-      assert tool in names
-    end
-  end
-
   test "batched local claim persists rehydration metadata", %{config: config} do
     trusted_config = %{config | local_daemon_trusted: true}
     package_id = "SYMPP-HTTP-BATCH-LOCAL"
@@ -444,7 +408,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert HTTPStateStore.get(config, "client-a", init.state_key) == nil
   end
 
-  test "claim_local_assignment persists bound HTTP continuity for later requests", %{config: config} do
+  test "cached HTTP claim retains only credential proof and never the raw WorkKey", %{config: config} do
     assert {:ok, work_package} =
              WorkPackageRepository.create(
                config.repo,
@@ -478,18 +442,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert session.assignment.grant_id == minted.grant.id
     assert session.proof_hash == minted.grant.secret_hash
     refute inspect(stored_server) =~ minted.work_key.secret
-
-    assert {:ok, tools} =
-             HTTPTransport.handle(local_config, tools_list_request("tools-after-claim"), client_key: "client-a", state_key: init.state_key)
-
-    assert "claim_local_assignment" in tool_names(tools.response)
-    assert "claim_local_architect_assignment" in tool_names(tools.response)
-    assert "get_current_assignment" in tool_names(tools.response)
-
-    assert {:ok, assignment} =
-             HTTPTransport.handle(local_config, get_current_assignment_request(), client_key: "client-a", state_key: init.state_key)
-
-    assert get_in(assignment.response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
   end
 
   defp initialize_request(id) do

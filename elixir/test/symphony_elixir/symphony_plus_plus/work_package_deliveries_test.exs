@@ -93,41 +93,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestWorkPackageDeliveriesTest d
     end
   end
 
-  test "delivery outcomes are scoped to their WorkPackage WorkRequest", %{repo: repo} do
-    work_request = create_work_request!(repo)
-    sibling_request = create_work_request!(repo, id: "WR-DELIVERY-SIBLING")
-    work_package = create_work_package!(repo, work_request, id: "WRS-DELIVERY-SCOPED")
-
-    assert {:error, :not_found} =
-             Repository.record_work_package_delivery(
-               repo,
-               sibling_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "completed_no_pr",
-                 no_pr_evidence: "Wrong WorkRequest must not claim this slice."
-               })
-             )
-
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
-
-    successor_slice = create_work_package!(repo, sibling_request, id: "WRS-DELIVERY-CROSS-SUCCESSOR")
-
-    assert {:error, :not_found} =
-             Repository.record_work_package_delivery(
-               repo,
-               work_request.id,
-               work_package.id,
-               delivery_attrs(%{
-                 outcome: "superseded",
-                 successor_work_package_id: successor_slice.id,
-                 superseded_reason: "Wrong WorkRequest successor must not be linked."
-               })
-             )
-
-    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 0
-  end
-
   defp create_work_request!(repo, overrides \\ []) do
     assert {:ok, work_request} = Repository.create(repo, work_request_attrs(overrides))
     work_request

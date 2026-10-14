@@ -63,25 +63,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
     end
   end
 
-  test "stdio decoded payload helper retains response-only initialized state", %{repo: repo} do
-    server = Server.new(Config.default(repo: repo))
-
-    init_response =
-      Stdio.handle_payload(
-        %{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()},
-        server
-      )
-
-    tools_response =
-      Stdio.handle_payload(
-        %{"jsonrpc" => "2.0", "id" => "tools", "method" => "tools/list", "params" => %{}},
-        server
-      )
-
-    assert get_in(init_response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
-    assert is_list(get_in(tools_response, ["result", "tools"]))
-  end
-
   test "one of 100 simultaneous owners atomically claims and activates the package", %{repo: repo} do
     package = create_local_claim_package!(repo, "SYMPP-ATOMIC-CLAIM-100")
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)

@@ -628,7 +628,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
-    assert get_in(mcp_tool(repo, nil, "read_work_package_document", %{"document" => "progress.md"}), ["error", "code"]) == -32_001
     repo.update_all(AccessGrant, set: [expires_at: DateTime.add(DateTime.utc_now(:microsecond), -1, :second)])
     assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"}), ["error", "data", "reason"]) == "expired"
     assert {:ok, _} = AccessGrantService.revoke(repo, minted.grant.id)

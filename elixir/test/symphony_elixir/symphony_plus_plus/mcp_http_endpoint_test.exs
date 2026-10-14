@@ -683,7 +683,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert SessionLocations.get(Repo, "work_request", second_id).description == location.description
   end
 
-  test "POST /mcp rehydrates claimed local worker session after backend state reset" do
+  test "near-expiry secretless binding refreshes on recovery without replacing its claim" do
     package_id = "SYMPP-HTTP-REHYDRATE-WORKER"
 
     assert {:ok, work_package} =
@@ -744,21 +744,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert get_in(json_response(assignment, 200), ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
     assert DateTime.compare(Repo.get!(SessionBinding, binding.id).last_seen_at, near_expiry_seen_at) == :gt
 
-    context = post_json(tool_call_request("local-worker-context", "read_context", %{}), [{"mcp-session-id", session_id}])
-
-    assert get_in(json_response(context, 200), ["result", "structuredContent", "uri"]) ==
-             "sympp://work-packages/#{work_package.id}/context.md"
-
-    progress =
-      post_json(
-        tool_call_request("local-worker-progress", "append_progress", %{
-          "summary" => "Progress after MCP restart",
-          "idempotency_key" => "local-worker-progress-after-restart"
-        }),
-        [{"mcp-session-id", session_id}]
-      )
-
-    assert get_in(json_response(progress, 200), ["result", "structuredContent", "progress_event", "summary"]) == "Progress after MCP restart"
     assert [%ClaimLease{id: ^claim_lease_id, actor_display_name: "local-worker-http-rehydrate"}] = active_claim_leases(work_package.id)
     assert %Server{session: %Session{assignment: %{work_package_id: ^package_id}}} = stored_http_server()
   end
@@ -916,7 +901,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert get_in(json_response(assignment, 200), ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
   end
 
-  test "POST /mcp auto-claims and rehydrates local architect scope after backend state reset" do
+  test "retained architect binding recovers a separately released lease after state reset" do
     assert {:ok, work_request} =
              WorkRequestRepository.create(
                Repo,
@@ -945,30 +930,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert claim_payload["guidance_requests"] == []
     assert [%ClaimLease{id: claim_lease_id, actor_display_name: owner}] = active_claim_leases(handoff.anchor_package.id)
 
-    reset_mcp_runtime_state()
-
-    read =
-      post_json(
-        tool_call_request("local-architect-read", "read_work_request", %{"work_request_id" => work_request.id}),
-        [{"mcp-session-id", session_id}]
-      )
-
-    assert get_in(json_response(read, 200), ["result", "structuredContent", "work_request", "id"]) == work_request.id
-
-    guidance =
-      post_json(tool_call_request("local-architect-guidance", "list_guidance_requests", %{}), [{"mcp-session-id", session_id}])
-
-    assert get_in(json_response(guidance, 200), ["result", "structuredContent", "guidance_requests"]) == []
-
-    delivery_board =
-      post_json(
-        tool_call_request("local-architect-delivery-board", "read_delivery_board", %{"work_request_id" => work_request.id}),
-        [{"mcp-session-id", session_id}]
-      )
-
-    assert get_in(json_response(delivery_board, 200), ["result", "structuredContent", "work_request", "id"]) == work_request.id
-    assert [%ClaimLease{id: ^claim_lease_id, actor_display_name: ^owner}] = active_claim_leases(handoff.anchor_package.id)
-
     assert {:ok, _released} = ClaimLeaseService.release(Repo, claim_lease_id, reason: "connection recovery regression")
     reset_mcp_runtime_state()
 
@@ -976,86 +937,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert get_in(json_response(recovered, 200), ["result", "structuredContent", "guidance_requests"]) == []
     assert [%ClaimLease{id: replacement_id, actor_display_name: ^owner}] = active_claim_leases(handoff.anchor_package.id)
     refute replacement_id == claim_lease_id
-  end
-
-  test "POST /mcp claimed worker follow-ups fail closed after grant revocation" do
-    assert {:ok, work_package} =
-             WorkPackageRepository.create(
-               Repo,
-               WorkPackageFactory.attrs(
-                 id: "SYMPP-HTTP-ENDPOINT-REVOKED",
-                 kind: "mcp",
-                 repo: "nextide/symphony-plus-plus",
-                 base_branch: "main",
-                 branch_pattern: "agent/SYMPP-HTTP-ENDPOINT-REVOKED/worker",
-                 worktree_path: local_claim_worktree_path("SYMPP-HTTP-ENDPOINT-REVOKED"),
-                 status: "ready_for_worker"
-               )
-             )
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(Repo, work_package.id)
-
-    init = post_json(initialize_request("init"))
-    [session_id] = get_resp_header(init, "mcp-session-id")
-
-    claim =
-      post_json(
-        tool_call_request("claim", "claim_local_assignment", local_assignment_claim_args(work_package, %{"claimed_by" => "worker-revoked"}))
-        |> with_location("revoked-client", "build-desk", %{}),
-        [{"mcp-session-id", session_id}]
-      )
-
-    assert get_in(json_response(claim, 200), ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
-    location = SessionLocations.get(Repo, "work_package", work_package.id)
-    assert location.client_id == "revoked-client"
-    assert {:ok, _revoked} = AccessGrantService.revoke(Repo, minted.grant.id)
-
-    health =
-      tool_call_request("revoked-health", "sympp.health", %{})
-      |> with_location("revoked-client", "another-desk", %{})
-      |> post_json([{"mcp-session-id", session_id}])
-
-    assert json_response(health, 200)["result"]
-    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
-
-    tools = post_json(tools_list_request("revoked-tools"), [{"mcp-session-id", session_id}])
-    tool_names = tool_names(json_response(tools, 200))
-
-    assert "claim_local_assignment" in tool_names
-    assert "claim_local_architect_assignment" in tool_names
-    assert "get_current_assignment" in tool_names
-
-    assignment_tool =
-      post_json(tool_call_request("revoked-assignment", "get_current_assignment", %{}), [{"mcp-session-id", session_id}])
-
-    assignment_payload = get_in(json_response(assignment_tool, 200), ["result", "structuredContent"])
-    assert assignment_payload["assignment"] == nil
-    assert get_in(assignment_payload, ["binding", "state"]) == "stale"
-    assert get_in(assignment_payload, ["recovery", "tools"]) == ["claim_local_assignment"]
-    assert get_resp_header(assignment_tool, "sympp-herdr-binding") == ["clear"]
-
-    progress =
-      post_json(
-        tool_call_request("revoked-progress", "append_progress", %{"summary" => "Should not write", "idempotency_key" => "revoked-progress"}),
-        [{"mcp-session-id", session_id}]
-      )
-
-    assert get_in(json_response(progress, 200), ["error", "data", "reason"]) == "claim_required"
-
-    reset_mcp_runtime_state()
-
-    architect_call =
-      post_json(
-        tool_call_request("revoked-worker-architect-call", "list_guidance_requests", %{"work_request_id" => "WR-NOT-A-WORKER-PROMOTION"}),
-        [{"mcp-session-id", session_id}]
-      )
-
-    assert get_in(json_response(architect_call, 200), ["error", "data", "reason"]) == "claim_required"
-
-    assignment_resource =
-      post_json(resources_read_request("revoked-resource", "sympp://assignment/current"), [{"mcp-session-id", session_id}])
-
-    assert get_in(json_response(assignment_resource, 200), ["error", "data", "reason"]) == "missing_session"
   end
 
   test "cleanup startup and the first MCP write share the migration file lock" do

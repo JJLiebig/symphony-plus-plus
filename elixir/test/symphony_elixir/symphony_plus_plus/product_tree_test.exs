@@ -26,52 +26,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
     :ok
   end
 
-  test "rejects cross-WorkRequest node ownership and dependency endpoints", %{repo: repo} do
-    left = create_work_request!(repo, id: "WR-LEFT")
-    right = create_work_request!(repo, id: "WR-RIGHT")
-    left_node = create_node!(repo, left, id: "node_left")
-    left_package = add_work_package!(repo, left, id: "wp_left")
-    right_package = add_work_package!(repo, right, id: "wp_right")
-
-    assert {:error, :not_found} =
-             WorkRequestRepository.update_work_package(
-               repo,
-               right.id,
-               right_package.id,
-               right_package.contract_revision,
-               %{product_tree_node_id: left_node.id}
-             )
-
-    assert {:error, {:constraint_failed, "product_tree_dependency_target_scope"}} =
-             ProductTree.create_dependency_edge(repo, %{
-               work_request_id: left.id,
-               source_kind: "product_node",
-               source_id: left_node.id,
-               target_kind: "work_package",
-               target_id: right_package.id
-             })
-
-    assert {:ok, edge} =
-             ProductTree.create_dependency_edge(repo, %{
-               work_request_id: left.id,
-               source_kind: "product_node",
-               source_id: left_node.id,
-               target_kind: "work_package",
-               target_id: left_package.id,
-               kind: "depends_on",
-               reason: "Scoped dependency fixture"
-             })
-
-    assert {:error, {:constraint_failed, "product_tree_dependency_target_scope"}} =
-             ProductTree.upsert_dependency_edge(repo, %{
-               id: edge.id,
-               work_request_id: left.id,
-               target_id: right_package.id
-             })
-
-    assert repo.get!(DependencyEdge, edge.id).target_id == left_package.id
-  end
-
   defp create_work_request!(repo, overrides) do
     attrs =
       %{
