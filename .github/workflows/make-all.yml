@@ -7,6 +7,57 @@ on:
       - main
 
 jobs:
+  browser-candidate-artifact:
+    name: browser candidate artifact
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      E2E_OAUTH_CREDENTIALS: '{}'
+      E2E_TELEMETRY_DISABLED: '1'
+      DO_NOT_TRACK: '1'
+    steps:
+      - name: Checkout candidate combined tree
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - name: Set up candidate Node toolchain
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install: false
+          working_directory: elixir
+      - name: Install Node only
+        working-directory: elixir
+        run: mise install node
+      - name: Select Node binary
+        working-directory: elixir
+        shell: pwsh
+        run: (mise where node) >> $env:GITHUB_PATH
+      - name: Generate acceptance lock on hosted runner
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Install isolated recording dependencies
+        run: npm ci --ignore-scripts
+      - name: Build candidate browser and inspector artifacts
+        working-directory: elixir/assets
+        run: |
+          npm ci
+          npm run build
+          npm run build:herdr
+      - name: Package recording inputs without runtime credentials
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .e2e/browser-candidate -Force | Out-Null
+          git rev-parse HEAD | Set-Content .e2e/browser-candidate/checkout-sha.txt
+          git show -s --format='%H %P' HEAD | Set-Content .e2e/browser-candidate/checkout-parents.txt
+          tar -cf .e2e/browser-candidate/recording-dependencies.tar node_modules
+          Copy-Item package-lock.json .e2e/browser-candidate/package-lock.json
+          Copy-Item elixir/priv/static .e2e/browser-candidate/static -Recurse
+          Copy-Item plugins/symphony-plus-plus-mcp/herdr/dist .e2e/browser-candidate/inspector -Recurse
+      - name: Retain hosted candidate recording inputs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-candidate-artifact
+          path: .e2e/browser-candidate
+          include-hidden-files: true
+
   native-acceptance:
     name: native acceptance
     runs-on: ubuntu-latest
@@ -361,6 +412,7 @@ jobs:
   make-all:
     runs-on: ubuntu-latest
     needs:
+      - browser-candidate-artifact
       - native-acceptance
       - portable-skills
       - beta-snapshot
@@ -371,6 +423,10 @@ jobs:
     steps:
       - name: Verify split gates
         run: |
+          if [ "${{ needs.browser-candidate-artifact.result }}" != "success" ]; then
+            echo "browser candidate artifact result: ${{ needs.browser-candidate-artifact.result }}"
+            exit 1
+          fi
           if [ "${{ needs.native-acceptance.result }}" != "success" ]; then
             echo "native acceptance result: ${{ needs.native-acceptance.result }}"
             exit 1
