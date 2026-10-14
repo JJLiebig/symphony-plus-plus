@@ -153,6 +153,11 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   const before = await candidate.rawRequest('tools/call', { name: 'read_context', arguments: {} });
   expect(before.error.data.reason).toBe('server_not_initialized');
   await candidate.request('initialize', initialize);
+  for (const uri of ['sympp://assignment/current', `sympp://work-packages/${wp}/task_plan.md`]) {
+    const unbound = await candidate.rawRequest('resources/read', { uri });
+    expect(unbound.error.code).toBe(-32001);
+    expect(unbound.error.data.reason).toBe('missing_session');
+  }
   const catalog = await candidate.request('tools/list');
   expect(catalog.tools.some((entry: any) => entry.name === 'set_status')).toBe(false);
   for (const name of ['mint_worker_grant', 'list_work_packages']) expect((await candidate.rawRequest('tools/call', { name, arguments: {} })).error.code).toBe(-32601);
@@ -179,9 +184,11 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   expect((await candidate.rawRequest('initialize', initialize)).error.data.reason).toBe('already_initialized');
   for (const [payload, key, reason] of [
     [{ jsonrpc: '1.0', id: 910 }, 910, 'invalid_jsonrpc_version'],
+    [{ jsonrpc: '1.0', method: 'initialize' }, null, 'invalid_jsonrpc_version'],
     [{ jsonrpc: '2.0', id: 911 }, 911, 'missing_method'],
     [{ jsonrpc: '2.0', id: {}, method: 'tools/call', params: { name: 'claim_local_assignment', arguments: { work_package_id: first } } }, null, 'invalid_request_id'],
     [{ jsonrpc: '2.0', id: [], method: 'tools/list' }, null, 'invalid_request_id'],
+    [{ id: {}, method: 'initialize', params: {} }, null, 'invalid_request_id'],
     [{ jsonrpc: '2.0', id: 912, method: 42 }, 912, 'invalid_method'],
     [{ jsonrpc: '2.0', id: 913, method: 'tools/list', params: 'bad' }, 913, 'params_must_be_object_or_array'],
     [{ id: null, method: 'initialize', params: {} }, null, 'invalid_jsonrpc_version'],
@@ -195,6 +202,13 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   }
   expect((await candidate.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment).toBeNull();
   const catalog = await candidate.request('tools/list');
+  const mixed = await candidate.rawPayload([
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: 'version', method: 'resources/read', params: { uri: 'sympp://health/version' } },
+  ]);
+  expect(mixed).toHaveLength(1);
+  expect(mixed[0].id).toBe('version');
+  expect(JSON.parse(mixed[0].result.contents[0].text).source.revision).toBe(process.env.ACCEPTANCE_CHECKOUT_SHA);
   const batchTool = (id: number, name: string, args: object = {}) => ({ ...tool(name, args), id });
   const denied = await candidate.rawPayload([
     [{ jsonrpc: '2.0', id: 920, method: 'tools/list' }],
@@ -223,6 +237,7 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   // A following response is the barrier: blank/CRLF lines and notifications
   // must neither emit replies nor stop processing the stream.
   const before = (await readFile(candidate.logPath, 'utf8')).split('\n').filter((line) => line.startsWith('{') || line.startsWith('[')).length;
+  candidate.process.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: {} }) + '\n');
   candidate.process.stdin.write('\r\n' + JSON.stringify([{ jsonrpc: '2.0', method: 'notifications/initialized' }, { jsonrpc: '2.0', method: 'notifications/cancelled' }]) + '\r\n');
   await candidate.request('tools/list');
   await expect.poll(async () => (await readFile(candidate.logPath, 'utf8')).split('\n').filter((line) => line.startsWith('{') || line.startsWith('[')).length).toBe(before + 1);

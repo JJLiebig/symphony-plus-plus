@@ -3,52 +3,6 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  test "server rejects re-initialize after handshake", %{repo: repo} do
-    server = Server.new(Config.default(repo: repo))
-    initialize_request = %{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()}
-
-    {_init_response, initialized_server} = Server.handle_state(initialize_request, server)
-    {second_response, second_server} = Server.handle_state(%{initialize_request | "id" => "init-again"}, initialized_server)
-
-    assert get_in(second_response, ["error", "code"]) == -32_600
-    assert get_in(second_response, ["error", "data", "reason"]) == "already_initialized"
-    assert second_server.initialized == true
-  end
-
-  test "initialize rejects missing protocol versions and negotiates supported version", %{repo: repo} do
-    missing_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize", "params" => %{}},
-        repo: repo
-      )
-
-    negotiated_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => 2,
-          "method" => "initialize",
-          "params" => %{initialize_params() | "protocolVersion" => "2024-11-05"}
-        },
-        repo: repo
-      )
-
-    assert get_in(missing_response, ["error", "code"]) == -32_602
-    assert get_in(missing_response, ["error", "data", "reason"]) == "missing_protocol_version"
-    assert get_in(negotiated_response, ["result", "protocolVersion"]) == "2025-03-26"
-  end
-
-  test "initialize rejects partial handshake params", %{repo: repo} do
-    response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize", "params" => %{"protocolVersion" => "2025-03-26"}},
-        repo: repo
-      )
-
-    assert get_in(response, ["error", "code"]) == -32_602
-    assert get_in(response, ["error", "data", "reason"]) == "invalid_initialize_params"
-  end
-
   test "health tool reaches the test ledger without exposing package rows", %{repo: repo} do
     assert {:ok, _work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-P3-001"))
 
@@ -90,37 +44,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
     assert payload["mode"] == "stdio"
     assert payload["source"]["revision"] == "0123456789abcdef0123456789abcdef01234567"
     assert payload["source"]["mcp_contract"] == Server.mcp_contract_identity()
-  end
-
-  test "health tool rejects arguments outside its empty schema", %{repo: repo} do
-    response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "health",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health", "arguments" => %{"unexpected" => "value"}}
-        },
-        repo: repo
-      )
-
-    assert get_in(response, ["error", "code"]) == -32_602
-    assert get_in(response, ["error", "data", "reason"]) == "invalid_tool_arguments"
-  end
-
-  test "health tool accepts omitted arguments for its empty schema", %{repo: repo} do
-    response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "health",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health"}
-        },
-        repo: repo
-      )
-
-    assert get_in(response, ["result", "structuredContent", "ledger", "reachable"]) == true
   end
 
   test "health tool hides raw ledger failure details" do
@@ -194,30 +117,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
     assert nil == Server.handle(%{"jsonrpc" => "2.0", "method" => "notifications/initialized"}, server)
   end
 
-  test "initialize cannot be sent as a notification", %{repo: repo} do
-    server = Server.new(Config.default(repo: repo))
-
-    response = Server.handle(%{"jsonrpc" => "2.0", "method" => "initialize", "params" => initialize_params()}, server)
-
-    assert response["id"] == nil
-    assert get_in(response, ["error", "code"]) == -32_600
-    assert get_in(response, ["error", "data", "reason"]) == "initialize_requires_id"
-  end
-
-  test "malformed method-only payloads are not suppressed as notifications", %{repo: repo} do
-    server = Server.new(Config.default(repo: repo))
-
-    missing_jsonrpc = Server.handle(%{"id" => nil, "method" => "initialize", "params" => %{}}, server)
-    missing_method = Server.handle(%{"jsonrpc" => "2.0", "id" => 12}, server)
-    method_only = Server.handle(%{"method" => "initialize", "params" => %{}}, server)
-
-    assert get_in(missing_jsonrpc, ["error", "code"]) == -32_600
-    assert get_in(missing_jsonrpc, ["error", "data", "reason"]) == "invalid_jsonrpc_version"
-    assert get_in(missing_method, ["error", "data", "reason"]) == "missing_method"
-    assert get_in(method_only, ["error", "code"]) == -32_600
-    assert get_in(method_only, ["error", "data", "reason"]) == "request_must_be_object"
-  end
-
   test "JSON-RPC requests reject invalid versions before shape fallthrough", %{repo: repo} do
     server = Server.new(Config.default(repo: repo))
 
@@ -252,28 +151,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
     )
   end
 
-  test "initialized tools call rejects invalid ids without notification side effects", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-BAD-ID-CLAIM")
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    arguments = local_assignment_claim_args(package)
-
-    response =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => %{"bad" => "id"},
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => arguments}
-        },
-        Server.new(Config.default(repo: repo), initialized: true)
-      )
-
-    assert response["id"] == nil
-    assert get_in(response, ["error", "data", "reason"]) == "invalid_request_id"
-    assert {:ok, unclaimed_grant} = AccessGrantRepository.get(repo, minted.grant.id)
-    assert unclaimed_grant.claimed_at == nil
-  end
-
   test "JSON-RPC batches are handled consistently through direct server calls", %{repo: repo} do
     response =
       MCPHarness.request(
@@ -286,106 +163,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
 
     assert [%{"id" => "version", "result" => %{"contents" => [%{"text" => text}]}}] = response
     assert Jason.decode!(text)["mode"] == "stdio"
-  end
-
-  test "JSON-RPC batch elements reject nested arrays", %{repo: repo} do
-    response =
-      MCPHarness.request(
-        [
-          [
-            %{"jsonrpc" => "2.0", "id" => "version", "method" => "resources/read", "params" => %{"uri" => "sympp://health/version"}}
-          ]
-        ],
-        repo: repo
-      )
-
-    assert [%{"id" => nil, "error" => %{"code" => -32_600, "data" => %{"reason" => "request_must_be_object"}}}] = response
-  end
-
-  test "JSON-RPC batches reject initialize requests", %{repo: repo} do
-    response =
-      MCPHarness.request(
-        [
-          %{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()},
-          %{"jsonrpc" => "2.0", "id" => "version", "method" => "resources/read", "params" => %{"uri" => "sympp://health/version"}}
-        ],
-        repo: repo
-      )
-
-    assert response["id"] == nil
-    assert get_in(response, ["error", "code"]) == -32_600
-    assert get_in(response, ["error", "data", "reason"]) == "initialize_must_be_standalone"
-  end
-
-  test "JSON-RPC notification-only batches return no response", %{repo: repo} do
-    response =
-      MCPHarness.request(
-        [
-          %{"jsonrpc" => "2.0", "method" => "notifications/initialized"},
-          %{"jsonrpc" => "2.0", "method" => "notifications/cancelled"}
-        ],
-        repo: repo
-      )
-
-    assert response == nil
-  end
-
-  test "JSON-RPC request params reject unsupported scalar values", %{repo: repo} do
-    response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => "bad"},
-        repo: repo
-      )
-
-    assert get_in(response, ["error", "code"]) == -32_602
-    assert get_in(response, ["error", "data", "reason"]) == "params_must_be_object_or_array"
-  end
-
-  test "object-only MCP methods reject positional params", %{repo: repo} do
-    Enum.each(
-      [
-        {"init", "initialize"},
-        {"tools", "tools/list"},
-        {"tool", "tools/call"},
-        {"resources", "resources/list"},
-        {"resource", "resources/read"}
-      ],
-      fn {id, method} ->
-        response =
-          MCPHarness.request(
-            %{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => []},
-            repo: repo
-          )
-
-        assert get_in(response, ["error", "code"]) == -32_602
-        assert get_in(response, ["error", "data", "reason"]) == "params_must_be_object"
-      end
-    )
-  end
-
-  test "JSON-RPC requests reject non-string methods", %{repo: repo} do
-    server = Server.new(Config.default(repo: repo))
-
-    response = Server.handle(%{"jsonrpc" => "2.0", "id" => 12, "method" => 123, "params" => %{}}, server)
-
-    assert response["id"] == 12
-    assert get_in(response, ["error", "code"]) == -32_600
-    assert get_in(response, ["error", "data", "reason"]) == "invalid_method"
-  end
-
-  test "JSON-RPC requests without versions reject non-string methods", %{repo: repo} do
-    response = MCPHarness.request(%{"id" => "method", "method" => 123}, repo: repo)
-
-    assert get_in(response, ["error", "code"]) == -32_600
-    assert get_in(response, ["error", "data", "reason"]) == "invalid_method"
-  end
-
-  test "stdio handler rejects empty batches", %{repo: repo} do
-    response = Stdio.handle_payload([], Server.new(Config.default(repo: repo)))
-
-    assert response["id"] == nil
-    assert get_in(response, ["error", "code"]) == -32_600
-    assert get_in(response, ["error", "data", "reason"]) == "empty_batch"
   end
 
   test "stdio read errors keep expected disconnects graceful" do
@@ -414,22 +191,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport01Test do
 
     assert get_in(init_response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
     assert is_list(get_in(tools_response, ["result", "tools"]))
-  end
-
-  test "stdio handler ignores blank lines and accepts CRLF lines", %{repo: repo} do
-    server = Server.new(Config.default(repo: repo), initialized: true)
-
-    assert nil == Stdio.line_response("\r\n", server)
-    assert nil == Stdio.line_response("\n", server)
-
-    response =
-      Stdio.line_response(
-        ~s({"jsonrpc":"2.0","id":10,"method":"resources/read","params":{"uri":"sympp://health/version"}}\r\n),
-        server
-      )
-
-    assert response["id"] == 10
-    assert get_in(response, ["result", "contents", Access.at(0), "uri"]) == "sympp://health/version"
   end
 
   test "injected session exposes only current assignment and denies sibling package scope", %{repo: repo} do

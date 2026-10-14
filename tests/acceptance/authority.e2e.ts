@@ -467,6 +467,9 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   expect((await client.rpc('tools/call', { name: 'mark_ready', arguments: {} })).error).toBeTruthy();
   await client.call('attach_pr', { url: prUrl(302), head_sha: head('b') });
   await client.call('sync_pr');
+  await client.call('attach_pr', { url: prUrl(302), head_sha: head('b'), idempotency_key: 'reattach-after-sync' });
+  expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toContain('current_pr_state');
+  await client.call('sync_pr', { recovery: { ...recovery, head_sha: head('b') }, idempotency_key: 'current-state-after-reattach' });
   expect((await client.call('mark_ready')).work_package.status).toBe('ready_for_merge');
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
   const readyDocument = await client.call('read_work_package_document', { document: 'progress.md' });
@@ -489,6 +492,8 @@ deliveryTest('worker metadata replay and short-head matching preserve distinct r
     contract('Canonical attachment state', { kind: 'mcp', policy_template: 'mcp_current_pr_state', branch_pattern: 'feature/authority' }),
     contract('Legacy compatible URL', { kind: 'mcp', branch_pattern: 'feature/authority' }),
     contract('Legacy URL canonical state', { kind: 'mcp', policy_template: 'mcp_current_pr_state', branch_pattern: 'feature/authority' }),
+    contract('Head refresh without reattachment', { kind: 'mcp', policy_template: 'mcp_current_pr_state', branch_pattern: 'feature/authority' }),
+    contract('Canonical recovery readiness', { kind: 'mcp', policy_template: 'mcp_current_pr_state', branch_pattern: 'feature/authority' }),
   ] })).work_package_ids;
   for (const id of ids) await architect.call('dispatch_work_package', { work_package_id: id });
   const full = await worker(factory, ids[0]);
@@ -532,6 +537,15 @@ deliveryTest('worker metadata replay and short-head matching preserve distinct r
     check_summary: { conclusion: 'success' }, review_state: { state: 'approved' }, merge_state: { state: 'clean' },
   } });
   expect((await legacyState.call('mark_ready')).work_package.status).toBe('ready_for_merge');
+  for (const [index, changeHead] of [[7, true], [8, false]] as const) {
+    const client = await worker(factory, ids[index], `recovery-policy-${index}`);
+    await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('a') });
+    await client.call('attach_pr', { url: prUrl(330 + index), head_sha: head('a') });
+    if (changeHead) await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('b') });
+    await client.call('sync_pr', { recovery: { url: prUrl(330 + index), head_sha: head(changeHead ? 'b' : 'a'),
+      check_summary: { status: 'passing' }, review_state: { status: 'approved' }, merge_state: { status: 'clean', merged: false } } });
+    expect((await client.call('mark_ready')).ready).toBe(true);
+  }
   const shortRepoArchitect = await factory.client();
   await shortRepoArchitect.request('Unambiguous PR identity', 'ready_for_slicing', 'beta', 'service');
   const [shortWp] = await packages(shortRepoArchitect, ['Explicit repository identity']);

@@ -4,16 +4,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPClientLeasesTest do
   alias SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases
   alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
 
-  test "tracks clients by lease id" do
-    server = start_supervised!({ClientLeases, name: :"#{__MODULE__}.tracks"})
-
-    assert {:ok, %{active_client_count: 1}} = ClientLeases.attach("client-a", server)
-    assert {:ok, %{active_client_count: 1}} = ClientLeases.heartbeat("client-a", server)
-    assert {:ok, %{active_client_count: 2}} = ClientLeases.attach("client-b", server)
-    assert {:ok, %{active_client_count: 1}} = ClientLeases.detach("client-a", server)
-    assert ClientLeases.active_count(server) == 1
-  end
-
   test "opens the dashboard once when the first client attaches after idle" do
     parent = self()
 
