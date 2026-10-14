@@ -100,6 +100,19 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
       const installedList = JSON.parse(await installed.skills(['list', '--agent', agent, '--json']));
       expect(JSON.stringify(installedList)).toContain('symphony-plus-plus');
     }
+    // A global beta install must not adopt the unrelated current project's main ref.
+    await installed.skills(['add', 'https://github.com/JJLiebig/symphony-plus-plus/tree/beta',
+      '--global', '--agent', 'codex', '--skill', 'symphony-plus-plus', '--yes']);
+    const globalBundle = join(installed.env.HOME!, '.agents/skills/symphony-plus-plus');
+    const globalSetup = join(globalBundle, 'scripts/setup-sympp.js');
+    await cp(resolve('plugins/symphony-plus-plus-mcp/scripts/setup-sympp.js'), globalSetup);
+    const projectLock = join(installed.project, 'skills-lock.json');
+    const local = JSON.parse(await readFile(projectLock, 'utf8'));
+    local.skills['symphony-plus-plus'].ref = 'main';
+    await writeFile(projectLock, JSON.stringify(local));
+    expect((await installed.run(process.execPath, [globalSetup, '--host', 'both'])).code).toBe(0);
+    const globalConfig = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
+    expect(globalConfig.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
   });
 
   test('native marketplace install and upgrade preserve the alternative route and refuse mixed Skills ownership', { timeout: 600_000 }, async ({ installed }) => {
@@ -115,10 +128,24 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     const manifestPath = process.env.SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST!;
     const candidate = JSON.parse(await readFile(manifestPath, 'utf8'));
     candidate.artifact.relative_path = resolve(dirname(manifestPath), candidate.artifact.file);
-    await writeFile(join(companion.installedPath, '.sympp-runtime-artifacts.json'), JSON.stringify(candidate));
-    const launchable = await installed.ok('pwsh.exe', ['-NoProfile', '-File',
-      join(companion.installedPath, 'scripts/start-sympp-mcp.ps1'), '-ValidateOnly']);
-    expect(launchable).toContain('runtimeMode: artifact');
+    const manifestFile = join(installed.root, 'candidate-runtime.json');
+    await writeFile(manifestFile, JSON.stringify(candidate));
+    const provenance = join(installed.env.CODEX_HOME!, '.tmp/marketplaces/symphony-plus-plus/.codex-marketplace-install.json');
+    const metadata = JSON.parse(await readFile(provenance, 'utf8'));
+    for (const ref of ['main', 'beta']) {
+      await writeFile(provenance, JSON.stringify({ ...metadata, ref_name: ref }));
+      const selected = ref === 'beta' ? 'beta' : 'stable';
+      const other = ref === 'beta' ? 'stable' : 'beta';
+      await writeFile(join(companion.installedPath, '.sympp-runtime-artifacts.json'), JSON.stringify({
+        schema_version: 1, channels: {
+          [selected]: { manifest: { path: manifestFile } },
+          [other]: { manifest: { path: join(installed.root, 'wrong-channel-must-not-be-read.json') } },
+        },
+      }));
+      const launchable = await installed.ok('pwsh.exe', ['-NoProfile', '-File',
+        join(companion.installedPath, 'scripts/start-sympp-mcp.ps1'), '-ValidateOnly']);
+      expect(launchable).toContain('runtimeMode: artifact');
+    }
     const listed = JSON.parse(await installed.ok('codex.exe', ['plugin', 'list', '--marketplace', 'symphony-plus-plus', '--json']));
     expect(listed.installed.some((plugin: any) => plugin.name === 'symphony-plus-plus-mcp' && plugin.enabled)).toBe(true);
     const bundle = await installed.install('codex');
