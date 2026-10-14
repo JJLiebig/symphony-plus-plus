@@ -33,6 +33,7 @@ export class InspectorHost {
   });
   process?: ChildProcessWithoutNullStreams;
   output = '';
+  frames = 0;
   stderr = '';
   constructor(readonly root: string, readonly snapshot: any, readonly receipt: string) {
     this.socketPath = join(root, 'inspector.sock');
@@ -53,6 +54,7 @@ export class InspectorHost {
     });
     this.process.stdout.on('data', (chunk) => {
       this.output += chunk;
+      this.frames = this.output.split('\u001b[H\u001b[2J').length - 1;
       appendFileSync(`${this.receipt}.stdout.txt`, chunk);
     });
     this.process.stderr.on('data', (chunk) => {

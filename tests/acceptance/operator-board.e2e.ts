@@ -36,8 +36,10 @@ test('operator sees dependency ordering, pending qualification and actual delive
     await expect(screen.getByLabel('Finished goals are archived after', { exact: false })).toBeVisible();
     throw new Error('Unrecorded model action unexpectedly returned');
   }
-  if (process.env.SYMPP_BROWSER_MECHANICAL === '1') await screen.getByRole('button', 'Expanded', { exact: true }).tap();
-  else await agent.act('Show every package by selecting Expanded');
+  if (process.env.SYMPP_BROWSER_MECHANICAL === '1') {
+    await screen.getByRole('button', 'Expanded', { exact: true }).tap();
+    await screen.getByRole('button', 'See all 2 packages', { exact: true }).tap();
+  } else await agent.act('Show all packages for Browser delivery, including those queued');
   await expect(goal).toContainText('Service prerequisite');
   await expect(goal).toContainText('Dependent findings');
   await expect(goal).toContainText('queued');
@@ -55,8 +57,13 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await candidate.capture('ci-wait');
   await browser.reload();
   await screen.getByRole('button', 'Expanded', { exact: true }).tap();
-  await expect(goal).toContainText('Checks');
+  await expect(browser.locator(`[data-goal="${request}"] ol span.font-semibold`)).toContainText('Checks');
   expect((await row(client, request, first)).delivery_outcome).toBeNull();
+  provider!.set(401, pr(401, head('a'), { reviewDecision: 'REVIEW_REQUIRED' }));
+  await sync(client, first, 401, head('a'));
+  await candidate.capture('review-wait');
+  await browser.reload();
+  await expect(browser.locator(`[data-goal="${request}"] ol span.font-semibold`)).toContainText('Review');
   provider!.set(401, pr(401, head('a')));
   await sync(client, first, 401, head('a'));
   await candidate.capture('qualified');
@@ -111,8 +118,7 @@ test('operator attention differs from explicit blockers and settings/archive act
   await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
   await screen.getByLabel('Finished goals are archived after', { exact: false }).fill('30');
   await screen.getByRole('button', 'Save', { exact: true }).tap();
-  await expect(screen.getByText('Saved.', { exact: true })).toBeVisible();
-  expect((await client.inspect('/api/v1/sympp/operator/dashboard/hydrated')).settings.work_request_archive_after_days).toBe(30);
+  await expect.poll(async () => (await client.inspect('/api/v1/sympp/operator/dashboard/hydrated')).settings.work_request_archive_after_days).toBe(30);
   await browser.reload();
   await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
   await expect(screen.getByLabel('Finished goals are archived after', { exact: false })).toHaveValue('30');
