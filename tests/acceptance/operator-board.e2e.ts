@@ -2,6 +2,8 @@ import { expect } from 'e2e';
 import { test } from '../support/browser-candidate.js';
 import { contract } from '../support/factory.js';
 import { close, head, pr, row, sync } from '../support/delivery.js';
+import { reviewRepository, installReviewProvider } from '../support/browser-review-provider.js';
+import { readFile } from 'node:fs/promises';
 
 test('operator sees dependency ordering, pending qualification and actual delivered completion', async ({ candidate, app, screen, browser, agent }) => {
   const { client, provider } = candidate;
@@ -49,26 +51,19 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await expect(screen.getByLabel('Finished goals are archived after', { exact: false })).toBeVisible();
   await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
   if (candidate.recording) return;
+  const worker = await candidate.factory!.client();
+  await worker.call('claim_local_assignment', { work_package_id: first, claimed_by: 'browser-worker' });
 
   provider!.set(401, pr(401, head('a'), {
     statusCheckRollup: [{ name: 'required', status: 'IN_PROGRESS', conclusion: null }], reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED',
   }));
-  await sync(client, first, 401, head('a'));
+  await sync(worker, first, 401, head('a'));
   await candidate.capture('ci-wait');
   await browser.reload();
   await screen.getByRole('button', 'Expanded', { exact: true }).tap();
   await expect(browser.locator(`[data-goal="${request}"] ol span.font-semibold`)).toContainText('Checks');
   expect((await row(client, request, first)).delivery_outcome).toBeNull();
-  provider!.set(401, pr(401, head('a'), { reviewDecision: 'REVIEW_REQUIRED' }));
-  await sync(client, first, 401, head('a'));
-  // A pending GitHub decision is not a native reviewer observation. Exercise
-  // the actual worker's reported reviewing state through its claimed scope.
-  const reviewer = await candidate.factory!.client();
-  await reviewer.call('claim_local_assignment', { work_package_id: first, claimed_by: 'browser-review-worker' });
-  await reviewer.call('append_progress', { status: 'reviewing', summary: 'Reviewing the bounded synthetic acceptance findings.', idempotency_key: 'browser-review-start' });
-  await candidate.capture('review-wait');
-  await browser.reload();
-  await expect(browser.locator(`[data-goal="${request}"] ol span.font-semibold`)).toContainText('Review');
+  expect((await client.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
   provider!.set(401, pr(401, head('a')));
   await sync(client, first, 401, head('a'));
   await candidate.capture('qualified');
@@ -90,6 +85,23 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await expect(goal).toContainText('All 2 packages have landed');
   await expect(screen.getByRole('heading', 'Landed · last 24 hours')).toBeVisible();
   expect((await client.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeTruthy();
+
+  const repository = await reviewRepository(candidate);
+  const reviewing = await client.request('Provider-reported review wait', 'ready_for_slicing', 'beta', repository);
+  const [reviewWp] = (await client.call('slice_work_request', {
+    work_packages: [contract('Review provider findings', { review: { type: 'review-suite', args: { mode: 'fast' } } })],
+  })).work_package_ids;
+  await client.call('dispatch_work_package', { work_package_id: reviewWp });
+  const receipt = await installReviewProvider(candidate);
+  const prepared = await client.call('prepare_work_package_worktree', { work_package_id: reviewWp, target_repo_root: repository });
+  expect(prepared.status).toBe('prepared');
+  await candidate.capture('provider-review-wait');
+  await browser.reload();
+  await expect(browser.locator(`[data-goal="${reviewing}"] ol span.font-semibold`)).toContainText('Review');
+  expect((await row(client, reviewing, reviewWp)).delivery_outcome).toBeNull();
+  const commands = (await readFile(receipt, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  expect(commands.some((entry) => entry.command === 'codex' && JSON.stringify(entry.argv) === JSON.stringify(['plugin', 'list', '--json']))).toBe(true);
+  expect(commands.some((entry) => entry.command === 'python' && entry.argv.includes('--status') && entry.argv.includes('--json') && entry.argv.includes('--cd') && entry.argv.includes('origin/beta'))).toBe(true);
 });
 
 test('operator attention differs from explicit blockers and settings/archive actions persist', async ({ candidate, app, screen, browser }) => {

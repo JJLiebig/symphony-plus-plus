@@ -1,6 +1,6 @@
 import { request as httpRequest, createServer, type Server } from 'node:http';
 import { once } from 'node:events';
-import { readFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, rm, writeFile, appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, join, resolve, sep } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -29,6 +29,7 @@ export class BrowserCandidate {
     }
     this.server = createServer(async (request, response) => {
       const path = new URL(request.url!, 'http://127.0.0.1:20373').pathname;
+      if (this.recording) await appendFile('.e2e/recording-http.jsonl', `${JSON.stringify({ method: request.method, path })}\n`);
       if (this.recording && request.method !== 'GET') {
         response.writeHead(405); response.end(); return;
       }
