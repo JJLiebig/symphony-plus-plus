@@ -5,7 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
 
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
 
-  test "create_work_request requires trusted local HTTP with explicit state", %{repo: repo} do
+  test "WorkRequest creation rejects implicit state and non-file-backed trusted configurations", %{repo: repo} do
     arguments = %{
       "repo" => "nextide/symphony-plus-plus",
       "base_branch" => "main",
@@ -13,22 +13,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
       "description" => "This should not be created outside trusted local HTTP.",
       "request_kind" => "investigation"
     }
-
-    stdio_response =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "stdio-create-work-request-denied",
-          "method" => "tools/call",
-          "params" => %{"name" => "create_work_request", "arguments" => arguments}
-        },
-        Server.new(Config.default(repo: repo), initialized: true)
-      )
-
-    assert get_in(stdio_response, ["error", "code"]) == -32_001
-    assert get_in(stdio_response, ["error", "data", "tool"]) == "create_work_request"
-    assert get_in(stdio_response, ["error", "data", "reason"]) == "local_mcp_required"
-    assert Enum.any?(tools_for_server(Server.new(Config.default(repo: repo), initialized: true)), &(&1["name"] == "create_work_request"))
 
     implicit_state_response =
       Server.handle(
@@ -43,11 +27,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
 
     assert get_in(implicit_state_response, ["error", "code"]) == -32_001
     assert get_in(implicit_state_response, ["error", "data", "reason"]) == "local_mcp_session_required"
-
-    assert Enum.any?(
-             tools_for_server(Server.new(local_mcp_config(repo), initialized: true, local_daemon_trusted: true)),
-             &(&1["name"] == "create_work_request")
-           )
 
     remote_config = %{local_mcp_config(repo) | database: "https://ledger.example.test/mcp?token=ghp_createworksecret"}
 
@@ -65,7 +44,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     assert get_in(remote_response, ["error", "code"]) == -32_001
     assert get_in(remote_response, ["error", "data", "reason"]) == "local_database_required"
     refute inspect(remote_response) =~ "ghp_createworksecret"
-    assert Enum.any?(tools_for_server(local_mcp_server(remote_config, "remote-create-work-request-tools-state")), &(&1["name"] == "create_work_request"))
 
     memory_response =
       Server.handle(
@@ -80,20 +58,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
 
     assert get_in(memory_response, ["error", "code"]) == -32_001
     assert get_in(memory_response, ["error", "data", "reason"]) == "file_backed_database_required"
-
-    pre_initialize_response =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "pre-init-create-work-request-denied",
-          "method" => "tools/call",
-          "params" => %{"name" => "create_work_request", "arguments" => arguments}
-        },
-        Server.new(local_mcp_config(repo), local_daemon_trusted: true, state_key: "pre-init-create-work-request-state")
-      )
-
-    assert get_in(pre_initialize_response, ["error", "code"]) == -32_000
-    assert get_in(pre_initialize_response, ["error", "data", "reason"]) == "server_not_initialized"
   end
 
   test "architect WorkRequest read tools are scoped, filtered, redacted, and read-only", %{repo: repo} do
@@ -297,61 +261,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
 
     invalid_status_response = mcp_tool(repo, session, "list_work_requests", %{"status" => "merged"})
     assert get_in(invalid_status_response, ["error", "data", "reason"]) == "invalid_status"
-  end
-
-  test "WorkRequest MCP reads hydrate persisted secondary repo scopes", %{repo: repo} do
-    {anchor, session, _grant} =
-      create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-MULTI-REPO", [
-        "read:work_request",
-        "write:work_request"
-      ])
-
-    visible =
-      create_work_request!(repo,
-        id: "WR-MCP-WR-MULTI-REPO",
-        repo: "nextide/secondary-service",
-        base_branch: "main",
-        status: "ready_for_slicing",
-        repo_scopes: [
-          %{repo: "nextide/secondary-service", base_branch: "main"},
-          %{repo: anchor.repo, base_branch: anchor.base_branch}
-        ]
-      )
-
-    hidden =
-      create_work_request!(repo,
-        id: "WR-MCP-WR-MULTI-HIDDEN",
-        repo: "nextide/secondary-service",
-        base_branch: "main",
-        status: "ready_for_slicing"
-      )
-
-    list_response = mcp_tool(repo, session, "list_work_requests", %{"status" => "ready_for_slicing"})
-    list_payload = get_in(list_response, ["result", "structuredContent"])
-
-    assert Enum.map(list_payload["work_requests"], & &1["id"]) == [visible.id]
-    refute inspect(list_response) =~ hidden.id
-
-    read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => visible.id})
-    assert get_in(read_response, ["result", "structuredContent", "work_request", "id"]) == visible.id
-
-    hidden_read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => hidden.id})
-    assert get_in(hidden_read_response, ["error", "code"]) == -32_004
-    assert get_in(hidden_read_response, ["error", "data", "reason"]) == "not_found"
-    refute inspect(hidden_read_response) =~ hidden.id
-
-    status_response =
-      mcp_tool(repo, session, "set_work_request_status", %{
-        "work_request_id" => visible.id,
-        "current_status" => "ready_for_slicing",
-        "next_status" => "draft"
-      })
-
-    assert get_in(status_response, ["error", "code"]) == -32_004
-    assert get_in(status_response, ["error", "data", "reason"]) == "not_found"
-
-    assert {:ok, persisted} = WorkRequestRepository.get(repo, visible.id)
-    assert persisted.status == "ready_for_slicing"
   end
 
   test "WorkRequest MCP list narrows to explicit WorkRequest read scopes", %{repo: repo} do

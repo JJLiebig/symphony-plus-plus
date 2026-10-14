@@ -174,6 +174,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       delivery_board
       |> Map.fetch!(:work_packages)
       |> json_safe_payload()
+      |> Enum.filter(&is_binary(get_in(&1, ["operational_state", "work_package_status"])))
       |> merge_projection_group_ids(work_packages)
 
     visible_work_packages = visible_work_packages_from_projection(work_packages, projection_work_package_payloads)
@@ -181,7 +182,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
 
     product_tree =
       repo
-      |> ProductTree.project(work_request.id, projection_work_package_payloads, product_tree_projection_opts())
+      |> ProductTree.project(work_request.id, projection_work_package_payloads, product_tree_projection_opts(work_packages, projection_work_package_payloads))
       |> public_product_tree()
       |> product_tree_view_payload(work_package_payloads, view)
 
@@ -420,7 +421,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     end)
   end
 
-  defp product_tree_projection_opts, do: [visible_only?: true, include_unowned_nodes?: true]
+  defp product_tree_projection_opts(work_packages, projection_work_package_payloads) do
+    all_ids = MapSet.new(work_packages, & &1.id)
+    visible_ids = MapSet.new(projection_work_package_payloads, &map_get(&1, :id))
+
+    [visible_only?: true, include_unowned_nodes?: MapSet.equal?(all_ids, visible_ids)]
+  end
 
   defp product_tree_operational_work_package_fields(projection_work_package_payload) when is_map(projection_work_package_payload) do
     projection_work_package_payload

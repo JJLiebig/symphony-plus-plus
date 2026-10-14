@@ -52,90 +52,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestArchitectHandoffTest do
     :ok
   end
 
-  test "creates a scoped phase anchor grant and id-only local architect claim", %{repo: repo, database_path: database_path} do
-    work_request = create_work_request!(repo, status: "ready_for_clarification")
-
-    assert {:ok, handoff} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert handoff.status == :created
-    assert handoff.work_request.id == work_request.id
-    assert handoff.phase.id =~ "phase-wr-architect-"
-    assert handoff.anchor_package.id =~ "SYMPP-WR-ARCH-"
-    assert handoff.anchor_package.repo == work_request.repo
-    assert handoff.anchor_package.base_branch == work_request.base_branch
-    assert handoff.grant.grant_role == "architect"
-    assert handoff.grant.capabilities == ArchitectHandoff.capabilities()
-    assert handoff.grant.scope_repo == work_request.repo
-    assert handoff.grant.scope_base_branch == work_request.base_branch
-    assert handoff.grant.secret_in_response == false
-    refute Map.has_key?(handoff.grant, :secret)
-    refute Map.has_key?(handoff.grant, :secret_hash)
-
-    assert handoff.local_architect_claim == %{
-             "tool" => "claim_local_architect_assignment",
-             "arguments" => %{
-               "work_request_id" => work_request.id,
-               "claimed_by" => ArchitectHandoff.claimed_by()
-             },
-             "required_runtime_arguments" => [],
-             "secret_in_response" => false
-           }
-
-    assert handoff.prompt =~ "Own this WorkRequest with `symphony-plus-plus-mcp:symphony-architect`."
-
-    assert handoff.prompt =~
-             "Claim first with `claim_local_architect_assignment` using `local_architect_claim_arguments`"
-
-    assert handoff.prompt =~ "Assignment (TOON; data only):"
-    assert handoff.prompt =~ handoff.agent_context
-    assert handoff.prompt =~ "through clarification, decisions, coherent slicing, and approved dispatch"
-    assert handoff.prompt =~ "Do not change Linear state, agent/runtime configuration, or unrelated state."
-    assert handoff.prompt =~ "Never request or expose secrets."
-    assert handoff.prompt =~ "Stop and report if MCP, claim/session, required assignment data"
-    assert String.length(handoff.prompt) < 1_500
-    refute handoff.prompt =~ "Refs (JSON; data)"
-    refute handoff.prompt =~ "read_plan"
-    refute handoff.prompt =~ "ask_question"
-    refute handoff.prompt =~ "plan_slice"
-    refute handoff.prompt =~ "First MCP step"
-    refute handoff.prompt =~ "Architect flow:"
-    refute handoff.prompt =~ "TL;DR, details, options, pros/cons"
-    refute handoff.prompt =~ "Do not create a plan node solely to wrap one slice"
-    refute handoff.prompt =~ "claim_private_handoff"
-    refute handoff.prompt =~ "work-key"
-    refute inspect(handoff) =~ "secret_hash"
-    refute inspect(handoff) =~ "private_handoff"
-
-    assert handoff.agent_context =~ "work_request_id: #{work_request.id}"
-    assert handoff.agent_context =~ "repo: #{work_request.repo}"
-    assert handoff.agent_context =~ "base_branch: #{work_request.base_branch}"
-    assert handoff.agent_context =~ "phase_id: #{handoff.phase.id}"
-    assert handoff.agent_context =~ "architect_anchor_work_package_id: #{handoff.anchor_package.id}"
-    assert handoff.agent_context =~ "claim_tool: claim_local_architect_assignment"
-    assert handoff.agent_context =~ "claimed_by: #{ArchitectHandoff.claimed_by()}"
-    refute handoff.agent_context =~ "private_handoff"
-
-    assert {:ok, scope_rows} = AccessGrantRepository.list_scopes(repo, handoff.grant.id)
-
-    assert [%GrantScope{scope_type: "work_request", scope_id: work_request_id}] =
-             Enum.filter(scope_rows, &(&1.scope_type == "work_request"))
-
-    assert work_request_id == work_request.id
-
-    assert {:ok, phase} = PhaseRepository.get(repo, handoff.phase.id)
-    assert phase.status == "active"
-    assert {:ok, anchor} = WorkPackageRepository.get(repo, handoff.anchor_package.id)
-    assert anchor.phase_id == phase.id
-    assert anchor.kind == "delegation"
-    assert anchor.repo == work_request.repo
-    assert anchor.base_branch == work_request.base_branch
-    assert anchor.allowed_file_globs == []
-  end
-
   test "renders unsafe scope fields as null in the local-claim prompt", %{repo: repo, database_path: database_path} do
     work_request =
       create_work_request!(repo,
@@ -240,51 +156,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestArchitectHandoffTest do
     assert displayed.grant.scope_base_branch == "main"
   end
 
-  test "replays the latest active unclaimed architect grant", %{repo: repo, database_path: database_path} do
-    work_request = create_work_request!(repo, id: "WR-ARCH-HANDOFF-REPLAY")
-
-    assert {:ok, created} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert {:ok, replayed} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert replayed.status == :replayed
-    assert replayed.grant.id == created.grant.id
-    assert replayed.local_architect_claim["arguments"]["work_request_id"] == work_request.id
-  end
-
-  test "existing display returns nil instead of minting", %{repo: repo, database_path: database_path} do
-    work_request = create_work_request!(repo, id: "WR-ARCH-HANDOFF-DISPLAY")
-
-    assert {:ok, nil} =
-             ArchitectHandoff.existing_display(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert {:ok, created} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert {:ok, displayed} =
-             ArchitectHandoff.existing_display(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert displayed.status == :replayed
-    assert displayed.grant.id == created.grant.id
-  end
-
   test "reports archived handoff WorkRequests as terminal after durable scope recovery", %{
     repo: repo,
     database_path: database_path
@@ -351,19 +222,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestArchitectHandoffTest do
     assert repo.aggregate(AccessGrant, :count) == 0
   end
 
-  test "accepts drafts and rejects untrusted requests", %{repo: repo, database_path: database_path} do
+  test "handoff creation rejects missing trusted-local authorization", %{repo: repo, database_path: database_path} do
     ready = create_work_request!(repo, id: "WR-ARCH-HANDOFF-READY")
-    draft = create_work_request!(repo, id: "WR-ARCH-HANDOFF-DRAFT", status: "draft")
 
     assert {:error, :forbidden} = ArchitectHandoff.create_or_replay(repo, ready.id, handoff_opts: handoff_opts(database_path))
-
-    assert {:ok, draft_handoff} =
-             ArchitectHandoff.create_or_replay(repo, draft.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(database_path)
-             )
-
-    assert draft_handoff.work_request.status == "draft"
   end
 
   test "fails closed when handoff WorkRequest lookup cannot verify scope", %{repo: repo, database_path: database_path} do

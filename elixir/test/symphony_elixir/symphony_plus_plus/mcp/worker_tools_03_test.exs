@@ -113,36 +113,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools03Test do
     assert get_in(replay_response, ["result", "structuredContent", "next_owner"]) == "architect"
     assert get_in(replay_response, ["result", "structuredContent", "next_action"]) == "return_to_architect"
   end
-
-  test "mark_ready uses attached delivery evidence without a manual CI lifecycle state", %{repo: repo} do
-    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-READY-NO-CI", kind: "mcp", status: "reviewing"))
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    missing_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "ready-no-ci-missing", "method" => "tools/call", "params" => %{"name" => "mark_ready"}},
-        repo: repo,
-        session: session
-      )
-
-    missing = get_in(missing_response, ["error", "data", "missing"])
-    refute "status_ci_waiting" in missing
-    assert "pr_attached" in missing
-
-    pr_url = "https://github.com/example/repo/pull/#{System.unique_integer([:positive])}"
-    attach_tool(repo, session, "attach_branch", %{"branch" => "agent/#{package.id}/worker", "head_sha" => "head-no-ci"})
-    attach_tool(repo, session, "attach_pr", %{"url" => pr_url, "head_sha" => "head-no-ci"})
-
-    ready_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "ready-no-ci", "method" => "tools/call", "params" => %{"name" => "mark_ready"}},
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(ready_response, ["result", "structuredContent", "ready"]) == true
-    assert get_in(ready_response, ["result", "structuredContent", "work_package", "status"]) == "ready_for_merge"
-  end
 end

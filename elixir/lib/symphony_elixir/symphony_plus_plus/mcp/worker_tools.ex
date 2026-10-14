@@ -79,7 +79,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
          work_package_id = Session.work_package_id(session),
          {:ok, state, _session} <- Surface.read_work_package_document_state(repo, session, work_package_id, document, Map.get(arguments, "before_sequence")),
          {:ok, payload} <- WorkerContext.virtual_file_payload(state, document, uri: "sympp://work-packages/#{work_package_id}/#{document}") do
-      {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.read_tool_result(payload) end)}
+      {:ok,
+       ToolResult.with_text_profile(:full, fn ->
+         ToolResult.agent_tool_result(payload, fn ->
+           {:ok, toon} = WorkerContext.encode_virtual_file(state, document, uri: payload["uri"])
+           toon
+         end)
+       end)}
     else
       {:error, _code, _message, _data} = error -> error
       {:tool_error, reason} -> invalid_params_error("read_work_package_document", reason)
@@ -431,6 +437,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
     {:error, -32_602, "Invalid params", data}
   end
 
+  defp stringify_keys(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp stringify_keys(%{} = map), do: Map.new(map, fn {key, value} -> {to_string(key), stringify_keys(value)} end)
   defp stringify_keys(values) when is_list(values), do: Enum.map(values, &stringify_keys/1)
   defp stringify_keys(value), do: value

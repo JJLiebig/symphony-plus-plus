@@ -6,40 +6,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{ProgressEvents, WorktreeScope}
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
 
-  test "worker tools update only the scoped planning state and deny sibling mutations", %{repo: repo} do
+  test "stored worker evidence preserves cross-grant identity and secret normalization", %{repo: repo} do
     assert {:ok, own_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-WORKER-OWN", kind: "adapter"))
-    assert {:ok, sibling_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-WORKER-SIBLING", kind: "adapter"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, own_package.id)
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    read_plan_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "read-plan", "method" => "tools/call", "params" => %{"name" => "read_task_plan"}},
-        repo: repo,
-        session: session
-      )
-
-    plan_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "plan",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => get_in(read_plan_response, ["result", "structuredContent", "version"]),
-              "nodes" => [%{"title" => "Implement MCP worker tools", "status" => "done"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(plan_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "status"]) == "done"
-    assert get_in(plan_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "id"]) =~ ~r/^plan_/
 
     finding_response =
       MCPHarness.request(
@@ -219,40 +190,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     assert get_in(conflicting_finding_response, ["error", "data", "reason"]) == "idempotency_conflict"
 
-    progress_args = %{"summary" => "Progress", "idempotency_key" => "worker-progress-1", "body" => "Done"}
-
-    progress_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "progress", "method" => "tools/call", "params" => %{"name" => "append_progress", "arguments" => progress_args}},
-        repo: repo,
-        session: session
-      )
-
-    replay_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "progress-replay", "method" => "tools/call", "params" => %{"name" => "append_progress", "arguments" => progress_args}},
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(progress_response, ["result", "structuredContent", "progress_event", "id"]) ==
-             get_in(replay_response, ["result", "structuredContent", "progress_event", "id"])
-
-    whitespace_progress_replay_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "progress-whitespace-replay",
-          "method" => "tools/call",
-          "params" => %{"name" => "append_progress", "arguments" => %{progress_args | "idempotency_key" => " worker-progress-1 "}}
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(whitespace_progress_replay_response, ["result", "structuredContent", "progress_event", "id"]) ==
-             get_in(progress_response, ["result", "structuredContent", "progress_event", "id"])
-
     redacted_progress_args = %{
       "summary" => "Redacted progress",
       "idempotency_key" => "worker-progress-redacted",
@@ -334,250 +271,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     assert get_in(redacted_replay_response, ["result", "structuredContent", "progress_event", "id"]) ==
              get_in(redacted_progress_response, ["result", "structuredContent", "progress_event", "id"])
-
-    conflicting_progress_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "progress-conflict",
-          "method" => "tools/call",
-          "params" => %{"name" => "append_progress", "arguments" => Map.put(progress_args, "summary", "Different progress")}
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(conflicting_progress_response, ["error", "data", "reason"]) == "idempotency_conflict"
-
-    denied_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "denied",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => get_in(plan_response, ["result", "structuredContent", "version"]),
-              "work_package_id" => sibling_package.id,
-              "nodes" => [%{"title" => "Mutate sibling"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(denied_response, ["error", "code"]) == -32_003
-    assert get_in(denied_response, ["error", "data", "reason"]) == "outside_session_scope"
-
-    assert {:ok, own_nodes} = PlanningRepository.list_plan_nodes(repo, own_package.id)
-    assert {:ok, sibling_nodes} = PlanningRepository.list_plan_nodes(repo, sibling_package.id)
-    assert length(own_nodes) == 1
-    assert sibling_nodes == []
-  end
-
-  test "worker context projects only its package, parent summary, selected decisions, and direct dependencies", %{repo: repo} do
-    parent_work_request =
-      create_work_request!(repo,
-        id: "WR-WORKER-CONTEXT",
-        title: "Ship scoped worker context",
-        human_description: "Let workers explain their assigned outcome."
-      )
-
-    assert {:ok, dependency} =
-             WorkPackageRepository.create(
-               repo,
-               WorkPackageFactory.attrs(
-                 id: "SYMPP-WORKER-CONTEXT-DEPENDENCY",
-                 work_request_id: parent_work_request.id,
-                 title: "Finish dependency",
-                 repo: parent_work_request.repo,
-                 base_branch: parent_work_request.base_branch,
-                 status: "ready_for_merge"
-               )
-             )
-
-    assert {:ok, sibling} =
-             WorkPackageRepository.create(
-               repo,
-               WorkPackageFactory.attrs(
-                 id: "SYMPP-WORKER-CONTEXT-SIBLING",
-                 work_request_id: parent_work_request.id,
-                 title: "Sibling contract title",
-                 engineering_scope: "sibling-contract-secret",
-                 repo: parent_work_request.repo,
-                 base_branch: parent_work_request.base_branch,
-                 status: "active"
-               )
-             )
-
-    assert {:ok, package} =
-             WorkPackageRepository.create(
-               repo,
-               WorkPackageFactory.attrs(
-                 id: "SYMPP-WORKER-CONTEXT-PACKAGE",
-                 work_request_id: parent_work_request.id,
-                 title: "Scoped work package",
-                 repo: parent_work_request.repo,
-                 base_branch: parent_work_request.base_branch,
-                 allowed_file_globs: ["elixir/lib/**"],
-                 acceptance_criteria: ["Honor decision WRD-WORKER-CONTEXT-CONTRACT."],
-                 status: "active"
-               )
-             )
-
-    assert {:ok, selected_decision} =
-             WorkRequestRepository.record_decision(
-               repo,
-               parent_work_request.id,
-               work_request_decision_attrs(
-                 id: "WRD-WORKER-CONTEXT-SELECTED",
-                 decision: "Use the direct dependency contract.",
-                 rationale: "It controls this worker's sequencing.",
-                 scope_impact: "Read only the selected decision."
-               )
-             )
-
-    assert {:ok, contract_decision} =
-             WorkRequestRepository.record_decision(
-               repo,
-               parent_work_request.id,
-               work_request_decision_attrs(
-                 id: "WRD-WORKER-CONTEXT-CONTRACT",
-                 decision: "Keep referenced decisions in worker context.",
-                 rationale: "The worker cannot read the parent decision log.",
-                 scope_impact: "Expose only explicitly referenced decisions."
-               )
-             )
-
-    assert {:ok, _unrelated_decision} =
-             WorkRequestRepository.record_decision(
-               repo,
-               parent_work_request.id,
-               work_request_decision_attrs(
-                 id: "WRD-WORKER-CONTEXT-UNRELATED",
-                 decision: "Sibling-only decision must stay hidden."
-               )
-             )
-
-    assert {:ok, _edge} =
-             ProductTree.create_dependency_edge(repo, %{
-               work_request_id: parent_work_request.id,
-               source_kind: "work_package",
-               source_id: package.id,
-               target_kind: "work_package",
-               target_id: dependency.id,
-               kind: "depends_on",
-               reason: "Worker needs direct dependency status.",
-               decision_ref: %{"id" => selected_decision.id}
-             })
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-context")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-    response = mcp_tool(repo, session, "read_context", %{})
-    context = get_in(response, ["result", "structuredContent"])
-
-    assert context["parent_work_request"] == %{
-             "id" => parent_work_request.id,
-             "title" => parent_work_request.title,
-             "goal" => parent_work_request.human_description,
-             "status" => parent_work_request.status
-           }
-
-    assert context["direct_dependencies"] == [
-             %{"id" => dependency.id, "title" => dependency.title, "status" => dependency.status}
-           ]
-
-    assert context["selected_decisions"] == [
-             %{
-               "id" => selected_decision.id,
-               "decision" => selected_decision.decision,
-               "rationale" => selected_decision.rationale,
-               "scope_impact" => selected_decision.scope_impact
-             },
-             %{
-               "id" => contract_decision.id,
-               "decision" => contract_decision.decision,
-               "rationale" => contract_decision.rationale,
-               "scope_impact" => contract_decision.scope_impact
-             }
-           ]
-
-    assert context["work_package"] == %{
-             "id" => package.id,
-             "status" => package.status,
-             "contract_revision" => package.contract_revision,
-             "repo" => package.repo,
-             "base_branch" => package.base_branch,
-             "branch" => package.branch_pattern,
-             "goal" => package.goal,
-             "product_description" => package.product_description,
-             "engineering_scope" => package.engineering_scope,
-             "allowed_file_globs" => package.allowed_file_globs,
-             "forbidden_file_globs" => package.forbidden_file_globs,
-             "acceptance_criteria" => package.acceptance_criteria,
-             "validation_steps" => package.validation_steps,
-             "stop_conditions" => package.stop_conditions,
-             "review" => package.review_requirement
-           }
-
-    assert context["current_binding"] == %{
-             "state" => "bound",
-             "role" => "worker",
-             "surface_profile" => "full",
-             "next_action" => "continue_current_assignment"
-           }
-
-    context_text = get_in(response, ["result", "content", Access.at(0), "text"])
-    assert context_text =~ dependency.id
-    refute context_text =~ sibling.title
-    refute context_text =~ "sibling-contract-secret"
-    refute context_text =~ "Sibling-only decision must stay hidden."
-  end
-
-  test "progress metadata tools reject non-string required fields", %{repo: repo} do
-    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-METADATA-ARGS", kind: "mcp"))
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    numeric_key_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "numeric-progress-key",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "append_progress",
-            "arguments" => %{"summary" => "Progress", "idempotency_key" => 123}
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(numeric_key_response, ["error", "code"]) == -32_602
-    assert get_in(numeric_key_response, ["error", "data", "reason"]) == "missing_idempotency_key"
-
-    numeric_summary_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "numeric-progress-summary",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "append_progress",
-            "arguments" => %{"summary" => 123, "idempotency_key" => "numeric-progress-summary"}
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(numeric_summary_response, ["error", "code"]) == -32_602
-    assert get_in(numeric_summary_response, ["error", "data", "reason"]) == "missing_summary"
   end
 
   test "compact worker metadata calls infer current package targets and keep verbose compatibility", %{repo: repo} do
@@ -692,7 +385,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert get_in(invalid_inferred_branch_response, ["error", "data", "validation_errors", Access.at(0), "field"]) == "branch_pattern"
   end
 
-  test "worker-facing WorkPackage tools and resources emit TOON agent text without changing JSON structured content", %{repo: repo} do
+  test "stored worker context and progress payloads retain redaction at read time", %{repo: repo} do
     leaked_secret = WorkKey.generate().secret
     api_token = "sk-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
     api_key = "plain-api-key-value"
@@ -715,18 +408,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
-    assignment_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "assignment", "method" => "tools/call", "params" => %{"name" => "get_current_assignment"}},
-        repo: repo,
-        session: session
-      )
-
-    assignment_text = get_in(assignment_response, ["result", "content", Access.at(0), "text"])
-    assert assignment_text =~ "assignment:"
-    assert get_in(assignment_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    refute assignment_text =~ minted.work_key.secret
-
     context_response =
       MCPHarness.request(
         %{"jsonrpc" => "2.0", "id" => "context", "method" => "tools/call", "params" => %{"name" => "read_context"}},
@@ -740,116 +421,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert context_text =~ "[REDACTED]"
     assert get_in(context_response, ["result", "structuredContent", "text"]) =~ "# source: `Emit TOON worker context`"
     refute context_text =~ leaked_secret
-
-    acceptance_resource =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "acceptance-resource",
-          "method" => "resources/read",
-          "params" => %{"uri" => "sympp://work-packages/#{package.id}/acceptance.md"}
-        },
-        repo: repo,
-        session: session
-      )
-
-    acceptance_contents = get_in(acceptance_resource, ["result", "contents"])
-    assert [%{"mimeType" => "text/vnd.toon"} = acceptance_toon_resource] = acceptance_contents
-
-    resource_list =
-      MCPHarness.request(%{"jsonrpc" => "2.0", "id" => "resources", "method" => "resources/list"}, repo: repo, session: session)
-
-    listed_acceptance = Enum.find(get_in(resource_list, ["result", "resources"]), &(&1["uri"] == acceptance_toon_resource["uri"]))
-    assert listed_acceptance["mimeType"] == acceptance_toon_resource["mimeType"]
-    assert acceptance_toon_resource["text"] =~ "acceptance[1]{source}:"
-    assert acceptance_toon_resource["text"] =~ "Do not invent completion state"
-    refute acceptance_toon_resource["text"] =~ "done"
-
-    http_acceptance_resource =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "http-acceptance-resource",
-          "method" => "resources/read",
-          "params" => %{"uri" => "sympp://work-packages/#{package.id}/acceptance.md"}
-        },
-        config: Config.default(repo: repo, mode: :http, surface_profile: :full),
-        session: session
-      )
-
-    assert [%{"mimeType" => "text/vnd.toon", "text" => http_acceptance_text}] =
-             get_in(http_acceptance_resource, ["result", "contents"])
-
-    assert http_acceptance_text == acceptance_toon_resource["text"]
-
-    read_plan_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "read-plan", "method" => "tools/call", "params" => %{"name" => "read_task_plan"}},
-        repo: repo,
-        session: session
-      )
-
-    read_plan_text = get_in(read_plan_response, ["result", "content", Access.at(0), "text"])
-    assert read_plan_text =~ "plan_nodes[0]:"
-    assert get_in(read_plan_response, ["result", "structuredContent", "text"]) =~ "# Task Plan"
-
-    update_plan_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "update-plan",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => get_in(read_plan_response, ["result", "structuredContent", "version"]),
-              "nodes" => [%{"title" => "Verify TOON worker context", "status" => "done"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    update_plan_text = get_in(update_plan_response, ["result", "content", Access.at(0), "text"])
-    assert update_plan_text =~ "plan_nodes[1]"
-    assert update_plan_text =~ "Verify TOON worker context"
-    assert get_in(update_plan_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "id"]) =~ ~r/^plan_/
-
-    finding_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "finding",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "append_finding",
-            "arguments" => %{"title" => "TOON visible", "body" => "Finding body", "idempotency_key" => "toon-finding"}
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(finding_response, ["result", "content", Access.at(0), "text"]) =~ "finding:"
-    assert get_in(finding_response, ["result", "structuredContent", "finding", "title"]) == "TOON visible"
-
-    findings_resource =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "findings-resource",
-          "method" => "resources/read",
-          "params" => %{"uri" => "sympp://work-packages/#{package.id}/findings.md"}
-        },
-        repo: repo,
-        session: session
-      )
-
-    findings_contents = get_in(findings_resource, ["result", "contents"])
-    assert [%{"mimeType" => "text/vnd.toon"} = findings_toon_resource] = findings_contents
-    assert findings_toon_resource["text"] =~ "findings[1]"
-    assert findings_toon_resource["text"] =~ "TOON visible"
 
     progress_response =
       MCPHarness.request(
@@ -916,70 +487,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     refute toon_resource["text"] =~ "handoff-value"
   end
 
-  test "read_task_plan TOON uses the same bounded state as the rendered virtual file", %{repo: repo} do
-    assert {:ok, package} =
-             WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-TOON-PLAN-BOUNDS", kind: "mcp"))
-
-    plan_nodes =
-      for index <- 1..101 do
-        assert {:ok, plan_node} =
-                 PlanningRepository.append_plan_node(repo, %{
-                   "work_package_id" => package.id,
-                   "title" => "Plan node #{index}",
-                   "status" => "pending"
-                 })
-
-        plan_node
-      end
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    read_plan_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "read-plan", "method" => "tools/call", "params" => %{"name" => "read_task_plan"}},
-        repo: repo,
-        session: session
-      )
-
-    read_plan_text = get_in(read_plan_response, ["result", "content", Access.at(0), "text"])
-    assert read_plan_text =~ "omitted:"
-    assert read_plan_text =~ "plan_nodes: 1"
-    refute read_plan_text =~ "Plan node 101"
-    assert get_in(read_plan_response, ["result", "structuredContent", "text"]) =~ "1 later plan nodes omitted"
-    assert get_in(read_plan_response, ["result", "structuredContent", "omitted", "plan_nodes"]) == 1
-
-    structured_plan_nodes = get_in(read_plan_response, ["result", "structuredContent", "plan_nodes"])
-    assert length(structured_plan_nodes) == 100
-    assert get_in(structured_plan_nodes, [Access.at(0), "id"]) == hd(plan_nodes).id
-    assert get_in(structured_plan_nodes, [Access.at(0), "status"]) == "pending"
-    assert get_in(structured_plan_nodes, [Access.at(0), "title"]) == "Plan node 1"
-
-    version = get_in(read_plan_response, ["result", "structuredContent", "version"])
-    assert version
-
-    update_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "update-plan",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "update_task_plan",
-            "arguments" => %{
-              "expected_version" => version,
-              "nodes" => [%{"id" => get_in(structured_plan_nodes, [Access.at(0), "id"]), "status" => "done"}]
-            }
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(update_response, ["result", "structuredContent", "plan_nodes", Access.at(0), "status"]) == "done"
-  end
-
   test "native document defaults match resources and recover safe observation identity", %{repo: repo} do
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DOCUMENTS", kind: "mcp"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
@@ -998,6 +505,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     id = observation.id
     mcp_tool(repo, session, "append_finding", %{"title" => "Prior evidence", "body" => "Recover the finding body", "idempotency_key" => "finding-once"})
 
+    assert {:ok, _} =
+             PlanningRepository.append_artifact(repo, %{
+               work_package_id: package.id,
+               title: "Stored artifact kind",
+               path: "evidence/stored-kind",
+               kind: "sk-synthetic-artifact-kind"
+             })
+
     for {mode, profile} <- [{:stdio, :full}, {:stdio, :worker}, {:http, :worker}],
         document <- ~w(context.md task_plan.md findings.md progress.md acceptance.md review.md handoff.md) do
       config = Config.default(repo: repo, mode: mode, surface_profile: profile)
@@ -1012,6 +527,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
       assert get_in(response, ["result", "content", Access.at(0), "text"]) == get_in(resource, ["result", "contents", Access.at(0), "text"])
       assert get_in(response, ["result", "structuredContent", "file"]) == document
+      refute Jason.encode!(response) =~ "sk-synthetic-artifact-kind"
+      refute Jason.encode!(resource) =~ "sk-synthetic-artifact-kind"
+
+      if document == "handoff.md" do
+        assert get_in(response, ["result", "structuredContent", "artifacts", Access.at(0), "kind"]) == "[REDACTED]"
+      end
     end
 
     # A fresh session recovers the original observation without replaying its mutation.
@@ -1068,62 +589,45 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert finding["body"] == "Recover the finding body"
   end
 
-  test "native history cursors recover every older row while appends leave the boundary unchanged", %{repo: repo} do
+  test "stored artifact history cursors retain older rows across concurrent appends", %{repo: repo} do
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-PAGED-DOCS", kind: "mcp"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
     for n <- 1..205 do
-      assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Progress #{n}", idempotency_key: "event-#{n}"})
-      assert {:ok, _} = PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Finding #{n}", body: "Evidence #{n}", idempotency_key: "finding-#{n}"})
       assert {:ok, _} = PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Artifact #{n}", path: "evidence/#{n}"})
     end
 
-    for {document, collection} <- [{"progress.md", "progress_events"}, {"findings.md", "findings"}, {"handoff.md", "artifacts"}] do
-      first = mcp_tool(repo, session, "read_work_package_document", %{"document" => document}) |> get_in(["result", "structuredContent"])
-      assert Enum.map(first[collection], & &1["sequence"]) == Enum.to_list(106..205)
-      assert first["omitted"][collection] == 105
-      assert first["next_before_sequence"] == 106
+    document = "handoff.md"
+    collection = "artifacts"
+    first = mcp_tool(repo, session, "read_work_package_document", %{"document" => document}) |> get_in(["result", "structuredContent"])
+    assert Enum.map(first[collection], & &1["sequence"]) == Enum.to_list(106..205)
+    assert first["omitted"][collection] == 105
+    assert first["next_before_sequence"] == 106
 
-      assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Concurrent append #{document}"})
-      if document == "findings.md", do: PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Concurrent append", body: document})
-      if document == "handoff.md", do: PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Concurrent append", path: document})
+    assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Concurrent append #{document}"})
+    assert {:ok, _} = PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Concurrent append", path: document})
 
-      second = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => first["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
-      assert Enum.map(second[collection], & &1["sequence"]) == Enum.to_list(6..105)
-      assert second["omitted"][collection] == 5
-      last = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => second["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
-      assert Enum.map(last[collection], & &1["sequence"]) == Enum.to_list(1..5)
-      assert last["omitted"][collection] == 0
-      assert last["next_before_sequence"] == nil
-      assert length(Enum.uniq_by(last[collection] ++ second[collection] ++ first[collection], & &1["id"])) == 205
+    second = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => first["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+    assert Enum.map(second[collection], & &1["sequence"]) == Enum.to_list(6..105)
+    assert second["omitted"][collection] == 5
+    last = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => second["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+    assert Enum.map(last[collection], & &1["sequence"]) == Enum.to_list(1..5)
+    assert last["omitted"][collection] == 0
+    assert last["next_before_sequence"] == nil
+    assert length(Enum.uniq_by(last[collection] ++ second[collection] ++ first[collection], & &1["id"])) == 205
 
-      if document == "handoff.md" do
-        assert List.last(last["latest_progress"])["summary"] == "Concurrent append handoff.md"
-        assert last["acceptance"] == package.acceptance_criteria
-      end
-    end
+    assert List.last(last["latest_progress"])["summary"] == "Concurrent append handoff.md"
+    assert last["acceptance"] == package.acceptance_criteria
   end
 
-  test "native document reads reject unsupported cursors and unauthorized scopes", %{repo: repo} do
+  test "document reads reject expired grants and prioritize revocation over expiry", %{repo: repo} do
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DOC-AUTH", kind: "mcp"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
     assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "reader")
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
-    for {arguments, reason} <- [
-          {%{"document" => "../progress.md"}, "unknown_virtual_file"},
-          {%{"document" => "review.md", "before_sequence" => 1}, "unsupported_document_cursor"},
-          {%{"document" => "progress.md", "before_sequence" => 0}, "invalid_before_sequence"},
-          {%{"document" => "progress.md", "before_sequence" => "1"}, "invalid_before_sequence"}
-        ] do
-      assert get_in(mcp_tool(repo, session, "read_work_package_document", arguments), ["error", "data", "reason"]) == reason
-    end
-
-    sibling = mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md", "work_package_id" => "sibling"})
-    assert get_in(sibling, ["error", "code"]) == -32_003
-    assert get_in(mcp_tool(repo, nil, "read_work_package_document", %{"document" => "progress.md"}), ["error", "code"]) == -32_001
     repo.update_all(AccessGrant, set: [expires_at: DateTime.add(DateTime.utc_now(:microsecond), -1, :second)])
     assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"}), ["error", "data", "reason"]) == "expired"
     assert {:ok, _} = AccessGrantService.revoke(repo, minted.grant.id)

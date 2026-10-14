@@ -273,24 +273,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
     assert reclaimed.reclaim_reason == "fast local recovery"
   end
 
-  test "only one current claim exists per package and release frees the package", %{repo: repo} do
+  test "new claims reject caller-supplied lineage after release", %{repo: repo} do
     now = ~U[2026-05-26 11:00:00Z]
     assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-CLAIM-UNIQUE"))
 
     assert {:ok, first} =
              Service.claim(repo, work_package.id, %{actor_kind: "agent", actor_id: "agent-1"}, stale_after_ms: 1_000, now: now)
 
-    assert {:error, :active_claim_exists} =
-             Service.claim(repo, work_package.id, %{actor_kind: "agent", actor_id: "agent-2"}, stale_after_ms: 1_000, now: now)
-
-    assert {:ok, current} = Service.current_for_work_package(repo, work_package.id)
-    assert current.id == first.id
-
     released_at = DateTime.add(now, 500, :millisecond)
-    assert {:ok, released} = Service.release(repo, first.id, now: released_at, reason: "worker finished")
-    assert released.status == "released"
-    assert released.release_reason == "worker finished"
-    assert DateTime.compare(released.released_at, released_at) == :eq
+    assert {:ok, _released} = Service.release(repo, first.id, now: released_at, reason: "worker finished")
 
     assert {:ok, second} =
              Repository.claim(

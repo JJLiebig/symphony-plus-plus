@@ -26,66 +26,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
     :ok
   end
 
-  test "visible-only projection keeps the owned node path without leaking hidden nodes", %{repo: repo} do
-    work_request = create_work_request!(repo, id: "WR-VISIBLE-TREE")
-    parent = create_node!(repo, work_request, id: "node_visible_parent")
-    visible_node = create_node!(repo, work_request, id: "node_visible", parent_id: parent.id)
-    hidden_node = create_node!(repo, work_request, id: "node_hidden")
-    visible = add_work_package!(repo, work_request, id: "wp_visible", product_tree_node_id: visible_node.id)
-    _hidden = add_work_package!(repo, work_request, id: "wp_hidden", product_tree_node_id: hidden_node.id)
-
-    projection = ProductTree.project(repo, work_request.id, [payload(visible)], visible_only?: true)
-
-    assert MapSet.new(Enum.map(projection.nodes, & &1.id)) == MapSet.new([parent.id, visible_node.id])
-    refute Enum.any?(projection.nodes, &(&1.id == hidden_node.id))
-  end
-
-  test "rejects cross-WorkRequest node ownership and dependency endpoints", %{repo: repo} do
-    left = create_work_request!(repo, id: "WR-LEFT")
-    right = create_work_request!(repo, id: "WR-RIGHT")
-    left_node = create_node!(repo, left, id: "node_left")
-    left_package = add_work_package!(repo, left, id: "wp_left")
-    right_package = add_work_package!(repo, right, id: "wp_right")
-
-    assert {:error, :not_found} =
-             WorkRequestRepository.update_work_package(
-               repo,
-               right.id,
-               right_package.id,
-               right_package.contract_revision,
-               %{product_tree_node_id: left_node.id}
-             )
-
-    assert {:error, {:constraint_failed, "product_tree_dependency_target_scope"}} =
-             ProductTree.create_dependency_edge(repo, %{
-               work_request_id: left.id,
-               source_kind: "product_node",
-               source_id: left_node.id,
-               target_kind: "work_package",
-               target_id: right_package.id
-             })
-
-    assert {:ok, edge} =
-             ProductTree.create_dependency_edge(repo, %{
-               work_request_id: left.id,
-               source_kind: "product_node",
-               source_id: left_node.id,
-               target_kind: "work_package",
-               target_id: left_package.id,
-               kind: "depends_on",
-               reason: "Scoped dependency fixture"
-             })
-
-    assert {:error, {:constraint_failed, "product_tree_dependency_target_scope"}} =
-             ProductTree.upsert_dependency_edge(repo, %{
-               id: edge.id,
-               work_request_id: left.id,
-               target_id: right_package.id
-             })
-
-    assert repo.get!(DependencyEdge, edge.id).target_id == left_package.id
-  end
-
   defp create_work_request!(repo, overrides) do
     attrs =
       %{

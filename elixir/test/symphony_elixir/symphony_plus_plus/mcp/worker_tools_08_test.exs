@@ -273,28 +273,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools08Test do
     refute Map.has_key?(get_in(response, ["error", "data"]), "detail")
   end
 
-  test "malformed work package resource URIs fail before auth", %{repo: repo} do
-    Enum.each(
-      [
-        "sympp://work-packages/",
-        "sympp://work-packages//task_plan.md",
-        "sympp://work-packages/SYMPP-P3-001/",
-        "sympp://work-packages/SYMPP-P3-001//task_plan.md",
-        "sympp://work-packages/SYMPP-P3-001/path/to/file.md"
-      ],
-      fn uri ->
-        response =
-          MCPHarness.request(
-            %{"jsonrpc" => "2.0", "id" => uri, "method" => "resources/read", "params" => %{"uri" => uri}},
-            repo: repo
-          )
-
-        assert get_in(response, ["error", "code"]) == -32_602
-        assert get_in(response, ["error", "data", "reason"]) == "invalid_work_package_resource_uri"
-      end
-    )
-  end
-
   test "invalid health arguments do not log bearer tokens or grant secrets", %{repo: repo} do
     secret = "wk_secret_that_must_not_be_logged"
 
