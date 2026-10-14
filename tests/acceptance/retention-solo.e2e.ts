@@ -86,7 +86,9 @@ test('Solo evidence survives restart and lifecycle transitions without creating 
   const scope = { repo: 'example/solo', base_branch: 'beta', workspace_path: join(processes.root, 'workspace'), caller_id: 'solo-owner' };
   const session = (await client.call('solo_attach', { ...scope, title: 'Local evidence' })).solo_session;
   const id = session.id;
-  expect((await client.call('solo_attach', { ...scope, repo: ` ${scope.repo} `, workspace_path: `${scope.workspace_path}/.` })).solo_session.id).toBe(id);
+  const reattached = (await client.call('solo_attach', { ...scope, repo: ` ${scope.repo} `, workspace_path: `${scope.workspace_path}/.` })).solo_session;
+  expect(reattached.id).toBe(id);
+  expect(reattached.last_activity_at > session.last_activity_at).toBe(true);
   await client.reject('solo_attach', { ...scope, workspace_path: '.' }, 'invalid_workspace_path');
   const active = (await client.call('solo_show', { session_id: id })).solo_session;
   expect((await client.call('solo_resume', { session_id: id })).solo_session.last_activity_at).toBe(active.last_activity_at);
@@ -113,8 +115,12 @@ test('Solo evidence survives restart and lifecycle transitions without creating 
   factory = processes.factory();
   client = await factory.client();
   expect((await client.call('solo_show', { session_id: id })).entries).toEqual(before.entries);
-  expect((await client.call('solo_pause', { session_id: id })).solo_session.status).toBe('paused');
-  expect((await client.call('solo_attach', scope)).solo_session.id).toBe(id);
+  const paused = (await client.call('solo_pause', { session_id: id })).solo_session;
+  expect(paused.status).toBe('paused');
+  const attachedPaused = (await client.call('solo_attach', scope)).solo_session;
+  expect(attachedPaused.id).toBe(id);
+  expect(attachedPaused.status).toBe('paused');
+  expect(attachedPaused.last_activity_at > paused.last_activity_at).toBe(true);
   await client.call('solo_append_progress', { session_id: id, summary: 'Paused observation', idempotency_key: 'paused-once' });
   expect((await client.call('solo_resume', { session_id: id })).solo_session.status).toBe('active');
   const completed = (await client.call('solo_complete', { session_id: id })).solo_session;
@@ -162,13 +168,16 @@ test('Solo rejects bound mutation, preserves redacted evidence and supports ever
   expect((await client.call('solo_show', { session_id: id })).solo_session.status).toBe('active');
   await bound.call('release_current_assignment');
   expect((await bound.call('solo_attach', scope)).solo_session.id).toBe(id);
-  for (const actions of [['archive'], ['pause', 'archive'], ['pause', 'complete', 'archive']] as const) {
+  let previous = id;
+  for (const actions of [['complete'], ['archive'], ['pause', 'archive'], ['pause', 'complete', 'archive']] as const) {
     const current = (await client.call('solo_attach', scope)).solo_session.id;
+    if (actions[0] !== 'complete') expect(current).not.toBe(previous);
     for (const action of actions) await client.call(`solo_${action}`, { session_id: current });
     const before = await client.call('solo_show', { session_id: current });
     await client.reject('solo_append_progress', { session_id: current, summary: 'Late mutation' }, 'session_not_mutable');
     await client.reject('solo_resume', { session_id: current }, 'invalid_transition');
     expect((await client.call('solo_show', { session_id: current })).solo_session.last_activity_at).toBe(before.solo_session.last_activity_at);
+    previous = current;
   }
   expect((await client.call('solo_show', { session_id: id })).entries).toEqual([entry]);
 });
