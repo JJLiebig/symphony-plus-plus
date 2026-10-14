@@ -56,9 +56,8 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
     expect((await copy.snapshot(source, true)).code).toBe(0);
     const refreshed = new DatabaseSync(copy.database, { readOnly: true });
     try {
-      const tables = refreshed.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
-      const contents = tables.map(({ name }) => refreshed.prepare(`SELECT * FROM "${String(name).replaceAll('"', '""')}"`).all());
-      expect(JSON.stringify(contents)).toContain('Only the explicit refresh sees this');
+      expect(refreshed.prepare('SELECT body FROM sympp_comments WHERE target_id = ?').all(request)
+        .map(row => row.body)).toContain('Only the explicit refresh sees this');
     } finally { refreshed.close(); }
     expect((await readdir(copy.home)).some(name => name.startsWith('.beta-snapshot-'))).toBe(false);
     expect(existsSync(copy.commands)).toBe(false);

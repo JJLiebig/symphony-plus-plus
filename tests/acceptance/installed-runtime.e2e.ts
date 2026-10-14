@@ -75,7 +75,16 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     await installed.ok('codex.exe', ['plugin', 'marketplace', 'add', 'https://github.com/JJLiebig/symphony-plus-plus', '--ref', process.env.ACCEPTANCE_HEAD_SHA!]);
     await installed.ok('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
     await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus@symphony-plus-plus']);
-    await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus-mcp@symphony-plus-plus']);
+    const companion = JSON.parse(await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus-mcp@symphony-plus-plus', '--json']));
+    const launchable = await installed.ok('pwsh.exe', ['-NoProfile', '-File',
+      join(companion.installedPath, 'scripts/start-sympp-mcp.ps1'), '-ValidateOnly']);
+    expect(launchable).toContain('runtimeMode: artifact');
+    const marketplaceRoot = join(installed.env.CODEX_HOME!, '.tmp/marketplaces/symphony-plus-plus');
+    // Exercise the supported explicit developer refresh in this disposable
+    // native-created home. It is never an installed-agent runtime shortcut.
+    await installed.ok('pwsh.exe', ['-NoProfile', '-File', join(marketplaceRoot, 'scripts/refresh-local-plugin.ps1'),
+      '-CodexHome', installed.env.CODEX_HOME!, '-MarketplaceName', 'symphony-plus-plus',
+      '-PluginName', 'symphony-plus-plus', '-ValidateInstalledCache']);
     const listed = JSON.parse(await installed.ok('codex.exe', ['plugin', 'list', '--marketplace', 'symphony-plus-plus', '--json']));
     expect(listed.installed.some((plugin: any) => plugin.name === 'symphony-plus-plus-mcp' && plugin.enabled)).toBe(true);
     const bundle = await installed.install('codex');

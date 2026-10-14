@@ -23,7 +23,12 @@ export class OfflineCopy {
     await mkdir(this.bin);
     for (const name of ['git', 'gh', 'codex', 'claude', 'herdr', 'review-suite']) {
       const file = join(this.bin, name);
-      await writeFile(file, `#!/bin/sh\nprintf '%s\\n' '${name}' >> '${this.commands}'\nexit 93\n`);
+      // Source identity performs this one local Git read. Keep its real answer;
+      // trap every provider/agent/worktree operation instead of injecting a SHA.
+      const revisionRead = name === 'git'
+        ? `if [ "$#" = 5 ] && [ "$1" = '-C' ] && [ "$2" = '${resolve('.')}' ] && [ "$3" = 'rev-parse' ] && [ "$4" = '--verify' ] && [ "$5" = 'HEAD' ]; then exec /usr/bin/git "$@"; fi\n`
+        : '';
+      await writeFile(file, `#!/bin/sh\n${revisionRead}printf '%s\\n' '${name}' >> '${this.commands}'\nexit 93\n`);
       await chmod(file, 0o700);
     }
   }
