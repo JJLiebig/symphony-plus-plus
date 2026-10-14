@@ -7,7 +7,7 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   const factory = processes.factory();
   const architect = await factory.client();
   await architect.request('Competing claims');
-  const [wp] = await packages(architect, ['Single owner']);
+  const [wp, implicit] = await packages(architect, ['Single owner', 'Implicit local owner']);
   const clients = await Promise.all([factory.client(), factory.client()]);
   const results = await Promise.all(clients.map((client, index) => client.rpc('tools/call', {
     name: 'claim_local_assignment', arguments: { work_package_id: wp, claimed_by: `contender-${index}` },
@@ -24,6 +24,12 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   const reconnected = await factory.client();
   await reconnected.call('claim_local_assignment', { work_package_id: wp, claimed_by: `contender-${winners[0].index}` });
   expect((await reconnected.call('append_progress', mutation)).progress_event.id).toBe(first.id);
+  const implicitFirst = await factory.client();
+  const implicitSecond = await factory.client();
+  const firstClaim = await implicitFirst.call('claim_local_assignment', { work_package_id: implicit });
+  const secondClaim = await implicitSecond.call('claim_local_assignment', { work_package_id: implicit });
+  expect(secondClaim.assignment.grant_id).toBe(firstClaim.assignment.grant_id);
+  expect(secondClaim.assignment.claimed_by).toBe(firstClaim.assignment.claimed_by);
   await reconnected.reject('append_progress', { ...mutation, summary: 'Conflicting replay' }, 'idempotency_conflict');
   const document = await reconnected.call('read_work_package_document', { document: 'progress.md' });
   expect(document.progress_events.filter((event: any) => event.id === first.id)).toHaveLength(1);
@@ -63,6 +69,9 @@ test('independent architect clients preserve the owner through release reconnect
   const factory = processes.factory();
   const owner = await factory.client();
   const request = await owner.request('Architect claim continuity');
+  await owner.call('set_work_request_status', { current_status: 'ready_for_slicing', next_status: 'draft' });
+  expect((await owner.call('read_work_request', { work_request_id: request })).work_request.status).toBe('draft');
+  await owner.call('set_work_request_status', { current_status: 'draft', next_status: 'ready_for_slicing' });
   const peer = await factory.client();
   const denied = await peer.rpc('tools/call', { name: 'claim_local_architect_assignment', arguments: { work_request_id: request, claimed_by: 'different-owner' } });
   expect(denied.error).toBeTruthy();
@@ -141,6 +150,9 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   const before = await candidate.rawRequest('tools/call', { name: 'read_context', arguments: {} });
   expect(before.error.data.reason).toBe('server_not_initialized');
   await candidate.request('initialize', initialize);
+  const catalog = await candidate.request('tools/list');
+  expect(catalog.tools.some((entry: any) => entry.name === 'set_status')).toBe(false);
+  for (const name of ['mint_worker_grant', 'list_work_packages']) expect((await candidate.rawRequest('tools/call', { name, arguments: {} })).error.code).toBe(-32601);
   expect((await candidate.rawRequest('tools/call', { name: 'read_context', arguments: {} })).error.data.reason).toBe('claim_required');
   const claimed = await candidate.request('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp, claimed_by: 'stdio-worker' } });
   expect(claimed.structuredContent.assignment.work_package_id).toBe(wp);
@@ -168,6 +180,9 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
     [{ jsonrpc: '2.0', id: [], method: 'tools/list' }, null, 'invalid_request_id'],
     [{ jsonrpc: '2.0', id: 912, method: 42 }, 912, 'invalid_method'],
     [{ jsonrpc: '2.0', id: 913, method: 'tools/list', params: 'bad' }, 913, 'params_must_be_object_or_array'],
+    [{ id: null, method: 'initialize', params: {} }, null, 'invalid_jsonrpc_version'],
+    [{ method: 'initialize', params: {} }, null, 'request_must_be_object'],
+    [{ id: 916, method: 123 }, 916, 'invalid_method'],
     [[], null, 'empty_batch'],
     [[{ jsonrpc: '2.0', id: 914, method: 'initialize', params: initialize }], null, 'initialize_must_be_standalone'],
   ] as const) expect((await candidate.rawPayload(payload, key)).error.data.reason).toBe(reason);
@@ -235,4 +250,72 @@ test('failed worker rebinding preserves its current authority and successful reb
   await client.call('release_current_assignment');
   expect((await client.call('release_current_assignment')).binding_cleared).toBe(false);
   expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
+});
+
+test('HTTP client attachment telemetry and readiness preserve local request boundaries', async ({ processes }) => {
+  const factory = processes.factory();
+  const client = new Client(await factory.endpoint, factory.receipt);
+  const readiness = await client.raw(null, {}, 'GET', '/mcp/readiness');
+  expect(readiness.status).toBe(200);
+  expect(readiness.body.source.revision).toBe(process.env.ACCEPTANCE_CHECKOUT_SHA);
+  expect(readiness.body.ledger.identity.default_home).toBe(false);
+  expect((await client.raw(tool('get_current_assignment'))).body.error.data.reason).toBe('missing_session_id');
+  for (const path of ['/mcp/readiness', '/mcp/client-lease']) {
+    const method = path.endsWith('readiness') ? 'GET' : 'POST';
+    for (const [headers, reason] of [[{ origin: 'https://example.invalid' }, 'origin_not_allowed'], [{ 'x-forwarded-for': '127.0.0.1' }, 'local_only']] as const) {
+      const refused = await client.raw({ client_id: 'denied-client', action: 'attach' }, headers, method, path);
+      expect(refused.status).toBe(403);
+      expect(refused.body.error.data.reason).toBe(reason);
+    }
+  }
+  const lease = async (id: string, action: string) => {
+    const response = await client.raw({ client_id: id, action }, {}, 'POST', '/mcp/client-lease');
+    expect(response.status).toBe(200);
+    return response.body.active_client_count;
+  };
+  expect(await lease('first-client', 'attach')).toBe(1);
+  expect(await lease('second-client', 'attach')).toBe(2);
+  expect(await lease('first-client', 'heartbeat')).toBe(2);
+  expect(await lease('first-client', 'detach')).toBe(1);
+  expect(await lease('second-client', 'detach')).toBe(0);
+  expect((await client.raw(null, {}, 'GET', '/mcp/readiness')).body.status).toBe('ok');
+});
+
+test('public architect handoff replays one unclaimed grant and trusted mutation claims only when needed', async ({ processes }) => {
+  const factory = processes.factory();
+  const client = await factory.client();
+  const create = async (status: string) => (await client.call('create_work_request', {
+    repo: 'example/service', base_branch: 'beta', title: `Handoff ${status}`, description: 'Synthetic handoff proof.',
+    request_kind: 'feature', status,
+  })).work_request.id;
+  const draft = await create('draft');
+  expect((await client.call('get_current_assignment')).assignment).toBeNull();
+  await client.call('read_work_request', { work_request_id: draft });
+  expect((await client.call('get_current_assignment')).assignment).toBeNull();
+  const path = `/api/v1/sympp/operator/work-requests/${draft}/architect-handoff`;
+  expect((await client.raw({}, { origin: 'https://example.invalid' }, 'POST', path)).status).toBe(403);
+  const handoff = await client.operator(path, {});
+  expect(handoff.status).toBe(200);
+  const created = handoff.body.architect_handoff;
+  expect(created.status).toBe('created');
+  expect(created.grant.secret_in_response).toBe(false);
+  expect(created.local_architect_claim.arguments.work_request_id).toBe(draft);
+  expect(JSON.stringify(created)).not.toContain('secret_hash');
+  expect((await client.operator(path, {})).body.architect_handoff.grant.id).toBe(created.grant.id);
+  const claim = await client.call('claim_local_architect_assignment', created.local_architect_claim.arguments);
+  expect(claim.assignment.grant_id).toBe(created.grant.id);
+  expect(claim.assignment.phase_id).toBe(created.phase.id);
+  const owner = await client.call('claim_local_architect_assignment', {
+    ...created.local_architect_claim.arguments, repo: 'example/service', base_branch: 'beta',
+    phase_id: created.phase.id, architect_anchor_work_package_id: created.anchor_package.id,
+  });
+  expect(owner.assignment.grant_id).toBe(claim.assignment.grant_id);
+  await client.call('release_current_assignment');
+  const ready = await create('ready_for_slicing');
+  expect((await client.call('list_work_requests', { status: 'ready_for_slicing' })).work_requests.map((entry: any) => entry.id)).toContain(ready);
+  await client.call('read_delivery_board', { work_request_id: ready });
+  expect((await client.call('get_current_assignment')).assignment).toBeNull();
+  await client.call('slice_work_request', { work_request_id: ready, work_packages: [contract('Automatically claimed work')] });
+  expect((await client.call('get_current_assignment')).assignment.grant_role).toBe('architect');
+  expect((await client.call('read_work_request', { work_request_id: ready })).work_packages).toHaveLength(1);
 });

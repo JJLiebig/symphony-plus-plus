@@ -62,7 +62,7 @@ export class Client {
       if (typeof value === 'string') return text(value);
       if (Array.isArray(value)) return value.map(redact);
       if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [
-        text(key), /^(secret|secret_hash|proof_hash|token|authorization|work_key)$/i.test(key) ? '[REDACTED]' : redact(item),
+        text(key), /^(secret|secret_hash|proof_hash|token|authorization|work_key|apiKey|accessKey|grant_verifier|private_payload)$/i.test(key) ? '[REDACTED]' : redact(item),
       ]));
       return value;
     };
@@ -114,8 +114,8 @@ export class Client {
     return body;
   }
 
-  async raw(payload: unknown, headers: Record<string, string> = {}, method = 'POST') {
-    const { response, body } = await this.exchange(this.endpoint, {
+  async raw(payload: unknown, headers: Record<string, string> = {}, method = 'POST', path = '/mcp') {
+    const { response, body } = await this.exchange(new URL(path, this.endpoint), {
       method,
       headers: { 'content-type': 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}), ...headers },
       ...(method === 'POST' ? { body: typeof payload === 'string' ? payload : JSON.stringify(payload) } : {}),
