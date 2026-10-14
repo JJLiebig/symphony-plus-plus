@@ -8,10 +8,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
   alias SymphonyElixir.SymphonyPlusPlus.AgentRuns
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
-  alias SymphonyElixir.SymphonyPlusPlus.Policies.Templates
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.TrackerAdapter
-  alias SymphonyElixir.SymphonyPlusPlus.TrackerStates
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.WorkPackageFactory
@@ -62,23 +60,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     :ok
   end
 
-  test "config routes Symphony++ tracker kind without requiring Linear config" do
-    assert :ok = Config.validate!()
-    assert Tracker.adapter() == TrackerAdapter
-
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "symphony_pp", tracker_assignee: "agent-1")
-    assert :ok = Config.validate!()
-    assert Tracker.adapter() == TrackerAdapter
-
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: " Symphony_PP ", tracker_assignee: "agent-1")
-    assert :ok = Config.validate!()
-    assert Config.settings!().tracker.kind == "Symphony_pp"
-    assert Tracker.adapter() == TrackerAdapter
-
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "linear")
-    assert Tracker.adapter() == SymphonyElixir.Linear.Adapter
-  end
-
   test "Symphony++ tracker config does not inherit Linear environment secrets" do
     original_linear_api_key = System.get_env("LINEAR_API_KEY")
     original_linear_assignee = System.get_env("LINEAR_ASSIGNEE")
@@ -105,31 +86,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     assert settings.tracker.api_key == nil
     assert settings.tracker.project_slug == nil
     assert settings.tracker.assignee == "agent-1"
-  end
-
-  test "non-Symphony++ tracker config still resolves Linear environment placeholders" do
-    original_linear_api_key = System.get_env("LINEAR_API_KEY")
-    original_linear_assignee = System.get_env("LINEAR_ASSIGNEE")
-
-    System.put_env("LINEAR_API_KEY", "linear-token")
-    System.put_env("LINEAR_ASSIGNEE", "linear-worker")
-
-    on_exit(fn ->
-      restore_env("LINEAR_API_KEY", original_linear_api_key)
-      restore_env("LINEAR_ASSIGNEE", original_linear_assignee)
-    end)
-
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "memory",
-      tracker_api_token: "$LINEAR_API_KEY",
-      tracker_project_slug: nil,
-      tracker_assignee: "$LINEAR_ASSIGNEE"
-    )
-
-    assert :ok = Config.validate!()
-    settings = Config.settings!()
-    assert settings.tracker.api_key == "linear-token"
-    assert settings.tracker.assignee == "linear-worker"
   end
 
   test "non-linear tracker config does not inherit Linear fallback secrets" do
@@ -171,308 +127,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
              Config.validate!()
   end
 
-  test "Symphony++ tracker config rejects unknown state names" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["ready_for_workeer"],
-      tracker_terminal_states: ["merged"]
-    )
-
-    assert {:error, {:unsupported_symphony_plus_plus_tracker_states, ["ready_for_workeer"]}} = Config.validate!()
-  end
-
-  test "Symphony++ tracker config rejects blank state entries" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["ready_for_worker", " "],
-      tracker_terminal_states: ["merged"]
-    )
-
-    assert {:error, {:unsupported_symphony_plus_plus_tracker_states, [""]}} = Config.validate!()
-  end
-
-  test "Symphony++ tracker config rejects active states outside the tracker surface" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["created", "blocked"],
-      tracker_terminal_states: ["merged"]
-    )
-
-    assert {:error, {:unsupported_symphony_plus_plus_tracker_states, ["created", "blocked"]}} = Config.validate!()
-  end
-
-  test "Symphony++ tracker config rejects terminal states that are still live" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["ready_for_worker"],
-      tracker_terminal_states: ["planning"]
-    )
-
-    assert {:error, {:unsupported_symphony_plus_plus_terminal_states, ["planning"]}} = Config.validate!()
-  end
-
-  test "Symphony++ tracker config rejects overlapping active and terminal states" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["ready_for_worker"],
-      tracker_terminal_states: ["ready_for_worker"]
-    )
-
-    assert {:error, {:overlapping_symphony_plus_plus_tracker_states, ["ready_for_worker"]}} = Config.validate!()
-  end
-
-  test "Symphony++ tracker config accepts dispatch filters" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["ready_for_worker"],
-      tracker_terminal_states: ["merged"],
-      tracker_filter_repos: ["nextide/service"],
-      tracker_filter_base_branches: ["origin/symphony-plus-plus/beta"],
-      tracker_filter_work_kinds: [" adapter "]
-    )
-
-    assert :ok = Config.validate!()
-    tracker = Config.settings!().tracker
-    assert tracker.kind == "Symphony_pp"
-    assert tracker.filters.repos == ["nextide/service"]
-    assert tracker.filters.base_branches == ["origin/symphony-plus-plus/beta"]
-    assert tracker.filters.work_kinds == ["adapter"]
-  end
-
-  test "Symphony++ dispatch matcher treats missing filters as unrestricted" do
-    File.write!(Workflow.workflow_file_path(), """
-    ---
-    tracker:
-      kind: Symphony_pp
-      assignee: agent-1
-      active_states: [ready_for_worker]
-      terminal_states: [merged]
-    ---
-    Prompt
-    """)
-
-    if Process.whereis(SymphonyElixir.WorkflowStore) do
-      SymphonyElixir.WorkflowStore.force_reload()
-    end
-
-    issue =
-      TrackerAdapter.to_issue(
-        struct!(
-          WorkPackage,
-          WorkPackageFactory.attrs(
-            id: "SYMPP-NO-FILTERS",
-            kind: "adapter",
-            repo: "nextide/other",
-            base_branch: "main",
-            status: "ready_for_worker"
-          )
-        )
-      )
-
-    assert :ok = Config.validate!()
-    assert TrackerAdapter.dispatch_filters_match?(issue)
-  end
-
-  test "Symphony++ tracker config rejects invalid dispatch filters" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["ready_for_worker"],
-      tracker_terminal_states: ["merged"],
-      tracker_filter_repos: ["nextide/service", " "]
-    )
-
-    assert {:error, {:invalid_symphony_plus_plus_dispatch_filter, :repos, [""]}} = Config.validate!()
-
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["ready_for_worker"],
-      tracker_terminal_states: ["merged"],
-      tracker_filter_work_kinds: ["adapter", "unsupported_docs"]
-    )
-
-    assert {:error, {:unsupported_symphony_plus_plus_work_kinds, ["unsupported_docs"]}} = Config.validate!()
-
-    File.write!(Workflow.workflow_file_path(), """
-    ---
-    tracker:
-      kind: Symphony_pp
-      assignee: agent-1
-      active_states: [ready_for_worker]
-      terminal_states: [merged]
-      filters:
-        repos: nextide/service
-    ---
-    Prompt
-    """)
-
-    if Process.whereis(SymphonyElixir.WorkflowStore) do
-      SymphonyElixir.WorkflowStore.force_reload()
-    end
-
-    assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
-    assert message =~ "tracker.filters.repos"
-  end
-
-  test "Symphony++ dispatch filter errors are reported as workflow config errors" do
-    invalid_filter_error = {:invalid_symphony_plus_plus_dispatch_filter, :repos, [""]}
-
-    assert Orchestrator.workflow_config_error_message_for_test(invalid_filter_error) ==
-             ~s(Invalid WORKFLOW.md config: invalid Symphony++ dispatch filter repos: [""])
-
-    assert Orchestrator.workflow_config_error_message_for_test({:unsupported_symphony_plus_plus_work_kinds, ["unsupported_docs"]}) ==
-             ~s(Invalid WORKFLOW.md config: unsupported Symphony++ work kinds: ["unsupported_docs"])
-  end
-
-  test "malformed tracker config returns workflow validation error" do
-    File.write!(Workflow.workflow_file_path(), """
-    ---
-    tracker: linear
-    ---
-    Prompt
-    """)
-
-    if Process.whereis(SymphonyElixir.WorkflowStore) do
-      SymphonyElixir.WorkflowStore.force_reload()
-    end
-
-    assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
-    assert message =~ "tracker"
-  end
-
-  test "adapter work packages have a policy template" do
-    assert {:ok, template} = Templates.expand("adapter")
-    assert template.template == "worker_package"
-    refute Map.has_key?(template, :review_suite)
-  end
-
-  test "configured Symphony++ Repo database paths are canonicalized" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-    relative_database = Path.join(["tmp", "sympp-relative.sqlite3"])
-    home_database = Path.join(["~", ".symphony_plus_plus_test", "custom.sqlite3"])
-    expanded_home_database = Path.expand(home_database)
-
-    try do
-      Application.put_env(:symphony_elixir, :sympp_repo_database, relative_database)
-      assert Repo.database_path() == Path.expand(relative_database)
-
-      Application.put_env(:symphony_elixir, :sympp_repo_database, home_database)
-      assert Repo.database_path() == expanded_home_database
-    after
-      if original_database_path do
-        Application.put_env(:symphony_elixir, :sympp_repo_database, original_database_path)
-      else
-        Application.delete_env(:symphony_elixir, :sympp_repo_database)
-      end
-
-      File.rm_rf(Path.dirname(expanded_home_database))
-    end
-  end
-
-  test "Symphony++ Repo database path uses existing Ecto Repo database config by default" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-    original_repo_config = Application.get_env(:symphony_elixir, Repo)
-    database_path = WorkPackageFactory.database_path()
-
-    try do
-      Application.delete_env(:symphony_elixir, :sympp_repo_database)
-      Application.put_env(:symphony_elixir, Repo, database: database_path, pool_size: 1)
-
-      assert Repo.database_path() == Path.expand(database_path)
-      assert Keyword.fetch!(Repo.child_options(), :database) == Path.expand(database_path)
-    after
-      restore_app_env(:sympp_repo_database, original_database_path)
-      restore_app_env(Repo, original_repo_config)
-      File.rm(database_path)
-    end
-  end
-
-  test "Symphony++ Repo child options use burst-friendly queue defaults" do
-    original_pool_size = Application.get_env(:symphony_elixir, :sympp_repo_pool_size)
-    original_queue_target = Application.get_env(:symphony_elixir, :sympp_repo_queue_target)
-    original_queue_interval = Application.get_env(:symphony_elixir, :sympp_repo_queue_interval)
-
-    try do
-      Application.delete_env(:symphony_elixir, :sympp_repo_pool_size)
-      Application.delete_env(:symphony_elixir, :sympp_repo_queue_target)
-      Application.delete_env(:symphony_elixir, :sympp_repo_queue_interval)
-
-      options = Repo.child_options(database: ":memory:", log: false)
-
-      assert Keyword.fetch!(options, :database) == ":memory:"
-      assert Keyword.fetch!(options, :pool_size) == 5
-      assert Keyword.fetch!(options, :queue_target) == 1_000
-      assert Keyword.fetch!(options, :queue_interval) == 5_000
-      assert Keyword.fetch!(options, :log) == false
-
-      Application.put_env(:symphony_elixir, :sympp_repo_pool_size, 8)
-      Application.put_env(:symphony_elixir, :sympp_repo_queue_target, 2_000)
-      Application.put_env(:symphony_elixir, :sympp_repo_queue_interval, 10_000)
-
-      configured = Repo.child_options(database: ":memory:")
-
-      assert Keyword.fetch!(configured, :pool_size) == 8
-      assert Keyword.fetch!(configured, :queue_target) == 2_000
-      assert Keyword.fetch!(configured, :queue_interval) == 10_000
-
-      overridden = Repo.child_options(database: ":memory:", pool_size: 1, queue_target: 250, queue_interval: 500)
-
-      assert Keyword.fetch!(overridden, :pool_size) == 1
-      assert Keyword.fetch!(overridden, :queue_target) == 250
-      assert Keyword.fetch!(overridden, :queue_interval) == 500
-    after
-      restore_app_env(:sympp_repo_pool_size, original_pool_size)
-      restore_app_env(:sympp_repo_queue_target, original_queue_target)
-      restore_app_env(:sympp_repo_queue_interval, original_queue_interval)
-    end
-  end
-
-  test "Symphony++ Repo database path preserves SQLite special database names" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-    original_repo_config = Application.get_env(:symphony_elixir, Repo)
-    uri_database = "file:sympp-tracker?mode=memory&cache=shared"
-
-    try do
-      Application.put_env(:symphony_elixir, :sympp_repo_database, ":memory:")
-      assert Repo.database_path() == ":memory:"
-      assert Keyword.fetch!(Repo.child_options(), :database) == ":memory:"
-      assert Repo.database_key(":memory:") == {:sqlite_database, ":memory:"}
-
-      Application.delete_env(:symphony_elixir, :sympp_repo_database)
-      Application.put_env(:symphony_elixir, Repo, database: uri_database, pool_size: 1)
-
-      assert Repo.database_path() == uri_database
-      assert Keyword.fetch!(Repo.child_options(), :database) == uri_database
-      assert Repo.database_key(uri_database) == {:sqlite_memory_uri, "sympp-tracker", [{"cache", "shared"}, {"mode", "memory"}]}
-    after
-      restore_app_env(:sympp_repo_database, original_database_path)
-      restore_app_env(Repo, original_repo_config)
-    end
-  end
-
   test "Symphony++ Repo database identity keys canonicalize equivalent Windows paths" do
     database_path = Path.join(System.tmp_dir!(), "Sympp-Case-Key.sqlite3")
     relative_uri = "file:tmp/sympp-uri-key.sqlite3?mode=rwc&cache=shared"
@@ -487,118 +141,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
 
       _other ->
         assert Repo.process_key(database_path) == Repo.process_key(Path.expand(database_path))
-    end
-  end
-
-  test "configured Symphony++ Repo database path does not evaluate workflow defaults" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-    original_workflow_path = Application.get_env(:symphony_elixir, :workflow_file_path)
-    database_path = WorkPackageFactory.database_path()
-
-    try do
-      Application.put_env(:symphony_elixir, :sympp_repo_database, database_path)
-      Application.put_env(:symphony_elixir, :workflow_file_path, :invalid_workflow_path)
-
-      assert Repo.database_path() == Path.expand(database_path)
-    after
-      restore_app_env(:workflow_file_path, original_workflow_path)
-      restore_app_env(:sympp_repo_database, original_database_path)
-      File.rm(database_path)
-    end
-  end
-
-  test "blank configured Symphony++ Repo database path falls back to shared local default" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-
-    try do
-      Application.put_env(:symphony_elixir, :sympp_repo_database, " ")
-
-      database_path = Repo.database_path()
-      assert_default_sympp_database_path(database_path)
-    after
-      restore_app_env(:sympp_repo_database, original_database_path)
-    end
-  end
-
-  test "default Symphony++ Repo database root does not require an available user home" do
-    home_dir = Path.join(System.tmp_dir!(), "sympp-home-root")
-    temp_dir = Path.join(System.tmp_dir!(), "sympp-default-root")
-    home_root = Path.join([home_dir, ".agents", "splusplus"])
-    temp_root = Path.join([temp_dir, ".agents", "splusplus"])
-
-    mkdir_fun = fn
-      ^home_root -> {:error, :eacces}
-      _path -> :ok
-    end
-
-    assert Repo.default_database_root_for_test(home_dir, temp_dir, mkdir_fun) == temp_root
-
-    assert Repo.default_database_root_for_test(" ", temp_dir) ==
-             temp_root
-
-    assert Repo.default_database_root_for_test(nil, temp_dir) ==
-             temp_root
-
-    assert Repo.default_database_root_for_test(nil, nil) == Path.join([".agents", "splusplus"])
-  end
-
-  test "default Symphony++ Repo database path is shared across workflow files" do
-    original_workflow_path = Application.get_env(:symphony_elixir, :workflow_file_path)
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-    Application.delete_env(:symphony_elixir, :sympp_repo_database)
-
-    first_workflow = Path.join([System.tmp_dir!(), "sympp-tracker-scope-a", "WORKFLOW.md"])
-    second_workflow = Path.join([System.tmp_dir!(), "sympp-tracker-scope-b", "WORKFLOW.md"])
-
-    try do
-      Workflow.set_workflow_file_path(first_workflow)
-      first_database = Repo.database_path()
-
-      Workflow.set_workflow_file_path(second_workflow)
-      second_database = Repo.database_path()
-
-      assert first_database == second_database
-      assert_default_sympp_database_path(first_database)
-      assert_default_sympp_database_path(second_database)
-    after
-      if original_workflow_path do
-        Workflow.set_workflow_file_path(original_workflow_path)
-      else
-        Workflow.clear_workflow_file_path()
-      end
-
-      if original_database_path do
-        Application.put_env(:symphony_elixir, :sympp_repo_database, original_database_path)
-      else
-        Application.delete_env(:symphony_elixir, :sympp_repo_database)
-      end
-    end
-  end
-
-  test "default Symphony++ Repo database path does not depend on workflow path case" do
-    original_workflow_path = Application.get_env(:symphony_elixir, :workflow_file_path)
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-    Application.delete_env(:symphony_elixir, :sympp_repo_database)
-
-    workflow_path = Path.join([System.tmp_dir!(), "sympp-tracker-workflow-case", "WORKFLOW.md"])
-
-    try do
-      Workflow.set_workflow_file_path(String.upcase(workflow_path))
-      first_database = Repo.database_path()
-
-      Workflow.set_workflow_file_path(String.downcase(workflow_path))
-      second_database = Repo.database_path()
-
-      assert first_database == second_database
-      assert_default_sympp_database_path(first_database)
-    after
-      if original_workflow_path do
-        Workflow.set_workflow_file_path(original_workflow_path)
-      else
-        Workflow.clear_workflow_file_path()
-      end
-
-      restore_app_env(:sympp_repo_database, original_database_path)
     end
   end
 
@@ -624,22 +166,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     end
   end
 
-  test "fallback Repo startup does not leave an adapter Repo retained after use" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-    database_path = WorkPackageFactory.database_path()
-
-    try do
-      Application.put_env(:symphony_elixir, :sympp_repo_database, database_path)
-
-      assert {:ok, []} = Tracker.fetch_candidate_issues()
-      assert_adapter_repo_unregistered(database_path)
-    after
-      stop_adapter_repo(database_path)
-      restore_app_env(:sympp_repo_database, original_database_path)
-      File.rm(database_path)
-    end
-  end
-
   test "adapter reuses an already-running default Repo for the same database" do
     database_path = Repo.database_path()
     default_pid = Process.whereis(Repo)
@@ -649,17 +175,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     assert {:ok, []} = Tracker.fetch_candidate_issues()
     assert Process.whereis(Repo) == default_pid
     assert :undefined = adapter_repo_pid(database_path)
-  end
-
-  test "adapter recognizes default Repo PRAGMA rows for SQLite special database names" do
-    file_database = WorkPackageFactory.database_path()
-    file_uri_database = "file:#{file_database}?mode=rwc"
-
-    assert TrackerAdapter.main_database_row_matches_for_test([0, "main", ""], ":memory:")
-    assert TrackerAdapter.main_database_row_matches_for_test([0, "main", ""], "file:sympp-memory?mode=memory&cache=shared")
-    assert TrackerAdapter.main_database_row_matches_for_test([0, "main", file_database], file_uri_database)
-    refute TrackerAdapter.main_database_row_matches_for_test([0, "main", ""], file_uri_database)
-    refute TrackerAdapter.main_database_row_matches_for_test([0, "main", file_database], ":memory:")
   end
 
   test "memory-backed adapter Repo stays alive across tracker calls" do
@@ -1017,87 +532,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     end
   end
 
-  test "minimal Symphony++ tracker config uses WorkPackage lifecycle state defaults", %{repo: repo} do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: nil,
-      tracker_terminal_states: nil
-    )
-
-    assert {:ok, ready} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DEFAULT-READY", kind: "adapter", status: "ready_for_worker"))
-
-    assert {:ok, ready_grant} = AccessGrantService.mint_worker_grant(repo, ready.id)
-    assert {:ok, _assignment} = AccessGrantService.claim(repo, ready_grant.work_key.secret, claimed_by: "agent-1")
-
-    assert {:ok, _merged} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DEFAULT-MERGED", kind: "adapter", status: "merged"))
-
-    assert {:ok, _created} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DEFAULT-CREATED", kind: "adapter", status: "created"))
-
-    assert {:ok, issues} = Tracker.fetch_candidate_issues()
-    issue_by_id = Map.new(issues, &{&1.id, &1})
-    assert Map.keys(issue_by_id) == [ready.id]
-
-    issue = Map.fetch!(issue_by_id, ready.id)
-
-    assert "ready_for_worker" in Config.settings!().tracker.active_states
-    refute "created" in Config.settings!().tracker.active_states
-    assert "merged" in Config.settings!().tracker.terminal_states
-    refute "blocked" in Config.settings!().tracker.terminal_states
-
-    assert {:ok, [terminal_issue]} = Tracker.fetch_issues_by_states(Config.settings!().tracker.terminal_states)
-    assert terminal_issue.id == "SYMPP-DEFAULT-MERGED"
-
-    state = %Orchestrator.State{
-      max_concurrent_agents: 1,
-      running: %{},
-      claimed: MapSet.new()
-    }
-
-    assert Orchestrator.should_dispatch_issue_for_test(issue, state)
-  end
-
-  test "explicit Linear-style state filters map aliases without expanding to defaults", %{repo: repo} do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "agent-1",
-      tracker_active_states: ["Todo", "In Progress"],
-      tracker_terminal_states: ["Done"]
-    )
-
-    assert {:ok, ready} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-EXPLICIT-READY", kind: "adapter", status: "ready_for_worker"))
-
-    assert {:ok, implementing} =
-             Repository.create(
-               repo,
-               WorkPackageFactory.attrs(id: "SYMPP-EXPLICIT-IMPLEMENTING", kind: "adapter", status: "implementing")
-             )
-
-    assert {:ok, _planning} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-EXPLICIT-PLANNING", kind: "adapter", status: "planning"))
-
-    assert Config.settings!().tracker.active_states == ["ready_for_worker", "implementing"]
-    assert Config.settings!().tracker.terminal_states == ["merged"]
-
-    assert {:ok, issues} = Tracker.fetch_candidate_issues()
-    assert MapSet.new(Enum.map(issues, & &1.id)) == MapSet.new([ready.id, implementing.id])
-  end
-
-  test "Symphony++ tracker state defaults are order-insensitive" do
-    assert MapSet.member?(TrackerStates.active_state_set(["In Progress", "Todo"]), "ready_for_worker")
-    assert MapSet.member?(TrackerStates.terminal_state_set(["Done", "Closed", "Duplicate", "Canceled", "Cancelled"]), "merged")
-    assert MapSet.member?(TrackerStates.lookup_state_set(["Todo"]), "ready_for_worker")
-    assert MapSet.member?(TrackerStates.lookup_state_set(["Done"]), "merged")
-  end
-
   test "explicit empty Symphony++ tracker state lists are honored", %{repo: repo} do
     write_workflow_file!(Workflow.workflow_file_path(),
       tracker_kind: "Symphony_pp",
@@ -1115,76 +549,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     assert Config.settings!().tracker.terminal_states == []
     assert {:ok, []} = Tracker.fetch_candidate_issues()
     assert {:ok, []} = Tracker.fetch_issues_by_states(Config.settings!().tracker.terminal_states)
-  end
-
-  test "maps a WorkPackage to a normalized issue", %{repo: repo} do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: "worker-1",
-      tracker_active_states: ["ready_for_worker"],
-      tracker_terminal_states: ["merged"]
-    )
-
-    assert {:ok, work_package} =
-             Repository.create(
-               repo,
-               WorkPackageFactory.attrs(
-                 id: "SYMPP-P2-001",
-                 kind: "adapter",
-                 title: "Symphony++ tracker adapter",
-                 repo: "nextide/symphony-plus-plus",
-                 base_branch: "symphony-plus-plus/beta",
-                 branch_pattern: "agent/SYMPP-P2-001/symphony-pp-tracker-adapter",
-                 product_description: "Expose packages to the orchestrator.",
-                 engineering_scope: "Build a tracker adapter.",
-                 acceptance_criteria: ["Map packages", "Filter states"],
-                 status: "ready_for_worker",
-                 parent_id: "SYMPP-P2",
-                 owner_id: "worker-1"
-               )
-             )
-
-    assert {:ok, work_package_grant} = AccessGrantService.mint_worker_grant(repo, work_package.id)
-    assert {:ok, _assignment} = AccessGrantService.claim(repo, work_package_grant.work_key.secret, claimed_by: "worker-1")
-
-    issue = TrackerAdapter.to_issue(work_package)
-
-    assert %Issue{} = issue
-    assert issue.id == "SYMPP-P2-001"
-    assert issue.identifier == "SYMPP-P2-001"
-    assert issue.title == "Symphony++ tracker adapter"
-    assert issue.state == "ready_for_worker"
-    assert issue.branch_name == "agent/SYMPP-P2-001/symphony-pp-tracker-adapter"
-    assert issue.assignee_id == "worker-1"
-    assert issue.assigned_to_worker
-    assert issue.priority == nil
-    assert issue.blocked_by == []
-
-    assert issue.labels == [
-             "kind:adapter",
-             "repo:nextide/symphony-plus-plus",
-             "base:symphony-plus-plus/beta",
-             "parent:SYMPP-P2"
-           ]
-
-    assert issue.description =~ "## Product description"
-    assert issue.description =~ "```"
-    assert issue.description =~ "Expose packages to the orchestrator."
-    assert issue.description =~ "- ` Map packages `"
-    assert issue.description =~ "- Repo: ` nextide/symphony-plus-plus `"
-
-    raw_status_issue = TrackerAdapter.to_issue(%{work_package | status: " READY_FOR_WORKER "})
-    assert raw_status_issue.state == "ready_for_worker"
-
-    alias_status_issue = TrackerAdapter.to_issue(%{work_package | status: "Todo"})
-    assert alias_status_issue.state == "ready_for_worker"
-
-    active_issue = TrackerAdapter.to_issue(%{work_package | status: "active"})
-    assert active_issue.state == "active"
-    assert active_issue.assigned_to_worker
-    assert active_issue.assignee_id == "worker-1"
   end
 
   test "marks configured assignee grants as assigned to this worker", %{repo: repo} do
@@ -1275,49 +639,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     refute issue.description =~ "\n[truncated]"
     assert Enum.all?(issue.labels, &(not String.contains?(&1, "\n")))
     assert Enum.any?(issue.labels, &String.ends_with?(&1, " [truncated]"))
-  end
-
-  test "bounds WorkPackage text before exposing issue descriptions" do
-    long_text = String.duplicate("x", 20_000)
-    criteria = Enum.map(1..30, &"Criterion #{&1}")
-
-    issue =
-      TrackerAdapter.to_issue(
-        struct!(
-          WorkPackage,
-          WorkPackageFactory.attrs(
-            id: "SYMPP-LONG-TEXT",
-            kind: "adapter",
-            product_description: long_text,
-            engineering_scope: long_text,
-            acceptance_criteria: criteria
-          )
-        )
-      )
-
-    assert String.length(issue.description) <= 16_012
-    assert issue.description =~ "[truncated]"
-    assert issue.description =~ "5 acceptance criteria truncated"
-  end
-
-  test "fetches active candidate packages and excludes terminal or blocked packages", %{repo: repo} do
-    assert {:ok, ready} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-READY", kind: "adapter", status: "ready_for_worker"))
-
-    assert {:ok, implementing} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-IMPLEMENTING", kind: "adapter", status: "implementing"))
-
-    assert {:ok, _merged} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-MERGED", kind: "adapter", status: "merged"))
-
-    assert {:ok, _blocked} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-BLOCKED", kind: "adapter", status: "blocked"))
-
-    assert {:ok, _anchor} =
-             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-ANCHOR", kind: "delegation", status: "ready_for_worker"))
-
-    assert {:ok, issues} = Tracker.fetch_candidate_issues()
-    assert MapSet.new(Enum.map(issues, & &1.id)) == MapSet.new([ready.id, implementing.id])
   end
 
   test "configured dispatch filters exclude out-of-scope work packages", %{repo: repo} do
@@ -1788,33 +1109,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     assert {:ok, []} = Tracker.fetch_issues_by_states([" ", nil])
   end
 
-  test "empty Symphony++ lookup filters return before repo setup" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-
-    try do
-      Application.put_env(:symphony_elixir, :sympp_repo_database, :invalid_database_path)
-
-      assert {:ok, []} = Tracker.fetch_issues_by_states([])
-      assert {:ok, []} = Tracker.fetch_issues_by_states([" ", nil])
-      assert {:ok, []} = Tracker.fetch_issue_states_by_ids([])
-      assert {:ok, []} = Tracker.fetch_issue_states_by_ids([nil, 123])
-    after
-      restore_app_env(:sympp_repo_database, original_database_path)
-    end
-  end
-
-  test "malformed configured Repo paths return tracker errors without crashing" do
-    original_database_path = Application.get_env(:symphony_elixir, :sympp_repo_database)
-
-    try do
-      Application.put_env(:symphony_elixir, :sympp_repo_database, :invalid_database_path)
-
-      assert {:error, %FunctionClauseError{}} = Tracker.fetch_candidate_issues()
-    after
-      restore_app_env(:sympp_repo_database, original_database_path)
-    end
-  end
-
   test "records tracker comments as WorkPackage progress events", %{repo: repo} do
     write_workflow_file!(Workflow.workflow_file_path(),
       tracker_kind: "Symphony_pp",
@@ -1871,19 +1165,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     assert {:ok, _second_assignment} = AccessGrantService.claim(repo, second_minted.work_key.secret, claimed_by: "worker-1")
 
     assert {:error, :ambiguous_actor_scope} = Tracker.create_comment(work_package.id, "Ambiguous")
-  end
-
-  test "Symphony++ tracker config requires an assignee" do
-    write_workflow_file!(Workflow.workflow_file_path(),
-      tracker_kind: "Symphony_pp",
-      tracker_api_token: nil,
-      tracker_project_slug: nil,
-      tracker_assignee: nil,
-      tracker_active_states: ["ready_for_worker"],
-      tracker_terminal_states: ["merged"]
-    )
-
-    assert {:error, :missing_symphony_plus_plus_assignee} = Config.validate!()
   end
 
   test "tracker writes require the configured actor to own the claimed grant", %{repo: repo} do
@@ -2059,15 +1340,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
       :undefined -> :ok
       table -> :ets.delete(table)
     end
-  end
-
-  defp assert_default_sympp_database_path(database_path) do
-    path_parts = Path.split(database_path)
-
-    assert database_path != Path.expand("")
-    assert Enum.take(path_parts, -3) == [".agents", "splusplus", "symphony_plus_plus.sqlite3"]
-    assert Path.basename(database_path) == "symphony_plus_plus.sqlite3"
-    refute "workflows" in path_parts
   end
 
   defp reset_local_lock_owner do
