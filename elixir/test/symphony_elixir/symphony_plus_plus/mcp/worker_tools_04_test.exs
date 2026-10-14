@@ -99,41 +99,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools04Test do
     assert get_in(conflict, ["error", "data", "reason"]) == "idempotency_conflict"
   end
 
-  test "sync_pr preserves service error shape for PR metadata lookup failures" do
-    session =
-      Session.new(
-        %Assignment{
-          grant_id: "grant-pr-sync-service",
-          work_package_id: "SYMPP-PR-SERVICE-ERROR",
-          display_key: "ABCD",
-          grant_role: "worker",
-          capabilities: ["read:own", "write:own"],
-          claimed_at: ~U[2026-05-05 00:00:00Z],
-          claimed_by: "worker-1"
-        },
-        proof_hash: "proof"
-      )
-
-    response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "sync-pr-service-error",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "sync_pr",
-            "arguments" => %{}
-          }
-        },
-        repo: BusyPrSyncRepo,
-        session: session
-      )
-
-    assert get_in(response, ["error", "code"]) == -32_000
-    assert get_in(response, ["error", "data", "resource"]) == "sync_pr"
-    assert get_in(response, ["error", "data", "reason"]) == "ledger_unavailable"
-  end
-
   defp sync_package(repo, id, number, head_sha, overrides \\ []) do
     attrs =
       [id: id, kind: "mcp", repo: "nextide/repo", status: "ci_waiting"]

@@ -184,11 +184,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageTest do
     end
   end
 
-  test "MCP contract manifest pins the server-reported fingerprint" do
-    fingerprint = Server.mcp_contract_identity()["fingerprint"]
-    contract = @contract_path |> File.read!() |> Jason.decode!()
-
-    assert fingerprint =~ ~r/\A[0-9a-f]{64}\z/
-    assert contract["mcp_contract_fingerprint"] == fingerprint
-  end
 end

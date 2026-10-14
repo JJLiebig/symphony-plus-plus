@@ -113,37 +113,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPCase do
     def query(sql, _params, _opts) when is_binary(sql), do: {:ok, %{rows: [[1]]}}
   end
 
-  defmodule BusyPrSyncRepo do
-    def get(AccessGrant, "grant-pr-sync-service") do
-      %AccessGrant{
-        id: "grant-pr-sync-service",
-        work_package_id: "SYMPP-PR-SERVICE-ERROR",
-        display_key: "ABCD",
-        grant_role: "worker",
-        capabilities: ["read:own", "write:own"],
-        claimed_at: ~U[2026-05-05 00:00:00Z],
-        claimed_by: "worker-1",
-        expires_at: ~U[2030-01-01 00:00:00Z],
-        secret_hash: "proof"
-      }
-    end
-
-    def get(WorkPackage, "SYMPP-PR-SERVICE-ERROR") do
-      %WorkPackage{
-        id: "SYMPP-PR-SERVICE-ERROR",
-        kind: "mcp",
-        repo: "nextide/symphony-plus-plus",
-        status: "ci_waiting"
-      }
-    end
-
-    def one(%Ecto.Query{from: %{source: {"sympp_work_packages", _schema}}}),
-      do: %{status: "ci_waiting", delivered?: false}
-
-    def one(_query), do: raise(%Exqlite.Error{message: "database is locked"})
-    def all(_query), do: raise(%Exqlite.Error{message: "database is locked"})
-  end
-
   defmodule LocalClaimAuditFailureRepo do
     alias Ecto.Changeset
     alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
@@ -291,7 +260,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPCase do
       import SymphonyElixir.SymphonyPlusPlus.MCPCase.HandoffHelpers
 
       alias SymphonyElixir.SymphonyPlusPlus.MCPCase.{
-        BusyPrSyncRepo,
         DefaultRemoteDbnameHealthRepo,
         DefaultRemoteHealthRepo,
         DefaultRemoteIpv6HealthRepo,

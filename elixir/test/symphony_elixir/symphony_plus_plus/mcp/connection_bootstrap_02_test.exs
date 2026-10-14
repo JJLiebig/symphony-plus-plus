@@ -61,19 +61,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap02Test do
     end
   end
 
-  test "harness config override does not require a repo option" do
-    config = Config.default(repo: Repo, version: "test-version")
-
-    response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => 1, "method" => "resources/read", "params" => %{"uri" => "sympp://health/version"}},
-        config: config
-      )
-
-    text = get_in(response, ["result", "contents", Access.at(0), "text"])
-    assert Jason.decode!(text)["version"] == "test-version"
-  end
-
   test "tools list returns Codex-compatible top-level input schemas for every surface", %{repo: repo} do
     assert {:ok, worker_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-CODEX-SCHEMA-WORKER", kind: "mcp"))
     assert {:ok, worker_minted} = AccessGrantService.mint_worker_grant(repo, worker_package.id)

@@ -16,14 +16,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesCase do
       alias SymphonyElixir.TestSupport
       alias SymphonyElixir.WorkPackageFactory
 
-      defmodule LockedWorkPackageRepo do
-        def get(_schema, _id), do: raise(%Exqlite.Error{message: "database is locked"})
-      end
-
-      defmodule BrokenWorkPackageRepo do
-        def get(_schema, _id), do: raise(%Exqlite.Error{message: "disk I/O failed"})
-      end
-
       defmodule UpdateFailsWorkPackageRepo do
         alias SymphonyElixir.SymphonyPlusPlus.Repo
 
