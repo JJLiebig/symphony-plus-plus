@@ -3,7 +3,9 @@ import { join, basename } from 'node:path';
 import type { BrowserCandidate } from './browser-candidate.js';
 
 // Qualify only the public discovery/command/parser contract, not live Review Suite.
-export async function installReviewProvider(candidate: BrowserCandidate) {
+export async function installReviewProvider(candidate: Pick<BrowserCandidate, 'root' | 'factory'>, status: object = {
+  review: 'rvw_b3_provider_wait', mode: 'fast', status: 'running', done: false, next_action: 'continue', progress: 'review 1/2 correctness', round: '1',
+}) {
   const version = 'b3-synthetic';
   const directory = join(candidate.factory!.home, '.codex/plugins/cache/review-suite/review-suite', version, 'scripts');
   await mkdir(directory, { recursive: true });
@@ -18,7 +20,6 @@ if (JSON.stringify(argv) !== JSON.stringify(['plugin', 'list', '--json'])) proce
 process.stdout.write(${JSON.stringify(JSON.stringify(plugin))});
 `);
   await chmod(command, 0o755);
-  const status = { review: 'rvw_b3_provider_wait', mode: 'fast', status: 'running', done: false, next_action: 'continue', progress: 'review 1/2 correctness', round: '1' };
   await writeFile(join(directory, 'review.py'), `import json, sys
 with open(${JSON.stringify(receipt)}, 'a', encoding='utf-8') as output:
     output.write(json.dumps({'command': 'python', 'argv': sys.argv}) + '\\n')

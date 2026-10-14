@@ -658,11 +658,17 @@ test('worker plan updates are atomic and native evidence history remains complet
   }
   const redacted = await client.rpc('tools/call', { name: 'append_progress', arguments: {
     summary: 'Recorded progress sk-synthetic-progress-token', idempotency_key: 'redacted-progress',
+    id: 'caller-progress-id', created_at: '2000-01-01T00:00:00Z', actor_id: 'forged-worker',
+    actor_type: 'architect', access_grant_id: 'forged-grant', agent_run_id: 'forged-run',
     payload: { accessKey: 'synthetic-access-value', apiKey: 'synthetic-api-value', grant_verifier: 'synthetic-verifier-value', private_payload: { path: 'synthetic-private-path' }, safe: 'unprojected-safe-value' },
   } });
   expect(redacted.result.structuredContent.progress_event.summary).toContain('[REDACTED]');
+  expect(redacted.result.structuredContent.progress_event.id).not.toBe('caller-progress-id');
   const projected = await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/progress.md` });
   const explicitProgress = await client.rpc('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } });
+  const audit = explicitProgress.result.structuredContent.progress_events.find((entry: any) => entry.id === redacted.result.structuredContent.progress_event.id);
+  expect(Date.parse(audit.created_at)).toBeGreaterThan(Date.parse('2026-01-01T00:00:00Z'));
+  for (const forged of ['forged-worker', 'forged-grant', 'forged-run']) expect(JSON.stringify(audit)).not.toContain(forged);
   expect(explicitProgress.result.content[0].text).toBe(projected.result.contents[0].text);
   for (const value of ['sk-synthetic-progress-token', 'synthetic-access-value', 'synthetic-api-value', 'synthetic-verifier-value', 'synthetic-private-path', 'unprojected-safe-value']) {
     expect(redacted.result.content[0].text).not.toContain(value);

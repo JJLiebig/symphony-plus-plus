@@ -53,7 +53,16 @@ test('a clarified request becomes a revised plan and ordinary worker assignment'
   expect(reread.text).toContain('[x]');
   expect(reread.text).toContain('Deferred detail');
 
+  // Dispatch must preserve evidence beyond the virtual document's 100-row cap.
+  for (let index = 1; index <= 101; index++) await architect.call('append_finding', {
+    work_package_id: wp, title: `Prior finding ${index}`, body: `Prior evidence ${index}`,
+    idempotency_key: `prior-${index}`,
+  });
   const dispatched = await architect.call('dispatch_work_package', { work_package_id: wp });
+  const prior = dispatched.worker_bootstrap.assignment.prior_findings.findings;
+  expect(prior).toHaveLength(101);
+  expect(prior[0].body).toBe('Prior evidence 1');
+  expect(prior.at(-1).body).toBe('Prior evidence 101');
   expect(dispatched.work_package.id).toBe(wp);
   expect(dispatched.work_package.dispatched_at).toBeTruthy();
   const bootstrap = dispatched.worker_bootstrap;
