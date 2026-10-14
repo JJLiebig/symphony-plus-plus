@@ -86,7 +86,7 @@ test('architect scope separates same-repository discovery from foreign writes an
     ['slice_work_request', { work_request_id: other, work_packages: [contract('Stolen')] }],
     ['dispatch_work_package', { work_request_id: other, work_package_id: otherWp }],
     ['reconcile_work_request', { work_request_id: other, apply: true }],
-  ] as const) await architect.reject(name, args, 'outside_session_scope');
+  ] as const) await architect.reject(name, args, 'not_found');
   for (const name of ['answer_question', 'close_question']) {
     const denied = await architect.reject(name, {
       work_request_id: own, question_id: question.id, current_status: 'open', answer: 'Stolen', answered_by: 'attacker',
@@ -112,7 +112,7 @@ test('architect scope separates same-repository discovery from foreign writes an
   const secondary = await factory.client();
   await secondary.request('Secondary repository reader', 'ready_for_slicing', 'integration', 'example/client');
   expect((await secondary.call('read_work_request', { work_request_id: own })).work_request.id).toBe(own);
-  await secondary.reject('set_work_request_status', { work_request_id: own, current_status: 'sliced', next_status: 'clarifying' }, 'outside_session_scope');
+  await secondary.reject('set_work_request_status', { work_request_id: own, current_status: 'sliced', next_status: 'clarifying' }, 'not_found');
   const [secondaryWp] = (await architect.call('slice_work_request', { work_packages: [contract('Secondary delivery', { repo: 'example/client', base_branch: 'integration' })] })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: secondaryWp });
   const secondaryWorker = await worker(factory, secondaryWp, 'secondary-worker');
@@ -168,12 +168,12 @@ test('worker mutations and resources remain confined to its package while explic
   await client.reject('resolve_comment', { comment_id: siblingComment.id }, 'not_found');
   await client.reject('add_comment', { target_kind: 'work_request', target_id: request, body: 'Wrong capability' }, 'outside_session_scope');
   for (const [name, args] of [
-    ['dispatch_work_package', { work_package_id: sibling }],
     ['record_work_package_delivery', { work_package_id: own, outcome: 'completed_no_pr', idempotency_key: 'worker-close', evidence: { completed_no_pr: { no_pr_evidence: 'Unapproved completion' } } }],
     ['reconcile_work_request', { work_request_id: request, apply: true }],
     ['revoke_work_package_worker_key', { work_package_id: sibling, reason: 'Steal authority' }],
     ['force_release_work_package_claim', { work_package_id: sibling, reason: 'Steal authority' }],
   ] as const) await client.reject(name, { work_request_id: request, ...args }, 'architect_grant_required');
+  await client.reject('dispatch_work_package', { work_request_id: request, work_package_id: sibling }, 'insufficient_role');
   const resources = await client.rpc('resources/list');
   expect(JSON.stringify(resources)).not.toContain(sibling);
   const foreignRead = await client.rpc('resources/read', { uri: `sympp://work-packages/${sibling}/progress.md` });
@@ -216,6 +216,9 @@ test('force release rotates worker authority without changing delivery and allow
   expect(released.released_claim_lease_ids).toEqual([]);
   const recycled = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
   expect(recycled.summary.active_grant_count).toBe(0);
+  const recycledRow = await row(architect, request, wp);
+  expect(recycledRow.work_package.runtime_state.lifecycle_state).toBe('recycled');
+  expect(recycledRow.work_package.runtime_state.reason_codes).toContain('worker_recycled');
   expect(JSON.stringify(released)).not.toContain('synthetic-release-secret');
   const before = (await architect.call('read_work_request', { work_request_id: request })).work_packages.find((entry: any) => entry.id === wp);
   expect(before.status).toBe('active');
@@ -226,7 +229,7 @@ test('force release rotates worker authority without changing delivery and allow
   expect((await replacement.call('append_progress', mutation)).progress_event.id).toBe(first.id);
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
   const document = await replacement.call('read_work_package_document', { document: 'progress.md' });
-  expect(document.progress_events.filter((event: any) => event.idempotency_key === 'old-owner')).toEqual([]);
+  expect(document.progress_events.filter((event: any) => event.idempotency_key.endsWith(':old-owner'))).toEqual([]);
 });
 
 test('explicit revocation retires live worker calls resources and persisted recovery without touching siblings', async ({ processes }) => {
@@ -295,24 +298,46 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
   expect((await fresh.rpc('tools/call', { name: 'claim_local_architect_assignment', arguments: { work_request_id: request } })).error).toBeTruthy();
 });
 
-deliveryTest('provider-confirmed merge retires a claimed worker and preserves unrelated worker authority', async ({ delivery: { factory, provider } }) => {
+deliveryTest('architect merged recovery retires real claimed workers and preserves unrelated worker authority', async ({ delivery: { factory, provider } }) => {
   const architect = await factory.client();
   const request = await architect.request('Merged authority retirement');
-  const [wp, sibling] = await packages(architect, ['Merged change', 'Independent change']);
+  const [wp, implementing, sibling] = (await architect.call('slice_work_request', { work_packages: [
+    contract('Merged change', { kind: 'docs', branch_pattern: 'feature/authority' }),
+    contract('Revised implementing change', { kind: 'docs', branch_pattern: 'feature/authority' }),
+    contract('Independent change'),
+  ] })).work_package_ids;
+  for (const id of [wp, implementing, sibling]) await architect.call('dispatch_work_package', { work_package_id: id });
   const client = await worker(factory, wp);
   const peer = await worker(factory, sibling, 'peer-worker');
   await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('a') });
   await client.call('attach_pr', { url: prUrl(301), head_sha: head('a') });
-  provider.set(301, pr(301, head('a'), { headRefName: 'feature/authority' }));
+  const mergedAt = new Date().toISOString();
+  provider.set(301, pr(301, head('a'), { headRefName: 'feature/authority', state: 'MERGED', mergedAt, mergeCommit: { oid: head('f') } }));
   await client.call('sync_pr');
-  await client.call('mark_ready');
-  provider.set(301, pr(301, head('a'), { headRefName: 'feature/authority', state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
-  await client.call('sync_pr');
+  expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
+  await architect.call('reconcile_work_request', { work_request_id: request, apply: false });
+  expect((await client.call('get_current_assignment')).assignment.work_package_id).toBe(wp);
+  expect((await architect.call('reconcile_work_request', { work_request_id: request, apply: true })).reconciliation.applied_count).toBe(1);
   expect((await row(architect, request, wp)).delivery_outcome).toBe('pr_merged');
   expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Late mutation', idempotency_key: 'late' } })).error).toBeTruthy();
   expect((await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/context.md` })).error).toBeTruthy();
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
   expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress.filter((event: any) => event.summary === 'Late mutation')).toEqual([]);
+  const revised = await worker(factory, implementing, 'revised-worker');
+  await revised.call('mark_ready');
+  await architect.call('update_work_package', { work_package_id: implementing, expected_contract_revision: 1, patch: { title: 'Revised delivery scope' } });
+  await revised.call('attach_branch', { branch: 'feature/authority', head_sha: head('b') });
+  await revised.call('attach_pr', { url: prUrl(326), head_sha: head('b') });
+  provider.set(326, pr(326, head('b'), { headRefName: 'feature/authority', state: 'MERGED', mergedAt, mergeCommit: { oid: head('f') } }));
+  await revised.call('sync_pr');
+  expect((await row(architect, request, implementing)).raw_status).toBe('implementing');
+  await close(architect, implementing, 'pr_merged', { pr_url: prUrl(326), pr_number: 326, pr_repository: 'example/service', pr_merged_at: mergedAt, merge_commit_sha: head('f') });
+  const delivered = await row(architect, request, implementing);
+  expect(delivered.raw_status).toBe('merged');
+  expect(delivered.work_package.runtime_state['active?']).toBe(false);
+  expect(delivered.work_package.runtime_state.reason_codes).not.toContain('claim_lease_active');
+  expect((await revised.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Late revised mutation', idempotency_key: 'late-revised' } })).error).toBeTruthy();
+  expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
 });
 
 test('worker plan updates are atomic and native evidence history remains complete across concurrent appends', async ({ processes }) => {
@@ -358,7 +383,7 @@ test('worker plan updates are atomic and native evidence history remains complet
   expect(bounded.result.content[0].text).not.toContain('Bounded node 100');
   expect(bounded.result.structuredContent.text).toContain('2 later plan nodes omitted');
   await peer.call('update_task_plan', { expected_version: bounded.result.structuredContent.version, nodes: [{ id: foreignNode, status: 'done' }] });
-  expect((await peer.call('read_task_plan')).plan_nodes[0].status).toBe('done');
+  expect((await peer.call('read_task_plan')).plan_nodes.find((node: any) => node.id === foreignNode).status).toBe('done');
   const first = await client.call('append_finding', { id: 'synthetic-finding', title: 'Finding', body: 'Evidence', idempotency_key: ' finding-once ' });
   expect((await client.call('append_finding', { id: 'synthetic-finding', title: 'Finding', body: 'Evidence', idempotency_key: 'finding-once' })).finding.id).toBe(first.finding.id);
   await client.reject('append_finding', { id: 'different-finding', title: 'Finding', body: 'Evidence', idempotency_key: 'finding-once' }, 'idempotency_conflict');
@@ -652,7 +677,10 @@ test('architect reports preserve server times and partial edits while rejecting 
   expect((await read()).parking.resumed_at).toBe(await eventTime(resolved.id));
   await report({ human_escalation: { question: 'Approve a follow-up?' } }, 'report-reopened');
   expect((await read()).human_escalation.resolved_at).toBeNull();
-  expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.operator_report).toEqual(await read());
+  const dashboard = await architect.inspect('/api/v1/sympp/operator/dashboard/hydrated');
+  const detail = dashboard.work_request_details.find((entry: any) => entry.work_request.id === request);
+  expect(detail.work_request.operator_report).toEqual(await read());
+  expect(detail.work_packages.map((entry: any) => entry.id)).not.toContain(anchor);
   expect((await architect.call('read_work_request', { work_request_id: request })).work_request.status).toBe('sliced');
 });
 
@@ -747,7 +775,7 @@ test('architect descendant planning stays scoped through terminal closeout and r
   ] as const) await architect.reject(name, { work_package_id: wp, ...args }, 'work_package_terminal');
   expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).findings).toHaveLength(1);
   expect((await architect.operator(`/api/v1/sympp/operator/work-requests/${request}/archive`, {})).status).toBe(200);
-  await architect.reject('read_task_plan', { work_package_id: wp }, 'work_request_terminal');
+  await architect.reject('read_task_plan', { work_package_id: wp }, 'claim_lease_lost');
 });
 
 deliveryTest('worker dependency qualifications survive successor replacement only after explicit input requalification', async ({ delivery: { factory, provider } }) => {

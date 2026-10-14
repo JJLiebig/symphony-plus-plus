@@ -1,6 +1,5 @@
 import { expect } from 'e2e';
 import { readFile, realpath } from 'node:fs/promises';
-import { candidateDiskLogs, captureCandidateDiskLogs } from '../support/candidate.js';
 import { Client, contract } from '../support/factory.js';
 import { initialize, packages, snapshot, test, tool, worker } from '../support/authority.js';
 
@@ -131,11 +130,12 @@ test('failed-call capture is opt-in redacted and immediately disabled through op
   const diagnostic = enabled.body.error.data.diagnostic_id;
   expect(diagnostic).toMatch(/^mcpdiag_[0-9a-f]{16}$/);
   expect(JSON.stringify(enabled.body)).not.toContain('synthetic-diagnostic-secret');
-  await expect.poll(async () => (await candidateDiskLogs()).some(({ bytes }) => bytes.includes(diagnostic))).toBe(true);
-  const log = await captureCandidateDiskLogs(`${factory.receipt}-diagnostics.json`);
+  await expect.poll(async () => (await readFile(factory.logPath, 'utf8')).includes(diagnostic)).toBe(true);
+  const log = await readFile(factory.logPath, 'utf8');
   expect(log).not.toContain('synthetic-diagnostic-secret');
   expect(log).toContain('sympp_failed_mcp_call');
-  expect(log).toContain('invalid_params');
+  expect(log).toContain('claim_required');
+  expect(log).toContain('unauthorized');
   const summary = await client.call('summarize_failed_mcp_calls');
   expect(summary.total_failures).toBe(1);
   expect(JSON.stringify(summary)).not.toContain('synthetic-diagnostic-secret');
@@ -250,7 +250,8 @@ test('failed worker rebinding preserves its current authority and successful reb
   expect((await client.call('get_current_assignment')).assignment.work_package_id).toBe(second);
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(taken);
   const recovered = await worker(factory, first, 'moving-worker');
-  expect((await recovered.call('append_progress', { summary: 'Original reservation recovered', idempotency_key: 'rebound' })).progress_event.work_package_id).toBe(first);
+  const recoveredEvent = (await recovered.call('append_progress', { summary: 'Original reservation recovered', idempotency_key: 'rebound' })).progress_event;
+  expect((await recovered.call('read_work_package_document', { document: 'progress.md' })).progress_events.map((entry: any) => entry.id)).toContain(recoveredEvent.id);
   await client.call('release_current_assignment');
   expect((await client.call('release_current_assignment')).binding_cleared).toBe(false);
   expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
@@ -288,11 +289,14 @@ test('HTTP client attachment telemetry and readiness preserve local request boun
 test('public architect handoff replays one unclaimed grant and trusted mutation claims only when needed', async ({ processes }) => {
   const factory = processes.factory();
   const client = await factory.client();
-  const create = async (status: string) => (await client.call('create_work_request', {
+  const create = async (status: string) => client.call('create_work_request', {
     repo: 'example/service', base_branch: 'beta', title: `Handoff ${status}`, description: 'Synthetic handoff proof.',
     request_kind: 'feature', status,
-  })).work_request.id;
-  const draft = await create('draft');
+  });
+  const initial = await create('draft');
+  expect(initial.architect_handoff.status).toBe('created');
+  expect(initial.architect_handoff.grant.claimed_at).toBeNull();
+  const draft = initial.work_request.id;
   expect((await client.call('get_current_assignment')).assignment).toBeNull();
   await client.call('read_work_request', { work_request_id: draft });
   expect((await client.call('get_current_assignment')).assignment).toBeNull();
@@ -301,7 +305,8 @@ test('public architect handoff replays one unclaimed grant and trusted mutation 
   const handoff = await client.operator(path, {});
   expect(handoff.status).toBe(200);
   const created = handoff.body.architect_handoff;
-  expect(created.status).toBe('created');
+  expect(created.status).toBe('replayed');
+  expect(created.grant.id).toBe(initial.architect_handoff.grant.id);
   expect(created.grant.secret_in_response).toBe(false);
   expect(created.local_architect_claim.arguments.work_request_id).toBe(draft);
   expect(JSON.stringify(created)).not.toContain('secret_hash');
@@ -315,7 +320,7 @@ test('public architect handoff replays one unclaimed grant and trusted mutation 
   });
   expect(owner.assignment.grant_id).toBe(claim.assignment.grant_id);
   await client.call('release_current_assignment');
-  const ready = await create('ready_for_slicing');
+  const ready = (await create('ready_for_slicing')).work_request.id;
   expect((await client.call('list_work_requests', { status: 'ready_for_slicing' })).work_requests.map((entry: any) => entry.id)).toContain(ready);
   await client.call('read_delivery_board', { work_request_id: ready });
   expect((await client.call('get_current_assignment')).assignment).toBeNull();

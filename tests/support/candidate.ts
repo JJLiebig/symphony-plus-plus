@@ -1,27 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import { createWriteStream } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, delimiter, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { test as base } from 'e2e';
 
 export type CandidateOptions = { database?: string; offline?: boolean; surface?: 'worker' | 'architect' };
-
-// The candidate's existing disk logger removes its console handler. Read the
-// hosted job's logs without changing logger configuration or resetting history.
-export async function candidateDiskLogs() {
-  const directory = resolve('elixir/log');
-  const names = (await readdir(directory)).filter((name) => /^symphony\.log(?:\.\d+)?$/.test(name)).sort();
-  return (await Promise.all(names.map(async (name) => ({ name, bytes: await readFile(join(directory, name)) }))));
-}
-
-export async function captureCandidateDiskLogs(path: string) {
-  const files = await candidateDiskLogs();
-  await writeFile(path, JSON.stringify({ capturedAt: new Date().toISOString(), files: files.map(({ name, bytes }) => ({ name, base64: bytes.toString('base64') })) }, null, 2));
-  return files.map(({ bytes }) => bytes.toString('utf8')).join('\n');
-}
 
 // A real candidate process, not the installed plugin or an in-process test harness.
 export class Candidate {

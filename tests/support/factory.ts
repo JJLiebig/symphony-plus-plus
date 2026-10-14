@@ -4,7 +4,7 @@ import { appendFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { expect, test as base } from 'e2e';
-import { Candidate, captureCandidateDiskLogs, type CandidateOptions } from './candidate.js';
+import { Candidate, type CandidateOptions } from './candidate.js';
 
 // The public cockpit owns trusted local HTTP initialization, sessions and SQLite.
 // The dashboard origin skips UI asset construction; no browser is opened or used.
@@ -98,7 +98,6 @@ export class Client {
       rawBody = await response.text();
       const body = rawBody === '' ? null : JSON.parse(rawBody);
       await this.record({ ...receipt, phase: 'response', status, response: body });
-      if (status >= 500 && this.receipt) await captureCandidateDiskLogs(`${this.receipt}-server-error.json`);
       return { response, body };
     } catch (error) {
       try {
@@ -118,7 +117,7 @@ export class Client {
   async raw(payload: unknown, headers: Record<string, string> = {}, method = 'POST', path = '/mcp') {
     const { response, body } = await this.exchange(new URL(path, this.endpoint), {
       method,
-      headers: { 'content-type': 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}), ...headers },
+      headers: { 'content-type': 'application/json', accept: 'application/json', ...(this.session ? { 'mcp-session-id': this.session } : {}), ...headers },
       ...(method === 'POST' ? { body: typeof payload === 'string' ? payload : JSON.stringify(payload) } : {}),
       signal: AbortSignal.timeout(30_000),
     }, { method: typeof payload === 'object' && payload !== null && 'method' in payload ? payload.method : method,
