@@ -56,12 +56,6 @@ jobs:
           npm ci
           npm run build
           npm run build:herdr
-      - name: Exercise live mechanical journeys and export actual GET observations
-        env:
-          SYMPP_BROWSER_MECHANICAL: '1'
-        run: |
-          npm exec -- e2e run --target browser --output .e2e/browser-mechanical
-          node tests/support/browser-report.ts mechanical
       - name: Prove unrecorded model calls fail before transport
         env:
           SYMPP_BROWSER_NEGATIVE: '1'
@@ -73,6 +67,12 @@ jobs:
           test "$result" -ne 0
           node tests/support/browser-report.ts negative
           mv .e2e/model-denials.jsonl .e2e/browser-negative/model-denials.jsonl
+      - name: Exercise live mechanical journeys and export actual GET observations
+        env:
+          SYMPP_BROWSER_MECHANICAL: '1'
+        run: |
+          npm exec -- e2e run --target browser --output .e2e/browser-mechanical
+          node tests/support/browser-report.ts mechanical
       - name: Replay unchanged native recordings against live candidate
         run: |
           npm exec -- e2e run --target browser --output .e2e/browser-replay --strict-cache
