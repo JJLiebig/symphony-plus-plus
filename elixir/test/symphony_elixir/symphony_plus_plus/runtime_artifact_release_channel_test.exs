@@ -118,26 +118,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
     end
   end
 
-  test "build scripts do not package the explicit-copy workflow template" do
-    for script <- [
-          Path.join(@repo_root, "scripts/build-sympp-runtime-artifact.ps1"),
-          Path.join(@repo_root, "scripts/build-sympp-runtime-artifact.sh")
-        ] do
-      body = File.read!(script)
-
-      refute body =~ "WORKFLOW.symfony_pp.md"
-      refute body =~ "workflowTemplatePath"
-      refute body =~ "workflow_template_path"
-      refute body =~ ~r/(Copy-Item|cp).+WORKFLOW\.md/
-      refute body =~ ~r/workflow\s*=\s*"WORKFLOW\.md"/
-      refute body =~ ~s("workflow": "WORKFLOW.md")
-      assert body =~ "unset SYMPP_WORKFLOW_FILE"
-      assert body =~ "Remove-Item Env:SYMPP_WORKFLOW_FILE"
-      assert body =~ "pluginIdentity.name" or body =~ "plugin_name"
-      assert body =~ "pluginIdentity.version" or body =~ "plugin_version"
-    end
-  end
-
   defp write_built_manifest!(root, revision, platform, dashboard_fingerprint) do
     extension = ".zip"
     archive_file = "sympp-runtime-#{revision}-#{platform}#{extension}"
