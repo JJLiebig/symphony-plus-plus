@@ -17,17 +17,17 @@ duplicate status/review reporting are optional.
 
 ## Install
 
-Windows beta installation and connection for Codex or Claude Code:
+Windows installation and connection for Codex or Claude Code:
 
-Follow [Install and run](docs/runtime.md) to select separate beta homes and a
-ledger, install `0.2.0-beta.2`, connect either host and open the board.
-[Beta release notes](https://github.com/JJLiebig/symphony-plus-plus/releases/tag/sympp-v2-beta-2-20261013)
-record the build, hosted checks, and native qualification limits.
+Follow [Install and run](docs/runtime.md) for the Skills route and the marketplace
+alternative. Main is the normal branch; beta is an isolated preview. Both follow
+automatically published branch runtimes. Close clients, update, run setup and open
+fresh sessions to adopt the latest published build.
 
 Portable procedures without runtime installation:
 
 ```sh
-npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/beta
+npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/main
 ```
 
 This installs procedures only. See [Portable skills](docs/portable-skills.md)

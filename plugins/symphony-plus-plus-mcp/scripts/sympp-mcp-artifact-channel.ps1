@@ -1,5 +1,20 @@
 $ErrorActionPreference = "Stop"
 
+function Get-SymppRuntimeChannel([string]$PluginRoot) {
+  if (Read-SymppPortableInstall $PluginRoot) {
+    if ($env:SYMPP_RUNTIME_CHANNEL -notin @("stable", "beta")) {
+      throw "Run Skills setup again to select this installation's runtime channel."
+    }
+    return $env:SYMPP_RUNTIME_CHANNEL
+  }
+  $sourceRoot = Resolve-RepoRootFromMarketplaceCache $PluginRoot
+  if (-not $sourceRoot) { return "stable" }
+  $install = Get-Content -LiteralPath (Join-Path $sourceRoot ".codex-marketplace-install.json") -Raw | ConvertFrom-Json
+  if ($install.ref_name -eq "beta") { return "beta" }
+  if ([string]::IsNullOrWhiteSpace([string]$install.ref_name) -or $install.ref_name -eq "main") { return "stable" }
+  throw "Install Symphony++ from the main or beta branch."
+}
+
 function Invoke-SymppBoundedDownload([string]$SourceUri, [string]$OutFile, [int]$TimeoutSec, [string]$Phase) {
   $effectiveTimeout = Get-SymppRemainingTimeoutSec $TimeoutSec $Phase
   Invoke-WebRequest -Uri $SourceUri -OutFile $OutFile -TimeoutSec $effectiveTimeout -UseBasicParsing -ErrorAction Stop

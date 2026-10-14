@@ -89,7 +89,7 @@ function Get-SymppStringSha256([string]$Value) {
 function Get-SymppPluginGenerationKey([string]$PluginRoot, [string]$SourceRoot) {
   $portable = Read-SymppPortableInstall $PluginRoot
   if ($portable) {
-    return Get-SymppStringSha256 "$([System.IO.Path]::GetFullPath($PluginRoot).ToLowerInvariant())`n$($portable.revision)`n$($portable.contract_fingerprint)`n$($portable.payload_sha256)"
+    return Get-SymppStringSha256 "$([System.IO.Path]::GetFullPath($PluginRoot).ToLowerInvariant())`n$(if ($env:SYMPP_RUNTIME_CHANNEL) { $env:SYMPP_RUNTIME_CHANNEL } else { 'stable' })`n$($portable.contract_fingerprint)`n$($portable.payload_sha256)"
   }
   $revision = Get-SymppMarketplaceSourceRevision $SourceRoot
   try {
@@ -123,7 +123,6 @@ function Read-SymppPortableInstall([string]$PluginRoot) {
     throw "Invalid Symphony++ skill install. Re-add the skill and run setup again."
   }
   if ($install.schema_version -ne 1 -or $install.distribution -ne "skills" -or
-      $install.revision -notmatch "^[0-9a-f]{40}$" -or
       $install.contract_fingerprint -notmatch "^[0-9a-f]{64}$" -or
       $install.payload_sha256 -notmatch "^[0-9a-f]{64}$") {
     throw "Invalid Symphony++ skill install. Re-add the skill and run setup again."
@@ -151,10 +150,14 @@ function Resolve-SymppInstalledIdentity([string]$PluginRoot, [switch]$ReadOnly) 
   $portable = Read-SymppPortableInstall $PluginRoot
   if (-not $portable) { return Resolve-SymppInstalledMarketplaceIdentity $PluginRoot -ReadOnly:$ReadOnly }
   $root = [System.IO.Path]::GetFullPath($PluginRoot)
+  # Portable content identifies the install; only a verified artifact identifies runtime source.
+  $probe = Resolve-SymppPreparedArtifactRuntime $root $null $portable.contract_fingerprint -ValidateOnly
+  $revision = Normalize-SymppMarketplaceSourceRevision ([string]$probe.runtime.source_revision)
+  if (-not $revision) { throw "The selected runtime has no valid source revision." }
   $identity = [pscustomobject]@{
     schema_version = 1; plugin_root = $root; source_root = $root
     generation_key = Get-SymppPluginGenerationKey $root $root
-    revision = $portable.revision; contract_fingerprint = $portable.contract_fingerprint
+    revision = $revision; contract_fingerprint = $portable.contract_fingerprint
   }
   if (-not $ReadOnly) { Write-SymppInstalledIdentityCache (Get-SymppInstalledIdentityCachePath $root) $identity }
   $script:SymppPreparedInstalledIdentity = $identity

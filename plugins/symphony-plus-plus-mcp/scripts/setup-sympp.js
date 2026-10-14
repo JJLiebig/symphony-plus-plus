@@ -49,6 +49,37 @@ function claudeConfig(config, registration) {
   value.mcpServers = { ...value.mcpServers, [name]: registration };
   return JSON.stringify(value, null, 2) + "\n";
 }
+function runtimeChannel() {
+  let directory = root;
+  let entry;
+  const globalRoot = path.join(os.homedir(), ".agents", "skills") + path.sep;
+  const globalInstall = root.toLowerCase().startsWith(globalRoot.toLowerCase());
+  while (!globalInstall) {
+    const lock = path.join(directory, "skills-lock.json");
+    if (fs.existsSync(lock)) { entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["symphony-plus-plus"]; if (entry) break; }
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  if (!entry && !globalInstall) {
+    const projectLock = path.join(process.cwd(), "skills-lock.json");
+    if (fs.existsSync(projectLock)) entry = JSON.parse(fs.readFileSync(projectLock, "utf8")).skills?.["symphony-plus-plus"];
+  }
+  if (!entry && globalInstall) {
+    const lock = process.env.XDG_STATE_HOME ? path.join(process.env.XDG_STATE_HOME, "skills", ".skill-lock.json") : path.join(os.homedir(), ".agents", ".skill-lock.json");
+    if (fs.existsSync(lock)) entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["symphony-plus-plus"];
+  }
+  if (!entry) throw new Error("Cannot identify this skill's install branch. Re-add the skill, then run setup again.");
+  if (entry.sourceType === "local") {
+    if (process.env.SYMPP_RUNTIME_CHANNEL && !["stable", "beta"].includes(process.env.SYMPP_RUNTIME_CHANNEL)) throw new Error("Select stable or beta for this local skill copy.");
+    return process.env.SYMPP_RUNTIME_CHANNEL || "stable";
+  }
+  if (entry.source !== "JJLiebig/symphony-plus-plus") throw new Error("Install Symphony++ from its official repository.");
+  if (entry.ref === "beta") return "beta";
+  if (!entry.ref || entry.ref === "main") return "stable";
+  throw new Error("Install Symphony++ from the main or beta branch.");
+}
+
 function main(args) {
   const install = JSON.parse(fs.readFileSync(path.join(root, ".sympp-install.json"), "utf8"));
   if (args.length === 1 && ["--version", "-v", "-V"].includes(args[0])) { process.stdout.write(`${install.version}\n`); return; }
@@ -66,7 +97,7 @@ function main(args) {
   if (!hosts.length || hosts.some(host => !commands[host])) throw new Error("The selected host is not installed on PATH. Install Codex or Claude Code, then retry setup with --host codex or --host claude.");
   const symppHome = path.resolve(process.env.SYMPP_HOME || path.join(os.homedir(), ".agents", "splusplus"));
   const env = {
-    SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: symppHome,
+    SYMPP_SKILLS_MANAGED: "1", SYMPP_RUNTIME_CHANNEL: runtimeChannel(), SYMPP_HOME: symppHome,
     SYMPP_DATABASE: path.resolve(process.env.SYMPP_DATABASE || path.join(symppHome, "symphony_plus_plus.sqlite3")),
     SYMPP_RUNTIME_FILE: path.resolve(process.env.SYMPP_RUNTIME_FILE || path.join(symppHome, "runtime", "codex-plugin.json")),
   };
@@ -90,7 +121,7 @@ function main(args) {
     }
     emit(plan.host, plan.before === plan.after ? "already configured" : "configured");
   }
-  emit("runtime", install.revision);
+  emit("channel", env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);
   if (hosts.includes("claude")) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its symphony_plus_plus entry before opening a fresh session here.");
   emit("next", "Open fresh host sessions in this project and verify symphony_plus_plus tools before ledger work.");

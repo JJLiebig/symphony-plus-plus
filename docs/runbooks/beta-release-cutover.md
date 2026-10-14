@@ -1,184 +1,34 @@
-# Publish and adopt a beta runtime
+# Branch Updates And Factory Cutover
 
-This is an operator procedure, not a record of a completed release. Publication
-and factory cutover require separate operator approval. Preparing this guide does
-not authorize either. Keep the original live ledger; never promote an exercised
-offline sandbox into the factory.
+Main is the normal installation branch; beta is an isolated preview. Each push
+builds and smokes Linux x64, Windows x64 and macOS ARM archives on hosted runners.
+Successful publication updates the branch's floating runtime manifest: main uses
+`stable`, beta uses `beta`. There is no manual version tag or pointer-promotion PR.
+GitHub Release tags remain internal asset containers; historical releases stay intact.
 
-## Release identity and prerequisites
+An installed factory adopts the latest successfully published branch runtime on
+cold start. Healthy clients keep their current runtime until all clients close.
+A source install can briefly be ahead of publication; matching MCP contracts
+remain required. Check the actual runtime SHA against the branch manifest rather
+than assuming the source checkout and running artifact are identical.
 
-Read-only release evidence on 13 October 2026:
+Use [portable installation](../portable-skills.md) for install/update commands and
+[the runtime guide](../runtime.md) for actual endpoint lookup. Changing the source
+branch requires running Skills setup again. Marketplace metadata records its
+selected ref. Branch selection is independent of ledger selection.
 
-| Channel | Package | Published runtime source |
-|---|---|---|
-| Stable | `0.1.10` | `6a3c2486624d391e9818e6ed267675384489b10e` |
-| Beta | `0.2.0-beta.2` | `87d828d528b68e7b35ebb94d307a96b6f2c556ed` |
-
-The current beta release is `sympp-v2-beta-2-20261013`. The publication examples
-below use that release's identity; it is already published, so do not dispatch
-them again. A future publication needs a new candidate version and unused tag.
-Recheck both before use. The release workflow can overwrite assets on an existing
-tag.
-
-Before freezing a build, confirm all of the following:
-
-- The executable-smoke fixture fix from #717 is present on beta by content.
-- Board wayfinding and the packaged-board swap have both merged. The served
-  `priv/static/index.html` must be the new board; #731 and #732 must be ancestors.
-- The preparation, old-dashboard removal (#735), and version preparation below
-  have merged, with their required hosted checks and fast reviews complete.
-  The approved beta.2 freeze includes the finished board cleanup.
-- The operator has explicitly authorized publication. No tag, release dispatch,
-  runtime start, plugin refresh or live-ledger operation belongs to preparation.
-
-At publication time, update both `plugins/symphony-plus-plus*/.codex-plugin/plugin.json`
-versions to `0.2.0-beta.2` in a small PR against beta. Update the package READMEs,
-root README, `docs/runtime.md`, and the installed bridge version in the packaged
-`symphony-work-package/references/mcp_wiring.md` and its portable mirror under
-`skills/symphony-plus-plus/references/`. Label the release as pending until it is
-published. Leave `plugins/symphony-plus-plus-mcp/assets/sympp-runtime-artifacts.json`
-on the existing release during the build. `elixir/mix.exs` is the backend
-application version, not the plugin release version; do not change it for this.
-
-Record the final 40-character beta build SHA only after these merges. It is not
-known in this preparation guide. Freeze beta through publication and pointer
-promotion: do not fold another backend, launcher or UI change into that window.
-Record the final PR's green hosted check runs and actual tested checkout commit
-(including its synthetic merge commit when CI checks out one). Before freezing,
-prove its tree equals the final beta tree with `git diff --exit-code
-<tested-checkout-sha> <frozen-beta-sha> --`. If the trees differ, take the changed
-tree through a reviewed, tested PR before freezing. `make-all.yml` runs on PRs
-and main pushes, not beta pushes or manual dispatch. This is tested-tree reuse,
-not a claim that the final merged SHA ran the full suite. The release build and
-smokes below run against the exact frozen runtime SHA.
-
-## Publish from the frozen SHA
-
-Run from a release worktree, after approval. These commands publish a prerelease:
-
-```powershell
-$releaseRepo = 'JJLiebig/symphony-plus-plus'
-$releaseTag = 'sympp-v2-beta-2-20261013' # Recheck that this tag is unused.
-git fetch origin beta
-$buildSha = (git rev-parse origin/beta).Trim()
-git ls-remote --tags origin "refs/tags/$releaseTag"
-gh release list --repo $releaseRepo --limit 20
-# Stop if the tag/release exists or the frozen prerequisite evidence differs.
-gh workflow run sympp-runtime-release.yml --repo $releaseRepo --ref beta `
-  -f "release_tag=$releaseTag" -f channel=beta `
-  -f "source_ref=$buildSha" -f prerelease=true
-gh run list --repo $releaseRepo --workflow sympp-runtime-release.yml --limit 5
-# Select the run whose head SHA and dispatch inputs match the frozen record.
-gh run watch <release-run-id> --repo $releaseRepo --exit-status
-```
-
-The dispatch uses the frozen beta branch for the workflow definition and the
-explicit SHA for its build checkout. The
-[release workflow](../../.github/workflows/sympp-runtime-release.yml) checks
-out `source_ref`, builds and smokes Linux x64, Windows x64 and macOS ARM64, then
-publishes all three archives and `sympp-runtime-artifacts-beta.json`. It creates
-the tag at the build SHA when it creates the release. A `sympp-v2-*` tag does not
-match its tag-push triggers; use the explicit dispatch above. Do not separately
-push a `v*` or `sympp-runtime-*` tag, which selects the stable channel by default.
-If any job fails, leave the pointer unchanged and inspect that run before retrying.
-
-### Inspect the Windows archive before promoting the pointer
-
-Download to a fresh evidence directory and inspect files only. Do not run the
-archive, its entrypoints, BEAM, Node, Elixir or local build/test helpers.
-
-```powershell
-$releaseEvidence = Join-Path $env:TEMP $releaseTag
-New-Item -ItemType Directory -Path $releaseEvidence -ErrorAction Stop | Out-Null
-gh release download $releaseTag --repo $releaseRepo --dir $releaseEvidence `
-  --pattern sympp-runtime-artifacts-beta.json `
-  --pattern "sympp-runtime-$buildSha-windows-x64.*"
-$channel = Get-Content (Join-Path $releaseEvidence 'sympp-runtime-artifacts-beta.json') -Raw | ConvertFrom-Json
-$windows = @($channel.artifacts | Where-Object { $_.platform.os -eq 'windows' })
-if ($windows.Count -ne 1) { throw 'Expected exactly one Windows artifact.' }
-$archive = Join-Path $releaseEvidence "sympp-runtime-$buildSha-windows-x64.zip"
-$actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actualHash -ne $windows[0].archive.sha256) { throw 'Archive hash mismatch.' }
-# Optional: expand into a short evidence path, or inspect ZIP entry bytes directly.
-# Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $releaseEvidence 'contents')
-```
-
-Retain the run URL, tag target, asset hashes and this inspection record:
-
-1. The aggregate manifest, Windows build manifest and extracted
-   `runtime-manifest.json` all identify `$buildSha`, candidate package version,
-   Windows platform and the frozen source's MCP contract fingerprint. Check the
-   downloaded build manifest hash against the channel, and the extracted payload
-   manifest hash against the build manifest. The remote tag must resolve to
-   `$buildSha`; a local tag can be stale.
-2. Inspect **both** `dashboard-static/index.html` and
-   `lib/symphony_elixir-*/priv/static/index.html`, their `.vite/manifest.json`,
-   referenced JS/CSS and packaged icons. The latter is the page the backend
-   serves. Follow its imports into the board bundle and verify the frozen swap
-   PR's entrypoint, API-base handling, navigation and icon references; finding
-   an `index.html` alone is insufficient. Record the concrete asset names and
-   hashes. Check that the two static trees agree.
-3. Confirm `lib/symphony_elixir-*/ebin/Elixir.SymphonyElixir.SymphonyPlusPlus.SessionLocations.beam`
-   and `Elixir.SymphonyElixir.SymphonyPlusPlus.SessionFocus.beam` are present, as
-   well as the session-location migration under that application's
-   `priv/symphony_plus_plus/repo/migrations/`. Tie these to #731/#732 ancestry and
-   the exact build workflow. This proves packaged provenance and presence, not
-   native session focus behavior.
-4. Verify the archive has the flattened release layout (`bin`, `lib`, `releases`
-   and entrypoints at its root) and contains no placeholder `WORKFLOW.md`.
-
-Only after this passes, create a pointer-only PR against beta changing the URL in
-`plugins/symphony-plus-plus-mcp/assets/sympp-runtime-artifacts.json` to:
-
-```text
-https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json
-```
-
-Use the actual approved tag if it differs. Update current release links in the
-docs and both MCP-wiring copies, remove pending labels, and complete hosted
-checks and fast review before merging. The pointer commit is an **installation
-revision**; `$buildSha` remains the **runtime build revision**. Installed artifact
-selection deliberately permits this difference and gates compatibility on the MCP
-contract fingerprint. Do not pin the installed cache to `$buildSha` or rebuild
-only to make these two SHAs equal. See
-[artifact selection](../../plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-artifact-manifest.ps1).
-
-During any future publication, the moving beta source can have a different
-contract from the previous artifact. Until publication and pointer promotion
-finish, upgrading may fail artifact selection. Keep existing installations
-running and do not advertise the candidate as installable during this window.
-A pointer to an unpublished URL would add another failure and is unnecessary.
-
-### Release notes
-
-Replace the workflow's generic notes after publishing, using a reviewed file:
-
-```powershell
-gh release edit $releaseTag --repo $releaseRepo `
-  --title 'Symphony V2 beta — 0.2.0-beta.2' --prerelease `
-  --notes-file <reviewed-release-notes-file>
-```
-
-Include the exact build SHA, pointer-promotion SHA, hosted run links, archive
-inspection evidence, new served operator board, session-location capture/focus,
-retention changes below, and this runbook. State unresolved qualification limits.
-Beta.1's Windows evidence covered named builds and an empty isolated old-version
-upgrade; it did not prove this release or migration of populated business records.
-Do not claim beta.2 native qualification from those older results.
-
-## Stop and back up the factory
+## Prepare A Factory Move
 
 Before a cutover, populated records can be inspected through the
 [installed offline copy/view commands](../portable-skills.md#copy-convert-and-view-an-offline-ledger)
 while the factory stays open. Use a separate offline home and port, keep the
 durable marker, and stop View with Ctrl+C before refreshing. This inspection
-uses beta.2's published schema and UI; newer branch procedures do not include
-later settings UI changes. An exercised snapshot is never the cutover ledger
+uses the selected branch's published schema and UI. An exercised snapshot is never the cutover ledger
 or a substitute for the stopped backup below.
 
-Start only after the operator approves a cutover window and the promoted beta
-pointer resolves to the inspected build. Publication alone does not approve a
-factory move. Keep the current factory homes and original ledger; the separate
+Start only after the operator approves a cutover window and the selected branch
+manifest resolves to the inspected build. Automatic publication alone does not
+approve a factory move. Keep the current factory homes and original ledger; the separate
 offline beta home is not an upgrade source or destination.
 
 1. Record the factory's actual `CODEX_HOME`, `SYMPP_HOME`, `SYMPP_DATABASE`, runtime
@@ -236,8 +86,7 @@ beta connection can migrate the ledger and normal operation can apply retention.
 ## Skills CLI cutover
 
 The preferred host-neutral route is the [Skills install](../portable-skills.md).
-It uses the already-published beta.2 artifact; adding this distribution requires
-no new release. An empty-ledger side-by-side beta trial is independent of this
+It uses the selected branch's automatically published artifact. An empty-ledger side-by-side beta trial is independent of this
 factory cutover. A raw factory copy is not a safe MCP dogfood ledger; offline
 snapshot/view rules remain in [development](../development.md#isolated-source-beta).
 
@@ -254,8 +103,8 @@ After the stopped-ledger backup above and an approved cutover window:
    and `SYMPP_RUNTIME_FILE`, then run the combined Skills install and setup
    commands in the portable guide. This registers one stable installed launcher
    for both hosts. Do not set `SYMPP_REPO_ROOT` or change the ledger path.
-3. Open one fresh host session. Require artifact mode, runtime build
-   `87d828d528b68e7b35ebb94d307a96b6f2c556ed`, and the original ledger identity.
+3. Open one fresh host session. Require artifact mode, the inspected branch
+   manifest's runtime SHA, and the original ledger identity.
    For this route `plugin_root` must be the installed skill directory, not a
    marketplace cache. Run the actual-session checks below before the second host.
 4. Open the second host and verify shared work and one runtime. Reclaim existing
@@ -266,12 +115,16 @@ After the stopped-ledger backup above and an approved cutover window:
 For future Skills upgrades, close clients, back up the installed skill directory
 and `skills-lock.json` using the [portable guide](../portable-skills.md), run
 `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`, and reopen
-sessions. If install location changes, repeat setup to repair its owned entry.
-Rollback re-adds that local bundle or an independently recorded previous
-Skills-capable full commit SHA; the lock does not record resolved commits. This first Skills
-release has no earlier Skills-capable release, so restore the paired original
-marketplace/configuration/artifact backup for its rollback. Restore the stopped
-ledger and sidecars too when migrations or retention require it.
+sessions. Repeat setup after updating to capture the recorded branch and repair its owned entry.
+Source rollback alone does not pin a floating runtime. Preserve the previous build's
+manifest and archive alongside its installed bundle and recorded actual SHA. A
+hosted artifact run retains these files; download the recorded run before its
+retention expires. Restore the matched files and point the installation's existing
+`.sympp-runtime-artifacts.json` override at that saved manifest/archive. Verify its
+SHA before reopening. Remove this local override only when returning to branch
+updates. Restore the stopped ledger and sidecars when migrations or retention
+require it; the original marketplace/configuration/artifact backup remains the
+rollback for a first distribution change.
 
 ## Marketplace alternative: upgrade and reconnect
 
@@ -282,8 +135,8 @@ clone is under `$factoryCodexHome/.tmp/marketplaces/symphony-plus-plus`; normal
 runtime execution must come from the installed cache and downloaded artifact.
 
 The following uses the existing Codex marketplace commands. Switching an existing
-marketplace from main to beta requires removing its old source registration
-before adding the different ref. Run outside the marketplace directory because
+marketplace between main and beta requires removing its old source registration
+before adding the intended ref (`main` normally, `beta` for an isolated preview). Run outside the marketplace directory because
 replacement renames/removes that directory:
 
 ```powershell
@@ -292,7 +145,7 @@ $env:SYMPP_HOME = $factorySymppHome
 $env:SYMPP_DATABASE = $factoryDatabase
 Set-Location -LiteralPath $env:USERPROFILE
 codex plugin marketplace remove symphony-plus-plus
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
+codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
 codex plugin marketplace upgrade symphony-plus-plus
 codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
 codex plugin list --marketplace symphony-plus-plus --json
@@ -301,11 +154,11 @@ codex plugin list --marketplace symphony-plus-plus --json
 Stop on any nonzero exit. If marketplace configuration is managed by a higher
 configuration layer, change the source in that layer instead of bypassing its
 refusal. Reinstall the skill-only `symphony-plus-plus` plugin too if it was
-previously installed. Confirm the resolved version is the published candidate,
-the clone contains the promoted pointer and no checkout-backed source hint was
+previously installed. Confirm the selected branch and actual runtime match the inspected manifest,
+the clone contains the shared channel configuration and no checkout-backed source hint was
 introduced. Do not run a refresh/pin helper from a developer checkout.
 
-For a subsequent upgrade already on beta, the supported helper is
+For a subsequent upgrade on the selected branch, the supported helper is
 `scripts/upgrade-spp.ps1` **from this marketplace source clone**, with no custom
 flags (`-WhatIf` previews). It stops, upgrades and immediately prepares/restarts
 the installed runtime. It is not a backup step. Do not use
@@ -387,7 +240,7 @@ a running database or invoke down migrations.
 Open fresh sessions against the restored installed marketplace/cache, verify the
 original runtime SHA and original ledger identity, then recover the assignments
 through their owning skills. Do not run marketplace upgrade during rollback: the
-stable tag/channel is mutable and may now resolve to another build. Restoring
+branch channel is mutable and may now resolve to another build. Restoring
 the paired marketplace/cache/artifact backup preserves the prior installation.
 Any post-backup ledger writes are lost; capture needed evidence before restoring
 and reconcile external commits/PRs before resuming.
@@ -400,16 +253,15 @@ and reconcile external commits/PRs before resuming.
 - Windows launcher CI skips desktop tests. A hosted runtime route/MCP smoke does
   not prove installed Codex/Claude generation upgrade, elevated desktop launch,
   shared-client shutdown, real session focus or native UI usability here.
-- Beta PRs do not automatically run the three-platform artifact workflow. The
-  explicit release build/smoke and archive inspection remain release gates.
+- Both main and beta PRs run the three-platform artifact workflow. Hosted Windows
+  process qualification uses a controlled process-creation seam; desktop ownership
+  and this workstation's native launch remain separate qualifications.
 - The populated factory ledger, its settings, backlog, migration duration,
   retention effects, backups and restore have not been exercised by this audit.
 - Operator mappings, external deployment observations, host permissions,
   authentication and real network/proxy behavior require checks in the intended
   environment. Linux/macOS archives do not establish native host support.
 
-Recommended operator decisions: authorize publication only after the freeze
-gates; choose a quiet cutover window with a complete backup; accept the retention
-change and restore-based rollback cost; resume with one bounded piece of work
-after the native checks pass. If those risks are unacceptable, keep the current
-factory installation until the missing qualification is done on an approved host.
+Choose a quiet cutover window with a complete backup, accept retention and
+restore-based rollback effects, and resume with one bounded request after actual
+session checks pass. Keep the original factory untouched until its move is approved.

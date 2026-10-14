@@ -1,6 +1,6 @@
 # Symphony++ Codex Plugin
 
-This `0.2.0-beta.2` package is skill-only. It supplies worker, coordinator and
+This `0.2.0` package is skill-only. It supplies worker, coordinator and
 Solo Session procedures without starting Symphony++ MCP. Ordinary work needs
 no backend when persistence is not requested. Ledger operations, including
 Solo Sessions, require configured MCP tools.
@@ -25,7 +25,7 @@ codex plugin marketplace upgrade symphony-plus-plus
 
 For persistence or assigned execution, choose the sibling
 `symphony-plus-plus-mcp` package instead. Its
-[installation guide](https://github.com/JJLiebig/symphony-plus-plus/blob/beta/docs/runtime.md)
+[installation guide](https://github.com/JJLiebig/symphony-plus-plus/blob/main/docs/runtime.md)
 covers beta homes and ledger, shared Codex/Claude runtime, dashboard and recovery.
 Do not install both packages unless both skill prefixes are intended.
 
@@ -33,5 +33,5 @@ Do not install both packages unless both skill prefixes are intended.
 
 The marketplace routes both packages to Git `beta`. Repository refresh helpers
 are for isolated developer homes, not installed runtime repair. See
-[Development](https://github.com/JJLiebig/symphony-plus-plus/blob/beta/docs/development.md)
+[Development](https://github.com/JJLiebig/symphony-plus-plus/blob/main/docs/development.md)
 for source validation.

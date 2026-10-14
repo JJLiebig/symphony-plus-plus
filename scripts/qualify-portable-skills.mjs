@@ -40,7 +40,7 @@ try {
   const installed = await realpath(join(root, '.claude/skills/symphony-plus-plus'));
   await run('process', 'pwsh', ['-NoProfile', '-File',
     join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'),
-    '-SkillsInstall', installed, ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], 900000);
+    '-SkillsInstall', installed, '-ArtifactManifest', process.env.SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST, ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], 900000);
 } finally {
   await rm(root, { recursive: true, force: true });
 }

@@ -91,7 +91,7 @@ function Get-SymppPluginName([string]$PluginRoot) {
 
 function Resolve-ExpectedSourceRevision([string]$PluginRoot) {
   $portable = Read-SymppPortableInstall $PluginRoot
-  if ($portable) { return [string]$portable.revision }
+  if ($portable) { return $null }
   $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
   if (Test-SymphonySourceRoot $sourceCandidate) {
     return Resolve-SymppSourceRevision $sourceCandidate $PluginRoot
@@ -133,6 +133,12 @@ function Read-SymppArtifactManifest([string]$PluginRoot) {
   try {
     $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     $manifest | Add-Member -NotePropertyName manifest_path -NotePropertyValue $path -Force
+    if ($manifest.PSObject.Properties["channels"]) {
+      $channel = Get-SymppRuntimeChannel $PluginRoot
+      $selected = Get-JsonPathValue $manifest @("channels", $channel)
+      if ($null -eq $selected) { throw "No runtime channel is configured for this installation." }
+      $manifest = $selected
+    }
     return Resolve-SymppPublishedArtifactManifest $manifest $path
   } catch {
     throw "artifact_manifest_invalid: $path could not be parsed as JSON. detail=$($_.Exception.Message)"

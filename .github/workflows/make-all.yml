@@ -185,7 +185,7 @@ jobs:
   portable-skills:
     name: Windows installed runtime
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       E2E_OAUTH_CREDENTIALS: '{}'
       E2E_TELEMETRY_DISABLED: '1'
@@ -195,10 +195,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-      - name: Set up acceptance Node
+      - name: Set up installed runtime toolchain
         uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          install_args: node@26.3.0
+          install: true
+          cache: true
+          working_directory: elixir
       - name: Install locked acceptance dependencies
         run: npm ci --ignore-scripts
       - name: Record installed candidate identity
@@ -247,7 +249,14 @@ jobs:
           npm exec -- e2e run tests/acceptance/installed-runtime.e2e.ts --target api
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/support/installed-report.ts tests/acceptance/installed-runtime.e2e.ts
-      - name: Prove native registration and published runtime processes
+      - name: Build the current candidate Windows runtime
+        shell: pwsh
+        run: |
+          ./scripts/build-sympp-runtime-artifact.ps1 -Revision "${env:ACCEPTANCE_CHECKOUT_SHA}" -Platform windows-x64 -OutputDir ".e2e/native-runtime"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $manifest = Get-ChildItem -LiteralPath .e2e/native-runtime -Filter *.manifest.json | Select-Object -First 1
+          "SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST=$($manifest.FullName)" >> $env:GITHUB_ENV
+      - name: Prove native registration and branch runtime processes
         if: ${{ !cancelled() && steps.native-hosts.outcome == 'success' }}
         run: node scripts/qualify-portable-skills.mjs
       - name: Require committed generated mirror

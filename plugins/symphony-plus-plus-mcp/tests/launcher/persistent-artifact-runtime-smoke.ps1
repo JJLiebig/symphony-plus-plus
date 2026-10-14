@@ -141,7 +141,7 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
       $identity = $health.result.structuredContent
       $healthPath = ([string]$identity.ledger.identity.display_path).Replace('$HOME', $Environment.USERPROFILE).Replace('/', '\')
       if ($identity.status -ne 'ok' -or $identity.source.revision -ne $manifest.source_revision -or
-          [IO.Path]::GetFullPath($healthPath) -ine [IO.Path]::GetFullPath($Environment.SYMPP_DATABASE)) { throw 'MCP health did not confirm the selected published runtime and ledger.' }
+          [IO.Path]::GetFullPath($healthPath) -ine [IO.Path]::GetFullPath($Environment.SYMPP_DATABASE)) { throw 'MCP health did not confirm the selected verified runtime and ledger.' }
     }
     if ($CreateMarker) {
       $attached = Send-BridgeRequest $process @{ jsonrpc = "2.0"; id = 3; method = "tools/call"; params = @{ name = "solo_attach"; arguments = @{ repo = "fixture/packaged-ledger"; base_branch = "beta"; workspace_path = $tempRoot; caller_id = "artifact-smoke"; title = "Disposable persistence marker" } } }
@@ -224,7 +224,18 @@ try {
     if ($SkillsInstall) {
       $installedRoot = [IO.Path]::GetFullPath($SkillsInstall)
       $install = Get-Content -LiteralPath (Join-Path $installedRoot ".sympp-install.json") -Raw | ConvertFrom-Json
-      $manifest = [pscustomobject]@{ source_revision = $install.revision }
+      if (-not $ArtifactManifest) { throw "Native Skills qualification requires a candidate artifact manifest." }
+      $candidateManifest = Get-Content -LiteralPath $ArtifactManifest -Raw | ConvertFrom-Json
+      $candidateManifest.artifact.file = Join-Path (Split-Path -Parent $ArtifactManifest) $candidateManifest.artifact.file
+      $candidateManifest.artifact.relative_path = $candidateManifest.artifact.file
+      $published = Invoke-RestMethod 'https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json'
+      $manifest = $published
+      $floatingManifest = Join-Path $tempRoot "floating-channel.json"
+      $published | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
+      @{ schema_version = 1; channels = @{ stable = @{ manifest = @{ path = $floatingManifest } }; beta = @{ manifest = @{ path = $floatingManifest } } } } |
+        ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
+      @{ version = 1; skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/symphony-plus-plus'; sourceType = 'github'; ref = 'beta' } } } |
+        ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $tempRoot 'skills-lock.json')
       $codexHome = Join-Path $tempRoot "selected codex home"
       New-Item -ItemType Directory -Path (Join-Path $tempRoot "profile") -Force | Out-Null
     } else {
@@ -251,7 +262,7 @@ try {
     }
     $database = Join-Path $tempRoot "database/explicit ledger.sqlite3"
     $environment = @{
-      CODEX_HOME = $codexHome; SYMPP_HOME = Join-Path $tempRoot "runtime-home"; SYMPP_RUNTIME_FILE = $runtimeFile
+      SYMPP_RUNTIME_CHANNEL = "beta"; CODEX_HOME = $codexHome; SYMPP_HOME = Join-Path $tempRoot "runtime-home"; SYMPP_RUNTIME_FILE = $runtimeFile
       SYMPP_DATABASE = $database; SYMPP_LOG_DIR = Join-Path $tempRoot "logs"; SYMPP_LAUNCHER_TRACE_DIR = Join-Path $tempRoot "trace"
       SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = [string]$backendPort; SYMPP_OPEN_DASHBOARD = "0"
       SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"
@@ -358,10 +369,22 @@ try {
       }
     }
     Wait-ManagedRuntimeStopped $first.backend_pid $first.backend_port
+    if ($SkillsInstall) {
+      # The owning install and MCP contract stay unchanged while its branch publishes new runtime bytes.
+      $beforeIdentity = Get-ChildItem -LiteralPath (Join-Path $environment.SYMPP_HOME 'runtime/launcher-validation') -Filter *.json | Get-Content -Raw | ConvertFrom-Json
+      if ($beforeIdentity.revision -ne $manifest.source_revision) { throw "Cold identity did not record the old actual runtime." }
+      $manifest = $candidateManifest
+      $candidateManifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
+    }
     $secondWave = Invoke-McpBridge $cmd $commandArgs $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
     Wait-ManagedRuntimeStopped $secondWave.backend_pid $secondWave.backend_port
     $trace = Get-ChildItem -LiteralPath $environment.SYMPP_LAUNCHER_TRACE_DIR -File | Get-Content -Raw
-    if (-not ($trace -match "prepared_runtime_start")) { throw "Second wave did not exercise prepared release restart." }
+    if ($SkillsInstall) {
+      if ($trace -match "prepared_runtime_start") { throw "Floating channel incorrectly reused a stopped prepared release." }
+      $afterIdentity = Get-ChildItem -LiteralPath (Join-Path $environment.SYMPP_HOME 'runtime/launcher-validation') -Filter *.json | Get-Content -Raw | ConvertFrom-Json
+      if ($afterIdentity.revision -ne $candidateManifest.source_revision -or $afterIdentity.generation_key -ne $beforeIdentity.generation_key) { throw "Cold refresh did not preserve content identity and adopt candidate runtime provenance." }
+      if (-not (Get-ChildItem -LiteralPath (Join-Path $environment.SYMPP_HOME 'runtime/launcher-cleanup') -Directory | Where-Object Name -Like "$($candidateManifest.source_revision)-*")) { throw "Cleanup snapshot did not adopt candidate runtime identity." }
+    } elseif (-not ($trace -match "prepared_runtime_start")) { throw "Second wave did not exercise prepared release restart." }
     if (-not ($trace -match "backend_recovery_leader")) { throw "Second wave did not exercise backend recovery." }
     if (-not (Test-Path -LiteralPath $database -PathType Leaf)) { throw "Explicit packaged database was not created." }
     if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
@@ -376,7 +399,7 @@ try {
       $offlineEnvironment.SYMPP_OFFLINE_ARTIFACT = $first.artifact_root
       Invoke-IsolatedCommand (Get-Command python -ErrorAction Stop).Source @((Join-Path $repoRoot "scripts/tests/test_sympp_beta_snapshot.py"), "InstalledSnapshotTest") $offlineEnvironment
     }
-    [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = $true; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true; hosted_process_creation_seam = [bool]$HostedProcessCreation; native_desktop_qualified = -not $HostedProcessCreation } | ConvertTo-Json -Compress
+    [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = -not [bool]$SkillsInstall; floating_channel_refresh = [bool]$SkillsInstall; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true; hosted_process_creation_seam = [bool]$HostedProcessCreation; native_desktop_qualified = -not $HostedProcessCreation } | ConvertTo-Json -Compress
     return
   }
   $sourceEnvironment = @{

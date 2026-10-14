@@ -35,6 +35,7 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(registration.transport.env.SYMPP_HOME).toBe(installed.env.SYMPP_HOME);
     expect(registration.transport.env.SYMPP_RUNTIME_FILE).toBe(installed.env.SYMPP_RUNTIME_FILE);
     expect(registration.transport.env.SYMPP_BACKEND_PORT).toBe('21345');
+    expect(registration.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('stable');
 
     // A saved install must still run setup after the original is refreshed.
     const saved = join(installed.root, 'saved skill');
@@ -84,9 +85,15 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
 
   test('Skills remote update keeps beta tracking for both native hosts', { timeout: 600_000 }, async ({ installed }) => {
     for (const agent of ['codex', 'claude-code'] as const) {
-      await installed.install(agent, 'https://github.com/JJLiebig/symphony-plus-plus/tree/beta');
+      const remoteBundle = await installed.install(agent, 'https://github.com/JJLiebig/symphony-plus-plus/tree/beta');
       const lock = () => readFile(join(installed.project, 'skills-lock.json'), 'utf8').then(JSON.parse);
       expect((await lock()).skills['symphony-plus-plus'].ref).toBe('beta');
+      // Use this candidate's setup with the real remote installation's lock.
+      const setup = join(remoteBundle, 'scripts/setup-sympp.js');
+      await cp(resolve('plugins/symphony-plus-plus-mcp/scripts/setup-sympp.js'), setup);
+      expect((await installed.run(process.execPath, [setup, '--host', 'both'])).code).toBe(0);
+      const config = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
+      expect(config.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
       const update = await installed.skills(['update', 'symphony-plus-plus', '--project', '--yes']);
       expect(/No installed skills found|Failed to|Cannot update|cannot be updated/i.test(update)).toBe(false);
       expect((await lock()).skills['symphony-plus-plus'].ref).toBe('beta');

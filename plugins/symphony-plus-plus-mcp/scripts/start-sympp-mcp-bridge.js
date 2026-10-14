@@ -288,7 +288,7 @@ function generationKey(pluginRoot, sourceRoot) {
   try {
     if (!fs.statSync(pluginRoot).isDirectory()) return null;
     const portable = portableInstall(pluginRoot);
-    if (portable) return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${portable.revision}\n${portable.contract_fingerprint}\n${portable.payload_sha256}`);
+    if (portable) return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${process.env.SYMPP_RUNTIME_CHANNEL || "stable"}\n${portable.contract_fingerprint}\n${portable.payload_sha256}`);
     const install = readJson(path.join(sourceRoot, ".codex-marketplace-install.json"));
     const contract = readJson(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"));
     const revision = String(install && (install.revision || install.source_revision || install.sourceRevision) || "").toLowerCase();
@@ -303,7 +303,6 @@ function generationKey(pluginRoot, sourceRoot) {
 function portableInstall(pluginRoot) {
   const install = readJson(path.join(pluginRoot, ".sympp-install.json"));
   if (!install || install.schema_version !== 1 || install.distribution !== "skills" ||
-      !/^[0-9a-f]{40}$/.test(install.revision || "") ||
       !/^[0-9a-f]{64}$/.test(install.contract_fingerprint || "") ||
       !/^[0-9a-f]{64}$/.test(install.payload_sha256 || "")) return null;
   return install;
@@ -559,7 +558,7 @@ async function resolveCachedIdentity(pluginRoot) {
   const sourceRoot = portable ? versionRoot : path.resolve(codexHome, ".tmp", "marketplaces", marketplaceName);
   const cacheName = sha256(versionRoot.toLowerCase()).slice(0, 12) + ".json";
   const cacheFile = path.join(resolveHome(), "runtime", "launcher-validation", cacheName);
-  const generationMarker = `${cacheFile}.generation`;
+  const generationMarker = `${cacheFile}.${portable ? process.env.SYMPP_RUNTIME_CHANNEL || "stable" : "marketplace"}.generation`;
   const generation = await coalescedGenerationKey(versionRoot, sourceRoot, generationMarker);
   if (!generation) return null;
   const cache = readJson(cacheFile);
@@ -791,7 +790,7 @@ function resolveStateIdentity(state, pluginRoot, cachedIdentity) {
   const key = runtimeKey(backend, dashboard, contract);
   if (String(state.runtime_key || "").toLowerCase() !== key.toLowerCase()) return null;
   return {
-    backend, dashboard, contract, runtimeKey: key, revision: identity.revision, headless,
+    backend, dashboard, contract, runtimeKey: key, revision: String(state.backend.source_revision || identity.revision), headless,
     epoch: `${Number(state.backend.pid) || 0}:${String(state.publication && state.publication.backend && state.publication.backend.process_start_time_utc_ticks || "external")}`,
     pluginRoot: path.resolve(pluginRoot), sourceRoot: path.resolve(String(sourceRoot)),
     generationKey: identity.generation_key || identity.generationKey,
