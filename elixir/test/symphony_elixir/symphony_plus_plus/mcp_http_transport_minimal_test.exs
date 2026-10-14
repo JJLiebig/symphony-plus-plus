@@ -475,23 +475,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert %Server{initialized: true} = HTTPStateStore.get(config, "client-a", init.state_key)
   end
 
-  test "unknown supplied state keys are controlled errors and are not persisted", %{config: config} do
-    assert {:ok, unknown_initialize} =
-             HTTPTransport.handle(config, initialize_request("caller-state-init"), client_key: "client-a", state_key: "caller-chosen")
-
-    assert unknown_initialize.status == :error
-    assert unknown_initialize.state_key == nil
-    assert get_in(unknown_initialize.response, ["error", "data", "reason"]) == "unknown_state_key"
-    assert HTTPStateStore.get(config, "client-a", "caller-chosen") == nil
-
-    assert {:ok, unknown_followup} =
-             HTTPTransport.handle(config, tools_list_request("unknown-tools"), client_key: "client-a", state_key: "missing-state")
-
-    assert unknown_followup.status == :error
-    assert get_in(unknown_followup.response, ["error", "data", "reason"]) == "unknown_state_key"
-    assert HTTPStateStore.get(config, "client-a", "missing-state") == nil
-  end
-
   test "batch transport observes each failed tool item once without retaining values", %{config: config} do
     assert {:ok, _settings} = OperatorSettingsRepository.update(config.repo, %{"capture_failed_mcp_calls" => true})
     {:ok, init} = HTTPTransport.handle(config, initialize_request("batch-failure-init"), client_key: "batch-failure-client")

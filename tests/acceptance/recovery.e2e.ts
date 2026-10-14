@@ -22,7 +22,9 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   const mutation = { summary: 'Accepted exactly once', body: 'A durable worker observation', idempotency_key: 'once' };
   const first = (await winner.call('append_progress', mutation)).progress_event;
   const reconnected = await factory.client();
-  await reconnected.call('claim_local_assignment', { work_package_id: wp, claimed_by: `contender-${winners[0].index}` });
+  const reconnectClaim = await reconnected.call('claim_local_assignment', { work_package_id: wp, claimed_by: `contender-${winners[0].index}`, caller_id: 'synthetic-new-caller' });
+  expect(reconnectClaim.local_claim.caller_id).toBe('synthetic-new-caller');
+  expect(reconnectClaim.local_claim.claim_lease_action).toBe('heartbeat');
   expect((await reconnected.call('append_progress', mutation)).progress_event.id).toBe(first.id);
   const implicitFirst = await factory.client();
   const implicitSecond = await factory.client();
@@ -30,6 +32,9 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   const secondClaim = await implicitSecond.call('claim_local_assignment', { work_package_id: implicit });
   expect(secondClaim.assignment.grant_id).toBe(firstClaim.assignment.grant_id);
   expect(secondClaim.assignment.claimed_by).toBe(firstClaim.assignment.claimed_by);
+  expect(firstClaim.local_claim.claim_lease_action).toBe('created');
+  expect(secondClaim.local_claim.claim_lease_action).toBe('heartbeat');
+  expect(secondClaim.local_claim.caller_id).not.toBe(firstClaim.local_claim.caller_id);
   await reconnected.reject('append_progress', { ...mutation, summary: 'Conflicting replay' }, 'idempotency_conflict');
   const document = await reconnected.call('read_work_package_document', { document: 'progress.md' });
   expect(document.progress_events.filter((event: any) => event.id === first.id)).toHaveLength(1);
@@ -154,7 +159,11 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   const candidate = processes.stdio('stdio-worker', { database: factory.database, surface: 'worker' });
   const before = await candidate.rawRequest('tools/call', { name: 'read_context', arguments: {} });
   expect(before.error.data.reason).toBe('server_not_initialized');
-  await candidate.request('initialize', initialize);
+  const initialized = await candidate.request('initialize', initialize);
+  expect(initialized.serverInfo.name).toBe('symphony-plus-plus');
+  expect(initialized.serverInfo.version).toBeTruthy();
+  expect(initialized.capabilities.tools).toEqual({});
+  expect(initialized.capabilities.resources).toEqual({});
   expect((await candidate.rawRequest('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } })).error.data.reason).toBe('claim_required');
   for (const uri of ['sympp://assignment/current', `sympp://work-packages/${wp}/task_plan.md`]) {
     const unbound = await candidate.rawRequest('resources/read', { uri });
@@ -169,6 +178,8 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   expect((await candidate.rawRequest('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp, unexpected: true } })).error.data.reason).toBe('unexpected_argument');
   const claimed = await candidate.request('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp } });
   expect(claimed.structuredContent.assignment.work_package_id).toBe(wp);
+  expect(claimed.structuredContent.local_claim.mode).toBe('stdio');
+  expect(claimed.structuredContent.local_claim.claim_lease_action).toBe('created');
   const assignmentResource = JSON.parse((await candidate.request('resources/read', { uri: 'sympp://assignment/current' })).contents[0].text);
   expect(assignmentResource.work_package_id).toBe(wp);
   expect(assignmentResource.claimed_by).toBe(claimed.structuredContent.assignment.claimed_by);
@@ -180,6 +191,8 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   expect(reconnected).toHaveLength(1);
   expect(reconnected[0].result.structuredContent.assignment.grant_id).toBe(claimed.structuredContent.assignment.grant_id);
   expect(reconnected[0].result.structuredContent.local_claim.claim_lease_action).toBe('heartbeat');
+  expect(reconnected[0].result.structuredContent.local_claim.mode).toBe('stdio');
+  expect(reconnected[0].result.structuredContent.local_claim.caller_id).not.toBe(claimed.structuredContent.local_claim.caller_id);
   expect((await peer.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment.work_package_id).toBe(wp);
   const note = await candidate.rawRequest('tools/call', { name: 'add_work_request_comment', arguments: { work_request_id: request, body: 'Untrusted operator', created_by: 'stdio-worker' } });
   expect(note.error).toBeTruthy();
@@ -225,6 +238,7 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   expect(mixed).toHaveLength(1);
   expect(mixed[0].id).toBe('version');
   expect(JSON.parse(mixed[0].result.contents[0].text).source.revision).toBe(process.env.ACCEPTANCE_CHECKOUT_SHA);
+  expect(JSON.parse(mixed[0].result.contents[0].text).mode).toBe('stdio');
   const batchTool = (id: number, name: string, args: object = {}) => ({ ...tool(name, args), id });
   const denied = await candidate.rawPayload([
     [{ jsonrpc: '2.0', id: 920, method: 'tools/list' }],

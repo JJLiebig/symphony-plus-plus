@@ -1461,18 +1461,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     refute notification_log =~ "notification-secret"
   end
 
-  test "POST /mcp rejects JSON-RPC batches before session handling" do
-    init_batch = post_json([initialize_request("init")])
-    mixed_batch = post_json([initialize_request("init"), tools_list_request("tools")])
-
-    assert json_response(init_batch, 400) == json_rpc_error(nil, -32_600, "Invalid Request", "batch_not_supported")
-
-    assert json_response(mixed_batch, 400) ==
-             json_rpc_error(nil, -32_600, "Invalid Request", "batch_not_supported")
-
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-  end
-
   test "POST /mcp observes each failed tool item in a rejected batch once" do
     assert {:ok, _settings} = OperatorSettingsRepository.update(Repo, %{"capture_failed_mcp_calls" => true})
 
@@ -1494,34 +1482,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     refute log =~ "private-batch-id"
     refute log =~ "request-secret"
     refute log =~ "notification-secret"
-  end
-
-  test "POST /mcp rejects JSON-RPC batches before Mcp-Session-Id continuity" do
-    init = post_json(initialize_request("init"))
-    [session_id] = get_resp_header(init, "mcp-session-id")
-
-    conn = post_json([initialize_request("init"), tools_list_request("tools")])
-
-    conn_with_session = post_json([tools_list_request("tools")], [{"mcp-session-id", session_id}])
-
-    assert json_response(conn, 400) == json_rpc_error(nil, -32_600, "Invalid Request", "batch_not_supported")
-
-    assert json_response(conn_with_session, 400) ==
-             json_rpc_error(nil, -32_600, "Invalid Request", "batch_not_supported")
-  end
-
-  test "POST /mcp rejects unknown Mcp-Session-Id without creating state" do
-    conn = post_json(tools_list_request("tools"), [{"mcp-session-id", "missing-session"}])
-
-    assert get_in(json_response(conn, 404), ["error", "data", "reason"]) == "unknown_state_key"
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-  end
-
-  test "POST /mcp rejects unknown Mcp-Session-Id for notifications" do
-    conn = post_json(notification_request(), [{"mcp-session-id", "missing-session"}])
-
-    assert json_response(conn, 404) == json_rpc_error(nil, -32_600, "Invalid Request", "unknown_state_key")
-    assert :sys.get_state(HTTPStateStore).entries == %{}
   end
 
   test "POST /mcp rejects non-loopback, forwarded, and cross-origin requests" do

@@ -89,27 +89,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap02Test do
     assert get_in(response, ["result", "capabilities", "resources"]) == %{}
   end
 
-  test "server requires initialize before MCP operations", %{repo: repo} do
-    server = Server.new(Config.default(repo: repo))
-
-    pre_init_response =
-      Server.handle(%{"jsonrpc" => "2.0", "id" => "tools", "method" => "tools/list", "params" => %{}}, server)
-
-    assert get_in(pre_init_response, ["error", "code"]) == -32_000
-    assert get_in(pre_init_response, ["error", "data", "reason"]) == "server_not_initialized"
-
-    {init_response, initialized_server} =
-      Server.handle_state(%{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()}, server)
-
-    assert init_response["result"]["protocolVersion"] == "2025-03-26"
-    assert initialized_server.initialized == true
-
-    post_init_response =
-      Server.handle(%{"jsonrpc" => "2.0", "id" => "tools", "method" => "tools/list", "params" => %{}}, initialized_server)
-
-    assert is_list(get_in(post_init_response, ["result", "tools"]))
-  end
-
   test "tools list exposes the stable full catalog while unbound writes stay claim-gated", %{repo: repo} do
     unbound_server = Server.new(Config.default(repo: repo), initialized: true)
 

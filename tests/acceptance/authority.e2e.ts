@@ -12,6 +12,11 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   expect(uninitialized.body.error.data.reason).toBe('missing_session_id');
   const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: initialize };
   const list = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} };
+  const concurrent = Array.from({ length: 20 }, () => new Client(endpoint, factory.receipt));
+  const initialized = await Promise.all(concurrent.map((client) => client.raw(init)));
+  expect(initialized.every((response) => response.status === 200 && response.sessionId)).toBe(true);
+  expect(new Set(initialized.map((response) => response.sessionId)).size).toBe(20);
+  for (const client of concurrent) expect((await client.rpc('tools/list')).result.tools.length).toBeGreaterThan(0);
   for (const batch of [[init], [init, list]]) {
     expect((await fresh.raw(batch)).body.error.data.reason).toBe('batch_not_supported');
   }
@@ -45,6 +50,9 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   }
   await fresh.reject('append_progress', { summary: 'Unclaimed mutation', idempotency_key: 'unclaimed' }, 'claim_required');
   const id = await fresh.request('Trusted initialization');
+  const bound = await fresh.call('get_current_assignment');
+  expect((await fresh.rpc('initialize', initialize)).error.data.reason).toBe('already_initialized');
+  expect((await fresh.call('get_current_assignment')).assignment.work_package_id).toBe(bound.assignment.work_package_id);
   const omittedHealthArgs = await fresh.rpc('tools/call', { name: 'sympp.health' });
   expect(omittedHealthArgs.result.structuredContent.status).toBe('ok');
   expect(JSON.stringify(omittedHealthArgs)).not.toContain(id);
@@ -292,7 +300,11 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
   const factory = processes.factory();
   const architect = await factory.client();
   const request = await architect.request('Retire terminal scope');
-  const [superseded, completed, successor, unclaimed] = await packages(architect, ['Old scope', 'Accepted research', 'New scope', 'Unclaimed old scope']);
+  const [superseded, completed, successor, unclaimed] = (await architect.call('slice_work_request', { work_packages: [
+    contract('Old scope'), contract('Accepted research', { kind: 'docs' }),
+    contract('New scope'), contract('Unclaimed old scope'),
+  ] })).work_package_ids;
+  for (const work_package_id of [superseded, completed, successor, unclaimed]) await architect.call('dispatch_work_package', { work_package_id });
   const old = await worker(factory, superseded);
   const research = await worker(factory, completed, 'research-worker');
   const supersede = (wp: string) => close(architect, wp, 'superseded', { successor_work_package_id: successor, superseded_reason: 'A bounded successor owns this scope.' });
@@ -373,7 +385,13 @@ test('worker plan updates are atomic and native evidence history remains complet
   const factory = processes.factory();
   const architect = await factory.client();
   await architect.request('Worker planning and history');
-  const [wp, sibling] = await packages(architect, ['Plan owner', 'Other plan']);
+  const reviewValues = ['synthetic-review-credential', 'synthetic-review-access', 'synthetic-review-verifier'];
+  const [wp, sibling] = (await architect.call('slice_work_request', { work_packages: [
+    contract('Plan owner', { review: { type: 'review-suite', args: {
+      mode: 'fast', credential: reviewValues[0], access_key: reviewValues[1], grant_verifier: reviewValues[2],
+    } } }), contract('Other plan'),
+  ] })).work_package_ids;
+  for (const work_package_id of [wp, sibling]) await architect.call('dispatch_work_package', { work_package_id });
   const client = await worker(factory, wp);
   const peer = await worker(factory, sibling, 'peer-worker');
   const initial = await client.call('read_task_plan');
@@ -437,11 +455,37 @@ test('worker plan updates are atomic and native evidence history remains complet
     expect(oldest.next_before_sequence).toBeNull();
     expect(older[collection].every((entry: any) => entry.sequence < boundary)).toBe(true);
   }
+  const safeIdentity = 'finding_embeddedSk-syntheticIdentifier';
+  const sensitiveFinding = await client.call('append_finding', {
+    id: safeIdentity, title: 'Identity survives document encoding',
+    body: 'Keep identity while hiding sk-synthetic-document-secret', severity: 'sk-synthetic-severity-secret',
+    idempotency_key: 'document-identity',
+  });
+  expect(sensitiveFinding.finding.id).toBe(safeIdentity);
   for (const document of ['context.md', 'task_plan.md', 'findings.md', 'progress.md', 'acceptance.md', 'review.md', 'handoff.md']) {
     const native = await client.rpc('tools/call', { name: 'read_work_package_document', arguments: { document } });
     const resource = await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/${document}` });
     expect(native.result.content[0].text).toBe(resource.result.contents[0].text);
     expect(resource.result.contents[0].mimeType).toBe('text/vnd.toon');
+    if (document === 'findings.md' || document === 'handoff.md') {
+      const finding = native.result.structuredContent.findings.find((entry: any) => entry.id === safeIdentity);
+      expect(finding.id).toBe(safeIdentity);
+      expect(finding.severity).toBe('[REDACTED]');
+      if (document === 'findings.md') expect(finding.body).toContain('[REDACTED]');
+      expect(native.result.content[0].text).toContain(safeIdentity);
+      expect(native.result.content[0].text).toContain('[REDACTED]');
+      for (const secret of ['sk-synthetic-document-secret', 'sk-synthetic-severity-secret']) {
+        expect(JSON.stringify(native)).not.toContain(secret);
+        expect(JSON.stringify(resource)).not.toContain(secret);
+      }
+    }
+    if (document === 'context.md' || document === 'review.md') {
+      expect(JSON.stringify(native)).toContain('[REDACTED]');
+      for (const value of reviewValues) {
+        expect(JSON.stringify(native)).not.toContain(value);
+        expect(JSON.stringify(resource)).not.toContain(value);
+      }
+    }
   }
   const redacted = await client.rpc('tools/call', { name: 'append_progress', arguments: {
     summary: 'Recorded progress sk-synthetic-progress-token', idempotency_key: 'redacted-progress',
@@ -449,8 +493,11 @@ test('worker plan updates are atomic and native evidence history remains complet
   } });
   expect(redacted.result.structuredContent.progress_event.summary).toContain('[REDACTED]');
   const projected = await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/progress.md` });
+  const explicitProgress = await client.rpc('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } });
+  expect(explicitProgress.result.content[0].text).toBe(projected.result.contents[0].text);
   for (const value of ['sk-synthetic-progress-token', 'synthetic-access-value', 'synthetic-api-value', 'synthetic-verifier-value', 'synthetic-private-path', 'unprojected-safe-value']) {
     expect(redacted.result.content[0].text).not.toContain(value);
+    expect(JSON.stringify(explicitProgress)).not.toContain(value);
     expect(projected.result.contents[0].text).not.toContain(value);
   }
 });
@@ -462,12 +509,33 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
     kind: 'mcp', policy_template: 'mcp_current_pr_state', branch_pattern: 'feature/authority',
   }), contract('Confidential sibling terminal marker')] })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: wp });
-  const client = await worker(factory, wp);
+  let client = await worker(factory, wp);
   for (const type of ['branch', 'pr']) await client.call('append_progress', { summary: `Spoof ${type}`, idempotency_key: `spoof-${type}`, payload: { type, source_tool: `attach_${type}` } });
-  expect((await client.rpc('tools/call', { name: 'mark_ready', arguments: {} })).error).toBeTruthy();
+  expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toEqual(['branch_attached', 'pr_attached']);
   await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('a'), idempotency_key: 'branch-once' });
   await client.call('attach_pr', { url: prUrl(302), head_sha: head('a') });
-  expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toContain('current_pr_state');
+  const missingState = (await client.reject('mark_ready', {}, 'readiness_failed')).missing;
+  expect(missingState).toContain('current_pr_state');
+  expect(missingState).not.toContain('pr_attached');
+  for (const [status, checks] of [
+    ['passing', [{ status: 'COMPLETED', conclusion: 'SUCCESS' }]],
+    ['failing', [{ status: 'COMPLETED', conclusion: 'FAILURE' }]],
+    ['pending', [{ status: 'IN_PROGRESS', conclusion: null }]],
+    ['unknown', []],
+  ] as const) {
+    provider.set(302, pr(302, head('a'), { headRefName: 'feature/authority', statusCheckRollup: checks }));
+    const before = provider.calls.filter((call) => call.argv[0] === 'pr').length;
+    const observation = (await client.call('sync_pr', { idempotency_key: `provider-state-${status}` })).progress_event;
+    const history = await client.call('read_work_package_document', { document: 'progress.md' });
+    const payload = history.progress_events.find((entry: any) => entry.id === observation.id).payload.observation;
+    expect(payload.check_summary.status).toBe(status);
+    expect(payload.review_state.status).toBe('approved');
+    expect(payload.merge_state).toEqual({ merged: false, status: 'clean' });
+    expect(payload.provider_reference).toBe('PR_synthetic_302');
+    expect(Number.isFinite(Date.parse(payload.observed_at))).toBe(true);
+    expect(provider.calls.filter((call) => call.argv[0] === 'pr')).toHaveLength(before + 1);
+    expect(provider.calls.at(-1)?.argv.slice(0, 5)).toEqual(['pr', 'view', '302', '--repo', 'example/service']);
+  }
   provider.set(302, pr(302, head('a'), { headRefName: 'feature/authority' }));
   const args = { idempotency_key: 'provider-once', url: prUrl(302) };
   const observed = (await client.call('sync_pr', args)).progress_event;
@@ -475,32 +543,57 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   provider.replies.set(302, { stdout: 'Provider offline', exitCode: 1 });
   expect((await client.call('sync_pr', args)).progress_event.id).toBe(observed.id);
   expect(provider.calls).toHaveLength(providerCalls);
+  await client.call('release_current_assignment', { reason: 'Reconnect provider replay' });
+  client = await worker(factory, wp);
+  expect((await client.call('sync_pr', args)).progress_event.id).toBe(observed.id);
+  expect(provider.calls).toHaveLength(providerCalls);
   const document = await client.call('read_work_package_document', { document: 'progress.md' });
-  for (const reply of [{ stdout: 'Provider offline', exitCode: 1 }, { stdout: 'not json', exitCode: 0 }]) {
+  for (const [reply, reason] of [
+    [{ stdout: 'Provider offline', exitCode: 1 }, 'provider_unavailable'],
+    [{ stdout: 'not json', exitCode: 0 }, 'provider_unavailable'],
+    [{ stdout: '{}', exitCode: 0 }, 'provider_malformed'],
+  ] as const) {
     provider.replies.set(302, reply);
-    expect((await client.rpc('tools/call', { name: 'sync_pr', arguments: {} })).error).toBeTruthy();
+    const failed = await client.rpc('tools/call', { name: 'sync_pr', arguments: {} });
+    expect(failed.error.code).toBe(-32000);
+    expect(failed.error.data.layer).toBe('provider');
+    expect(failed.error.data.reason).toBe(reason);
     expect(await client.call('read_work_package_document', { document: 'progress.md' })).toEqual(document);
   }
+  const beforeWrongReference = provider.calls.length;
   await client.reject('sync_pr', { url: prUrl(303) }, 'pr_reference_mismatch');
+  expect(provider.calls).toHaveLength(beforeWrongReference);
   provider.set(302, pr(302, head('b'), { headRefName: 'feature/authority' }));
-  await client.reject('sync_pr', {}, 'provider_head_mismatch');
+  const mismatch = await client.reject('sync_pr', {}, 'provider_head_mismatch');
+  expect(mismatch.expected_head_sha).toBe(head('a'));
+  expect(mismatch.actual_head_sha).toBe(head('b'));
+  expect(mismatch.recovery.next_action).toBe('prove_current_head_then_retry_sync_pr');
   expect(await client.call('read_work_package_document', { document: 'progress.md' })).toEqual(document);
   await client.reject('sync_pr', { check_summary: { status: 'passing' } }, 'unexpected_argument');
   const recovery = { url: prUrl(302), head_sha: head('a'), branch: 'feature/authority', base_branch: 'beta',
-    observed_at: '', check_summary: { status: 'passing' }, review_state: { status: 'approved' }, merge_state: { status: 'clean', merged: false } };
+    observed_at: '', provider_reference: 'synthetic-import-302', check_summary: { status: 'passing' }, review_state: { status: 'approved' }, merge_state: { status: 'clean', merged: false } };
+  const beforeImport = provider.calls.length;
   const imported = (await client.call('sync_pr', { recovery, idempotency_key: 'recovery-once' })).progress_event;
+  const importedHistory = await client.call('read_work_package_document', { document: 'progress.md' });
+  expect(importedHistory.progress_events.find((entry: any) => entry.id === imported.id).payload.observation.provider_reference).toBe('synthetic-import-302');
   expect((await client.call('sync_pr', { recovery, idempotency_key: 'recovery-once' })).progress_event.id).toBe(imported.id);
   await client.reject('sync_pr', { recovery: { ...recovery, check_summary: { status: 'failing' } }, idempotency_key: 'recovery-once' }, 'idempotency_conflict');
   await client.reject('sync_pr', { recovery: { ...recovery, check_summary: { status: 'green' } } }, 'invalid_recovery');
   await client.reject('sync_pr', { recovery: { ...recovery, merge_state: { status: 'clean', merged: true } } }, 'invalid_recovery');
+  expect(provider.calls).toHaveLength(beforeImport);
   await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('b') });
-  expect((await client.rpc('tools/call', { name: 'mark_ready', arguments: {} })).error).toBeTruthy();
+  expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toContain('current_pr_state');
   await client.call('attach_pr', { url: prUrl(302), head_sha: head('b') });
+  expect((await client.call('sync_pr', { recovery, idempotency_key: 'recovery-once' })).progress_event.id).toBe(imported.id);
+  expect(provider.calls).toHaveLength(beforeImport);
   await client.call('sync_pr');
   await client.call('attach_pr', { url: prUrl(302), head_sha: head('b'), idempotency_key: 'reattach-after-sync' });
   expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toContain('current_pr_state');
   await client.call('sync_pr', { recovery: { ...recovery, head_sha: head('b') }, idempotency_key: 'current-state-after-reattach' });
   expect((await client.call('mark_ready')).work_package.status).toBe('ready_for_merge');
+  const beforeReadyReplay = provider.calls.length;
+  expect((await client.call('sync_pr', args)).progress_event.id).toBe(observed.id);
+  expect(provider.calls).toHaveLength(beforeReadyReplay);
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
   const readyDocument = await client.call('read_work_package_document', { document: 'progress.md' });
   await client.reject('sync_pr', {}, 'pr_not_merged');
@@ -542,6 +635,10 @@ deliveryTest('worker metadata replay and short-head matching preserve distinct r
   expect((await full.call('read_work_package_document', { document: 'progress.md' })).progress_events.find((entry: any) => entry.id === branch.id).payload.observation.branch).toBe('feature/authority');
   expect((await full.call('attach_branch', { ...branchArgs, work_package_id: ids[0] })).progress_event.id).toBe(branch.id);
   await full.reject('attach_branch', { ...branchArgs, head_sha: head('b') }, 'idempotency_conflict');
+  const separate = (await full.call('attach_branch', { ...branchArgs, idempotency_key: 'independent-observation' })).progress_event;
+  expect(separate.id).not.toBe(branch.id);
+  await full.call('attach_pr', { url: prUrl(304), head_sha: head('b') });
+  expect((await full.reject('mark_ready', {}, 'readiness_failed')).missing).toContain('pr_attached');
   const prArgs = { number: 304, head_sha: head('a'), idempotency_key: 'pr-replay' };
   const attached = (await full.call('attach_pr', prArgs)).progress_event;
   expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${ids[0]}`)).metadata.pr.url).toBe(prUrl(304));
@@ -581,7 +678,10 @@ deliveryTest('worker metadata replay and short-head matching preserve distinct r
     const client = await worker(factory, ids[index], `recovery-policy-${index}`);
     await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('a') });
     await client.call('attach_pr', { url: prUrl(330 + index), head_sha: head('a') });
-    if (changeHead) await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('b') });
+    if (changeHead) {
+      await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('b') });
+      expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toContain('pr_attached');
+    }
     await client.call('sync_pr', { recovery: { url: prUrl(330 + index), head_sha: head(changeHead ? 'b' : 'a'),
       check_summary: { status: 'passing' }, review_state: { status: 'approved' }, merge_state: { status: 'clean', merged: false } } });
     expect((await client.call('mark_ready')).ready).toBe(true);

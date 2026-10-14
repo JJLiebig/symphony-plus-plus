@@ -730,6 +730,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     id = observation.id
     mcp_tool(repo, session, "append_finding", %{"title" => "Prior evidence", "body" => "Recover the finding body", "idempotency_key" => "finding-once"})
+    assert {:ok, _} =
+             PlanningRepository.append_artifact(repo, %{
+               work_package_id: package.id,
+               title: "Stored artifact kind",
+               path: "evidence/stored-kind",
+               kind: "sk-synthetic-artifact-kind"
+             })
 
     for {mode, profile} <- [{:stdio, :full}, {:stdio, :worker}, {:http, :worker}],
         document <- ~w(context.md task_plan.md findings.md progress.md acceptance.md review.md handoff.md) do
@@ -745,6 +752,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
       assert get_in(response, ["result", "content", Access.at(0), "text"]) == get_in(resource, ["result", "contents", Access.at(0), "text"])
       assert get_in(response, ["result", "structuredContent", "file"]) == document
+      refute Jason.encode!(response) =~ "sk-synthetic-artifact-kind"
+      refute Jason.encode!(resource) =~ "sk-synthetic-artifact-kind"
+
+      if document == "handoff.md" do
+        assert get_in(response, ["result", "structuredContent", "artifacts", Access.at(0), "kind"]) == "[REDACTED]"
+      end
     end
 
     # A fresh session recovers the original observation without replaying its mutation.

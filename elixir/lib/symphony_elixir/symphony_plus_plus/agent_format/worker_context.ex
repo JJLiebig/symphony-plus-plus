@@ -182,12 +182,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
       "owner_id" => Redactor.redact_text(work_package.owner_id),
       "product_description" => Redactor.redact_text(work_package.product_description),
       "engineering_scope" => Redactor.redact_text(work_package.engineering_scope),
-      "review" => Redactor.redact_output(work_package.review_requirement)
+      "review" => agent_safe(work_package.review_requirement)
     }
   end
 
   defp review_payload(%State{work_package: work_package}) do
-    %{"requirement" => Redactor.redact_output(work_package.review_requirement)}
+    %{"requirement" => agent_safe(work_package.review_requirement)}
   end
 
   defp plan_node_payload(%PlanNode{} = plan_node) do
@@ -205,7 +205,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
       "sequence" => finding.sequence,
       "idempotency_key" => idempotency_identity(finding.idempotency_key),
       "title" => Redactor.redact_text(finding.title),
-      "severity" => finding.severity,
+      "severity" => Redactor.redact_text(finding.severity),
       "body" => Redactor.redact_text(finding.body),
       "created_at" => timestamp(finding.created_at)
     }
@@ -217,7 +217,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
       "sequence" => finding.sequence,
       "idempotency_key" => idempotency_identity(finding.idempotency_key),
       "title" => Redactor.redact_text(finding.title),
-      "severity" => finding.severity,
+      "severity" => Redactor.redact_text(finding.severity),
       "created_at" => timestamp(finding.created_at)
     }
   end
@@ -254,7 +254,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext do
       "sequence" => artifact.sequence,
       "path" => Redactor.redact_text(artifact.path),
       "title" => Redactor.redact_text(artifact.title),
-      "kind" => artifact.kind,
+      "kind" => Redactor.redact_text(artifact.kind),
       "uri" => Redactor.redact_text(artifact.uri),
       "metadata" => payload_overview(artifact.metadata || %{})
     }

@@ -130,7 +130,7 @@ export class Client {
     }, { method: typeof payload === 'object' && payload !== null && 'method' in payload ? payload.method : method,
       payload, headerNames: Object.keys(headers) });
     this.session = response.headers.get('mcp-session-id') ?? this.session;
-    return { status: response.status, body };
+    return { status: response.status, body, sessionId: response.headers.get('mcp-session-id') };
   }
 
   async call(name: string, args: object = {}) {
