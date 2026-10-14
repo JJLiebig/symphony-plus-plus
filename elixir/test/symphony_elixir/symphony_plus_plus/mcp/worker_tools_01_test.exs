@@ -730,6 +730,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     id = observation.id
     mcp_tool(repo, session, "append_finding", %{"title" => "Prior evidence", "body" => "Recover the finding body", "idempotency_key" => "finding-once"})
+
     assert {:ok, _} =
              PlanningRepository.append_artifact(repo, %{
                work_package_id: package.id,

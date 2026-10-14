@@ -130,7 +130,7 @@ export class Client {
     }, { method: typeof payload === 'object' && payload !== null && 'method' in payload ? payload.method : method,
       payload, headerNames: Object.keys(headers) });
     this.session = response.headers.get('mcp-session-id') ?? this.session;
-    return { status: response.status, body, sessionId: response.headers.get('mcp-session-id') };
+    return { status: response.status, body, sessionId: response.headers.get('mcp-session-id'), binding: response.headers.get('sympp-herdr-binding') };
   }
 
   async call(name: string, args: object = {}) {
@@ -162,12 +162,12 @@ export class Client {
     return body;
   }
 
-  async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta', repo = 'example/service') {
+  async request(title: string, status = 'ready_for_slicing', baseBranch = 'beta', repo = 'example/service', extraScopes: object[] = []) {
     const created = await this.call('create_work_request', {
       repo, base_branch: baseBranch, title,
       description: 'Synthetic acceptance request; no external work is executed.',
       request_kind: 'feature', status, claimed_by: 'acceptance-architect',
-      repo_scopes: [{ repo: 'example/client', base_branch: 'integration' }],
+      repo_scopes: [{ repo: 'example/client', base_branch: 'integration' }, ...extraScopes],
     });
     expect(created.status).toBe('created');
     expect(created.work_request.creator).toEqual({ kind: 'agent', name: 'acceptance-architect', via: 'mcp' });

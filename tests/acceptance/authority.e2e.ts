@@ -10,6 +10,9 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   const uninitialized = await fresh.raw(tool('create_work_request', {}));
   expect(uninitialized.status).toBe(400);
   expect(uninitialized.body.error.data.reason).toBe('missing_session_id');
+  for (const name of ['add_work_request_comment', 'record_work_request_operator_decision']) {
+    expect((await fresh.raw(tool(name, {}))).body.error.data.reason).toBe('missing_session_id');
+  }
   const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: initialize };
   const list = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} };
   const concurrent = Array.from({ length: 20 }, () => new Client(endpoint, factory.receipt));
@@ -86,7 +89,9 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
 test('architect scope separates same-repository discovery from foreign writes and hides sibling endpoints', async ({ processes }) => {
   const factory = processes.factory();
   const architect = await factory.client();
-  const own = await architect.request('Owned request');
+  const own = await architect.request('Owned request', 'ready_for_slicing', 'beta', 'example/service', [
+    { repo: 'example/service', base_branch: 'integration' },
+  ]);
   const [ownWp] = await packages(architect, ['Owned package']);
   const malformedQuestion = await architect.reject('ask_question', { work_request_id: own, category: 'scope',
     question: 'Continue implementation?', why_needed: 'A choice is required.',
@@ -106,7 +111,10 @@ test('architect scope separates same-repository discovery from foreign writes an
     ['slice_work_request', { work_request_id: other, work_packages: [contract('Stolen')] }],
     ['dispatch_work_package', { work_request_id: other, work_package_id: otherWp }],
     ['reconcile_work_request', { work_request_id: other, apply: true }],
+    ['record_work_package_delivery', { work_request_id: other, work_package_id: otherWp, outcome: 'completed_no_pr', idempotency_key: 'foreign-close', evidence: { completed_no_pr: { no_pr_evidence: 'Refuse foreign closeout' } } }],
+    ['sync_pr', { work_request_id: own, work_package_id: otherWp }],
   ] as const) await architect.reject(name, args, 'not_found');
+  await architect.reject('dispatch_work_package', { work_request_id: own, work_package_id: 'missing-package' }, 'not_found');
   for (const [name, fields] of [
     ['answer_question', { answer: 'Stolen', answered_by: 'attacker' }],
     ['close_question', {}],
@@ -133,6 +141,13 @@ test('architect scope separates same-repository discovery from foreign writes an
   expect(unchanged.work_request.title).toBe('Other request');
   expect(unchanged.work_packages[0].status).toBe('planned');
   expect(unchanged.clarification_questions.find((entry: any) => entry.id === question.id).status).toBe('open');
+  await peer.call('dispatch_work_package', { work_package_id: otherWp });
+  const siblingWorker = await worker(factory, otherWp, 'sibling-worker');
+  const siblingGrant = (await siblingWorker.call('get_current_assignment')).assignment.grant_id;
+  await architect.reject('revoke_work_package_worker_key', { work_request_id: other, work_package_id: otherWp,
+    grant_id: siblingGrant, reason: 'Refuse foreign revoke',
+  }, 'not_found');
+  expect((await siblingWorker.call('get_current_assignment')).assignment.grant_id).toBe(siblingGrant);
 
   const secondary = await factory.client();
   await secondary.request('Secondary repository reader', 'ready_for_slicing', 'integration', 'example/client');
@@ -173,6 +188,16 @@ test('architect scope separates same-repository discovery from foreign writes an
   expect(hiddenTerminal['work_package_hidden?']).toBe(true);
   expect(hiddenTerminal.operational_state.key).toBe('completed_no_pr');
   expect(hiddenTerminal.attention_reason_codes).toEqual([]);
+  const sameRepoReader = await factory.client();
+  await sameRepoReader.request('Same repository different delivery base', 'ready_for_slicing', 'integration');
+  const [alternateBase] = (await architect.call('slice_work_request', { work_packages: [contract('Alternate delivery base', { base_branch: 'integration' })] })).work_package_ids;
+  await architect.call('dispatch_work_package', { work_package_id: alternateBase });
+  const baseBoard = (await sameRepoReader.call('read_delivery_board', { work_request_id: own })).delivery_board;
+  expect(baseBoard.work_packages.find((entry: any) => entry.id === alternateBase).work_package.id).toBe(alternateBase);
+  expect(baseBoard.work_packages.find((entry: any) => entry.id === ownWp).work_package).toBeNull();
+  await sameRepoReader.reject('record_work_package_delivery', { work_request_id: own, work_package_id: ownWp, outcome: 'completed_no_pr',
+    idempotency_key: 'wrong-delivery-base', evidence: { completed_no_pr: { no_pr_evidence: 'Refuse hidden-base closeout' } },
+  }, 'not_found');
 
   for (const [repo, branch] of [['foreign/service', 'beta'], ['example/service', 'other-branch']]) {
     const outsider = await factory.client();
@@ -208,6 +233,7 @@ test('worker mutations and resources remain confined to its package while explic
     ['force_release_work_package_claim', { work_package_id: sibling, reason: 'Steal authority' }],
   ] as const) await client.reject(name, { work_request_id: request, ...args }, 'architect_grant_required');
   await client.reject('dispatch_work_package', { work_request_id: request, work_package_id: sibling }, 'insufficient_role');
+  await client.reject('record_work_package_delivery', {}, 'architect_grant_required');
   const resources = await client.rpc('resources/list');
   expect(JSON.stringify(resources)).not.toContain(sibling);
   const foreignRead = await client.rpc('resources/read', { uri: `sympp://work-packages/${sibling}/progress.md` });
@@ -218,10 +244,18 @@ test('worker mutations and resources remain confined to its package while explic
   await client.reject('read_task_plan', { work_package_id: sibling }, 'unexpected_argument');
   expect(JSON.stringify(ownContext)).not.toContain('Confidential sibling');
   expect(JSON.stringify(ownContext)).not.toContain('Private sibling note');
+  const overlong = await client.rpc('tools/call', { name: 'add_comment', arguments: { body: 'x'.repeat(4001) } });
+  expect(overlong.error.data.reason).toContain('body');
+  expect((await client.call('list_comments')).comments).toEqual([]);
   const comment = (await client.call('add_comment', { body: 'Review sk-synthetic-secret before completion' })).comment;
   expect(comment.body).toContain('[REDACTED]');
   expect(comment.body).not.toContain('sk-synthetic-secret');
-  expect((await client.call('resolve_comment', { comment_id: comment.id, resolution_note: 'Addressed' })).comment.status).toBe('resolved');
+  const resolved = (await client.call('resolve_comment', { comment_id: comment.id, resolution_note: 'Addressed' })).comment;
+  expect(resolved.status).toBe('resolved');
+  expect(resolved.source_type).toBe('worker');
+  expect(resolved.author_name).toBe('acceptance-worker');
+  expect(resolved.resolved_by).toBe('acceptance-worker');
+  expect(resolved.resolved_source_type).toBe('worker');
   const note = await client.call('add_work_request_comment', { work_request_id: request, body: 'An explicit local operator note' });
   expect(note.comment.body).toBe('An explicit local operator note');
   expect(note.comment.author_name).toBe('acceptance-worker');
@@ -300,13 +334,17 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
   const factory = processes.factory();
   const architect = await factory.client();
   const request = await architect.request('Retire terminal scope');
-  const [superseded, completed, successor, unclaimed] = (await architect.call('slice_work_request', { work_packages: [
-    contract('Old scope'), contract('Accepted research', { kind: 'docs' }),
+  const [superseded, completed, successor, unclaimed, detached] = (await architect.call('slice_work_request', { work_packages: [
+    contract('Old scope', { kind: 'docs' }), contract('Accepted research', { kind: 'docs' }),
     contract('New scope'), contract('Unclaimed old scope'),
+    contract('Completed disconnected work', { kind: 'docs' }),
   ] })).work_package_ids;
-  for (const work_package_id of [superseded, completed, successor, unclaimed]) await architect.call('dispatch_work_package', { work_package_id });
+  for (const work_package_id of [superseded, completed, successor, unclaimed, detached]) await architect.call('dispatch_work_package', { work_package_id });
   const old = await worker(factory, superseded);
   const research = await worker(factory, completed, 'research-worker');
+  await old.call('mark_ready');
+  await architect.call('update_work_package', { work_package_id: superseded, expected_contract_revision: 1, patch: { goal: 'The scope needs an implementing revision before supersession.' } });
+  expect((await row(architect, request, superseded)).raw_status).toBe('implementing');
   const supersede = (wp: string) => close(architect, wp, 'superseded', { successor_work_package_id: successor, superseded_reason: 'A bounded successor owns this scope.' });
   const invalidSuccessor = await factory.client();
   await invalidSuccessor.request('Foreign successor owner');
@@ -325,7 +363,15 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
     const fresh = await factory.client();
     expect((await fresh.rpc('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: wp, claimed_by: 'terminal-reclaim' } })).error).toBeTruthy();
     expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).progress.filter((event: any) => event.summary === 'Terminal mutation')).toEqual([]);
+    expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).summary.active_grant_count).toBe(0);
+    expect((await row(architect, request, wp)).work_package.runtime_state.reason_codes).not.toContain('claim_lease_active');
   }
+  const disconnected = await worker(factory, detached, 'completed-worker');
+  await disconnected.call('mark_ready');
+  await disconnected.call('release_current_assignment', { reason: 'Work completed before architect delivery' });
+  expect((await row(architect, request, detached)).work_package.runtime_state.reason_codes).not.toContain('claim_lease_active');
+  await close(architect, detached);
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${detached}`)).summary.active_grant_count).toBe(0);
   const fresh = await factory.client();
   expect((await fresh.rpc('tools/call', { name: 'claim_local_assignment', arguments: { work_package_id: unclaimed } })).error).toBeTruthy();
   expect((await row(architect, request, superseded)).delivery_outcome).toBe('superseded');
@@ -511,7 +557,7 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   await architect.call('dispatch_work_package', { work_package_id: wp });
   let client = await worker(factory, wp);
   for (const type of ['branch', 'pr']) await client.call('append_progress', { summary: `Spoof ${type}`, idempotency_key: `spoof-${type}`, payload: { type, source_tool: `attach_${type}` } });
-  expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toEqual(['branch_attached', 'pr_attached']);
+  expect((await client.reject('mark_ready', {}, 'readiness_failed')).missing).toEqual(['branch_attached', 'pr_attached', 'current_pr_state']);
   await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('a'), idempotency_key: 'branch-once' });
   await client.call('attach_pr', { url: prUrl(302), head_sha: head('a') });
   const missingState = (await client.reject('mark_ready', {}, 'readiness_failed')).missing;
@@ -843,6 +889,53 @@ test('architect reports preserve server times and partial edits while rejecting 
   expect((await row(architect, request, wp)).attention_reason_codes).not.toContain('active_blocker');
 });
 
+test('architect question and decision mutations preserve provenance and redact compact responses', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Redacted clarification authority', 'ready_for_clarification');
+  const status = await architect.call('set_work_request_status', { work_request_id: request, current_status: 'ready_for_clarification', next_status: 'clarifying' });
+  expect(status.work_request.status).toBe('clarifying');
+  expect(status.scope).toEqual({ repo: 'example/service', base_branch: 'beta' });
+  const ask = await architect.call('ask_question', { work_request_id: request, category: 'scope',
+    question: 'Avoid Bearer raw_secret_synthetic', why_needed: 'Keep raw_secret_synthetic out of responses.',
+    asked_by_agent_run_id: 'raw_secret_synthetic', decision_prompt: { tl_dr: 'Choose scope', details: 'A bounded decision is required.',
+      options: [{ id: 'continue', label: 'Continue', answer: 'Proceed without raw_secret_synthetic.' }],
+    },
+  });
+  const question = ask.clarification_question.id;
+  for (const field of ['asked_by_agent_run_id', 'decision_prompt']) expect(ask.clarification_question[field]).toBeUndefined();
+  expect(JSON.stringify(ask)).not.toContain('raw_secret_synthetic');
+  for (const [value, got] of [['ready_for_slicing', 'ready_for_slicing'], [123, 'non_string']] as const) {
+    const invalid = await architect.reject('answer_question', { work_request_id: request, question_id: question,
+      expected_question_status: value, answer: 'Invalid status domain',
+    }, 'invalid_question_status');
+    expect(invalid.status_domain).toBe('clarification_question');
+    expect(invalid.expected_statuses).toEqual(['open']);
+    expect(invalid.got).toBe(got);
+  }
+  const answered = await architect.call('answer_question', { work_request_id: request, question_id: question,
+    answer: 'Use https://example.invalid/evidence?sig=raw_secret_synthetic',
+  });
+  expect(answered.clarification_question.status).toBe('answered');
+  expect(answered.clarification_question.answered_by).toBeUndefined();
+  expect(JSON.stringify(answered)).not.toContain('raw_secret_synthetic');
+  const ids: string[] = [];
+  for (const [source, by] of [['implicit', undefined], ['override', 'synthetic-architect-override']] as const) {
+    const result = await architect.call('record_decision', { work_request_id: request, source_type: 'architect', source_id: source,
+      decision: 'Exclude raw_secret_synthetic from the decision', rationale: 'Keep the scope bounded.', scope_impact: 'No scope expansion.',
+      ...(by ? { created_by: by } : {}),
+    });
+    expect(result.decision_log_entry.created_by).toBe(by ?? 'acceptance-architect');
+    expect(JSON.stringify(result)).not.toContain('raw_secret_synthetic');
+    ids.push(result.decision_log_entry.id);
+  }
+  const persisted = await architect.call('read_work_request', { work_request_id: request });
+  expect(persisted.work_request.status).toBe('clarifying');
+  expect(persisted.clarification_questions[0].status).toBe('answered');
+  expect(persisted.decision_log_entries.map((entry: any) => entry.id)).toEqual(ids);
+  expect(JSON.stringify(persisted)).not.toContain('raw_secret_synthetic');
+});
+
 test('worker context exposes selected decisions and direct dependencies without sibling contracts', async ({ processes }) => {
   const factory = processes.factory();
   const architect = await factory.client();
@@ -884,6 +977,19 @@ test('explicit trusted local notes remain independent of stale worker authority 
   expect(JSON.stringify(note)).not.toContain('sk-synthetic');
   const packageNote = (await client.call('add_comment', { body: 'Existing package note' })).comment;
   const observer = await factory.client();
+  const localNote = await observer.call('add_work_request_comment', { work_request_id: request,
+    body: 'Coordinate ghp_syntheticcomment before slicing', created_by: 'operator sk-synthetic-author',
+  });
+  expect(localNote.comment.body).toBe('Coordinate [REDACTED] before slicing');
+  expect(localNote.comment.source_type).toBe('operator');
+  expect(localNote.comment.author_name).toBe('operator [REDACTED]');
+  expect(localNote.provenance.created_by).toBe('operator [REDACTED]');
+  const localDecision = await observer.call('record_work_request_operator_decision', {
+    ...decisionArgs, source_id: 'ghp_syntheticdecision', created_by: 'operator sk-synthetic-decision-author',
+  });
+  expect(localDecision.decision_log_entry.source_id).toBe('[REDACTED]');
+  expect(localDecision.decision_log_entry.created_by).toBe('operator [REDACTED]');
+  expect((await observer.call('list_comments', { target_kind: 'work_request', target_id: request })).comments.map((entry: any) => entry.id)).toContain(localNote.comment.id);
   expect((await observer.call('list_comments', { target_kind: 'work_package', target_id: wp })).comments.map((entry: any) => entry.id)).toContain(packageNote.id);
   await observer.reject('list_comments', { target_kind: 'work_request', target_id: 'missing-request' }, 'not_found');
   expect((await observer.call('get_current_assignment')).assignment).toBeNull();
@@ -901,6 +1007,8 @@ test('explicit trusted local notes remain independent of stale worker authority 
   const persisted = await architect.call('read_work_request', { work_request_id: request });
   const stored = persisted.decision_log_entries.find((entry: any) => entry.id === note.decision_log_entry.id);
   expect(stored.decision).toBe('Use [REDACTED]');
+  expect(stored.rationale).toBe('Context [REDACTED]');
+  expect(stored.scope_impact).toBe('Bounded [REDACTED]');
   expect(JSON.stringify(stored)).not.toContain('sk-synthetic');
   expect((await architect.call('list_comments', { target_kind: 'work_request', target_id: request })).comments.map((entry: any) => entry.id)).toContain(comment.comment.id);
 });

@@ -192,7 +192,7 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   expect(reconnected[0].result.structuredContent.assignment.grant_id).toBe(claimed.structuredContent.assignment.grant_id);
   expect(reconnected[0].result.structuredContent.local_claim.claim_lease_action).toBe('heartbeat');
   expect(reconnected[0].result.structuredContent.local_claim.mode).toBe('stdio');
-  expect(reconnected[0].result.structuredContent.local_claim.caller_id).not.toBe(claimed.structuredContent.local_claim.caller_id);
+  expect(reconnected[0].result.structuredContent.assignment.claimed_by).toBe(claimed.structuredContent.assignment.claimed_by);
   expect((await peer.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment.work_package_id).toBe(wp);
   const note = await candidate.rawRequest('tools/call', { name: 'add_work_request_comment', arguments: { work_request_id: request, body: 'Untrusted operator', created_by: 'stdio-worker' } });
   expect(note.error).toBeTruthy();
@@ -283,9 +283,22 @@ test('failed worker rebinding preserves its current authority and successful reb
   const request = await architect.request('Atomic worker rebind');
   const [first, second, taken] = await packages(architect, ['Original work', 'Next work', 'Other owner']);
   const [undispatched] = (await architect.call('slice_work_request', { work_packages: [contract('Unclaimed plan')] })).work_package_ids;
-  const client = await worker(factory, first, 'moving-worker');
-  const peer = await worker(factory, taken, 'peer-worker');
+  const workerFactory = processes.factory('worker-profile', { database: factory.database, surface: 'worker' });
+  const client = await workerFactory.client();
   const catalog = await client.rpc('tools/list');
+  const names = catalog.result.tools.map((entry: any) => entry.name);
+  for (const name of ['read_work_request', 'update_work_package', 'record_work_package_delivery', 'create_work_request', 'add_work_request_comment', 'claim_local_architect_assignment']) expect(names).not.toContain(name);
+  const unbound = await client.call('get_current_assignment');
+  expect(unbound.assignment).toBeNull();
+  expect(unbound.binding.state).toBe('unbound');
+  expect(unbound.recovery.tools).toEqual(['claim_local_assignment']);
+  await client.reject('read_context', {}, 'claim_required');
+  expect((await client.reject('get_current_assignment', { unexpected: true }, 'unexpected_argument')).arguments).toEqual(['unexpected']);
+  const claim = await client.call('claim_local_assignment', { work_package_id: first, claimed_by: 'moving-worker' });
+  for (const key of ['surface_revision', 'relist']) expect(claim[key]).toBeUndefined();
+  expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
+  const peer = await worker(factory, taken, 'peer-worker');
+  expect((await client.reject('record_work_package_delivery', {}, 'architect_grant_required')).recovery).toEqual({ next_action: 'return_to_architect', next_owner: 'architect' });
   await client.reject('claim_local_assignment', { work_package_id: first, claimed_by: 'replacement-owner' }, 'claim_lease_active_for_other_actor');
   expect((await client.call('get_current_assignment')).assignment.claimed_by).toBe('moving-worker');
   for (const [args, reason] of [
@@ -303,7 +316,9 @@ test('failed worker rebinding preserves its current authority and successful reb
   const recovered = await worker(factory, first, 'moving-worker');
   const recoveredEvent = (await recovered.call('append_progress', { summary: 'Original reservation recovered', idempotency_key: 'rebound' })).progress_event;
   expect((await recovered.call('read_work_package_document', { document: 'progress.md' })).progress_events.map((entry: any) => entry.id)).toContain(recoveredEvent.id);
-  await client.call('release_current_assignment');
+  const released = await client.rpc('tools/call', { name: 'release_current_assignment', arguments: {} });
+  expect(released.result.structuredContent.binding_cleared).toBe(true);
+  for (const key of ['claim_lease_id', 'grant_id', 'caller_id']) expect(released.result.content[0].text).not.toContain(key);
   const releasedAgain = await client.call('release_current_assignment');
   expect(releasedAgain.binding_cleared).toBe(true);
   expect(releasedAgain.released_assignment).toBeNull();
@@ -313,6 +328,75 @@ test('failed worker rebinding preserves its current authority and successful reb
   expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
   await client.call('claim_local_assignment', { work_package_id: second, claimed_by: 'moving-worker' });
   expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
+  await workerFactory.stop();
+  const restarted = processes.factory('worker-profile-restarted', { database: factory.database, surface: 'worker' });
+  const restored = client.reconnect(await restarted.endpoint);
+  expect((await restored.call('get_current_assignment')).assignment.work_package_id).toBe(second);
+  expect((await restored.rpc('tools/list')).result).toEqual(catalog.result);
+});
+
+test('HTTP location metadata follows successful authority and cannot be refreshed by failed or revoked calls', async ({ processes }) => {
+  const factory = processes.factory();
+  const architect = await factory.client();
+  const request = await architect.request('Session location attribution');
+  const [wp] = await packages(architect, ['Located worker']);
+  const client = await factory.client();
+  const located = (name: string, args: object, clientId: string, machine: string, pane = '') => ({
+    ...tool(name, args), params: { name, arguments: args, _meta: { sympp_session_location: {
+      client_id: clientId, machine_id: machine, machine_label: machine,
+      herdr: pane ? { pane_id: pane, workspace_id: 'synthetic-workspace', tab_id: 'synthetic-tab' } : {}, unknown_future_field: true,
+    } } },
+  });
+  const detail = async (id: string) => (await architect.inspect('/api/v1/sympp/operator/dashboard/hydrated')).work_request_details.find((entry: any) => entry.work_request.id === id);
+  const packageLocation = async () => (await detail(request)).work_packages.find((entry: any) => entry.id === wp).session_location;
+  const claim = await client.raw(located('claim_local_assignment', { work_package_id: wp, claimed_by: 'located-worker' }, 'synthetic-worker-client', 'synthetic-worker-machine', 'synthetic-pane'));
+  expect(claim.body.error).toBeUndefined();
+  const binding = JSON.parse(Buffer.from(claim.binding!, 'base64url').toString('utf8'));
+  expect(binding.role).toBe('worker');
+  expect(binding.work_package_id).toBe(wp);
+  expect(binding.show_inspector).toBe(false);
+  const location = await packageLocation();
+  expect(location.role).toBe('worker');
+  expect(location.source).toBe('herdr');
+  expect(location.machine_id).toBe('synthetic-worker-machine');
+  expect(location.herdr.pane_id).toBe('synthetic-pane');
+  const created = await client.call('create_work_request', { repo: 'example/service', base_branch: 'beta', title: 'Worker-originated follow-up',
+    request_kind: 'feature', description: 'Synthetic local follow-up without widening worker authority.',
+  });
+  const followup = created.work_request.id;
+  const creator = (await detail(followup)).work_request.architect_session_location;
+  expect(creator.role).toBe('coordinator');
+  expect(creator.machine_id).toBe(location.machine_id);
+  expect(await packageLocation()).toEqual(location);
+  await client.call('add_work_request_comment', { work_request_id: followup, body: 'Keep coordinator attribution.' });
+  const refreshed = (await detail(followup)).work_request.architect_session_location;
+  expect(refreshed.role).toBe('coordinator');
+  expect(Date.parse(refreshed.last_seen_at)).toBeGreaterThanOrEqual(Date.parse(creator.last_seen_at));
+  expect(await packageLocation()).toEqual(location);
+  expect((await client.raw(located('not_a_tool', {}, 'synthetic-failed-client', 'synthetic-failed-machine'))).body.error).toBeTruthy();
+  expect(await packageLocation()).toEqual(location);
+  await architect.call('revoke_work_package_worker_key', { work_package_id: wp, grant_id: claim.body.result.structuredContent.assignment.grant_id, reason: 'Retire located worker' });
+  expect((await client.raw(located('sympp.health', {}, 'synthetic-worker-client', 'synthetic-changed-machine'))).body.result).toBeTruthy();
+  expect(await packageLocation()).toEqual(location);
+  const stale = await client.raw(tool('get_current_assignment'));
+  expect(stale.body.result.structuredContent.assignment).toBeNull();
+  expect(stale.body.result.structuredContent.binding.state).toBe('stale');
+  expect(stale.binding).toBe('clear');
+  const planner = await factory.client();
+  const plannerClaim = await planner.raw(located('claim_local_architect_assignment', {
+    work_request_id: followup, claimed_by: 'located-architect', session_description: 'Synthetic planning terminal',
+  }, 'synthetic-architect-client', 'synthetic-planning-machine'));
+  expect(plannerClaim.body.error).toBeUndefined();
+  const plannerBinding = JSON.parse(Buffer.from(plannerClaim.binding!, 'base64url').toString('utf8'));
+  expect(plannerBinding.role).toBe('architect');
+  expect(plannerBinding.work_request_id).toBe(followup);
+  expect(plannerBinding.show_inspector).toBe(true);
+  const plannerLocation = (await detail(followup)).work_request.architect_session_location;
+  expect(plannerLocation.source).toBe('agent');
+  expect(plannerLocation.description).toBe('Synthetic planning terminal');
+  await planner.raw(located('read_work_request', { work_request_id: followup }, 'synthetic-architect-client', 'synthetic-planning-machine'));
+  expect((await detail(followup)).work_request.architect_session_location.description).toBe(plannerLocation.description);
+  expect((await planner.raw(tool('release_current_assignment'))).binding).toBe('clear');
 });
 
 test('HTTP client attachment telemetry and readiness preserve local request boundaries', async ({ processes }) => {
