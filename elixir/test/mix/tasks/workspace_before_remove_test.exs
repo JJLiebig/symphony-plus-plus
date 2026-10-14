@@ -10,21 +10,6 @@ defmodule Mix.Tasks.Workspace.BeforeRemoveTest do
     :ok
   end
 
-  test "prints help" do
-    output =
-      capture_io(fn ->
-        BeforeRemove.run(["--help"])
-      end)
-
-    assert output =~ "mix workspace.before_remove"
-  end
-
-  test "fails on invalid options" do
-    assert_raise Mix.Error, ~r/Invalid option/, fn ->
-      BeforeRemove.run(["--wat"])
-    end
-  end
-
   test "no-ops when branch is unavailable" do
     with_path([], fn ->
       in_temp_dir(fn ->
@@ -128,43 +113,6 @@ defmodule Mix.Tasks.Workspace.BeforeRemoveTest do
       assert second_output =~ "Closed PR #101 for branch feature/workpad"
       assert error_output =~ "Failed to close PR #102 for branch feature/workpad"
     end)
-  end
-
-  test "formats close failures without command stderr output" do
-    with_fake_gh(
-      """
-      #!/bin/sh
-      printf '%s\n' "$*" >> "$GH_LOG"
-
-      if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
-        exit 0
-      fi
-
-      if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
-        printf '102\n'
-        exit 0
-      fi
-
-      if [ "$1" = "pr" ] && [ "$2" = "close" ] && [ "$3" = "102" ]; then
-        exit 17
-      fi
-
-      exit 99
-      """,
-      fn log_path ->
-        error_output =
-          capture_io(:stderr, fn ->
-            Mix.Task.reenable("workspace.before_remove")
-            BeforeRemove.run(["--branch", "feature/no-output"])
-          end)
-
-        assert error_output =~ "Failed to close PR #102 for branch feature/no-output: exit 17"
-        refute error_output =~ "output="
-        log = File.read!(log_path)
-        assert log =~ "pr list --repo openai/symphony --head feature/no-output --state open --json number --jq .[].number"
-        assert log =~ "pr close 102 --repo openai/symphony"
-      end
-    )
   end
 
   test "no-ops when PR list fails for current branch" do

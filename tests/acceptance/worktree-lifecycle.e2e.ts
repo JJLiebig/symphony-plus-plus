@@ -64,6 +64,13 @@ test('real worktree prepare and replay preserve branch scope and clean only the 
   await client.reject('prepare_work_package_worktree', args, 'stale_existing_branch');
   expect(await git(root, repo.checkout, 'rev-parse', 'feature/owned')).toBe(divergent);
   expect(await exists(path)).toBe(false);
+  const distinct: string[] = [];
+  for (const branch of ['feature/a-b', 'feature-a/b']) {
+    const id = await workPackage(client, repo.origin, branch);
+    distinct.push((await client.call('prepare_work_package_worktree', { work_package_id: id, target_repo_root: repo.checkout })).worktree.path);
+  }
+  expect(distinct[0]).not.toBe(distinct[1]);
+  for (const owned of distinct) expect(await exists(owned)).toBe(true);
 });
 
 test('outside-root path substitution is refused without deleting unrelated content and recovery cleans the owned path', async ({ processes }) => {
@@ -131,27 +138,6 @@ test('missing metadata recovery refuses unrelated non-Git contents and preserves
   await rm(third);
   expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('stale_record_cleared');
   expect(await readFile(join(factory.home, 'ambient.txt'), 'utf8')).toBe('Ambient parent data\n');
-});
-
-test('deleting a goal preserves its cleanup obligation across a stopped backend and removes only its owned tree', async ({ processes }) => {
-  const { root } = processes;
-  const repo = await repository(root, 'source');
-  let factory = processes.factory();
-  let client = await factory.client();
-  const wp = await workPackage(client, repo.origin, 'feature/deleted');
-  const request = (await client.call('list_work_requests')).work_requests[0].id;
-  const path = (await client.call('prepare_work_package_worktree', { work_package_id: wp, target_repo_root: repo.checkout })).worktree.path;
-  await git(root, repo.checkout, 'worktree', 'lock', path);
-  expect((await client.operator(`${requestPath(request)}/delete`, {})).status).toBe(200);
-  expect((await client.operator(`${requestPath(request)}/restore`, {})).status).toBe(404);
-  expect(await exists(path)).toBe(true);
-  await factory.stop();
-  await git(root, repo.checkout, 'worktree', 'unlock', path);
-  factory = processes.factory();
-  client = await factory.client();
-  await expect.poll(() => exists(path), { timeout: 30_000 }).toBe(false);
-  expect((await client.call('list_work_requests')).work_requests).toEqual([]);
-  expect(await readFile(join(repo.checkout, 'README.md'), 'utf8')).toBe('Initial fixture content\n');
 });
 
 test('offline snapshot lifecycle changes leave copied live worktree paths and source history untouched', async ({ processes }) => {

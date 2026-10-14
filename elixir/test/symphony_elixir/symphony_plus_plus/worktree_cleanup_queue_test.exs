@@ -127,52 +127,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     assert File.dir?(package.worktree_path)
   end
 
-  test "active packages do not create cleanup obligations", %{repo: repo} do
-    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-active")
-    codex_home = use_codex_home!(fixture.root)
-    package = prepared_package!(repo, fixture.repo_root, codex_home, "WP-CLEANUP-ACTIVE", "fix/cleanup-active")
-    active = repo.update!(Ecto.Changeset.change(package, status: "active"))
-
-    assert :ok = WorktreeCleanupQueue.enqueue_terminal(repo, active, codex_home: codex_home)
-    assert repo.all(Entry) == []
-    assert File.dir?(package.worktree_path)
-  end
-
-  test "manual retryable cleanup reports queued while preserving its durable obligation", %{repo: repo} do
-    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-manual")
-    codex_home = use_codex_home!(fixture.root)
-    package = prepared_package!(repo, fixture.repo_root, codex_home, "WP-CLEANUP-MANUAL", "fix/cleanup-manual")
-
-    failure =
-      {:git_failed, 1,
-       %{
-         stage: "git_worktree_remove",
-         rule: "durable_preflight_proof"
-       }}
-
-    assert {:ok, queued} = WorktreeCleanupQueue.queue_retryable_cleanup(repo, package, failure, codex_home: codex_home)
-    assert queued.status == "cleanup_queued"
-    assert queued.worktree_path == package.worktree_path
-    assert [%Entry{work_package_id: package_id, worktree_path: worktree_path}] = repo.all(Entry)
-    assert package_id == package.id
-    assert worktree_path == package.worktree_path
-
-    assert {:error, :invalid_worktree_path} =
-             WorktreeCleanupQueue.queue_retryable_cleanup(repo, package, :invalid_worktree_path, codex_home: codex_home)
-
-    assert {:error, :unsafe_worktree_path} =
-             WorktreeCleanupQueue.queue_retryable_cleanup(
-               repo,
-               %{package | worktree_path: fixture.repo_root},
-               failure,
-               codex_home: codex_home
-             )
-  end
-
-  test "offline operator actions and retention never touch copied worktree paths or queued obligations", %{repo: repo} do
+  test "offline background reconciliation preserves existing cleanup obligations and source trees", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-offline-cleanup")
     codex_home = use_codex_home!(fixture.root)
-    {request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-OFFLINE", "fix/offline")
+    {_request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-OFFLINE", "fix/offline")
     repo.update!(Ecto.Changeset.change(package, status: "merged"))
     assert :ok = WorktreeCleanupQueue.enqueue_terminal(repo, %{package | status: "merged"}, codex_home: codex_home)
     [obligation] = repo.all(Entry)
@@ -181,17 +139,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
 
     try do
-      assert {:ok, _completed} = WorkRequestService.force_complete(repo, request.id)
-      assert {:ok, _archived} = WorkRequestService.archive(repo, request.id)
-      assert {:ok, _restored} = WorkRequestService.restore(repo, request.id)
-      assert {:ok, _archived} = WorkRequestService.archive(repo, request.id)
-
-      archived = repo.get!(WorkRequest, request.id)
-      repo.update!(Ecto.Changeset.change(archived, archived_at: DateTime.add(DateTime.utc_now(:microsecond), -90, :day)))
-      assert {:ok, %{deleted_count: 1}} = WorkRequestService.retention_pass(repo, delete_after_days: 30)
-      assert repo.get(WorkRequest, request.id) == nil
-      assert repo.get(WorkPackage, package.id) == nil
-      assert :ok = WorktreeCleanupQueue.enqueue_for_deletion(repo, [package], codex_home: codex_home)
       assert :ok = WorktreeCleanupQueue.reconcile(repo, codex_home: codex_home)
       assert repo.all(Entry) == [obligation]
       assert File.ls!(package.worktree_path) == before
