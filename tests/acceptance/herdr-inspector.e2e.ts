@@ -93,16 +93,17 @@ test('compiled inspector binds and pins actual request detail without stealing f
     await expect.poll(() => host.frames).toBeGreaterThan(before);
     expect(host.screen).toContain('Bound inspector request');
     expect(host.calls.filter((call) => call.method === 'pane.focus')).toEqual([]);
-    host.process!.stdin.write('p');
-    await expect.poll(() => host.screen).toContain('Other inspector request');
-    expect(host.screen).not.toContain('Bound inspector request');
     // No real worker process was started. Explicit Enter must still refuse to
     // focus an absent worker, while the user's chosen owner stays focused.
+    expect(host.screen).toContain('Inspector API');
     const entered = host.frames;
     host.process!.stdin.write('\r');
     await expect.poll(() => host.frames).toBeGreaterThan(entered);
     expect(host.calls.filter((call) => call.method === 'pane.focus')).toEqual([]);
     expect(snapshot.focused_pane_id).toBe('owner-b');
+    host.process!.stdin.write('p');
+    await expect.poll(() => host.screen).toContain('Other inspector request');
+    expect(host.screen).not.toContain('Bound inspector request');
     expect(host.stderr).toBe('');
     snapshot.panes = [];
     host.event('pane.closed');
