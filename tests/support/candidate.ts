@@ -15,6 +15,7 @@ export class Candidate {
   readonly home: string;
   readonly logPath: string;
   readonly process: ChildProcessWithoutNullStreams;
+  protocolLineCount = 0;
   private sequence = 0;
   private pending = new Map<number | string | null, { resolve: (response: any) => void; reject: (error: Error) => void }>();
   private log;
@@ -53,6 +54,7 @@ export class Candidate {
       this.log.write(`${line}\n`);
       // Mix/log output is not a protocol response. Unknown response fields are tolerated.
       if (!line.startsWith('{') && !line.startsWith('[')) return;
+      this.protocolLineCount++;
       let response: any;
       try { response = JSON.parse(line); } catch { return; }
       const key = Array.isArray(response) ? 'batch' : response.id;

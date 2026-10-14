@@ -310,11 +310,11 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   expect(await candidate.request('tools/list')).toEqual(catalog);
   // A following response is the barrier: blank/CRLF lines and notifications
   // must neither emit replies nor stop processing the stream.
-  const before = (await readFile(candidate.logPath, 'utf8')).split('\n').filter((line) => line.startsWith('{') || line.startsWith('[')).length;
+  const before = candidate.protocolLineCount;
   candidate.process.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: {} }) + '\n');
   candidate.process.stdin.write('\r\n' + JSON.stringify([{ jsonrpc: '2.0', method: 'notifications/initialized' }, { jsonrpc: '2.0', method: 'notifications/cancelled' }]) + '\r\n');
   await candidate.request('tools/list');
-  await expect.poll(async () => (await readFile(candidate.logPath, 'utf8')).split('\n').filter((line) => line.startsWith('{') || line.startsWith('[')).length).toBe(before + 1);
+  expect(candidate.protocolLineCount).toBe(before + 1);
 });
 
 test('failed worker rebinding preserves its current authority and successful rebinding releases only its lease', async ({ processes }) => {

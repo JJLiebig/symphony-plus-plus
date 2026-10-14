@@ -3,7 +3,7 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools03Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  test "stored ready package with missing PR identity requires a verified merge to repair it", %{repo: repo} do
+  test "sync_pr repairs PR identity and records only a verified terminal merge after readiness", %{repo: repo} do
     original_client = Application.get_env(:symphony_elixir, :sympp_github_client)
     Application.put_env(:symphony_elixir, :sympp_github_client, SymphonyElixir.FakeGitHubClient)
     SymphonyElixir.FakeGitHubClient.clear()
@@ -93,5 +93,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools03Test do
     assert get_in(merged_response, ["result", "structuredContent", "pr_sync", "status"]) == "merged"
     assert get_in(merged_response, ["result", "structuredContent", "next_owner"]) == "architect"
     assert get_in(merged_response, ["result", "structuredContent", "next_action"]) == "return_to_architect"
+
+    replay_response =
+      MCPHarness.request(
+        %{
+          "jsonrpc" => "2.0",
+          "id" => "sync-replay",
+          "method" => "tools/call",
+          "params" => %{
+            "name" => "sync_pr",
+            "arguments" => %{"url" => "https://github.com/nextide/repo/pull/27"}
+          }
+        },
+        repo: repo,
+        session: session
+      )
+
+    assert get_in(replay_response, ["result", "structuredContent", "pr_sync", "status"]) == "already_merged"
+    assert get_in(replay_response, ["result", "structuredContent", "next_owner"]) == "architect"
+    assert get_in(replay_response, ["result", "structuredContent", "next_action"]) == "return_to_architect"
   end
 end
