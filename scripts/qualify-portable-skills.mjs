@@ -11,17 +11,19 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = await mkdtemp(join(tmpdir(), 'sympp portable runtime '));
 const evidence = join(repo, '.e2e');
 const npx = resolve(dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
-const env = Object.fromEntries(['PATH', 'PATHEXT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PSModulePath']
+const env = Object.fromEntries(['PATH', 'PATHEXT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PSModulePath', 'TEMP', 'TMP']
   .filter(name => process.env[name]).map(name => [name, process.env[name]]));
 Object.assign(env, {
   HOME: join(root, 'home'), USERPROFILE: join(root, 'home'),
   APPDATA: join(root, 'home/AppData/Roaming'), LOCALAPPDATA: join(root, 'home/AppData/Local'),
   CODEX_HOME: join(root, 'home/.codex'), CLAUDE_CONFIG_DIR: join(root, 'home/.claude'),
-  TEMP: join(root, 'tmp'), TMP: join(root, 'tmp'), npm_config_cache: join(root, 'npm-cache'),
+  npm_config_cache: join(root, 'npm-cache'),
   DISABLE_TELEMETRY: '1', DO_NOT_TRACK: '1',
 });
 await mkdir(evidence, { recursive: true });
-for (const path of [env.HOME, env.TEMP]) await mkdir(path, { recursive: true });
+// A1 owns its isolated temp trees. Another nested TEMP layer exceeds the Windows
+// native library path limit when its retained offline viewer prepares a release.
+await mkdir(env.HOME, { recursive: true });
 
 async function run(name, command, args, timeout) {
   await appendFile(join(evidence, 'native-runtime-commands.jsonl'), JSON.stringify({ name, command, args, cwd: root }) + '\n');
