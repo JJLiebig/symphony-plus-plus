@@ -20,7 +20,14 @@ export class Factory extends Candidate {
       const lines = createInterface({ input: this.process.stdout });
       lines.on('line', (line) => {
         const match = line.match(/Symphony\+\+ API bridge: (http:\/\/127\.0\.0\.1:\d+)/);
-        if (match) { clearTimeout(timer); resolve(`${match[1]}/mcp`); lines.close(); }
+        if (match) {
+          clearTimeout(timer);
+          resolve(`${match[1]}/mcp`);
+          lines.close();
+          // Closing this startup reader pauses the shared stream; keep the
+          // candidate's permanent process-log reader receiving later output.
+          this.process.stdout.resume();
+        }
       });
       this.process.once('exit', (code) => { clearTimeout(timer); reject(new Error(`Cockpit exited: ${code}`)); });
       this.process.once('error', (error) => { clearTimeout(timer); reject(error); });

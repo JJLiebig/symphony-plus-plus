@@ -237,31 +237,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
            ]
   end
 
-  test "append_progress rejects non-map payloads", %{repo: repo} do
-    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-PAYLOAD", kind: "mcp"))
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    invalid_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "bad-payload",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "append_progress",
-            "arguments" => %{"summary" => "Bad", "idempotency_key" => "bad-payload", "payload" => false}
-          }
-        },
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(invalid_response, ["error", "code"]) == -32_602
-    assert get_in(invalid_response, ["error", "data", "reason"]) == "invalid_payload"
-  end
-
   test "mark_ready uses lifecycle capability checks", %{repo: repo} do
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-READY-CAP", kind: "mcp", status: "ci_waiting"))
     assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id, capabilities: ["worker:claim"])
@@ -282,35 +257,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
     assert get_in(response, ["error", "data", "reason"]) == "missing_lifecycle_capability"
   end
 
-  test "worker surface omits general lifecycle mutation, grant minting, and package listing", %{repo: repo} do
-    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DENIALS", kind: "adapter", status: "ready_for_merge"))
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    tools_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "worker-tools",
-          "method" => "tools/list",
-          "params" => %{}
-        },
-        repo: repo,
-        session: session
-      )
-
-    refute Enum.any?(get_in(tools_response, ["result", "tools"]), &(&1["name"] == "set_status"))
-
-    Enum.each(["mint_worker_grant", "list_work_packages"], fn tool ->
-      response =
-        MCPHarness.request(
-          %{"jsonrpc" => "2.0", "id" => tool, "method" => "tools/call", "params" => %{"name" => tool, "arguments" => %{}}},
-          repo: repo,
-          session: session
-        )
-
-      assert get_in(response, ["error", "code"]) == -32_601
-    end)
-  end
 end

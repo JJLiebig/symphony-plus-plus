@@ -87,9 +87,12 @@ test('architect scope separates same-repository discovery from foreign writes an
     ['dispatch_work_package', { work_request_id: other, work_package_id: otherWp }],
     ['reconcile_work_request', { work_request_id: other, apply: true }],
   ] as const) await architect.reject(name, args, 'not_found');
-  for (const name of ['answer_question', 'close_question']) {
+  for (const [name, fields] of [
+    ['answer_question', { answer: 'Stolen', answered_by: 'attacker' }],
+    ['close_question', {}],
+  ] as const) {
     const denied = await architect.reject(name, {
-      work_request_id: own, question_id: question.id, current_status: 'open', answer: 'Stolen', answered_by: 'attacker',
+      work_request_id: own, question_id: question.id, current_status: 'open', ...fields,
     }, 'not_found');
     expect(JSON.stringify(denied)).not.toContain(other);
   }
@@ -229,7 +232,7 @@ test('force release rotates worker authority without changing delivery and allow
   expect((await replacement.call('append_progress', mutation)).progress_event.id).toBe(first.id);
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
   const document = await replacement.call('read_work_package_document', { document: 'progress.md' });
-  expect(document.progress_events.filter((event: any) => event.idempotency_key.endsWith(':old-owner'))).toEqual([]);
+  expect(document.progress_events.filter((event: any) => event.idempotency_key?.endsWith(':old-owner'))).toEqual([]);
 });
 
 test('explicit revocation retires live worker calls resources and persisted recovery without touching siblings', async ({ processes }) => {
@@ -373,6 +376,7 @@ test('worker plan updates are atomic and native evidence history remains complet
   expect(await client.call('read_task_plan')).toEqual(before);
   const changed = await client.call('update_task_plan', { expected_version: before.version, nodes: [{ id: ownNode, body: 'Working', status: 'in_progress' }, { title: 'Additional task', status: 'done' }] });
   expect(changed.plan_nodes.map((node: any) => node.status)).toEqual(['in_progress', 'done']);
+  expect((await client.call('read_task_plan')).text).toContain('Working');
   await client.reject('update_task_plan', { expected_version: before.version, nodes: [{ id: ownNode, status: 'done' }] }, 'stale_plan_version');
   expect((await peer.call('read_task_plan')).text).toContain('Sibling node');
   const peerVersion = (await peer.call('read_task_plan')).version;
@@ -428,9 +432,9 @@ test('worker plan updates are atomic and native evidence history remains complet
 deliveryTest('worker provider evidence resists spoofing mismatch failure and replay while preserving ready state', async ({ delivery: { factory, provider } }) => {
   const architect = await factory.client();
   const request = await architect.request('Worker provider evidence');
-  const [wp] = (await architect.call('slice_work_request', { work_packages: [contract('Provider-qualified work', {
+  const [wp, sibling] = (await architect.call('slice_work_request', { work_packages: [contract('Provider-qualified work', {
     kind: 'mcp', policy_template: 'mcp_current_pr_state', branch_pattern: 'feature/authority',
-  })] })).work_package_ids;
+  }), contract('Confidential sibling terminal marker')] })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: wp });
   const client = await worker(factory, wp);
   for (const type of ['branch', 'pr']) await client.call('append_progress', { summary: `Spoof ${type}`, idempotency_key: `spoof-${type}`, payload: { type, source_tool: `attach_${type}` } });
@@ -476,7 +480,12 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   await client.reject('sync_pr', {}, 'pr_not_merged');
   expect(await client.call('read_work_package_document', { document: 'progress.md' })).toEqual(readyDocument);
   provider.set(302, pr(302, head('b'), { headRefName: 'feature/authority', state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
-  expect((await client.call('sync_pr')).pr_sync.status).toBe('merged');
+  const merged = await client.call('sync_pr');
+  expect(merged.pr_sync.status).toBe('merged');
+  for (const hidden of [sibling, 'Confidential sibling terminal marker']) expect(JSON.stringify(merged)).not.toContain(hidden);
+  const terminal = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
+  expect(terminal.summary.active_grant_count).toBe(0);
+  expect((await row(architect, request, wp)).delivery_outcome).toBe('pr_merged');
   expect((await client.call('sync_pr')).pr_sync.status).toBe('already_merged');
   expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Late worker mutation', idempotency_key: 'after-worker-merge' } })).error).toBeTruthy();
 });
@@ -655,6 +664,8 @@ test('architect reports preserve server times and partial edits while rejecting 
   const [wp] = await packages(architect, ['Worker report boundary']);
   const client = await worker(factory, wp);
   const anchor = (await architect.call('get_current_assignment')).assignment.work_package_id;
+  const question = (await architect.call('ask_question', { work_request_id: request, category: 'scope',
+    question: 'Which release should include this?', why_needed: 'Select the intended release.' })).clarification_question;
   const report = (patch: object, key: string) => architect.call('append_progress', {
     work_package_id: anchor, summary: 'Operator update', idempotency_key: key,
     payload: { type: 'architect_operator_report', ...patch },
@@ -668,7 +679,7 @@ test('architect reports preserve server times and partial edits while rejecting 
   }
   const initial = { brief: 'Core work is ready.', eta: 'After review', written_at: '2000-01-01T00:00:00Z',
     parking: { reason: 'Awaiting a release window', parked_at: '2000-01-01T00:00:00Z' },
-    human_escalation: { question: 'Use this release?', raised_at: '2000-01-01T00:00:00Z' } };
+    human_escalation: { question: 'Use this release?', raised_at: '2000-01-01T00:00:00Z' }, active: true, blocker_id: 'not-a-blocker' };
   const event = (await report(initial, 'initial-report')).progress_event;
   const eventTime = async (id: string) => (await architect.inspect(`/api/v1/sympp/operator/work-packages/${anchor}`)).progress.find((entry: any) => entry.id === id).created_at;
   const createdAt = await eventTime(event.id);
@@ -695,7 +706,10 @@ test('architect reports preserve server times and partial edits while rejecting 
   const detail = dashboard.work_request_details.find((entry: any) => entry.work_request.id === request);
   expect(detail.work_request.operator_report).toEqual(await read());
   expect(detail.work_packages.map((entry: any) => entry.id)).not.toContain(anchor);
-  expect((await architect.call('read_work_request', { work_request_id: request })).work_request.status).toBe('sliced');
+  const unchanged = await architect.call('read_work_request', { work_request_id: request });
+  expect(unchanged.work_request.status).toBe('sliced');
+  expect(unchanged.clarification_questions.find((entry: any) => entry.id === question.id).status).toBe('open');
+  expect((await row(architect, request, wp)).attention_reason_codes).not.toContain('active_blocker');
 });
 
 test('worker context exposes selected decisions and direct dependencies without sibling contracts', async ({ processes }) => {

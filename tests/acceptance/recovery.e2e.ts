@@ -268,7 +268,12 @@ test('failed worker rebinding preserves its current authority and successful reb
   const recoveredEvent = (await recovered.call('append_progress', { summary: 'Original reservation recovered', idempotency_key: 'rebound' })).progress_event;
   expect((await recovered.call('read_work_package_document', { document: 'progress.md' })).progress_events.map((entry: any) => entry.id)).toContain(recoveredEvent.id);
   await client.call('release_current_assignment');
-  expect((await client.call('release_current_assignment')).binding_cleared).toBe(false);
+  const releasedAgain = await client.call('release_current_assignment');
+  expect(releasedAgain.binding_cleared).toBe(true);
+  expect(releasedAgain.released_assignment).toBeNull();
+  expect(releasedAgain.claim_lease_release.reason).toBe('not_bound');
+  expect((await client.call('get_current_assignment')).assignment).toBeNull();
+  expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(taken);
   expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
 });
 
