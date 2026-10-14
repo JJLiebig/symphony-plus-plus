@@ -79,8 +79,9 @@ test('compiled inspector binds and pins actual request detail without stealing f
     provider!.set(402, pr(402, head('a'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
     await client.call('sync_pr', { work_package_id: wp });
     expect((await row(client, request, left)).merge_eligibility.eligible).toBe(true);
-    await expect.poll(() => host.screen).not.toContain('Qualified');
-    expect(host.screen).toContain('Ready to merge');
+    await press('j');
+    await expect.poll(() => host.screen).toContain('Ready to merge');
+    expect(host.screen).not.toContain('Qualified');
 
     host.process!.stdin.write('p');
     await expect.poll(() => host.screen).toContain('Pinned');
