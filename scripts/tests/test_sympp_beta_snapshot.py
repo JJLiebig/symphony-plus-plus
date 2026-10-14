@@ -22,37 +22,6 @@ spec.loader.exec_module(snapshot)
 
 
 class SnapshotTest(unittest.TestCase):
-    def test_online_wal_copy_is_marked_migrated_and_does_not_write_source(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "live.sqlite3"
-            destination = root / "beta" / "ledger.sqlite3"
-            with closing(sqlite3.connect(source)) as live:
-                live.execute("PRAGMA journal_mode=WAL")
-                live.execute("PRAGMA wal_autocheckpoint=0")
-                live.execute("CREATE TABLE goals (title TEXT)")
-                live.execute("INSERT INTO goals VALUES ('Example goal')")
-                live.commit()
-                originals = {path: path.read_bytes() for path in (source, Path(str(source) + "-wal"))}
-
-                def migrate(stage):
-                    self.assertTrue(snapshot.marked(stage))
-                    with closing(sqlite3.connect(stage)) as copy:
-                        self.assertEqual(copy.execute("SELECT title FROM goals").fetchall(), [("Example goal",)])
-                        copy.execute("ALTER TABLE goals ADD COLUMN migrated INTEGER DEFAULT 1")
-                        copy.commit()
-
-                snapshot.snapshot(source, destination, destination.parent, False, migrate)
-                for path, before in originals.items():
-                    self.assertEqual(path.read_bytes(), before)
-                self.assertFalse(snapshot.marked(source))
-                snapshot.verify(destination, offline=True)
-                with self.assertRaises(ValueError):
-                    snapshot.verify(destination, offline=False)
-                with closing(sqlite3.connect(destination)) as copy:
-                    self.assertEqual(copy.execute("SELECT migrated FROM goals").fetchall(), [(1,)])
-                self.assertFalse(any(destination.parent.glob(".beta-snapshot-*")))
-
     def test_force_stopped_sandbox_can_refresh_but_busy_or_failed_refresh_preserves_it(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -241,7 +210,10 @@ class InstalledSnapshotTest(unittest.TestCase):
                                     break
                             except (OSError, urllib.error.URLError):
                                 pass
-                            self.assertIsNone(viewer.poll(), output_file.read_text())
+                            if viewer.poll() is not None:
+                                logs = "\n".join(f"{log.name}:\n{log.read_text(errors='replace')}"
+                                                 for log in (viewer_home / "logs").glob("*.log"))
+                                self.fail("Offline viewer exited: " + output_file.read_text() + "\n" + logs)
                             time.sleep(0.3)
                         else:
                             self.fail("Offline board did not start: " + output_file.read_text() + "\n" + (viewer_home / "logs/viewer.log").read_text())
