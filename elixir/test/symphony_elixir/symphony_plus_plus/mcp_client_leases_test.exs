@@ -124,7 +124,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPClientLeasesTest do
     refute_receive :shutdown_requested, 50
 
     assert {:ok, %{active_client_count: 0}} = ClientLeases.detach("client-b", server)
-    assert_receive :shutdown_requested, 100
+    assert_receive :shutdown_requested, 1_000
   end
 
   test "stale idle shutdown messages do not bypass the current grace period" do

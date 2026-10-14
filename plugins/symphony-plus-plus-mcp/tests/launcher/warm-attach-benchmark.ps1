@@ -13,6 +13,7 @@ $gate = [System.Threading.ManualResetEventSlim]::new($false)
 $ready = [System.Threading.CountdownEvent]::new($Clients)
 $samples = [System.Collections.Concurrent.ConcurrentQueue[double]]::new()
 $remoteAttempts = [System.Collections.Concurrent.ConcurrentQueue[bool]]::new()
+$leaseDeleteFailures = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $jobs = [System.Collections.Generic.List[object]]::new()
 function Get-ScriptFunctionDefinitions([string[]]$Paths) {
   $definitions = @{}
@@ -66,6 +67,12 @@ $Samples.Enqueue($ClientWatch.Elapsed.TotalMilliseconds)
 if (-not $Gate.Wait(30000)) { throw "Timed out holding concurrent warm bridges." }
 '@
   $definitions["New-McpClientLeaseId"] = 'return [guid]::NewGuid().ToString("N")'
+  $definitions["Remove-BridgeLease"] += @'
+if ($LeasePath -and [IO.File]::Exists($LeasePath)) {
+  $detail = if ($Error.Count) { $Error[0].Exception.Message } else { "No deletion error was returned" }
+  $LeaseDeleteFailures.Enqueue(([IO.Path]::GetFileName($LeasePath) + ": " + $detail))
+}
+'@
   foreach ($name in @("Resolve-SymppArtifactProbe", "Read-SymppArtifactManifest", "Invoke-WebRequest")) {
     $definitions[$name] = '$RemoteAttempts.Enqueue($true); throw "Warm path attempted artifact or remote resolution."'
   }
@@ -74,7 +81,7 @@ if (-not $Gate.Wait(30000)) { throw "Timed out holding concurrent warm bridges."
     $initialState.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new($entry.Key, $entry.Value))
   }
   foreach ($variable in @{
-      ContractFingerprint = $contract; Samples = $samples; RemoteAttempts = $remoteAttempts; Ready = $ready; Gate = $gate
+      ContractFingerprint = $contract; Samples = $samples; RemoteAttempts = $remoteAttempts; Ready = $ready; Gate = $gate; LeaseDeleteFailures = $leaseDeleteFailures
       BoardPath = "/sympp/board"
     }.GetEnumerator()) {
     $initialState.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new($variable.Key, $variable.Value, "warm benchmark"))
@@ -108,6 +115,8 @@ if (-not $Gate.Wait(30000)) { throw "Timed out holding concurrent warm bridges."
     leases_peak = $leasesPeak
     leases_after = @(Get-ChildItem -LiteralPath $leaseDir -Filter "bridge-*.json" -File -ErrorAction SilentlyContinue).Count
     remote_resolution_attempts = $remoteAttempts.Count
+    lease_delete_failures = @($leaseDeleteFailures.ToArray())
+    worker_errors = @($jobs.shell.Streams.Error | ForEach-Object { $_.Exception.Message })
   } | ConvertTo-Json -Compress
 } finally {
   $gate.Set()
