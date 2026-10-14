@@ -1,6 +1,6 @@
 import { expect } from 'e2e';
 import { join } from 'node:path';
-import { test, packages } from '../support/authority.js';
+import { test, packages, worker } from '../support/authority.js';
 import { ageHistory, archives, detail, requestPath, retention, unstarted } from '../support/retention-history.js';
 
 test('never-started retention uses creation age and restore age without inventing completion or deleting history', async ({ processes }) => {
@@ -86,7 +86,8 @@ test('Solo evidence survives restart and lifecycle transitions without creating 
   const scope = { repo: 'example/solo', base_branch: 'beta', workspace_path: join(processes.root, 'workspace'), caller_id: 'solo-owner' };
   const session = (await client.call('solo_attach', { ...scope, title: 'Local evidence' })).solo_session;
   const id = session.id;
-  expect((await client.call('solo_attach', scope)).solo_session.id).toBe(id);
+  expect((await client.call('solo_attach', { ...scope, repo: ` ${scope.repo} `, workspace_path: `${scope.workspace_path}/.` })).solo_session.id).toBe(id);
+  await client.reject('solo_attach', { ...scope, workspace_path: '.' }, 'invalid_workspace_path');
   const progress = { session_id: id, summary: 'Accepted progress', status: 'active', idempotency_key: 'durable-once' };
   const first = (await client.call('solo_append_progress', progress)).entry;
   expect(first.status).toBe('in_progress');
@@ -123,6 +124,39 @@ test('Solo evidence survives restart and lifecycle transitions without creating 
   const replacement = (await client.call('solo_attach', scope)).solo_session;
   expect(replacement.id).not.toBe(id);
   expect(replacement.status).toBe('active');
+});
+
+test('Solo rejects bound mutation, preserves redacted evidence and supports every documented lifecycle edge', async ({ processes }) => {
+  const factory = processes.factory();
+  const client = await factory.client();
+  const scope = { repo: 'example/solo', base_branch: 'beta', workspace_path: processes.root, caller_id: 'solo-boundary' };
+  const id = (await client.call('solo_attach', scope)).solo_session.id;
+  const secret = 'Bearer synthetic-acceptance-canary';
+  const progress = { session_id: id, summary: `Redact ${secret}`, body: `Body ${secret}`,
+    payload: { token: secret }, idempotency_key: 'redacted-progress' };
+  const entry = (await client.call('solo_append_progress', progress)).entry;
+  expect(entry.title).toBe('Redact [REDACTED]');
+  expect(entry.body).toBe('Body [REDACTED]');
+  expect(entry.payload.token).toBe('[REDACTED]');
+  await client.reject('solo_append_progress', { session_id: id, summary: 'Reject secret key', idempotency_key: secret }, 'invalid_entry_idempotency_key');
+  const architect = await factory.client();
+  await architect.request('Bound sessions cannot mutate Solo');
+  const [wp] = await packages(architect, ['Scoped work']);
+  const bound = await worker(factory, wp);
+  await bound.reject('solo_attach', scope, 'solo_tools_require_unbound_session');
+  await bound.reject('solo_pause', { session_id: id }, 'solo_tools_require_unbound_session');
+  expect((await client.call('solo_show', { session_id: id })).solo_session.status).toBe('active');
+  await bound.call('release_current_assignment');
+  expect((await bound.call('solo_attach', scope)).solo_session.id).toBe(id);
+  for (const actions of [['archive'], ['pause', 'archive'], ['pause', 'complete', 'archive']] as const) {
+    const current = (await client.call('solo_attach', scope)).solo_session.id;
+    for (const action of actions) await client.call(`solo_${action}`, { session_id: current });
+    const before = await client.call('solo_show', { session_id: current });
+    await client.reject('solo_append_progress', { session_id: current, summary: 'Late mutation' }, 'session_not_mutable');
+    await client.reject('solo_resume', { session_id: current }, 'invalid_transition');
+    expect((await client.call('solo_show', { session_id: current })).solo_session.last_activity_at).toBe(before.solo_session.last_activity_at);
+  }
+  expect((await client.call('solo_show', { session_id: id })).entries).toEqual([entry]);
 });
 
 test('Solo inactivity retention archives and later deletes through operator settings while reads leave activity unchanged', async ({ processes }) => {

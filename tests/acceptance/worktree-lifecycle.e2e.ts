@@ -3,6 +3,7 @@ import { access, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs
 import { join } from 'node:path';
 import { test } from '../support/authority.js';
 import { git, repository, workPackage } from '../support/worktree-git.js';
+import { requestPath } from '../support/retention-history.js';
 
 const exists = async (path: string) => access(path).then(() => true, () => false);
 
@@ -10,6 +11,16 @@ test('real worktree prepare and replay preserve branch scope and clean only the 
   const { root } = processes;
   const repo = await repository(root, 'source');
   const foreign = await repository(root, 'foreign');
+  const updater = join(root, 'updater');
+  await git(root, root, 'clone', '--branch', 'beta', repo.origin, updater);
+  await git(root, repo.checkout, 'config', '--unset-all', 'remote.origin.fetch');
+  const stale = await git(root, repo.checkout, 'rev-parse', 'origin/beta');
+  await writeFile(join(updater, 'update.txt'), 'Remote base advanced\n');
+  await git(root, updater, 'add', 'update.txt');
+  await git(root, updater, 'commit', '-m', 'Advance remote base');
+  await git(root, updater, 'push', 'origin', 'beta');
+  const current = await git(root, updater, 'rev-parse', 'HEAD');
+  expect(current).not.toBe(stale);
   const factory = processes.factory();
   const client = await factory.client();
   const wp = await workPackage(client, repo.origin, 'feature/owned');
@@ -22,6 +33,7 @@ test('real worktree prepare and replay preserve branch scope and clean only the 
   expect(prepared.work_package.worktree_path).toBe(path);
   expect(await git(root, path, 'branch', '--show-current')).toBe('feature/owned');
   expect(await git(root, path, 'rev-parse', 'HEAD')).toBe(await git(root, repo.checkout, 'rev-parse', 'origin/beta'));
+  expect(await git(root, path, 'rev-parse', 'HEAD')).toBe(current);
   expect((await client.call('prepare_work_package_worktree', args)).worktree.path).toBe(path);
   expect((await client.call('prepare_work_package_worktree', args)).worktree.status).toBe('already_prepared');
   const clone = join(root, 'same-origin');
@@ -69,6 +81,61 @@ test('outside-root path substitution is refused without deleting unrelated conte
   expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('cleaned');
   expect(await exists(path)).toBe(false);
   expect(await readFile(join(unrelated, 'keep.txt'), 'utf8')).toBe('Unrelated data\n');
+});
+
+test('missing metadata recovery refuses unrelated non-Git contents and preserves ambient repository files', async ({ processes }) => {
+  const { root } = processes;
+  const repo = await repository(root, 'source');
+  const factory = processes.factory();
+  const client = await factory.client();
+  const wp = await workPackage(client, repo.origin, 'feature/metadata');
+  const args = { work_package_id: wp, target_repo_root: repo.checkout };
+  const path = (await client.call('prepare_work_package_worktree', args)).worktree.path;
+  await rm(path, { recursive: true });
+  await mkdir(path);
+  await client.reject('prepare_work_package_worktree', args, 'invalid_worktree_path');
+  await writeFile(join(path, 'unrelated.txt'), 'Not disposable Git content\n');
+  await git(root, factory.home, 'init');
+  await writeFile(join(factory.home, 'ambient.txt'), 'Ambient parent data\n');
+  await client.reject('cleanup_work_package_worktree', args, 'invalid_worktree_path');
+  expect(await readFile(join(path, 'unrelated.txt'), 'utf8')).toBe('Not disposable Git content\n');
+  await rm(join(path, 'unrelated.txt'));
+  expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('stale_record_cleared');
+  expect(await exists(path)).toBe(false);
+  const second = (await client.call('prepare_work_package_worktree', args)).worktree.path;
+  await rm(second, { recursive: true });
+  await mkdir(second);
+  await writeFile(join(second, '.git'), 'gitdir: missing-git-dir\n');
+  expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('stale_record_cleared');
+  const third = (await client.call('prepare_work_package_worktree', args)).worktree.path;
+  await rm(third, { recursive: true });
+  await writeFile(third, 'Not a directory\n');
+  await client.reject('cleanup_work_package_worktree', args, 'invalid_worktree_path');
+  expect(await readFile(third, 'utf8')).toBe('Not a directory\n');
+  await rm(third);
+  expect((await client.call('cleanup_work_package_worktree', args)).worktree.status).toBe('stale_record_cleared');
+  expect(await readFile(join(factory.home, 'ambient.txt'), 'utf8')).toBe('Ambient parent data\n');
+});
+
+test('deleting a goal preserves its cleanup obligation across a stopped backend and removes only its owned tree', async ({ processes }) => {
+  const { root } = processes;
+  const repo = await repository(root, 'source');
+  let factory = processes.factory();
+  let client = await factory.client();
+  const wp = await workPackage(client, repo.origin, 'feature/deleted');
+  const request = (await client.call('list_work_requests')).work_requests[0].id;
+  const path = (await client.call('prepare_work_package_worktree', { work_package_id: wp, target_repo_root: repo.checkout })).worktree.path;
+  await git(root, repo.checkout, 'worktree', 'lock', path);
+  expect((await client.operator(`${requestPath(request)}/delete`, {})).status).toBe(200);
+  expect((await client.operator(`${requestPath(request)}/restore`, {})).status).toBe(404);
+  expect(await exists(path)).toBe(true);
+  await factory.stop();
+  await git(root, repo.checkout, 'worktree', 'unlock', path);
+  factory = processes.factory();
+  client = await factory.client();
+  await expect.poll(() => exists(path), { timeout: 30_000 }).toBe(false);
+  expect((await client.call('list_work_requests')).work_requests).toEqual([]);
+  expect(await readFile(join(repo.checkout, 'README.md'), 'utf8')).toBe('Initial fixture content\n');
 });
 
 test('a real Git removal obstruction preserves the worktree and a later cleanup recovers after restart', async ({ processes }) => {
