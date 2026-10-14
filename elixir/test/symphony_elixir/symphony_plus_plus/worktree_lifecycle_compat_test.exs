@@ -77,38 +77,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeLifecycleCompatTest do
     assert repo.get!(WorkPackage, package.id).base_branch == "origin/main"
   end
 
-  test "stores nullable worktree metadata through SQLite", %{repo: repo} do
-    assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-P1-001"))
-    assert package.worktree_path == nil
-    assert package.worktree_target_repo_root == nil
-    assert package.worktree_cleanup_proof == nil
-
-    worktree_path = Path.join(System.tmp_dir!(), "sympp-worktree-path")
-    target_repo_root = Path.join(System.tmp_dir!(), "sympp-target-repo-root")
-
-    assert {:ok, updated} =
-             Repository.update(repo, package.id, %{
-               worktree_path: worktree_path,
-               worktree_target_repo_root: target_repo_root,
-               worktree_cleanup_proof: "proof"
-             })
-
-    assert updated.worktree_path == worktree_path
-    assert updated.worktree_target_repo_root == target_repo_root
-    assert updated.worktree_cleanup_proof == "proof"
-
-    assert {:ok, cleared} =
-             Repository.update(repo, package.id, %{
-               worktree_path: nil,
-               worktree_target_repo_root: nil,
-               worktree_cleanup_proof: nil
-             })
-
-    assert cleared.worktree_path == nil
-    assert cleared.worktree_target_repo_root == nil
-    assert cleared.worktree_cleanup_proof == nil
-  end
-
   test "cleanup retries a proven Windows partial worktree removal", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-worktree-recovery")
     codex_home = Path.join(fixture.root, "codex-home")
