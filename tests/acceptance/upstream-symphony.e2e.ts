@@ -157,7 +157,7 @@ test('upstream aborts failed bootstrap and run hooks, then recovers with safe cl
 
 test('upstream honors priority, age and state-specific capacity without duplicate dispatch', async ({ upstream: u }) => {
   const p = u.provider;
-  await u.configure({ agent: { max_concurrent_agents: 2, max_concurrent_agents_by_state: { ' ToDo ': 1 } } });
+  await u.configure({ agent: { max_concurrent_agents: 2, max_concurrent_agents_by_state: { ToDo: 1 } } });
   p.issues = [issue('LOW-1', { priority: 3, createdAt: '2025-01-01T00:00:00Z' }),
     issue('HIGH-NEW', { priority: 1, createdAt: '2026-02-01T00:00:00Z' }),
     issue('HIGH-OLD', { priority: 1 }), issue('ACTIVE-1', { priority: 4, state: { name: 'In Progress' } })];

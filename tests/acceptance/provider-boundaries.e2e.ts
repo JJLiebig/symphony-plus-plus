@@ -57,9 +57,12 @@ test('provider cumulative usage reaches public status once and survives stream n
   p.send(worker, { raw: `worker diagnostic\n{invalid-json\n${wire.slice(0, 20)}` }, { raw: `${wire.slice(20)}\n` },
     usage(10, 3), usage(5, 1), usage(18, 7),
     { method: 'codex/event/token_count', params: { msg: { info: { last_token_usage: { input_tokens: 999, output_tokens: 999, total_tokens: 1998 } } } } },
-    { method: 'account/rateLimits/updated', params: { rateLimits: { primary: { usedPercent: 25, windowDurationMins: 5 } } } });
+    // Adapter-owned identified snapshot dialect; live provider compatibility is separate.
+    { method: 'codex/event/token_count', params: { msg: { type: 'token_count', rate_limits: {
+      limit_id: 'controlled-model', primary: { used_percent: 25, window_minutes: 5 },
+    } } } });
   await expect.poll(async () => (await u.state()).codex_totals.total_tokens).toBe(25);
-  await expect.poll(async () => (await u.state()).rate_limits?.primary?.usedPercent).toBe(25);
+  await expect.poll(async () => (await u.state()).rate_limits?.primary?.used_percent).toBe(25);
   const status = (await u.request('/api/v1/USAGE-1')).body;
   expect(status.running.tokens).toEqual({ input_tokens: 18, output_tokens: 7, total_tokens: 25 });
   expect(status.running.session_id).toBe(`${worker.id}-turn-1`);
@@ -100,9 +103,14 @@ test('provider noninteractive approvals answer without stalling and safer policy
   await u.start();
   const worker = await u.worker('POLICY-1');
   p.send(worker, { id: 501, method: 'item/commandExecution/requestApproval', params: { command: 'echo controlled' } },
-    { id: 502, method: 'item/tool/requestUserInput', params: { questions: [{ id: 'choice', question: 'Continue?', options: [] }] } });
+    { id: 502, method: 'item/tool/requestUserInput', params: { questions: [{ id: 'choice', question: 'Continue?', options: [] }] } },
+    { id: 504, method: 'item/tool/requestUserInput', params: { questions: [{ id: 'mcp_tool_call_approval_acceptance', question: 'Allow tool?',
+      options: [{ label: 'Approve Once' }, { label: 'Approve this Session' }, { label: 'Deny' }] }] } },
+    { id: 505, method: 'item/fileChange/requestApproval', params: {} });
   await expect.poll(() => worker.messages.find((m) => m.id === 501)?.result.decision).toBe('acceptForSession');
   await expect.poll(() => worker.messages.find((m) => m.id === 502)?.result.answers.choice.answers[0]).toContain('non-interactive');
+  await expect.poll(() => worker.messages.find((m) => m.id === 504)?.result.answers.mcp_tool_call_approval_acceptance.answers).toEqual(['Approve this Session']);
+  await expect.poll(() => worker.messages.find((m) => m.id === 505)?.result.decision).toBe('acceptForSession');
   p.issues = [];
   await expect.poll(async () => (await u.state()).counts.running).toBe(0);
   await u.configure({ codex: { approval_policy: undefined } });
