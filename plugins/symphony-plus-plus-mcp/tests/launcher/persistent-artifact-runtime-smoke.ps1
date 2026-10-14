@@ -397,6 +397,7 @@ try {
       }
       $offlineEnvironment.SYMPP_OFFLINE_SKILL = $installedRoot
       $offlineEnvironment.SYMPP_OFFLINE_ARTIFACT = $first.artifact_root
+      $offlineEnvironment.SYMPP_OFFLINE_REVISION = $manifest.source_revision
       Invoke-IsolatedCommand (Get-Command python -ErrorAction Stop).Source @((Join-Path $repoRoot "scripts/tests/test_sympp_beta_snapshot.py"), "InstalledSnapshotTest") $offlineEnvironment
     }
     [pscustomobject]@{ artifact_revision = $manifest.source_revision; explicit_database_with_spaces = $true; warm_singleton = $true; prepared_restart = -not [bool]$SkillsInstall; floating_channel_refresh = [bool]$SkillsInstall; recovery = $true; mcp_marker_persisted = $true; listeners_closed = $true; hosted_process_creation_seam = [bool]$HostedProcessCreation; native_desktop_qualified = -not $HostedProcessCreation } | ConvertTo-Json -Compress
