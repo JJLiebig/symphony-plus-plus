@@ -36,7 +36,7 @@ test('deployment observations cover every delivered revision and preserve comple
   expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
   expect((await hydrated()).deployments['example/service'].dev.reason).toBe('unfinished');
   await architect.call('close_question', { work_request_id: request, question_id: question, current_status: 'open' });
-  const completed = (await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at;
+  const completed = (await hydrated()).completed_at;
   expect(completed).toBeTruthy();
   const run = (id: number, sha: string, conclusion: string | null, hour = 11, patch: object = {}) => ({
     id, head_sha: sha, conclusion, status: 'completed', event: 'push',
