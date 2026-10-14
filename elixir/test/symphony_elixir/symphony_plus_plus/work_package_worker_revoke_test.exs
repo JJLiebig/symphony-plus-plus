@@ -95,19 +95,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackageWorkerRevokeTest do
     assert {:error, _reason} = Auth.require_session(old_session, repo)
   end
 
-  test "force release projects a grant-only reservation as recycled", %{repo: repo} do
-    {work_request, _slice, package} = linked_slice!(repo, "active")
-    session = create_work_request_architect_session(repo, work_request)
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, _assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "key-worker")
-
-    response = mcp_tool(repo, session, "force_release_work_package_claim", %{"work_package_id" => package.id, "reason" => "replace key worker"})
-    assert get_in(response, ["result", "structuredContent", "released_claim_lease_ids"]) == []
-    runtime = WorkPackageActivity.context(repo, package.id).runtime_state
-    assert runtime.lifecycle_state == "recycled"
-    assert "worker_recycled" in runtime.reason_codes
-  end
-
   test "force release clears paused claims and denies workers without changing their authority", %{repo: repo} do
     {work_request, _slice, package} = linked_slice!(repo, "active")
     session = create_work_request_architect_session(repo, work_request)

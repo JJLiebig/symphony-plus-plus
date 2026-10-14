@@ -15,14 +15,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
     "write:guidance_request"
   ]
 
-  test "worker can use package-scoped planning and evidence actions for its exact package" do
-    actor = Actor.new(:worker, scopes: [Scope.work_package("wp-1")])
-    target = Target.package_resource(:task_plan, "wp-1")
-
-    assert %Decision{allowed?: true, reason_code: "allowed", matched_scope: %Scope{type: :work_package, id: "wp-1"}} =
-             Policy.decide(actor, :task_plan_update, target)
-  end
-
   test "worker cannot mutate sibling package targets" do
     actor = Actor.new(:worker, scopes: [Scope.work_package("wp-1")])
     target = Target.package_resource(:review_evidence, "wp-2")

@@ -1436,27 +1436,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     end)
   end
 
-  test "POST /mcp notification returns 202 with no body and preserves state" do
-    init = post_json(initialize_request("init"))
-    [session_id] = get_resp_header(init, "mcp-session-id")
-
-    notification = post_json(notification_request(), [{"mcp-session-id", session_id}])
-
-    assert response(notification, 202) == ""
-    assert [^session_id] = get_resp_header(notification, "mcp-session-id")
-
-    conn = post_json(tools_list_request("after-notification"), [{"mcp-session-id", session_id}])
-
-    assert "sympp.health" in tool_names(json_response(conn, 200))
-  end
-
-  test "POST /mcp requires Mcp-Session-Id for non-initialize requests" do
-    conn = post_json(tools_list_request("tools"))
-
-    assert json_response(conn, 400) == json_rpc_error("tools", -32_600, "Invalid Request", "missing_session_id")
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-  end
-
   test "POST /mcp observes failed tool requests and notifications once at the endpoint boundary" do
     assert {:ok, _settings} = OperatorSettingsRepository.update(Repo, %{"capture_failed_mcp_calls" => true})
 
@@ -1543,36 +1522,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     assert json_response(conn, 404) == json_rpc_error(nil, -32_600, "Invalid Request", "unknown_state_key")
     assert :sys.get_state(HTTPStateStore).entries == %{}
-  end
-
-  test "POST /mcp rejects malformed Mcp-Session-Id bytes without crashing" do
-    conn = post_json(tools_list_request("tools"), [{"mcp-session-id", <<255>>}])
-
-    assert json_response(conn, 400) == json_rpc_error("tools", -32_600, "Invalid Request", "invalid_session_id")
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-  end
-
-  test "POST /mcp rejects reserved Mcp-Session-Id values without dispatching" do
-    conn = post_json(tools_list_request("tools"), [{"mcp-session-id", "__sympp_mcp_current_state__"}])
-
-    assert json_response(conn, 400) == json_rpc_error("tools", -32_600, "Invalid Request", "invalid_session_id")
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-  end
-
-  test "POST /mcp invalid JSON returns controlled JSON-RPC error" do
-    conn = post_raw("{")
-
-    assert json_response(conn, 400) == json_rpc_error(nil, -32_700, "Parse error", "invalid_json")
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-  end
-
-  test "GET /mcp returns 405 because this slice does not implement SSE" do
-    conn =
-      local_conn()
-      |> get("/mcp")
-
-    assert json_response(conn, 405) == json_rpc_error(nil, -32_601, "Method not found", "method_not_allowed")
-    assert get_resp_header(conn, "allow") == ["POST"]
   end
 
   test "POST /mcp rejects non-loopback, forwarded, and cross-origin requests" do

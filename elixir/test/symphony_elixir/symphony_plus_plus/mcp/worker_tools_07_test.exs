@@ -256,5 +256,4 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools07Test do
 
     assert get_in(response, ["error", "data", "reason"]) == "missing_lifecycle_capability"
   end
-
 end

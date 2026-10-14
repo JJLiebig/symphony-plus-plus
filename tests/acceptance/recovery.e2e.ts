@@ -73,9 +73,11 @@ test('independent architect clients preserve the owner through release reconnect
   expect((await owner.call('read_work_request', { work_request_id: request })).work_request.status).toBe('draft');
   await owner.call('set_work_request_status', { work_request_id: request, current_status: 'draft', next_status: 'ready_for_slicing' });
   const peer = await factory.client();
+  await peer.reject('claim_local_architect_assignment', { work_request_id: request }, 'claim_lease_active_for_other_actor');
   const denied = await peer.rpc('tools/call', { name: 'claim_local_architect_assignment', arguments: { work_request_id: request, claimed_by: 'different-owner' } });
   expect(denied.error).toBeTruthy();
   expect((await owner.call('get_current_assignment')).assignment.claimed_by).toBe('acceptance-architect');
+  expect((await owner.call('claim_local_architect_assignment', { work_request_id: request })).assignment.claimed_by).toBe('acceptance-architect');
   const reconnect = await factory.client();
   const claimed = await reconnect.call('claim_local_architect_assignment', { work_request_id: request, claimed_by: 'acceptance-architect' });
   expect(claimed.assignment.work_package_id).toBe((await owner.call('get_current_assignment')).assignment.work_package_id);
@@ -187,7 +189,7 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
 test('STDIO protocol errors and batches cannot smuggle authority across requests', async ({ processes }) => {
   const factory = processes.factory();
   const architect = await factory.client();
-  await architect.request('Batch authority');
+  const request = await architect.request('Batch authority');
   const [first, second] = await packages(architect, ['First batch claim', 'Second batch claim']);
   const candidate = processes.stdio('protocol', { database: factory.database, surface: 'worker' });
   expect((await candidate.rawRequest('initialize')).error.data.reason).toBe('missing_protocol_version');
@@ -249,6 +251,8 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   expect(switched[1].result.structuredContent.assignment.work_package_id).toBe(first);
   expect(switched[2].result.structuredContent.assignment.work_package_id).toBe(second);
   expect((await candidate.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment.work_package_id).toBe(second);
+  const board = (await architect.call('read_delivery_board', { work_request_id: request })).delivery_board;
+  expect(board.work_packages.find((entry: any) => entry.id === first).work_package.runtime_state.reason_codes).not.toContain('claim_lease_active');
   expect(await candidate.request('tools/list')).toEqual(catalog);
   // A following response is the barrier: blank/CRLF lines and notifications
   // must neither emit replies nor stop processing the stream.
@@ -268,6 +272,8 @@ test('failed worker rebinding preserves its current authority and successful reb
   const client = await worker(factory, first, 'moving-worker');
   const peer = await worker(factory, taken, 'peer-worker');
   const catalog = await client.rpc('tools/list');
+  await client.reject('claim_local_assignment', { work_package_id: first, claimed_by: 'replacement-owner' }, 'claim_lease_active_for_other_actor');
+  expect((await client.call('get_current_assignment')).assignment.claimed_by).toBe('moving-worker');
   for (const [args, reason] of [
     [{ work_package_id: second, repo: 'foreign/service' }, 'repo_scope_mismatch'],
     [{ work_package_id: taken }, 'claim_lease_active_for_other_actor'],
@@ -290,6 +296,8 @@ test('failed worker rebinding preserves its current authority and successful reb
   expect(releasedAgain.claim_lease_release.reason).toBe('not_bound');
   expect((await client.call('get_current_assignment')).assignment).toBeNull();
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(taken);
+  expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
+  await client.call('claim_local_assignment', { work_package_id: second, claimed_by: 'moving-worker' });
   expect((await client.rpc('tools/list')).result).toEqual(catalog.result);
 });
 
@@ -356,6 +364,14 @@ test('public architect handoff replays one unclaimed grant and trusted mutation 
   });
   expect(owner.assignment.grant_id).toBe(claim.assignment.grant_id);
   await client.call('release_current_assignment');
+  const replacement = await factory.client();
+  const replaced = await replacement.call('claim_local_architect_assignment', {
+    ...created.local_architect_claim.arguments, claimed_by: 'replacement-architect',
+    repo: 'example/service', base_branch: 'beta', phase_id: created.phase.id,
+    architect_anchor_work_package_id: created.anchor_package.id,
+  });
+  expect(replaced.assignment.grant_id).toBe(claim.assignment.grant_id);
+  expect(replaced.assignment.claimed_by).toBe('replacement-architect');
   const ready = (await create('ready_for_slicing')).work_request.id;
   expect((await client.call('list_work_requests', { status: 'ready_for_slicing' })).work_requests.map((entry: any) => entry.id)).toContain(ready);
   await client.call('read_delivery_board', { work_request_id: ready });

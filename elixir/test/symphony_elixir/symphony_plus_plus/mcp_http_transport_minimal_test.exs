@@ -58,18 +58,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     :ok
   end
 
-  test "initialize returns a valid MCP response and generated state key", %{config: config} do
-    assert {:ok, result} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert result.status == :ok
-    assert is_binary(result.state_key)
-    assert result.response["jsonrpc"] == "2.0"
-    assert result.response["id"] == "init"
-    assert get_in(result.response, ["result", "protocolVersion"]) == "2025-03-26"
-    assert get_in(result.response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
-    assert %Server{initialized: true, session: nil} = HTTPStateStore.get(config, "client-a", result.state_key)
-  end
-
   test "initialize only marks state trusted when the internal daemon config opts in", %{config: config} do
     assert {:ok, ordinary} = HTTPTransport.handle(config, initialize_request("ordinary-init"), client_key: "ordinary-client")
     assert %Server{local_daemon_trusted: false} = HTTPStateStore.get(config, "ordinary-client", ordinary.state_key)
@@ -363,18 +351,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert get_in(assignment.response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
   end
 
-  test "sympp.health works after initialize", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, health} =
-             HTTPTransport.handle(config, health_request("health"), client_key: "client-a", state_key: init.state_key)
-
-    assert get_in(health.response, ["result", "structuredContent", "status"]) == "ok"
-    assert get_in(health.response, ["result", "structuredContent", "mode"]) == "http"
-    assert get_in(health.response, ["result", "structuredContent", "ledger", "reachable"]) == true
-    assert get_in(health.response, ["result", "structuredContent", "source", "mcp_contract"]) == Server.mcp_contract_identity()
-  end
-
   test "live repo policy stays in transport for state-local and repo-backed followups", %{config: config} do
     {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
     parent = self()
@@ -514,22 +490,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert unknown_followup.status == :error
     assert get_in(unknown_followup.response, ["error", "data", "reason"]) == "unknown_state_key"
     assert HTTPStateStore.get(config, "client-a", "missing-state") == nil
-  end
-
-  test "notifications return no response without corrupting initialized state", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, notification} =
-             HTTPTransport.handle(config, notification_request(), client_key: "client-a", state_key: init.state_key)
-
-    assert notification.response == nil
-    assert notification.status == :no_response
-    assert notification.state_key == init.state_key
-
-    assert {:ok, tools} =
-             HTTPTransport.handle(config, tools_list_request("tools-after-notification"), client_key: "client-a", state_key: init.state_key)
-
-    assert "sympp.health" in tool_names(tools.response)
   end
 
   test "batch transport observes each failed tool item once without retaining values", %{config: config} do

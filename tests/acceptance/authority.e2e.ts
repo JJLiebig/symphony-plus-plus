@@ -114,9 +114,11 @@ test('architect scope separates same-repository discovery from foreign writes an
   ] as const) {
     await architect.reject(name, { work_request_id: own, work_package_id: otherWp, ...args }, 'not_found');
   }
-  await architect.reject('upsert_dependency', {
+  const foreignDependency = await architect.rpc('tools/call', { name: 'upsert_dependency', arguments: {
     dependent: { kind: 'work_package', id: ownWp }, prerequisite: { kind: 'work_package', id: otherWp }, reason: 'Foreign endpoint',
-  }, 'product_tree_dependency_target_scope');
+  } });
+  expect(foreignDependency.error.code).toBe(-32602);
+  expect(foreignDependency.error.data.reason).toContain('product_tree_dependency_target_scope');
   const tree = await architect.call('read_plan', { work_request_id: own, view: 'groups_with_work_packages' });
   expect(JSON.stringify(tree)).not.toContain(otherWp);
   const unchanged = await peer.call('read_work_request', { work_request_id: other });
@@ -148,6 +150,15 @@ test('architect scope separates same-repository discovery from foreign writes an
   expect(scopedPlan.product_tree.groups.map((entry: any) => entry.id).sort()).toEqual([parentGroup, visibleGroup].sort());
   expect(JSON.stringify(scopedPlan)).not.toContain('Confidential primary group');
   await peer.reject('update_work_package', { work_package_id: otherWp, expected_contract_revision: 1, patch: { group_id: visibleGroup } }, 'not_found');
+  const dependencyArgs = { dependent: { kind: 'group', id: hiddenGroup }, prerequisite: { kind: 'work_package', id: secondaryWp }, reason: 'Scoped dependency' };
+  const dependency = (await architect.call('upsert_dependency', dependencyArgs)).dependency.id;
+  const beforeEdges = (await architect.call('read_plan', { work_request_id: own, view: 'groups_with_work_packages' })).product_tree.dependency_intents;
+  const foreignUpdate = await architect.rpc('tools/call', { name: 'upsert_dependency', arguments: {
+    ...dependencyArgs, dependency_id: dependency, prerequisite: { kind: 'work_package', id: otherWp },
+  } });
+  expect(foreignUpdate.error.code).toBe(-32602);
+  expect(foreignUpdate.error.data.reason).toContain('product_tree_dependency_target_scope');
+  expect((await architect.call('read_plan', { work_request_id: own, view: 'groups_with_work_packages' })).product_tree.dependency_intents).toEqual(beforeEdges);
   await close(architect, ownWp);
   const hiddenTerminal = await row(secondary, own, ownWp);
   expect(hiddenTerminal.work_package).toBeNull();
@@ -311,7 +322,9 @@ test('superseded and no-PR delivery retire live claims and prevent terminal work
   expect((await architect.operator(`/api/v1/sympp/operator/work-requests/${request}/archive`, {})).status).toBe(200);
   const refused = await architect.rpc('tools/call', { name: 'slice_work_request', arguments: { work_packages: [contract('Archived scope')] } });
   expect(refused.error).toBeTruthy();
-  expect((await fresh.rpc('tools/call', { name: 'claim_local_architect_assignment', arguments: { work_request_id: request } })).error).toBeTruthy();
+  const archived = await fresh.reject('claim_local_architect_assignment', { work_request_id: request }, 'work_request_terminal');
+  expect(archived.terminal_state).toBe('archived');
+  expect(archived.action).toBe('restore_work_request_or_start_new_work_request');
 });
 
 deliveryTest('architect merged recovery retires real claimed workers and preserves unrelated worker authority', async ({ delivery: { factory, provider } }) => {
@@ -820,8 +833,11 @@ test('architect descendant planning stays scoped through terminal closeout and r
     ['append_progress', { summary: 'Late progress', idempotency_key: 'late-architect-progress' }],
   ] as const) await architect.reject(name, { work_package_id: wp, ...args }, 'work_package_terminal');
   expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).findings).toHaveLength(1);
+  const staleReader = await factory.client();
+  await staleReader.call('claim_local_architect_assignment', { work_request_id: request, claimed_by: 'acceptance-architect' });
   expect((await architect.operator(`/api/v1/sympp/operator/work-requests/${request}/archive`, {})).status).toBe(200);
   await architect.reject('read_task_plan', { work_package_id: wp }, 'claim_lease_lost');
+  await staleReader.reject('list_work_requests', {}, 'claim_lease_lost');
 });
 
 deliveryTest('worker dependency qualifications survive successor replacement only after explicit input requalification', async ({ delivery: { factory, provider } }) => {

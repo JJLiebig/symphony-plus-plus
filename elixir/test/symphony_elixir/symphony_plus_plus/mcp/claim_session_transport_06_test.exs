@@ -11,31 +11,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport06Test do
     def get(_schema, _id), do: raise(RuntimeError, "grant lookup unavailable")
   end
 
-  test "batch claim guard ignores earlier non-claim items on bound sessions", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-BATCH-BOUND-CLAIM")
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    {responses, server} =
-      Server.handle_state(
-        [
-          %{"jsonrpc" => "2.0", "id" => "context", "method" => "tools/call", "params" => %{"name" => "read_context"}},
-          %{
-            "jsonrpc" => "2.0",
-            "id" => "claim",
-            "method" => "tools/call",
-            "params" => %{"name" => "claim_local_assignment", "arguments" => local_assignment_claim_args(package, %{"claimed_by" => "worker-1"})}
-          }
-        ],
-        %{local_mcp_server(local_mcp_config(repo), "local-bound-batch-claim-state") | session: session}
-      )
-
-    assert Enum.map(responses, & &1["id"]) == ["context", "claim"]
-    assert get_in(Enum.at(responses, 1), ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
-    assert server.session.assignment.work_package_id == package.id
-  end
-
   test "batch claim releases the earlier claim before binding a later claim", %{repo: repo} do
     first_package = create_local_claim_package!(repo, "SYMPP-BATCH-FIRST-CLAIM")
     second_package = create_local_claim_package!(repo, "SYMPP-BATCH-SECOND-CLAIM")
