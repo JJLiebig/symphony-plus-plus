@@ -287,15 +287,17 @@ try {
   $wrapper = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($leader.Id)" -ErrorAction SilentlyContinue | Where-Object { [string]$_.CommandLine -match 'wrapper\.ps1' } | Select-Object -First 1
   Assert-True ($null -ne $wrapper) "Pending-launch fixture did not create the published wrapper"
   $wrapperPid = [int]$wrapper.ProcessId
-  $wrapperIdentity = Get-ProcessStartIdentity (Get-Process -Id $wrapperPid)
+  $wrapperProcess = Get-Process -Id $wrapperPid
+  $wrapperIdentity = Get-ProcessStartIdentity $wrapperProcess
   Set-Content -LiteralPath $wrapperRelease -Value "ready" -NoNewline
+  $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
   $owned = $null
   while ($null -eq $owned -and [DateTimeOffset]::UtcNow -lt $deadline) {
     $owned = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapperPid" -ErrorAction SilentlyContinue | Where-Object { [string]$_.CommandLine -match 'start-runtime\.cmd' } | Select-Object -First 1
     if ($null -eq $owned) { Start-Sleep -Milliseconds 25 }
   }
-  while ((Get-Process -Id $wrapperPid -ErrorAction SilentlyContinue) -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 25 }
-  Assert-True ($null -ne $owned -and $null -eq (Get-Process -Id $wrapperPid -ErrorAction SilentlyContinue)) "Published wrapper did not exit after creating its backend child"
+  # Wrapper startup and CIM child discovery must not consume the separate exit allowance.
+  Assert-True ($null -ne $owned -and $wrapperProcess.WaitForExit(10000)) "Published wrapper did not exit after creating its backend child"
   $ownedPid = [int]$owned.ProcessId
   Stop-Process -Id $leader.Id -Force; [void]$leader.WaitForExit(5000)
   $unrelated = Start-Process cmd.exe -ArgumentList @('/d', '/s', '/c', "call `"$runtimeCmd`"") -WorkingDirectory $pendingRoot -WindowStyle Hidden -PassThru

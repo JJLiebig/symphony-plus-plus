@@ -1,6 +1,6 @@
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { expect } from 'e2e';
 import { test } from '../support/installed-runtime.js';
 
@@ -110,6 +110,12 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect((await installed.ok('git', ['-C', join(installed.env.CODEX_HOME!, '.tmp/marketplaces/symphony-plus-plus'), 'rev-parse', 'HEAD'])).trim()).toBe(process.env.ACCEPTANCE_HEAD_SHA);
     await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus@symphony-plus-plus']);
     const companion = JSON.parse(await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus-mcp@symphony-plus-plus', '--json']));
+    // Native install consumes this exact candidate tree; only the hosted artifact
+    // transport is supplied explicitly because production follows named branches.
+    const manifestPath = process.env.SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST!;
+    const candidate = JSON.parse(await readFile(manifestPath, 'utf8'));
+    candidate.artifact.relative_path = resolve(dirname(manifestPath), candidate.artifact.file);
+    await writeFile(join(companion.installedPath, '.sympp-runtime-artifacts.json'), JSON.stringify(candidate));
     const launchable = await installed.ok('pwsh.exe', ['-NoProfile', '-File',
       join(companion.installedPath, 'scripts/start-sympp-mcp.ps1'), '-ValidateOnly']);
     expect(launchable).toContain('runtimeMode: artifact');

@@ -2363,6 +2363,10 @@ function Resolve-SymppLauncherRuntimeInputs([string]$PluginRoot, [string]$Bridge
 }
 
 function Invoke-PreparedRuntimeStart([string]$RuntimeFile, [string]$PluginRoot) {
+  $manifestPath = Get-SymppArtifactManifestPath $PluginRoot
+  if ($manifestPath -and (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).PSObject.Properties["channels"]) {
+    return $false
+  }
   if (-not (Test-SymppWindowsPlatform) -or $env:SYMPP_REPO_ROOT -or
       (Get-EnvMode "SYMPP_MCP_BRIDGE_MODE" "http" @("http", "direct_stdio")) -ne "http" -or
       -not (Test-SymppInstalledPluginRoot $PluginRoot)) { return $false }

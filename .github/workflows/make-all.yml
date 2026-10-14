@@ -244,11 +244,6 @@ jobs:
           (Get-ChildItem $bin -Recurse -Filter codex.exe | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
           npm install --global @anthropic-ai/claude-code@2.1.292
           if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
-      - name: Prove real Skills and marketplace user journeys
-        run: |
-          npm exec -- e2e run tests/acceptance/installed-runtime.e2e.ts --target api
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node tests/support/installed-report.ts tests/acceptance/installed-runtime.e2e.ts
       - name: Build the current candidate Windows runtime
         shell: pwsh
         run: |
@@ -256,6 +251,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $manifest = Get-ChildItem -LiteralPath .e2e/native-runtime -Filter *.manifest.json | Select-Object -First 1
           "SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST=$($manifest.FullName)" >> $env:GITHUB_ENV
+      - name: Prove real Skills and marketplace user journeys
+        run: |
+          npm exec -- e2e run tests/acceptance/installed-runtime.e2e.ts --target api
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/support/installed-report.ts tests/acceptance/installed-runtime.e2e.ts
       - name: Prove native registration and branch runtime processes
         if: ${{ !cancelled() && steps.native-hosts.outcome == 'success' }}
         run: node scripts/qualify-portable-skills.mjs
