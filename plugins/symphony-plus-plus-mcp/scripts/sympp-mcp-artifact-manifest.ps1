@@ -1,4 +1,18 @@
+function Normalize-McpContractFingerprint([string]$Fingerprint) {
+  if ([string]::IsNullOrWhiteSpace($Fingerprint)) {
+    return $null
+  }
+
+  $fingerprint = $Fingerprint.Trim().ToLowerInvariant()
+  if ($fingerprint -match "^[0-9a-f]{64}$") {
+    return $fingerprint
+  }
+
+  return $null
+}
+
 $ErrorActionPreference = "Stop"
+$script:SymppBranchManifestCache = @{}
 
 function Get-JsonPropertyValue($Object, [string[]]$Names) {
   if ($null -eq $Object) {
@@ -39,6 +53,8 @@ function Get-JsonFirstPathValue($Object, [string[][]]$Paths) {
 }
 
 function Get-SymppPluginVersion([string]$PluginRoot) {
+  $portable = Read-SymppPortableInstall $PluginRoot
+  if ($portable) { return [string]$portable.version }
   $manifestPath = Join-Path $PluginRoot ".codex-plugin/plugin.json"
   if (-not (Test-Path -LiteralPath $manifestPath)) {
     return $null
@@ -56,6 +72,8 @@ function Get-SymppPluginVersion([string]$PluginRoot) {
 }
 
 function Get-SymppPluginName([string]$PluginRoot) {
+  $portable = Read-SymppPortableInstall $PluginRoot
+  if ($portable) { return [string]$portable.name }
   $manifestPath = Join-Path $PluginRoot ".codex-plugin/plugin.json"
   if (-not (Test-Path -LiteralPath $manifestPath)) {
     return $null
@@ -73,6 +91,8 @@ function Get-SymppPluginName([string]$PluginRoot) {
 }
 
 function Resolve-ExpectedSourceRevision([string]$PluginRoot) {
+  $portable = Read-SymppPortableInstall $PluginRoot
+  if ($portable) { return $null }
   $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
   if (Test-SymphonySourceRoot $sourceCandidate) {
     return Resolve-SymppSourceRevision $sourceCandidate $PluginRoot
@@ -112,9 +132,25 @@ function Read-SymppArtifactManifest([string]$PluginRoot) {
   }
 
   try {
+    $cacheKey = $null
     $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     $manifest | Add-Member -NotePropertyName manifest_path -NotePropertyValue $path -Force
-    return Resolve-SymppPublishedArtifactManifest $manifest $path
+    if ($manifest.PSObject.Properties["channels"]) {
+      $channel = Get-SymppRuntimeChannel $PluginRoot
+      $cacheKey = "$path`n$channel"
+      if ($script:SymppBranchManifestCache -and $script:SymppBranchManifestCache.ContainsKey($cacheKey)) {
+        return $script:SymppBranchManifestCache[$cacheKey]
+      }
+      $selected = Get-JsonPathValue $manifest @("channels", $channel)
+      if ($null -eq $selected) { throw "No runtime channel is configured for this installation." }
+      $manifest = $selected
+    }
+    $resolved = Resolve-SymppPublishedArtifactManifest $manifest $path
+    if ($cacheKey) {
+      if (-not $script:SymppBranchManifestCache) { $script:SymppBranchManifestCache = @{} }
+      $script:SymppBranchManifestCache[$cacheKey] = $resolved
+    }
+    return $resolved
   } catch {
     throw "artifact_manifest_invalid: $path could not be parsed as JSON. detail=$($_.Exception.Message)"
   }

@@ -10,6 +10,7 @@ function Test-EnvEnabled([string]$Name) {
 }
 
 function Test-SourceCheckoutLaunch([string]$PluginRoot) {
+  if (Read-SymppPortableInstall $PluginRoot) { return $false }
   $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
   return Test-SymphonySourceRoot $sourceCandidate
 }
@@ -32,16 +33,9 @@ function Test-ArtifactRuntimeAllowed([string]$PluginRoot) {
   return -not (Test-SourceCheckoutLaunch $PluginRoot)
 }
 
-function Resolve-SymppArtifactCacheRoot([string]$Platform, [string]$SourceRevision, [string]$PluginVersion, [string]$Sha256) {
-  $revisionKey = if (-not [string]::IsNullOrWhiteSpace($SourceRevision)) {
-    $SourceRevision.Substring(0, [Math]::Min(12, $SourceRevision.Length))
-  } elseif (-not [string]::IsNullOrWhiteSpace($PluginVersion)) {
-    $PluginVersion -replace "[^A-Za-z0-9_.-]", "_"
-  } else {
-    "unknown"
-  }
+function Resolve-SymppArtifactCacheRoot([string]$Platform, [string]$Sha256) {
   $shaKey = $Sha256.Substring(0, 16)
-  return [System.IO.Path]::GetFullPath((Join-Path (Resolve-SymppPluginHome) "artifacts/mcp/$Platform/$revisionKey/$shaKey"))
+  return [System.IO.Path]::GetFullPath((Join-Path (Resolve-SymppPluginHome) "rt/$Platform/$shaKey"))
 }
 
 function New-SymppArtifactRuntimeDescriptor([string]$ExtractRoot, [string]$Entrypoint, [string]$Workflow, [string[]]$RuntimeArgs, [string]$Sha256, [string]$Platform, [string]$SourceRevision, [string]$PluginVersion, [string]$ManifestPath, [string]$DashboardRoot, [string]$DashboardFingerprint) {
@@ -78,11 +72,12 @@ function Get-SymppArtifactDirectoryFingerprint([string]$Root) {
   $rootPrefix = ([System.IO.Path]::GetFullPath($Root)).TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
   # Cache metadata is written after extraction and is not dashboard content.
   $cacheMarker = [System.IO.Path]::GetFullPath((Join-Path $Root ".sympp-artifact.json"))
-  foreach ($file in @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object { $_.FullName -ne $cacheMarker } | Sort-Object FullName)) {
+  foreach ($file in @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object { $_.FullName -ne $cacheMarker })) {
     $relativePath = ([System.IO.Path]::GetFullPath($file.FullName)).Substring($rootPrefix.Length).Replace("\", "/")
     $lines.Add("$relativePath $(Get-FileSha256 $file.FullName)")
   }
 
+  $lines.Sort([System.StringComparer]::Ordinal)
   $payload = [string]::Join("`n", $lines)
   $sha = [System.Security.Cryptography.SHA256]::Create()
   try {
@@ -363,7 +358,7 @@ function Resolve-SymppPreparedArtifactRuntime([string]$PluginRoot, [string]$Expe
   }
   $runtimeArgs = Resolve-SymppArtifactRuntimeArgs $artifact
   $cacheSourceRevision = Resolve-SymppArtifactCacheSourceRevision $manifest $artifact $ExpectedSourceRevision $requireSourceRevision
-  $cacheRoot = Resolve-SymppArtifactCacheRoot $platform $cacheSourceRevision $pluginVersion $sha256
+  $cacheRoot = Resolve-SymppArtifactCacheRoot $platform $sha256
   $extractRoot = Join-Path $cacheRoot "runtime"
   $archivePath = Join-Path $cacheRoot "artifact.zip"
   $runtimeDescriptor = New-SymppArtifactRuntimeDescriptor $extractRoot $entrypoint $workflow $runtimeArgs $sha256 $platform $cacheSourceRevision $pluginVersion $manifest.manifest_path $dashboardRoot $dashboardFingerprint

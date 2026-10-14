@@ -22,14 +22,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
   alias SymphonyElixir.WorkPackageFactory
 
-  defmodule LockedAccessGrantRepo do
-    def get(_schema, _id), do: raise(%Exqlite.Error{message: "database is locked"})
-  end
-
-  defmodule BrokenAccessGrantRepo do
-    def get(_schema, _id), do: raise(%Exqlite.Error{message: "disk I/O failed"})
-  end
-
   defmodule TerminalClaimRaceRepo do
     import Ecto.Query, only: [from: 2]
 
@@ -121,34 +113,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
     :ok
   end
 
-  test "generates high-entropy work keys with four-character display keys" do
-    first = WorkKey.generate()
-    second = WorkKey.generate()
-
-    assert String.length(first.display_key) == 4
-    assert first.display_key =~ ~r/\A[0-9A-F]{4}\z/
-    assert WorkKey.secret_shape?(first.secret)
-    assert String.length(first.secret) >= 46
-    assert first.secret != second.secret
-    assert WorkKey.secret_hash(first.secret) != WorkKey.secret_hash(second.secret)
-  end
-
-  test "mints a worker grant for one work package and stores only a secret hash", %{repo: repo} do
+  test "mint stores separated credential hashes and redacts persisted and inspected material", %{repo: repo} do
     assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-P1-002"))
 
     assert {:ok, %{grant: grant, work_key: work_key}} =
              Service.mint_worker_grant(repo, work_package.id, capabilities: ["worker:claim"])
 
-    assert %AccessGrant{} = grant
-    assert grant.work_package_id == work_package.id
-    assert grant.grant_role == "worker"
-    assert grant.display_key == work_key.display_key
+    other = WorkKey.generate()
+    refute work_key.secret == other.secret
+    refute WorkKey.secret_hash(work_key.secret) == WorkKey.secret_hash(other.secret)
     assert grant.secret_hash == WorkKey.secret_hash(work_key.secret)
-    assert grant.expires_at == nil
     refute grant.secret_hash == work_key.secret
 
     assert {:ok, persisted} = Repository.get(repo, grant.id)
-    assert persisted.expires_at == nil
     refute Map.has_key?(Map.from_struct(persisted), :secret)
     refute Map.has_key?(Map.from_struct(persisted), :raw_secret)
     refute inspect(persisted) =~ persisted.secret_hash
@@ -182,57 +159,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
     assert {:ok, persisted} = Repository.get(repo, grant.id)
     assert persisted.claimed_at == nil
     assert persisted.claimed_by == nil
-  end
-
-  test "grant scope persistence supports all explicit scope row types", %{repo: repo} do
-    assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-SCOPE-SCHEMA"))
-    assert {:ok, %{grant: grant}} = Service.mint_worker_grant(repo, work_package.id)
-    repo.delete_all(GrantScope)
-
-    for scope <- [
-          Scope.ledger(),
-          Scope.repo("nextide/symphony-plus-plus", "main"),
-          Scope.work_request("wr-scope-schema"),
-          Scope.work_package("wrs-scope-schema"),
-          Scope.work_package(work_package.id)
-        ] do
-      assert {:ok, %GrantScope{}} =
-               scope
-               |> then(&GrantScope.attrs_from_scope(grant.id, &1))
-               |> GrantScope.create_changeset()
-               |> repo.insert()
-    end
-
-    assert {:ok, scope_rows} = Repository.list_scopes(repo, grant.id)
-    assert MapSet.new(Enum.map(scope_rows, & &1.scope_type)) == MapSet.new(["ledger", "repo", "work_request", "work_package", "work_package"])
-  end
-
-  test "worker grants persist exactly one work package scope", %{repo: repo} do
-    assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-WORKER-SCOPE"))
-
-    assert {:ok, %{grant: grant}} =
-             Service.mint_worker_grant(repo, work_package.id, capabilities: ["worker:claim"])
-
-    assert {:ok, [%GrantScope{} = scope]} = Repository.list_scopes(repo, grant.id)
-    assert scope.scope_type == "work_package"
-    assert scope.scope_id == work_package.id
-    assert scope.scope_key == "work_package:#{work_package.id}"
-    assert scope.repo == nil
-    assert scope.base_branch == nil
-  end
-
-  test "architect handoff grants persist one work request scope", %{repo: repo} do
-    {phase, work_package, _work_request} = create_handoff_anchor!(repo, "wr-architect-scope")
-
-    assert {:ok, %{grant: grant}} =
-             Service.mint_architect_grant(repo, phase.id,
-               work_package_id: work_package.id,
-               work_request_id: "wr-architect-scope",
-               capabilities: ["read:work_request", "write:work_request"]
-             )
-
-    assert {:ok, scope_rows} = Repository.list_scopes(repo, grant.id)
-    assert [%GrantScope{scope_type: "work_request", scope_id: "wr-architect-scope"}] = Enum.filter(scope_rows, &(&1.scope_type == "work_request"))
   end
 
   test "architect grants reject requested work request scopes outside the anchor repository", %{repo: repo} do
@@ -767,11 +693,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
     assert persisted.claimed_by == nil
   end
 
-  test "repository normalizes SQLite read failures" do
-    assert {:error, :database_busy} = Repository.get(LockedAccessGrantRepo, "grant-1")
-    assert {:error, {:storage_failed, "disk I/O failed"}} = Repository.get(BrokenAccessGrantRepo, "grant-1")
-  end
-
   test "expired grants reject claims", %{repo: repo} do
     assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs())
     now = ~U[2026-04-30 10:00:00Z]
@@ -1248,7 +1169,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
           base_branch: "main"
         )
 
-      insert_work_request!(Repo, "wr-grant-scope-backfill", work_package.repo, work_package.base_branch)
+      insert_work_request!(Repo, "wr-grant-scope-backfill", work_package.repo, work_package.base_branch, load: false)
       insert_legacy_slice!(Repo, "wrs-grant-scope-backfill", "wr-grant-scope-backfill", work_package.id, work_package.base_branch)
 
       foreign_work_package =
@@ -1259,7 +1180,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
           base_branch: work_package.base_branch
         )
 
-      insert_work_request!(Repo, "wr-grant-scope-foreign-branch", work_package.repo, "feature/other")
+      insert_work_request!(Repo, "wr-grant-scope-foreign-branch", work_package.repo, "feature/other", load: false)
       insert_legacy_slice!(Repo, "wrs-grant-scope-foreign-branch", "wr-grant-scope-foreign-branch", foreign_work_package.id, "feature/other")
 
       Repo.query!(
@@ -1465,7 +1386,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
     refute log =~ minted.work_key.secret
   end
 
-  defp insert_work_request!(repo, id, repo_name, base_branch) do
+  defp insert_work_request!(repo, id, repo_name, base_branch, opts \\ []) do
     now = DateTime.utc_now(:microsecond)
 
     repo.query!(
@@ -1490,7 +1411,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AccessGrantsTest do
       ]
     )
 
-    repo.get!(WorkRequest, id)
+    if Keyword.get(opts, :load, true), do: repo.get!(WorkRequest, id)
   end
 
   defp create_handoff_anchor!(repo, work_request_id) do

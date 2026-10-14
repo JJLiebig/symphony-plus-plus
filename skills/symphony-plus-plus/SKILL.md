@@ -22,14 +22,15 @@ business CLI commands, direct SQLite, or private state files as a fallback.
 Operational shell tools remain available for installation, startup, diagnosis,
 upgrade, and connection recovery.
 
-This install supplies procedures only. It does not install, configure, or start
-the backend. For separate server setup and host connection, read
-[MCP connection](connection.md). Start a fresh dedicated MCP-enabled session;
-do not interrupt live agent sessions or alter their configuration.
+This install includes procedures and the Windows x64 artifact launcher. When
+required MCP tools are missing, read [MCP connection](connection.md) and run
+the installed `scripts/setup-sympp.js` command from the intended project.
+It detects Codex/Claude Code and registers the same launcher; explicit host
+selection is available. Report that a fresh session is required: setup cannot
+add tools to an already-open model session. Do not interrupt other sessions.
 
 Invoke this skill as `$symphony-plus-plus` in Codex or `/symphony-plus-plus` in
 Claude Code. Procedure names in linked instructions refer to local files,
-not additional skills to install. Codex-specific launcher/profile guidance in
-the wiring reference applies only to Codex marketplace sessions. Use your
+not additional skills to install. The wiring reference covers the shared Windows bridge for both hosts. Use your
 host's delegation tools when available; otherwise report a required worker
 dispatch as unavailable instead of taking over an architect's implementation.

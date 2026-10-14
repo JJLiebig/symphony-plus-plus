@@ -4,9 +4,11 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const net = require("net");
+const os = require("os");
 const path = require("path");
 const readline = require("readline");
 const { spawn, spawnSync } = require("child_process");
+const sessionLocation = require("./sympp-session-location.js").createReporter();
 
 const WARM_MISS = 42;
 const POWERSHELL_FALLBACK = 43;
@@ -41,7 +43,7 @@ const HERDR_METADATA_SOURCE = "symphony-plus-plus";
 const HERDR_METADATA_COMMAND_TIMEOUT_MS = 5000;
 const HERDR_METADATA_TTL_MS = 150000;
 const HERDR_METADATA_REFRESH_MS = 60000;
-const HERDR_METADATA_TOKENS = ["sympp_role", "sympp_work_request_id", "sympp_work_package_id", "sympp_show_inspector", "sympp_endpoint"];
+const HERDR_METADATA_TOKENS = ["sympp_role", "sympp_work_request_id", "sympp_work_package_id", "sympp_show_inspector", "sympp_endpoint", "sympp_session_location_id"];
 const HERDR_INSPECTOR_PLUGIN = "symphony-plus-plus.execution-inspector";
 
 function trace(event, fields) {
@@ -171,6 +173,7 @@ function herdrMetadataArgs(binding, backend) {
     sympp_work_package_id: binding.work_package_id,
     sympp_show_inspector: String(binding.show_inspector === true),
     sympp_endpoint: trimOrigin(backend),
+    sympp_session_location_id: sessionLocation.clientId,
   };
   const args = ["--ttl-ms", String(HERDR_METADATA_TTL_MS)];
   for (const name of HERDR_METADATA_TOKENS) {
@@ -284,15 +287,31 @@ function readJson(file) {
 function generationKey(pluginRoot, sourceRoot) {
   try {
     if (!fs.statSync(pluginRoot).isDirectory()) return null;
+    const portable = portableInstall(pluginRoot);
+    if (portable) return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${process.env.SYMPP_RUNTIME_CHANNEL || "stable"}\n${portable.contract_fingerprint}\n${portable.payload_sha256}`);
     const install = readJson(path.join(sourceRoot, ".codex-marketplace-install.json"));
     const contract = readJson(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"));
     const revision = String(install && (install.revision || install.source_revision || install.sourceRevision) || "").toLowerCase();
     const fingerprint = String(contract && contract.mcp_contract_fingerprint || "").toLowerCase();
     if (!/^[0-9a-f]{40}$/.test(revision) || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
-    return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${revision}\n${fingerprint}`);
+    const ref = String(install.ref_name || "main");
+    return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${revision}\n${fingerprint}${ref === "main" ? "" : `\n${ref}`}`);
   } catch (_) {
     return null;
   }
+}
+
+function portableInstall(pluginRoot) {
+  const install = readJson(path.join(pluginRoot, ".sympp-install.json"));
+  if (!install || install.schema_version !== 1 || install.distribution !== "skills" ||
+      !/^[0-9a-f]{64}$/.test(install.contract_fingerprint || "") ||
+      !/^[0-9a-f]{64}$/.test(install.payload_sha256 || "")) return null;
+  return install;
+}
+
+function installedScripts(identity) {
+  return portableInstall(identity.pluginRoot) ? path.join(identity.pluginRoot, "scripts") :
+    path.join(identity.sourceRoot, "plugins", path.basename(path.dirname(identity.pluginRoot)), "scripts");
 }
 
 function validPid(pid) {
@@ -384,6 +403,40 @@ function releaseProcessLock(lockFile, lock) {
   if (owner && owner.lock_id === lock.lockId) { try { fs.unlinkSync(lockFile); } catch (_) { } }
 }
 
+async function claimPortableLedger(runtimeFile) {
+  const requested = path.resolve(process.env.SYMPP_DATABASE || path.join(os.homedir(), ".agents", "splusplus", "symphony_plus_plus.sqlite3"));
+  fs.mkdirSync(path.dirname(requested), { recursive: true });
+  const database = fs.existsSync(requested) ? fs.realpathSync.native(requested) : path.join(fs.realpathSync.native(path.dirname(requested)), path.basename(requested));
+  const receiptFile = `${database}.sympp-owner.json`;
+  const lockFile = `${receiptFile}.lock`;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const lock = await tryAcquireProcessLock(lockFile);
+    if (!lock) { await new Promise(resolve => setTimeout(resolve, 25)); continue; }
+    try {
+      const receipt = readJson(receiptFile);
+      if (fs.existsSync(receiptFile) && (!receipt || typeof receipt.runtime_file !== "string" || !Array.isArray(receipt.clients))) {
+        throw new Error("The ledger ownership receipt is unreadable. Close all Symphony++ clients and inspect the adjacent .sympp-owner.json file before retrying.");
+      }
+      const clients = [];
+      for (const client of receipt?.clients || []) {
+        if (await livenessMatches(client.pid, client.pipe, client.token)) clients.push(client);
+      }
+      if (receipt && path.resolve(receipt.runtime_file).toLowerCase() !== path.resolve(runtimeFile).toLowerCase()) {
+        const state = readJson(receipt.runtime_file);
+        const health = state?.backend?.managed && state.backend.url ? await backendHealth(state.backend.url) : null;
+        if (clients.length || health?.healthy) {
+          throw new Error("This ledger is already owned by another Symphony++ home. Use its SYMPP_HOME and SYMPP_RUNTIME_FILE to share, or choose a separate SYMPP_DATABASE. Close all clients before moving a ledger.");
+        }
+      }
+      clients.push({ pid: process.pid, pipe: livenessPipe, token: livenessToken });
+      fs.writeFileSync(receiptFile, JSON.stringify({ runtime_file: path.resolve(runtimeFile), clients }) + "\n");
+      return;
+    } finally { releaseProcessLock(lockFile, lock); }
+  }
+  throw new Error("Another Symphony++ client is selecting this ledger. Retry the connection.");
+}
+
 function closeGenerationWatchers() {
   const count = generationWatchers.length;
   for (const watcher of generationWatchers.splice(0)) {
@@ -430,11 +483,12 @@ function liveGeneration(markerFile) {
 }
 
 async function coalescedGenerationKey(pluginRoot, sourceRoot, markerFile) {
-  const watched = watchGeneration([
+  const paths = portableInstall(pluginRoot) ? [{ path: pluginRoot, recursive: true }] : [
     { path: pluginRoot, recursive: true },
     { path: path.join(sourceRoot, ".codex-marketplace-install.json"), recursive: false },
     { path: path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"), recursive: false },
-  ], markerFile);
+  ];
+  const watched = watchGeneration(paths, markerFile);
   if (!watched) return null;
 
   let watchVersion = generationWatchVersion;
@@ -497,14 +551,15 @@ async function resolveCachedIdentity(pluginRoot) {
   const marketplaceRoot = path.dirname(packageRoot);
   const cacheRoot = path.dirname(marketplaceRoot);
   const pluginsRoot = path.dirname(cacheRoot);
-  if (path.basename(cacheRoot).toLowerCase() !== "cache" || path.basename(pluginsRoot).toLowerCase() !== "plugins") return null;
+  const portable = portableInstall(versionRoot);
+  if (!portable && (path.basename(cacheRoot).toLowerCase() !== "cache" || path.basename(pluginsRoot).toLowerCase() !== "plugins")) return null;
 
   const codexHome = path.dirname(pluginsRoot);
   const marketplaceName = path.basename(marketplaceRoot);
-  const sourceRoot = path.resolve(codexHome, ".tmp", "marketplaces", marketplaceName);
+  const sourceRoot = portable ? versionRoot : path.resolve(codexHome, ".tmp", "marketplaces", marketplaceName);
   const cacheName = sha256(versionRoot.toLowerCase()).slice(0, 12) + ".json";
   const cacheFile = path.join(resolveHome(), "runtime", "launcher-validation", cacheName);
-  const generationMarker = `${cacheFile}.generation`;
+  const generationMarker = `${cacheFile}.${portable ? process.env.SYMPP_RUNTIME_CHANNEL || "stable" : "marketplace"}.generation`;
   const generation = await coalescedGenerationKey(versionRoot, sourceRoot, generationMarker);
   if (!generation) return null;
   const cache = readJson(cacheFile);
@@ -538,7 +593,7 @@ function prepareCleanupScript(identity) {
   try {
     const names = fs.readdirSync(__dirname).filter((name) => name.toLowerCase().endsWith(".ps1")).sort();
     const directory = path.join(resolveHome(), "runtime", "launcher-cleanup", `${identity.revision}-${identity.generationKey.slice(0, 12)}`);
-    const marketplaceScripts = path.join(identity.sourceRoot, "plugins", path.basename(path.dirname(identity.pluginRoot)), "scripts");
+    const marketplaceScripts = installedScripts(identity);
     fs.mkdirSync(directory, { recursive: true });
     const script = path.join(directory, "start-sympp-mcp.ps1");
     const markerFile = path.join(directory, "validated.json");
@@ -607,7 +662,7 @@ function prepareCleanupScript(identity) {
 
 function cleanupSourcesChanged(identity, script) {
   try {
-    const marketplaceScripts = path.join(identity.sourceRoot, "plugins", path.basename(path.dirname(identity.pluginRoot)), "scripts");
+    const marketplaceScripts = installedScripts(identity);
     const directories = [__dirname, marketplaceScripts, path.dirname(script)];
     const fileSets = directories.map((directory) => fs.readdirSync(directory).filter((name) => name.toLowerCase().endsWith(".ps1")).sort());
     if (fileSets.some((names) => names.join("\n") !== fileSets[0].join("\n"))) return true;
@@ -694,9 +749,24 @@ function tracedRuntimeIdentity(identity) {
   };
 }
 
+function databasePath(database, displayPath = false) {
+  if (!database || !String(database).trim()) return null;
+  const value = displayPath ? String(database).replace(/^\$HOME(?=\/|$)/, os.homedir()) : String(database);
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function requestedDatabaseMatches(ledgerIdentity) {
+  const requested = databasePath(process.env.SYMPP_DATABASE);
+  if (requested) return ledgerIdentity?.kind === "sqlite" && databasePath(ledgerIdentity.display_path, true) === requested;
+  if (String(process.env.SYMPP_REPO_ROOT || "").trim() || String(process.env.SYMPP_BACKEND_URL || "").trim()) return true;
+  return ledgerIdentity?.kind === "sqlite" && ledgerIdentity.default_home === true;
+}
+
 function resolveStateIdentity(state, pluginRoot, cachedIdentity) {
   if (!state || !state.backend || !state.frontend || !state.plugin_root) return null;
   if (path.resolve(String(state.plugin_root)).toLowerCase() !== path.resolve(pluginRoot).toLowerCase()) return null;
+  if (databasePath(state.publication?.controls?.database) !== databasePath(process.env.SYMPP_DATABASE)) return null;
   const identity = cachedIdentity;
   const sourceRoot = identity && (identity.source_root || identity.sourceRoot);
   if (!sourceRoot) return null;
@@ -721,7 +791,7 @@ function resolveStateIdentity(state, pluginRoot, cachedIdentity) {
   const key = runtimeKey(backend, dashboard, contract);
   if (String(state.runtime_key || "").toLowerCase() !== key.toLowerCase()) return null;
   return {
-    backend, dashboard, contract, runtimeKey: key, revision: identity.revision, headless,
+    backend, dashboard, contract, runtimeKey: key, revision: String(state.backend.source_revision || identity.revision), headless,
     epoch: `${Number(state.backend.pid) || 0}:${String(state.publication && state.publication.backend && state.publication.backend.process_start_time_utc_ticks || "external")}`,
     pluginRoot: path.resolve(pluginRoot), sourceRoot: path.resolve(String(sourceRoot)),
     generationKey: identity.generation_key || identity.generationKey,
@@ -769,6 +839,7 @@ function responseLines(response) {
 }
 
 async function mcpPost(url, body, sessionId, protocol, timeoutMs) {
+  body = await sessionLocation.attach(body);
   const headers = { Accept: "application/json, text/event-stream", "Content-Type": "application/json" };
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   if (protocol) headers["MCP-Protocol-Version"] = protocol;
@@ -808,8 +879,9 @@ async function backendHealth(origin) {
     if (response.status < 200 || response.status >= 300 || !response.body) return null;
     const readiness = JSON.parse(response.body);
     const contract = String((readiness.source && readiness.source.mcp_contract && readiness.source.mcp_contract.fingerprint) || "").toLowerCase();
-    const healthy = readiness.status === "ok" && readiness.ledger && readiness.ledger.reachable === true;
-    return { healthy, contract, retryable: false };
+    const ledgerIdentity = readiness.ledger?.identity;
+    const healthy = readiness.status === "ok" && readiness.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity);
+    return { healthy, contract, ledgerIdentity, retryable: false };
   } catch (error) {
     return { healthy: false, contract: "", retryable: /timed out/i.test(String(error && error.message)) };
   }
@@ -827,7 +899,8 @@ async function legacyBackendHealth(mcpUrl) {
   const structured = payload.result && payload.result.structuredContent;
   if (!structured) return null;
   const contract = String((structured.source && structured.source.mcp_contract && structured.source.mcp_contract.fingerprint) || (structured.mcp_contract && structured.mcp_contract.fingerprint) || "").toLowerCase();
-  return { healthy: structured.status === "ok" && structured.ledger && structured.ledger.reachable === true, contract };
+  const ledgerIdentity = structured.ledger?.identity;
+  return { healthy: structured.status === "ok" && structured.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity), contract, ledgerIdentity };
 }
 
 function healthCacheMatches(cache, state, identity) {
@@ -835,6 +908,7 @@ function healthCacheMatches(cache, state, identity) {
   const ttl = backendPid > 0 ? HEALTH_CACHE_TTL_MS : EXTERNAL_HEALTH_CACHE_TTL_MS;
   return !!cache && cache.runtime_key === identity.runtimeKey &&
     Number(cache.backend_pid) === backendPid && cache.contract === identity.contract &&
+    requestedDatabaseMatches(cache.ledger_identity) &&
     Date.now() - Number(cache.validated_at_ms) <= ttl;
 }
 
@@ -858,7 +932,7 @@ async function ensureRuntimeHealth(runtimeFile, state, identity, clientId) {
           const health = await backendHealth(identity.backend);
           if (health && health.contract === identity.contract && health.healthy) {
             const temporary = `${cacheFile}.${process.pid}.tmp`;
-            fs.writeFileSync(temporary, `${JSON.stringify({ runtime_key: identity.runtimeKey, backend_pid: Number(state.backend.pid), contract: identity.contract, validated_at_ms: Date.now() })}\n`);
+            fs.writeFileSync(temporary, `${JSON.stringify({ runtime_key: identity.runtimeKey, backend_pid: Number(state.backend.pid), contract: identity.contract, ledger_identity: health.ledgerIdentity, validated_at_ms: Date.now() })}\n`);
             try { fs.unlinkSync(cacheFile); } catch (_) { }
             fs.renameSync(temporary, cacheFile);
             return { healthy: true, attachedResponse };
@@ -897,12 +971,13 @@ function leaseDirectory(runtimeFile) {
   return path.join(path.dirname(runtimeFile), "codex-plugin-leases");
 }
 
-function createLocalLease(runtimeFile, state, identity) {
+function createLocalLease(runtimeFile, state, identity, clientId) {
   const directory = leaseDirectory(runtimeFile);
   fs.mkdirSync(directory, { recursive: true });
   const file = path.join(directory, `bridge-${process.pid}-${crypto.randomUUID().replace(/-/g, "")}.json`);
   const temporary = `${file}.tmp`;
   const lease = {
+    client_id: clientId,
     pid: process.pid,
     process_liveness_pipe: livenessPipe,
     process_liveness_token: livenessToken,
@@ -1037,7 +1112,7 @@ async function bridge(identity, state, runtimeFile) {
     const generationValidation = beginGenerationAttachmentValidation(next.identity);
     const replacementLease = next.identity.runtimeKey.toLowerCase() === current.identity.runtimeKey.toLowerCase()
       ? localLease
-      : createLocalLease(runtimeFile, next.state, next.identity);
+      : createLocalLease(runtimeFile, next.state, next.identity, clientId);
     let attachedResponse;
     let nextCleanupScript;
     let replacementAttached = false;
@@ -1142,7 +1217,7 @@ async function bridge(identity, state, runtimeFile) {
       trace("warm_miss_cleanup");
       return false;
     }
-    localLease = createLocalLease(runtimeFile, state, identity);
+    localLease = createLocalLease(runtimeFile, state, identity, clientId);
     const confirmedState = readJson(runtimeFile);
     const confirmed = resolveStateIdentity(confirmedState, path.resolve(__dirname, ".."), identity);
     if (!confirmed || confirmed.runtimeKey.toLowerCase() !== identity.runtimeKey.toLowerCase()) {
@@ -1309,7 +1384,9 @@ function cancelPreparation() {
 async function prepareColdRuntime() {
   const configured = process.env.SYMPP_POWERSHELL;
   const state = readJson(resolveRuntimeFile());
-  if (process.platform === "win32" && process.argv.length === 2 && state?.backend?.status === "stopped" && state?.artifact?.prepared_release) {
+  const preparedBackendStopped = state?.backend?.status === "stopped" ||
+    (state?.backend?.status === "started" && validPid(state.backend.pid) && !processAlive(state.backend.pid));
+  if (process.platform === "win32" && process.argv.length === 2 && preparedBackendStopped && state?.artifact?.prepared_release) {
     const code = await runPreparation(configured || "powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "start-sympp-mcp.ps1"), "-TryPreparedRuntime"]).catch((error) => {
       if (!configured && error.code === "ENOENT") return 42;
       throw error;
@@ -1376,15 +1453,34 @@ async function resolveColdRuntime(runtimeFile, pluginRoot) {
 }
 
 async function main() {
+  if (process.argv.includes("--probe-client-leases")) {
+    try {
+      const input = readline.createInterface({ input: process.stdin, terminal: false });
+      for await (const line of input) {
+        const dead = await Promise.all(JSON.parse(line).map(async ({ id, pid, pipe, token }) =>
+          await livenessMatches(pid, pipe, token) ? null : id));
+        process.stdout.write(JSON.stringify(dead.filter((id) => id !== null)), () => process.exit(0));
+        return;
+      }
+    } catch (_) { }
+    process.exit(1);
+  }
   if (Number(process.versions.node.split(".")[0]) < 18) process.exit(POWERSHELL_FALLBACK);
   if (process.argv.includes("--runtime-supported")) {
     process.exit(0);
   }
   if (process.argv.some((arg) => /^-(Help|ValidateOnly)$/i.test(arg)) || process.env.SYMPP_REPO_ROOT || String(process.env.SYMPP_MCP_BRIDGE_MODE || "http").toLowerCase() !== "http") process.exit(POWERSHELL_FALLBACK);
 
+  const pluginRoot = path.resolve(__dirname, "..");
+  const portable = portableInstall(pluginRoot);
+  if (portable) {
+    if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Symphony++ Skills supports Windows x64 only.");
+    // Preserve the cmd entrypoint's neutral directory for native executable lookup.
+    process.chdir(process.env.SystemRoot);
+  }
   await ensureLivenessProbe();
   const runtimeFile = resolveRuntimeFile();
-  const pluginRoot = path.resolve(__dirname, "..");
+  if (portable) await claimPortableLedger(runtimeFile);
   const runtime = await resolveColdRuntime(runtimeFile, pluginRoot);
   if (!runtime) { trace("cold_start_timeout"); process.exit(COLD_TIMEOUT); }
   const { state, identity } = runtime;
@@ -1398,5 +1494,5 @@ if (require.main === module) {
     process.exit(1);
   });
 } else {
-  module.exports = { ensureLivenessProbe, closeLivenessProbe, tryAcquireProcessLock, releaseProcessLock, livenessMatches, decodeHerdrBinding, generationFromMarker, generationKey, herdrMetadataArgs, resolveStateIdentity };
+  module.exports = { ensureLivenessProbe, closeLivenessProbe, claimPortableLedger, createLocalLease, tryAcquireProcessLock, releaseProcessLock, livenessMatches, decodeHerdrBinding, generationFromMarker, generationKey, herdrMetadataArgs, resolveStateIdentity, requestedDatabaseMatches };
 }

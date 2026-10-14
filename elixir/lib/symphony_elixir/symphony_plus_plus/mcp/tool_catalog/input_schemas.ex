@@ -3,7 +3,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
 
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Comment
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{SoloTools, ToolCatalog}
-  alias SymphonyElixir.SymphonyPlusPlus.Planning.PlanNode
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.{PlanNode, Renderer}
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.{WorkPackage, WorkPackageDelivery}
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.{DecisionLogEntry, WorkRequest}
 
@@ -33,7 +33,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         "claimed_by" => string_schema(),
         "creator_kind" => string_enum_schema(WorkRequest.creator_kinds()),
         "creator_name" => string_schema(),
-        "created_via" => string_schema()
+        "created_via" => string_schema(),
+        "session_description" => session_description_schema()
       },
       ["repo", "base_branch", "title", "request_kind", "description"]
     )
@@ -91,6 +92,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         "base_branch" => string_schema(),
         "phase_id" => string_schema(),
         "caller_id" => string_schema(),
+        "session_description" => session_description_schema(),
         "claimed_by" => string_schema()
       },
       ["work_request_id"]
@@ -107,18 +109,34 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_package_id" => string_schema(),
+        "session_description" => session_description_schema(),
         "claimed_by" => string_schema()
       },
       ["work_package_id"]
     )
   end
 
-  def worker_tool_input_schema(name) when name in ["get_current_assignment", "read_context", "read_task_plan"] do
+  def worker_tool_input_schema("get_current_assignment") do
+    schema(%{"session_description" => session_description_schema()}, [])
+  end
+
+  def worker_tool_input_schema(name) when name in ["read_context", "read_task_plan"] do
     schema(%{}, [])
   end
 
   def worker_tool_input_schema("mark_ready") do
     schema(%{}, [])
+  end
+
+  def worker_tool_input_schema("read_work_package_document") do
+    schema(
+      %{
+        "document" => string_enum_schema(Renderer.virtual_files()),
+        "before_sequence" => integer_schema() |> Map.put("minimum", 1)
+      },
+      ["document"]
+    )
+    |> Map.put("additionalProperties", true)
   end
 
   def worker_tool_input_schema("update_task_plan") do
@@ -258,7 +276,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     )
   end
 
-  def architect_tool_input_schema("read_work_request"), do: schema(%{"work_request_id" => string_schema()}, ["work_request_id"])
+  def architect_tool_input_schema("read_work_request") do
+    schema(%{"work_request_id" => string_schema(), "session_description" => session_description_schema()}, ["work_request_id"])
+  end
 
   def architect_tool_input_schema("read_plan") do
     schema(
@@ -296,10 +316,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_request_id" => current_work_request_id_schema(),
-        "work_package_id" => described_string_schema("Explicit descendant WorkPackage to synchronize through its attached GitHub PR.")
+        "work_package_id" => described_string_schema("Explicit descendant WorkPackage to synchronize through GitHub."),
+        "url" => described_string_schema("PR URL from the normal worker handoff. Supply head_sha with it to reconcile readiness without a worker claim."),
+        "head_sha" => described_string_schema("Expected PR head from the handoff; must match the fetched provider head.")
       },
       ["work_package_id"]
     )
+    |> Map.put("additionalProperties", true)
   end
 
   def architect_tool_input_schema("attach_branch") do
@@ -585,11 +608,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_request_id" => current_work_request_id_schema(),
-        "work_package_id" => string_schema(),
-        "claimed_by" => described_string_schema("Optional claim display name to prefill worker bootstrap metadata.")
+        "work_package_id" => string_schema()
       },
       ["work_package_id"]
     )
+    |> Map.put("additionalProperties", true)
   end
 
   def architect_tool_input_schema("prepare_work_package_worktree") do
@@ -918,6 +941,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         "dependency_id" => described_string_schema("Optional existing dependency id. Omit to create a dependency."),
         "dependent" => dependency_endpoint_schema(),
         "prerequisite" => dependency_endpoint_schema(),
+        "candidate_head_sha" => %{
+          "type" => ["string", "null"],
+          "pattern" => "^[0-9a-fA-F]{40}$",
+          "description" => "Optional exact head of a concrete prerequisite WorkPackage qualified by the caller using native checks/review. Enables wiring before delivery; null removes the pin."
+        },
         "reason" => markdown_string_schema("Why this dependency exists."),
         "decision_ref" => object_schema(),
         "created_by" => described_string_schema("Optional architect identity for audit display.")
@@ -996,5 +1024,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         }
       }
     }
+  end
+
+  defp session_description_schema do
+    described_string_schema("Optional human-readable place to find this session outside Herdr, such as Terminal window: widget work.")
   end
 end

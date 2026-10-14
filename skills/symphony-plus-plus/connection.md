@@ -1,46 +1,65 @@
-# Separate MCP connection
+# MCP Connection
 
-Portable skill installation does not provide a runtime. Use an already
-running Symphony++ cockpit with the intended ledger, or start the existing
-operator tooling separately. For a source development environment, install
-the repository's `elixir/mise.toml` toolchain and dependencies, then from
-`elixir/` run:
+This skill includes the Windows x64 launcher, bridge, contract identity and
+published runtime pointer. Git, Node.js 22.20+, PowerShell 7 and the selected host
+must be available. No Codex marketplace or source checkout is required.
 
-```sh
-mix sympp.cockpit --port 19998 --database <isolated-ledger-path>
+From the project that will use Symphony++, run:
+
+```powershell
+node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
 ```
 
-Source startup is developer operation, not an installed marketplace runtime.
-For normal Codex marketplace operation, use the MCP companion and its existing
-launcher; see the [marketplace wiring](references/symphony-work-package/references/mcp_wiring.md).
-Keep installed runtimes marketplace-backed. Do not refresh the active plugin
-cache from a developer checkout.
+For a Claude-only copy, use
+`.claude/skills/symphony-plus-plus/scripts/setup-sympp.js`. The default detects
+Codex and Claude Code on PATH; `--host codex`, `--host claude`, or `--host both`
+selects explicitly. An agent may run setup when required MCP tools are missing.
+Setup does not restart sessions or add tools to an already-open model session.
+Report that a fresh session is needed, then verify native MCP tools there.
 
-For a separately running cockpit, configure the actual endpoint before the
-new agent session starts. The examples below use the explicit port above;
-substitute the real endpoint when using another port. Each host needs its own
-initialized MCP session and claim, connected to the same intended ledger.
+Set `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE` and optionally
+`SYMPP_BACKEND_PORT` before setup. Both host entries capture those selections.
+Codex configuration uses `CODEX_HOME`; Claude uses this project's `.mcp.json`.
+For side-by-side beta use a separate workspace, host profiles, runtime home,
+ledger and port. Do not commit machine-specific MCP config to shared repositories.
 
-Codex configuration for a dedicated home/profile:
+Repeat setup to repair its own registration. It refuses unrelated entries and
+enabled Symphony++ MCP marketplace registration in the selected Codex home.
+Do not overwrite those blindly or stop healthy sessions to repair one client.
+Claude local entries override project configuration. If this project has an old
+local entry, remove it with `claude mcp remove --scope local symphony_plus_plus`
+before opening a fresh session; setup does not inspect that local store.
 
-```toml
-[mcp_servers.symphony_plus_plus]
-url = "http://127.0.0.1:19998/mcp"
+Setup prints runtime SHA and install digest. Close this runtime's clients,
+update with `npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`,
+and open fresh sessions. Re-run setup after relocation or changed configuration.
+Before updating, back up the installed skill directory and project lock.
+Rollback re-adds that bundle or a known previous Skills-capable commit and
+selects its pointer; ledger rollback may require a stopped backup. A raw ledger copy
+is not a safe MCP sandbox.
+
+For a consistent offline copy, use the installed helper with an explicit source
+and a new empty home separate from every online runtime. Python 3.9+ is required
+only for Snapshot; both actions require PowerShell 7 on Windows x64:
+
+```powershell
+$offlineHelper = '.agents/skills/symphony-plus-plus/scripts/sympp-offline.ps1'
+$offlineHome = Join-Path $env:USERPROFILE 'sympp-offline-view'
+pwsh -NoProfile -File $offlineHelper -Action Snapshot -SourceDatabase 'C:\explicit\source.sqlite3' -SymppHome $offlineHome
+pwsh -NoProfile -File $offlineHelper -Action View -SymppHome $offlineHome -Port 21498
 ```
 
-Claude Code, from the intended project (project scope writes `.mcp.json`):
+Claude-only installs use `.claude/skills/symphony-plus-plus/scripts/sympp-offline.ps1`.
+Open `http://127.0.0.1:21498/sympp/board`; use an unused port different from the
+online dogfood runtime. Press Ctrl+C and wait for View to exit before repeating
+Snapshot with `-ReplaceSnapshot`. The source may remain open. Conversion and
+viewing use the selected published artifact without a checkout or Elixir.
+The copy has no MCP/agent access or external worktree/PR actions. Keep its
+offline marker, never promote it to live, and keep copied private data local.
+Branch updates can change these procedures while still selecting beta.2;
+later runtime and settings UI changes need a new published artifact.
 
-```sh
-claude mcp add --transport http --scope project symphony_plus_plus http://127.0.0.1:19998/mcp
-```
-
-Follow host approval prompts for that new connection. Verify MCP tools are
-available in the actual session before claiming or requesting persistence.
-An HTTP health probe does not recover an agent's claim. On reconnection, follow
-the procedure's state inspection and uncertain-mutation rules.
-
-Never embed credentials in the skill, repository, prompts, or shared config.
-Do not configure generic reviewer sessions to start the Symphony++ backend.
-The portable package has been qualified for Skills CLI installation on
-Windows for Codex and Claude Code; shared-ledger host runtime qualification
-is a separate pilot, not evidence supplied by installing these files.
+The [connection procedure](references/symphony-work-package/references/mcp_wiring.md)
+covers marketplace/developer alternatives and assignment recovery. Skill
+visibility and health probes do not restore claims. Keep credentials out of
+skills, prompts and shared config; ordinary reviewers need no backend.

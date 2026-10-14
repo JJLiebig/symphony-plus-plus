@@ -1,10 +1,13 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext
   alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
   alias SymphonyElixir.SymphonyPlusPlus.CreateWork
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.ExecutionGraph
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDeliveryScope
@@ -12,8 +15,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
   @mcp_worker_skill "symphony-plus-plus-mcp:symphony-worker"
-  @mcp_work_package_skill "symphony-plus-plus-mcp:symphony-work-package"
-  @preferred_worker_skill_set [@mcp_worker_skill, @mcp_work_package_skill]
+  @preferred_worker_skill_set [@mcp_worker_skill]
 
   @type dispatch_result :: %{
           work_request: WorkRequest.t(),
@@ -22,13 +24,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
           worker_bootstrap: map()
         }
 
-  @spec dispatch(module(), String.t(), String.t(), keyword()) ::
+  @spec dispatch(module(), String.t(), String.t()) ::
           {:ok, dispatch_result()} | {:error, term()}
-  def dispatch(repo, work_request_id, work_package_id, handoff_opts)
-      when is_atom(repo) and is_binary(work_request_id) and is_binary(work_package_id) and is_list(handoff_opts) do
+  def dispatch(repo, work_request_id, work_package_id)
+      when is_atom(repo) and is_binary(work_request_id) and is_binary(work_package_id) do
     repo.transaction(
       fn ->
-        case dispatch_transaction(repo, work_request_id, work_package_id, handoff_opts) do
+        case dispatch_transaction(repo, work_request_id, work_package_id) do
           {:ok, result} -> result
           {:error, reason} -> repo.rollback(reason)
         end
@@ -42,16 +44,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
     |> DashboardPubSub.broadcast_changed_on_success()
   end
 
-  defp dispatch_transaction(repo, work_request_id, work_package_id, handoff_opts) do
+  defp dispatch_transaction(repo, work_request_id, work_package_id) do
     with {:ok, %WorkRequest{status: "sliced"} = work_request} <- Repository.get(repo, work_request_id),
          {:ok, %WorkPackage{status: "planned"} = work_package} <-
            Repository.get_work_package(repo, work_request_id, work_package_id),
          {:ok, execution_graph} <- ExecutionGraph.evaluate(repo, work_request_id),
          :ok <- ExecutionGraph.require_ready(execution_graph, work_package_id),
          :ok <- validate_contract(repo, work_request, work_package),
-         {:ok, creation} <- CreateWork.activate(repo, work_package, broadcast?: false) do
+         {:ok, creation} <- CreateWork.activate(repo, work_package, broadcast?: false),
+         {:ok, state} <- PlanningRepository.get_state(repo, creation.work_package.id),
+         {:ok, context} <- WorkRequestPayloads.worker_context(repo, creation.work_package, creation.work_package),
+         {:ok, findings} <- WorkerContext.virtual_file_payload(state, "findings.md", []),
+         {:ok, progress} <- WorkerContext.virtual_file_payload(state, "progress.md", []),
+         {:ok, handoff} <- WorkerContext.virtual_file_payload(state, "handoff.md", []) do
       activated = creation.work_package
-      bootstrap = worker_bootstrap(work_request, activated, handoff_opts)
+      context = context |> Map.put("prior_findings", findings) |> Map.put("prior_progress", progress)
+      bootstrap = worker_bootstrap(work_request, activated, context, handoff)
 
       {:ok,
        %{
@@ -105,22 +113,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
     end
   end
 
-  defp worker_bootstrap(%WorkRequest{} = work_request, %WorkPackage{} = work_package, handoff_opts) do
-    claimed_by = Keyword.get(handoff_opts, :claimed_by)
-
-    claim_arguments =
-      %{work_package_id: work_package.id, claimed_by: claimed_by}
-      |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  defp worker_bootstrap(%WorkRequest{} = work_request, %WorkPackage{} = work_package, context, handoff) do
+    assignment =
+      context
+      |> Map.put("work_package", WorkRequestPayloads.work_package(work_package))
+      |> Map.update!("work_package", &Map.merge(&1, %{"product_description" => work_package.product_description, "engineering_scope" => work_package.engineering_scope}))
+      |> Map.put("delivery_context", handoff)
+      |> Redactor.json_safe()
+      |> Redactor.redact_output()
 
     %{
-      type: "ledger_claim",
-      mode: "local_assignment",
-      ledger: ledger_bootstrap(Keyword.get(handoff_opts, :database)),
-      claim: %{
-        tool: "claim_local_assignment",
-        arguments: claim_arguments,
-        required_runtime_arguments: []
-      },
+      type: "assignment",
+      assignment: assignment,
       coordinates: %{
         primary_execution: %{kind: "work_package", work_package_id: work_package.id},
         product_parent: %{kind: "work_request", work_request_id: work_request.id}
@@ -128,23 +132,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
       required_skills: @preferred_worker_skill_set,
       preferred_skill_set: @preferred_worker_skill_set,
       supported_skill_sets: [@preferred_worker_skill_set],
-      launch_prompt: worker_launch_prompt(work_request, work_package, claim_arguments)
+      launch_prompt: worker_launch_prompt(work_request, work_package, assignment)
     }
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
 
-  defp worker_launch_prompt(%WorkRequest{} = work_request, %WorkPackage{} = work_package, claim_arguments) do
-    claim_arguments = claim_arguments |> Map.new(fn {key, value} -> {to_string(key), value} end) |> Jason.encode!()
-
+  defp worker_launch_prompt(%WorkRequest{} = work_request, %WorkPackage{} = work_package, assignment) do
     """
     WorkPackage #{prompt_data(work_package.id)}: #{prompt_data(work_package.title)}
     Parent WorkRequest: #{prompt_data(work_request.id)}.
 
-    Skills: `#{@mcp_worker_skill}` + `#{@mcp_work_package_skill}`.
-    Start: call `claim_local_assignment` with #{claim_arguments}; stop on paused, owned, or scope failure.
-    Confirm the returned assignment and read scoped context/history per the WorkPackage skill; call `get_current_assignment()` if assignment evidence is missing or conflicting.
-    Read or update the task plan only when it adds useful execution context.
-    Record meaningful findings, progress, and validation; report blockers to the parent. Keep review evidence with its provider and handoff. Stay inside this WorkPackage and never request or expose raw secrets.
+    Use `#{@mcp_worker_skill}`. Implement the assignment, run required native checks/review, and return the PR URL, exact head, results, and remaining risks to the parent.
+    No worker MCP calls or duplicate status/review records are required. Ask questions in the conversation; the parent owns coordination, blockers, and delivery reconciliation.
+    Stay inside this WorkPackage and never request or expose raw secrets.
+
+    Assignment and prior evidence: #{Jason.encode!(assignment)}
     """
     |> String.trim()
     |> Redactor.redact_text()
@@ -164,8 +166,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
     }
   end
 
-  defp ledger_bootstrap(nil), do: nil
-  defp ledger_bootstrap(database), do: %{database: database}
   defp prompt_data(value), do: value |> to_string() |> Jason.encode!()
   defp timestamp(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp timestamp(nil), do: nil

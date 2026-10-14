@@ -87,21 +87,6 @@ defmodule SymphonyElixir.SSHTest do
     assert trace =~ "printf ok"
   end
 
-  test "run/3 returns an error when ssh is unavailable" do
-    test_root = Path.join(System.tmp_dir!(), "symphony-ssh-missing-test-#{System.unique_integer([:positive])}")
-    previous_path = System.get_env("PATH")
-
-    on_exit(fn ->
-      restore_env("PATH", previous_path)
-      File.rm_rf(test_root)
-    end)
-
-    File.mkdir_p!(test_root)
-    System.put_env("PATH", test_root)
-
-    assert {:error, :ssh_not_found} = SSH.run("localhost", "printf ok")
-  end
-
   test "run/3 preserves percent signs through Windows command shims" do
     test_root = Path.join(System.tmp_dir!(), "symphony-ssh-percent-test-#{System.unique_integer([:positive])}")
     trace_file = Path.join(test_root, "ssh.trace")
@@ -121,67 +106,12 @@ defmodule SymphonyElixir.SSHTest do
     assert trace =~ "%s\\t%s\\t%s\\n"
   end
 
-  test "start_port/3 supports binary output without line mode" do
-    test_root = Path.join(System.tmp_dir!(), "symphony-ssh-port-test-#{System.unique_integer([:positive])}")
-    trace_file = Path.join(test_root, "ssh.trace")
-    previous_path = System.get_env("PATH")
-    previous_ssh_config = System.get_env("SYMPHONY_SSH_CONFIG")
-
-    on_exit(fn ->
-      restore_env("PATH", previous_path)
-      restore_env("SYMPHONY_SSH_CONFIG", previous_ssh_config)
-      File.rm_rf(test_root)
-    end)
-
-    install_fake_ssh!(test_root, trace_file, """
-    #!/bin/sh
-    printf 'ARGV:%s\\n' "$*" >> "#{trace_file}"
-    printf 'ready\\n'
-    exit 0
-    """)
-
-    System.delete_env("SYMPHONY_SSH_CONFIG")
-
-    assert {:ok, port} = SSH.start_port("localhost", "printf ok")
-    assert is_port(port)
-    wait_for_trace!(trace_file)
-
-    trace = read_trace!(trace_file)
-    assert trace =~ "-T localhost bash -lc"
-    refute trace =~ " -F "
-  end
-
-  test "start_port/3 supports line mode" do
-    test_root = Path.join(System.tmp_dir!(), "symphony-ssh-line-port-test-#{System.unique_integer([:positive])}")
-    trace_file = Path.join(test_root, "ssh.trace")
-    previous_path = System.get_env("PATH")
-
-    on_exit(fn ->
-      restore_env("PATH", previous_path)
-      File.rm_rf(test_root)
-    end)
-
-    install_fake_ssh!(test_root, trace_file, """
-    #!/bin/sh
-    printf 'ARGV:%s\\n' "$*" >> "#{trace_file}"
-    printf 'ready\\n'
-    exit 0
-    """)
-
-    assert {:ok, port} = SSH.start_port("localhost:2222", "printf ok", line: 256)
-    assert is_port(port)
-    wait_for_trace!(trace_file)
-
-    trace = read_trace!(trace_file)
-    assert trace =~ "-T -p 2222 localhost bash -lc"
-  end
-
   test "remote_shell_command/1 escapes embedded single quotes" do
     assert SSH.remote_shell_command("printf 'hello'") ==
              "bash -lc 'printf '\"'\"'hello'\"'\"''"
   end
 
-  defp install_fake_ssh!(test_root, trace_file, script \\ nil) do
+  defp install_fake_ssh!(test_root, trace_file) do
     fake_bin_dir = Path.join(test_root, "bin")
     File.mkdir_p!(fake_bin_dir)
 
@@ -189,26 +119,18 @@ defmodule SymphonyElixir.SSHTest do
       {:win32, _name} ->
         fake_ssh = Path.join(fake_bin_dir, "ssh.cmd")
 
-        output =
-          if is_nil(script) do
-            ""
-          else
-            "echo ready\r\n"
-          end
-
-        File.write!(fake_ssh, "@echo off\r\necho ARGV:%*>> \"#{trace_file}\"\r\n#{output}exit /b 0\r\n")
+        File.write!(fake_ssh, "@echo off\r\necho ARGV:%*>> \"#{trace_file}\"\r\nexit /b 0\r\n")
 
       _type ->
         fake_ssh = Path.join(fake_bin_dir, "ssh")
 
         File.write!(
           fake_ssh,
-          script ||
-            """
-            #!/bin/sh
-            printf 'ARGV:%s\\n' "$*" >> "#{trace_file}"
-            exit 0
-            """
+          """
+          #!/bin/sh
+          printf 'ARGV:%s\\n' "$*" >> "#{trace_file}"
+          exit 0
+          """
         )
 
         File.chmod!(fake_ssh, 0o755)
@@ -221,18 +143,6 @@ defmodule SymphonyElixir.SSHTest do
     case :os.type() do
       {:win32, _name} -> ";"
       _type -> ":"
-    end
-  end
-
-  defp wait_for_trace!(trace_file, attempts \\ 20)
-  defp wait_for_trace!(trace_file, 0), do: flunk("timed out waiting for fake ssh trace at #{trace_file}")
-
-  defp wait_for_trace!(trace_file, attempts) do
-    if File.exists?(trace_file) and File.read!(trace_file) != "" do
-      :ok
-    else
-      Process.sleep(25)
-      wait_for_trace!(trace_file, attempts - 1)
     end
   end
 

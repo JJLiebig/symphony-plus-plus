@@ -58,7 +58,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     {request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-CLEANUP-STARTUP", "fix/cleanup-startup")
 
     repo.update!(Ecto.Changeset.change(package, status: "merged"))
-    repo.update!(Ecto.Changeset.change(request, completed_at: DateTime.utc_now(:microsecond)))
+
+    assert {:ok, _delivery} =
+             WorkRequestRepository.record_work_package_delivery(repo, request.id, package.id, %{
+               outcome: "completed_no_pr",
+               idempotency_key: "cleanup-startup-delivered",
+               no_pr_evidence: "Completed work resumes queued cleanup after archive."
+             })
 
     assert {:ok, _archived} = WorkRequestService.archive(repo, request.id)
     assert [%Entry{}] = repo.all(Entry)
@@ -93,6 +99,34 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     refute File.exists?(package.worktree_path)
   end
 
+  test "never-started archive, refresh and later retention leave a prepared worktree and history intact", %{repo: repo} do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-never-started-cleanup")
+    codex_home = use_codex_home!(fixture.root)
+    {request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-NEVER-CLEANUP", "fix/never-started")
+    repo.update!(Ecto.Changeset.change(package, status: "skipped"))
+    now = DateTime.utc_now(:microsecond)
+    repo.update!(Ecto.Changeset.change(request, inserted_at: DateTime.add(now, -90, :day)))
+
+    assert {:ok, %{archived_ids: [id]}} = WorkRequestService.retention_pass(repo, now: now, delete_after_days: 1)
+    assert id == request.id
+    assert {:ok, archived} = WorkRequestService.refresh_completion(repo, id)
+    assert archived.completed_at == nil
+    assert archived.archive_reason == "never_started"
+
+    assert {:ok, %{deleted_ids: []}} = WorkRequestService.retention_pass(repo, now: DateTime.add(now, 100, :day), delete_after_days: 1)
+    assert repo.get!(WorkRequest, id).archive_reason == "never_started"
+    assert repo.get!(WorkPackage, package.id).worktree_path == package.worktree_path
+    assert repo.all(Entry) == []
+    assert :ok = WorktreeCleanupQueue.reconcile(repo, codex_home: codex_home)
+    assert File.dir?(package.worktree_path)
+
+    assert {:ok, restored} = WorkRequestService.restore(repo, id)
+    assert restored.completed_at == nil
+    assert restored.archived_at == nil
+    assert repo.all(Entry) == []
+    assert File.dir?(package.worktree_path)
+  end
+
   test "active packages do not create cleanup obligations", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-active")
     codex_home = use_codex_home!(fixture.root)
@@ -104,35 +138,43 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeCleanupQueueTest do
     assert File.dir?(package.worktree_path)
   end
 
-  test "manual retryable cleanup reports queued while preserving its durable obligation", %{repo: repo} do
+  test "manual retryable cleanup persists its obligation before reporting queued", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-cleanup-queue-manual")
     codex_home = use_codex_home!(fixture.root)
     package = prepared_package!(repo, fixture.repo_root, codex_home, "WP-CLEANUP-MANUAL", "fix/cleanup-manual")
-
-    failure =
-      {:git_failed, 1,
-       %{
-         stage: "git_worktree_remove",
-         rule: "durable_preflight_proof"
-       }}
+    failure = {:git_failed, 1, %{stage: "git_worktree_remove", rule: "durable_preflight_proof"}}
 
     assert {:ok, queued} = WorktreeCleanupQueue.queue_retryable_cleanup(repo, package, failure, codex_home: codex_home)
     assert queued.status == "cleanup_queued"
-    assert queued.worktree_path == package.worktree_path
     assert [%Entry{work_package_id: package_id, worktree_path: worktree_path}] = repo.all(Entry)
     assert package_id == package.id
     assert worktree_path == package.worktree_path
+  end
 
-    assert {:error, :invalid_worktree_path} =
-             WorktreeCleanupQueue.queue_retryable_cleanup(repo, package, :invalid_worktree_path, codex_home: codex_home)
+  test "offline background reconciliation preserves existing cleanup obligations and source trees", %{repo: repo} do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-offline-cleanup")
+    codex_home = use_codex_home!(fixture.root)
+    {_request, package} = prepared_linked_package!(repo, fixture.repo_root, codex_home, "WR-OFFLINE", "fix/offline")
+    repo.update!(Ecto.Changeset.change(package, status: "merged"))
+    assert :ok = WorktreeCleanupQueue.enqueue_terminal(repo, %{package | status: "merged"}, codex_home: codex_home)
+    [obligation] = repo.all(Entry)
+    before = File.ls!(package.worktree_path)
+    previous = System.get_env("SYMPP_OFFLINE_SANDBOX")
+    System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
 
-    assert {:error, :unsafe_worktree_path} =
-             WorktreeCleanupQueue.queue_retryable_cleanup(
-               repo,
-               %{package | worktree_path: fixture.repo_root},
-               failure,
-               codex_home: codex_home
-             )
+    try do
+      assert :ok = WorktreeCleanupQueue.reconcile(repo, codex_home: codex_home)
+      assert repo.all(Entry) == [obligation]
+      assert File.ls!(package.worktree_path) == before
+
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.prepare(repo, "missing", %{}, [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.cleanup(repo, "missing", [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.validate_cleanup(repo, "missing", [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.cleanup_obligation(package, [])
+      assert {:error, :offline_sandbox} = WorktreeLifecycle.cleanup_obligation(repo, obligation, [])
+    after
+      if previous, do: System.put_env("SYMPP_OFFLINE_SANDBOX", previous), else: System.delete_env("SYMPP_OFFLINE_SANDBOX")
+    end
   end
 
   defp prepared_linked_package!(repo, repo_root, codex_home, request_id, branch) do

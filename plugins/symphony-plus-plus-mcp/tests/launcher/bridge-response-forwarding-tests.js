@@ -39,12 +39,25 @@ async function main() {
   server = http.createServer((request, response) => {
     if (request.method === "GET" && request.url === "/sympp/board") return response.end("<title>Symphony++ Dashboard</title>");
     if (request.method === "POST" && request.url === "/mcp/client-lease") {
-      // Directory metadata changes during attach must not look like installed payload edits.
-      if (process.platform === "win32") {
-        const now = new Date();
-        fs.utimesSync(path.join(installedRoot, "scripts"), now, now);
-      }
-      return response.end(JSON.stringify({ stale_after_ms: 300000 }));
+      let body = "";
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        const lease = JSON.parse(body);
+        if (lease.action === "attach") {
+          // Directory metadata changes during attach must not look like installed payload edits.
+          if (process.platform === "win32") {
+            const now = new Date();
+            fs.utimesSync(path.join(installedRoot, "scripts"), now, now);
+          }
+          const directory = path.join(symppHome, "runtime", "codex-plugin-leases");
+          const local = fs.readdirSync(directory).map((file) => JSON.parse(fs.readFileSync(path.join(directory, file))))
+            .find((record) => record.client_id === lease.client_id);
+          assert.ok(local, "local identity must exist before HTTP attach");
+          assert.equal(local.pid, bridge.pid);
+        }
+        response.end(JSON.stringify({ stale_after_ms: 300000 }));
+      });
+      return;
     }
     if (request.method !== "POST" || request.url !== "/mcp") return response.writeHead(404).end();
     const chunks = [];
@@ -107,7 +120,7 @@ async function main() {
     frontend: { status: "artifact_static", origin: backend, managed: false, pid: null },
   }));
   fs.writeFileSync(path.join(symppHome, "runtime", "codex-plugin-health.json"), JSON.stringify({
-    runtime_key: runtimeKey, backend_pid: 0, contract, validated_at_ms: Date.now(),
+    runtime_key: runtimeKey, backend_pid: 0, contract, validated_at_ms: Date.now(), ledger_identity: { kind: "sqlite", default_home: true },
   }));
 
   const environment = { ...process.env, SYMPP_HOME: symppHome, SYMPP_RUNTIME_FILE: runtimeFile, SYMPP_MCP_BRIDGE_MODE: "http" };

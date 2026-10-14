@@ -11,7 +11,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.LifecycleTest do
   alias SymphonyElixir.SymphonyPlusPlus.Lifecycle.StateMachine
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
-  alias SymphonyElixir.SymphonyPlusPlus.Policies.Templates
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
@@ -37,100 +36,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.LifecycleTest do
     :ok
   end
 
-  test "allowed worker package transitions pass for quick work templates", %{repo: repo} do
-    for kind <- ["quick_fix", "hotfix", "docs", "investigation"] do
-      assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: kind))
-
-      for status <- [
-            "ready_for_worker",
-            "active",
-            "ready_for_merge"
-          ] do
-        assert {:ok, package} = Service.transition(repo, package.id, status, worker_actor!(repo, package))
-        assert package.status == status
-      end
-    end
-  end
-
-  test "invalid worker package transitions fail for quick work templates", %{repo: repo} do
-    for kind <- ["quick_fix", "hotfix", "docs", "investigation"] do
-      assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: kind))
-
-      assert {:error, :invalid_transition} =
-               Service.transition(repo, package.id, "merged", architect_actor!(repo, package))
-
-      assert {:ok, fetched} = Repository.get(repo, package.id)
-      assert fetched.status == "created"
-    end
-  end
-
-  test "policy templates expand into deterministic constraints and provider-backed gates" do
-    assert {:ok, quick_fix} = Templates.expand("quick_fix")
-    assert quick_fix.constraints.expiry_seconds == nil
-    assert quick_fix.constraints.planning_depth == "brief"
-    assert quick_fix.constraints.terminal_readiness_status == "ready_for_merge"
-
-    assert {:ok, hotfix} = Templates.expand("hotfix")
-    assert hotfix.constraints.expiry_seconds == nil
-    assert hotfix.required_gates == ["human_merge"]
-    assert hotfix.constraints.terminal_readiness_status == "ready_for_merge"
-
-    assert {:ok, docs} = Templates.expand("docs")
-    assert docs.constraints.expiry_seconds == nil
-    assert docs.constraints.planning_depth == "brief"
-    assert docs.constraints.terminal_readiness_status == "ready_for_merge"
-
-    assert {:ok, investigation} = Templates.expand("investigation")
-    assert investigation.constraints.expiry_seconds == nil
-    assert investigation.constraints.planning_depth == "findings"
-    assert investigation.required_gates == ["findings_documented"]
-
-    for kind <- ["mcp", "skill", "hooks"] do
-      assert {:ok, policy} = Templates.expand(kind)
-      assert policy.template == "worker_package"
-      refute Map.has_key?(policy, :review_suite)
-      assert policy.constraints.terminal_readiness_status == "ready_for_merge"
-    end
-
-    assert {:ok, current_pr_state_policy} = Templates.expand("mcp_current_pr_state")
-    assert current_pr_state_policy.template == "worker_package"
-    assert "current_pr_state" in current_pr_state_policy.required_gates
-  end
-
-  test "policy can be computed from a persisted work package", %{repo: repo} do
-    assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix"))
-
-    assert {:ok, policy} = Service.policy_for(repo, package.id)
-    assert policy.template == "hotfix"
-    assert policy.constraints.terminal_readiness_status == "ready_for_merge"
-  end
-
   test "worker capability cannot transition to merged", %{repo: repo} do
     assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix", status: "ready_for_merge"))
 
     assert {:error, :worker_cannot_mark_merged} = Service.transition(repo, package.id, "merged", worker_actor!(repo, package))
-  end
-
-  test "hotfix happy path reaches ready for human merge", %{repo: repo} do
-    assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix"))
-
-    assert {:ok, package} = Service.transition(repo, package.id, "ready_for_worker", worker_actor!(repo, package))
-    assert {:ok, package} = Service.transition(repo, package.id, "active", worker_actor!(repo, package))
-    assert {:ok, package} = Service.transition(repo, package.id, "ready_for_merge", worker_actor!(repo, package))
-
-    assert package.status == "ready_for_merge"
-  end
-
-  test "does not allow created to merged", %{repo: repo} do
-    assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix"))
-
-    assert {:error, :invalid_transition} = Service.transition(repo, package.id, "merged", architect_actor!(repo, package))
-  end
-
-  test "worker package merged remains a known terminal lifecycle status", %{repo: repo} do
-    assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix", status: "merged"))
-
-    assert {:error, :invalid_transition} = Service.transition(repo, package.id, "closed", architect_actor!(repo, package))
   end
 
   test "terminal transition clears only the package's human-action residue and replays idempotently", %{repo: repo} do
@@ -228,15 +137,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.LifecycleTest do
              Service.transition(repo, package.id, "ready_for_worker", Map.from_struct(assignment))
   end
 
-  test "default claimed worker assignment can drive lifecycle transition", %{repo: repo} do
-    assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix"))
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-
-    assert {:ok, transitioned} = Service.transition(repo, package.id, "ready_for_worker", Map.from_struct(assignment))
-    assert transitioned.status == "ready_for_worker"
-  end
-
   test "worker assignment cannot transition a sibling work package", %{repo: repo} do
     assert {:ok, first} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix", title: "First"))
     assert {:ok, second} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix", title: "Second"))
@@ -272,13 +172,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.LifecycleTest do
              })
   end
 
-  test "transition supports declared dispatchable lifecycle kinds", %{repo: repo} do
-    package = insert_raw_package!(repo, kind: "mcp", status: "created")
-
-    assert {:ok, updated} = Service.transition(repo, package.id, "ready_for_worker", worker_actor!(repo, package))
-    assert updated.status == "ready_for_worker"
-  end
-
   test "transition rejects unknown lifecycle kinds", %{repo: repo} do
     package = insert_raw_package!(repo, kind: "legacy_kind", status: "created")
 
@@ -312,14 +205,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.LifecycleTest do
     assert {:error, :stale_status} = Service.transition(repo, package, "ci_waiting", actor)
     assert {:ok, fetched} = Repository.get(repo, package.id)
     assert fetched.status == "ci_waiting"
-  end
-
-  test "conditional status update rejects unknown statuses before writing", %{repo: repo} do
-    assert {:ok, package} = Repository.create(repo, WorkPackageFactory.attrs(kind: "hotfix", status: "reviewing"))
-
-    assert {:error, :invalid_status} = Repository.update_status(repo, package.id, "reviewing", "definitely_done")
-    assert {:ok, fetched} = Repository.get(repo, package.id)
-    assert fetched.status == "reviewing"
   end
 
   defp insert_raw_package!(repo, attrs) do

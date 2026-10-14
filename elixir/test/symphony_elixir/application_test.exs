@@ -1,6 +1,7 @@
 defmodule SymphonyElixir.ApplicationTest do
   use ExUnit.Case, async: false
 
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.RetentionThrottle
@@ -8,8 +9,6 @@ defmodule SymphonyElixir.ApplicationTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
-
-  @runtime_config Path.expand("../../config/runtime.exs", __DIR__)
 
   test "artifact runtime archives overdue WorkRequests without dashboard visits and reloads the cutoff" do
     database = Path.join(System.tmp_dir!(), "sympp-retention-#{System.unique_integer([:positive])}.sqlite3")
@@ -42,91 +41,31 @@ defmodule SymphonyElixir.ApplicationTest do
     end)
   end
 
-  test "artifact runtime skips legacy workflow daemon children" do
-    with_env("SYMPP_RUNTIME_ARTIFACT", " true ", fn ->
-      children = SymphonyElixir.Application.children()
-      repo_child = {Repo, Repo.child_options()}
-
-      refute SymphonyElixir.WorkflowStore in children
-      refute SymphonyElixir.Orchestrator in children
-      assert repo_child in children
-      assert SymphonyElixir.SymphonyPlusPlus.MCP.HTTPStateStore in children
-      assert SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases in children
-      assert SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener in children
-      assert {SymphonyElixir.HttpServer, host: "127.0.0.1"} in children
-      refute SymphonyElixir.HttpServer in children
-      refute SymphonyElixir.StatusDashboard in children
-
-      assert Enum.find_index(children, &(&1 == repo_child)) <
-               Enum.find_index(children, &(&1 == SymphonyElixir.SymphonyPlusPlus.MCP.HTTPStateStore))
-    end)
-  end
-
-  test "prod artifact runtime config accepts missing workflow file" do
-    logs_root = Path.join(System.tmp_dir!(), "sympp-runtime-config-#{System.unique_integer([:positive])}")
-
-    with_envs(
-      [
-        {"SYMPP_RUNTIME_ARTIFACT", "1"},
-        {"SYMPP_RUNTIME_ARTIFACT_ACKNOWLEDGED", "1"},
-        {"SYMPP_WORKFLOW_FILE", ""},
-        {"SYMPP_LOGS_ROOT", logs_root},
-        {"SYMPP_BACKEND_PORT", "4157"}
-      ],
-      fn ->
-        config = Config.Reader.read!(@runtime_config, env: :prod)
-        symphony_config = Keyword.fetch!(config, :symphony_elixir)
-
-        refute Keyword.has_key?(symphony_config, :workflow_file_path)
-        assert Keyword.fetch!(symphony_config, :server_port_override) == 4157
-
-        assert Keyword.fetch!(symphony_config, :log_file) ==
-                 Path.join(Path.expand(logs_root), "log/symphony.log")
-      end
-    )
-  end
-
-  test "http server explicit options do not evaluate workflow-backed defaults" do
-    previous_workflow_path = Application.get_env(:symphony_elixir, :workflow_file_path)
-    workflow_store_running? = is_pid(Process.whereis(SymphonyElixir.WorkflowStore))
+  test "offline application boot refuses an unmarked ledger before starting legacy services" do
+    database = Path.join(System.tmp_dir!(), "sympp-offline-boot-#{System.unique_integer([:positive])}.sqlite3")
+    previous_database = Application.get_env(:symphony_elixir, :sympp_repo_database)
+    Application.put_env(:symphony_elixir, :sympp_repo_database, database)
 
     try do
-      if workflow_store_running? do
-        assert :ok = Supervisor.terminate_child(SymphonyElixir.Supervisor, SymphonyElixir.WorkflowStore)
-      end
-
-      missing_workflow =
-        Path.join(System.tmp_dir!(), "missing-workflow-#{System.unique_integer([:positive])}.md")
-
-      Application.put_env(:symphony_elixir, :workflow_file_path, missing_workflow)
-
-      assert :ignore = SymphonyElixir.HttpServer.start_link(port: -1, host: "127.0.0.1")
+      with_envs([{"SYMPP_OFFLINE_SANDBOX", "1"}, {"SYMPP_RUNTIME_ARTIFACT", nil}], fn ->
+        assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> OfflineSandbox.verify!(nil) end
+        assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> SymphonyElixir.Application.start(:normal, []) end
+        refute File.exists?(database)
+        children = SymphonyElixir.Application.children()
+        refute SymphonyElixir.WorkflowStore in children
+        refute SymphonyElixir.Orchestrator in children
+        refute SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases in children
+        refute Enum.any?(children, &match?({SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue, _}, &1))
+        assert {Repo, Repo.child_options()} in children
+        assert {Retention, repo: Repo} in children
+      end)
     after
-      if previous_workflow_path do
-        Application.put_env(:symphony_elixir, :workflow_file_path, previous_workflow_path)
+      if previous_database do
+        Application.put_env(:symphony_elixir, :sympp_repo_database, previous_database)
       else
-        Application.delete_env(:symphony_elixir, :workflow_file_path)
-      end
-
-      if workflow_store_running? do
-        case Supervisor.restart_child(SymphonyElixir.Supervisor, SymphonyElixir.WorkflowStore) do
-          {:ok, _pid} -> :ok
-          {:ok, _pid, _info} -> :ok
-          {:error, {:already_started, _pid}} -> :ok
-        end
+        Application.delete_env(:symphony_elixir, :sympp_repo_database)
       end
     end
-  end
-
-  test "normal runtime keeps legacy workflow daemon children" do
-    with_env("SYMPP_RUNTIME_ARTIFACT", nil, fn ->
-      children = SymphonyElixir.Application.children()
-
-      assert SymphonyElixir.WorkflowStore in children
-      assert SymphonyElixir.Orchestrator in children
-      assert SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener in children
-      refute Enum.any?(children, &match?({Repo, _opts}, &1))
-    end)
   end
 
   defp with_env(name, value, fun) do

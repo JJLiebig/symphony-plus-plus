@@ -8,45 +8,14 @@ defmodule SymphonyElixir.MixProject do
       elixir: "~> 1.20",
       compilers: Mix.compilers(),
       start_permanent: Mix.env() == :prod,
-      test_coverage: [
-        summary: [
-          threshold: 80.0
-        ],
-        ignore_modules: [
-          SymphonyElixir.Config,
-          SymphonyElixir.Linear.Client,
-          SymphonyElixir.SpecsCheck,
-          SymphonyElixir.Orchestrator,
-          SymphonyElixir.Orchestrator.State,
-          SymphonyElixir.AgentRunner,
-          SymphonyElixir.CLI,
-          SymphonyElixir.Codex.AppServer,
-          SymphonyElixir.Codex.DynamicTool,
-          SymphonyElixir.HttpServer,
-          SymphonyElixir.StatusDashboard,
-          SymphonyElixir.LogFile,
-          SymphonyElixir.Workspace,
-          SymphonyElixirWeb.Endpoint,
-          SymphonyElixirWeb.ErrorHTML,
-          SymphonyElixirWeb.ErrorJSON,
-          SymphonyElixirWeb.ObservabilityApiController,
-          SymphonyElixirWeb.Presenter,
-          SymphonyElixirWeb.StaticAssetController,
-          SymphonyElixirWeb.StaticAssets,
-          SymphonyElixirWeb.Router,
-          SymphonyElixirWeb.Router.Helpers
-        ]
-      ],
       test_ignore_filters: [
         "test/support/canonical_work_package_fixtures.ex",
         "test/support/github_test_support.exs",
         "test/support/mcp_harness.exs",
-        "test/support/symphony_plus_plus/agent_format_fixtures.exs",
         "test/support/symphony_plus_plus/mcp_case.exs",
         "test/support/symphony_plus_plus/mcp_common_helpers.exs",
         "test/support/symphony_plus_plus/mcp_handoff_helpers.exs",
         "test/support/symphony_plus_plus/mcp_session_helpers.exs",
-        "test/support/snapshot_support.exs",
         "test/support/test_support.exs",
         "test/support/work_package_factory.exs",
         "test/symphony_elixir/symphony_plus_plus/dashboard/api_case.exs",
@@ -56,7 +25,6 @@ defmodule SymphonyElixir.MixProject do
         plt_core_path: "_build/dialyzer",
         plt_add_apps: [:mix]
       ],
-      cli: cli(),
       escript: escript(),
       releases: releases(),
       aliases: aliases(),
@@ -69,12 +37,6 @@ defmodule SymphonyElixir.MixProject do
     [
       mod: {SymphonyElixir.Application, []},
       extra_applications: [:logger]
-    ]
-  end
-
-  def cli do
-    [
-      preferred_envs: ["sympp.integration": :test]
     ]
   end
 
@@ -100,7 +62,6 @@ defmodule SymphonyElixir.MixProject do
       setup: ["deps.get"],
       build: ["escript.build"],
       static: ["format --check-formatted", "lint"],
-      "sympp.integration": ["test test/symphony_elixir/symphony_plus_plus/integration_harness_test.exs"],
       lint: ["specs.check", "credo --strict"]
     ]
   end

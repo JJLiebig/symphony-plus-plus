@@ -31,7 +31,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Repo.Migrations do
   end
 
   defp load_migrations(cached) do
-    :global.trans({__MODULE__, :load}, fn ->
+    :global.trans({__MODULE__, self()}, fn ->
       files = migration_files()
       current_signature = signature(files)
 

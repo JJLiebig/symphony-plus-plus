@@ -15,6 +15,8 @@
 ## Documentation And Planning Assets
 
 - Treat `docs/` as the current human-facing product and operator guide.
+- Keep approved beta target contracts under `docs/design/`, clearly labeled
+  and linked from the index. Do not present target behavior as implemented.
 - Treat packaged `plugins/**/skills/**/SKILL.md` files as the authoritative
   agent procedures. Link to them instead of copying their workflows into docs.
 - Use the WorkPackage ledger, MCP resources, and package-specific assignment
@@ -24,6 +26,10 @@
   active archive or migration-diary documents.
 
 ## Worker Prompt Conventions
+
+- Read [testing guidance](docs/testing.md) before changing tests. Define independent
+  acceptance outcomes first; retain unique process/storage/security boundaries
+  until their owning journey proves them. Keep conversion inventories in PR evidence.
 
 - Keep worker prompts short and outcome-first: state the package goal, success criteria, constraints, available evidence, and required final output.
 - For tool-heavy work, use brief preambles before tool calls so the operator can see the next step and why it matters.

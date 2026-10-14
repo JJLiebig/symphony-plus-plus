@@ -12,6 +12,17 @@ Tool calls retain their JSON `structuredContent`; architect resources remain Mar
 `create_work_request` takes `description`, `creator_kind`, and `creator_name`; the former
 `human_description`, `created_by_kind`, and `created_by_name` argument aliases are removed.
 
+Finished goals archive by default after 3 days (72 hours), on the next retention pass.
+The existing integer-day setting remains configurable; normal ledger migrations
+convert the former stored default of 14 days to 3 days. See
+[operator retention and actions](../docs/operator-board-api.md#finished-goal-retention-and-operator-actions)
+for upgrade details and cleanup consequences.
+
+Never-started goals archive after 30 days by default, remain restorable, and are
+exempt from automatic deletion and worktree cleanup. Restore starts a fresh
+window. See [never-started retention](../docs/operator-board-api.md#never-started-goal-retention)
+for the configurable operator API setting and execution evidence rules.
+
 ## Screenshot
 
 ![Symphony Elixir screenshot](../.github/media/elixir-screenshot.png)
@@ -272,7 +283,7 @@ The observability UI runs on a minimal Phoenix stack:
 make all
 ```
 
-`make all` is the fast PR gate: format, specs, Credo, and fast tests. It is
+`make all` runs format, specs, Credo, and the retained ExUnit qualifications. It is
 quiet by default, prints one line per step, and writes full logs to
 `_build/make-logs/`. Run `make all VERBOSE=1` to stream Mix output while
 debugging.
@@ -283,11 +294,12 @@ Use split targets when validating one gate at a time:
 make ci-static
 make ci-test
 make ci-dialyzer
-make ci-coverage
 ```
 
-Use `make ci-full` before release-style handoff when you need coverage and
-Dialyzer in one local command.
+Use `make ci-full` to include Dialyzer. Coverage thresholds and test partitions
+are retired; the hosted `make-all` workflow separately requires native candidate,
+browser, installed/offline, frontend and Windows qualifications. See
+[Testing](../docs/testing.md) for their boundaries and evidence requirements.
 
 Run the real external end-to-end test only when you want Symphony to create disposable Linear
 resources and launch a real `codex app-server` session:

@@ -1,0 +1,16 @@
+{
+  "name": "symphony-plus-plus-acceptance",
+  "private": true,
+  "scripts": {
+    "test:e2e": "e2e run --target api"
+  },
+  "engines": {
+    "node": ">=24.8.0"
+  },
+  "devDependencies": {
+    "@ai-sdk/openai": "4.0.85",
+    "@e2e-dev/web": "0.13.0",
+    "ai": "7.0.129",
+    "e2e": "0.18.0"
+  }
+}

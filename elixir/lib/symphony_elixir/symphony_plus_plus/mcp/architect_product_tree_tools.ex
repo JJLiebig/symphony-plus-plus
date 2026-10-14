@@ -307,6 +307,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectProductTreeTools do
     with {:ok, session} <- Auth.require_session(session, config.repo),
          {:ok, work_request_id} <- CurrentWorkRequest.id_argument(arguments, session),
          {:ok, dependency_id} <- optional_string_argument(arguments, "dependency_id"),
+         {:ok, candidate_head_sha} <- optional_string_argument(arguments, "candidate_head_sha"),
          {:ok, dependent} <- required_object(arguments, "dependent"),
          {:ok, prerequisite} <- required_object(arguments, "prerequisite"),
          {:ok, {source_kind, source_id}} <- dependency_endpoint(dependent),
@@ -327,6 +328,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectProductTreeTools do
              "kind" => "depends_on"
            }
            |> optional_put("id", dependency_id)
+           |> optional_put_present("candidate_head_sha", candidate_head_sha, Map.has_key?(arguments, "candidate_head_sha"))
            |> optional_put("reason", reason)
            |> optional_put("decision_ref", decision_ref)
            |> optional_put("created_by", created_by),

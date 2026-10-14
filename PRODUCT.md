@@ -20,6 +20,20 @@ Symphony++ coordinates delivery work through its ledger; it does not own termina
 
 The lean local cockpit where human oversight and agent execution stay synchronized through the same ledger.
 
+## Beta Direction
+
+The approved [factory workflow](docs/design/factory-workflow.md) extends this
+cockpit toward agent-agnostic delivery: direct workers for small clear work,
+feature architects for substantial requests, and human/UI collaboration with
+explicit backend dependencies and technical review. Domain chiefs remain an
+optional human entrypoint; model and host choices are separate from roles.
+
+The operator must see the owner, current activity, waiting reason, and next
+action. Keep worker handoffs compact and reuse valid check/review evidence.
+Beta source now implements candidate sequencing, delivery resolution and visible
+work state. Combined native-host qualification is still required; source delivery
+does not qualify the installed marketplace runtime or other operating systems.
+
 ## Brand Personality
 
 Calm, dense, trustworthy. The voice is direct and operational: precise without ceremony, energetic only when the underlying system is active, and quiet when no action is needed.

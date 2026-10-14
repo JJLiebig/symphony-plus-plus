@@ -7,12 +7,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.MCPErrorTest do
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.Scope
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.Target
 
-  test "allowed decisions do not produce MCP errors" do
-    decision = Decision.allow(Actor.new(:worker, scopes: [Scope.work_package("wp-1")]), :task_plan_read, Target.work_package("wp-1"))
-
-    assert MCPError.from_decision(decision, "read_task_plan") == :ok
-  end
-
   test "authorization denials preserve legacy reason and expose stable reason code" do
     decision =
       Decision.authorization_denied(

@@ -79,7 +79,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
         latest_gate_at: nil,
         reason_codes: []
       },
-      worker_signal: nil
+      worker_signal: nil,
+      current_worker_session: nil
     }
   end
 
@@ -100,8 +101,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
     %{
       blocker_state: blocker_state(progress_events),
       runtime_state: runtime_state(runtime_evidence, grants, agent_runs, claim_leases, progress_events, work_package),
-      worker_signal: worker_signal(worker_grants, worker_runs, worker_leases, worker_runtime_evidence)
+      worker_signal: worker_signal(worker_grants, worker_runs, worker_leases, worker_runtime_evidence),
+      current_worker_session: current_worker_session(worker_runtime_evidence, work_package)
     }
+  end
+
+  defp current_worker_session(evidence, work_package) do
+    unless terminal_package?(work_package) or match?(%WorkPackage{status: "skipped"}, work_package) do
+      evidence.active_agent_runs
+      |> Enum.max_by(&{timestamp_sort_value(&1.last_seen_at), &1.id}, fn -> nil end)
+      |> case do
+        %AgentRun{worker_host: host, session_id: session_id} -> %{worker_host: host, session_id: session_id}
+        nil -> nil
+      end
+    end
   end
 
   defp worker_signal(grants, agent_runs, claim_leases, runtime_evidence) do
@@ -126,6 +139,32 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
       }
       |> reject_nil_values()
     end
+  end
+
+  defp current_actor(evidence, grants) do
+    cond do
+      evidence.paused? ->
+        nil
+
+      evidence.active_claim_leases != [] ->
+        lease = List.last(evidence.active_claim_leases)
+        grant = Enum.find(grants, &(&1.id == lease.access_grant_id))
+        role = if(grant, do: grant.grant_role)
+        %{id: lease.actor_id, name: lease.actor_display_name, role: role, source: "claim"}
+
+      evidence.active_agent_runs != [] ->
+        run = Enum.max_by(evidence.active_agent_runs, &timestamp_sort_value(&1.last_seen_at))
+        grant = Enum.find(grants, &(&1.id == run.access_grant_id))
+        role = if(grant, do: grant.grant_role)
+
+        if Enum.any?([run.actor_id, run.worker_task_handle, run.session_id], &filled_string?/1) do
+          %{id: run.actor_id, name: run.worker_task_handle, role: role, session_id: run.session_id, source: "run"}
+        end
+
+      true ->
+        nil
+    end
+    |> Redactor.redact()
   end
 
   defp worker_evidence(grants, agent_runs, claim_leases, work_package) do
@@ -303,6 +342,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity do
       active_agent_run_ids: runtime_ids(evidence.active_agent_runs),
       stale_agent_run_ids: runtime_ids(evidence.stale_agent_runs),
       lifecycle_state: runtime_lifecycle_state(active?, evidence.paused?, stale?, recycled?, terminal?),
+      current_actor: current_actor(evidence, grants),
       latest_gate_at: latest_runtime_gate_at(grants, agent_runs, claim_leases, progress_events, work_package, evidence.now),
       reason_codes: reason_codes
     }

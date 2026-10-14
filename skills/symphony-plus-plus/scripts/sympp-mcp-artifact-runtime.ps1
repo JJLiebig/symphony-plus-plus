@@ -1,0 +1,507 @@
+$ErrorActionPreference = "Stop"
+
+function Test-EnvEnabled([string]$Name) {
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    return $false
+  }
+
+  return $value.Trim().ToLowerInvariant() -in @("1", "true", "yes", "on")
+}
+
+function Test-SourceCheckoutLaunch([string]$PluginRoot) {
+  if (Read-SymppPortableInstall $PluginRoot) { return $false }
+  $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
+  return Test-SymphonySourceRoot $sourceCandidate
+}
+
+function Test-SourceFallbackAllowed([string]$PluginRoot) {
+  if (Test-SourceCheckoutLaunch $PluginRoot) {
+    return $true
+  }
+
+  return (Test-EnvEnabled "SYMPP_DEVELOPER_MODE") -or
+    (Test-EnvEnabled "SYMPP_SOURCE_FALLBACK") -or
+    (Test-EnvEnabled "SYMPP_ALLOW_SOURCE_COMPILE")
+}
+
+function Test-ArtifactRuntimeAllowed([string]$PluginRoot) {
+  if (Test-EnvEnabled "SYMPP_ARTIFACT_RUNTIME") {
+    return $true
+  }
+
+  return -not (Test-SourceCheckoutLaunch $PluginRoot)
+}
+
+function Resolve-SymppArtifactCacheRoot([string]$Platform, [string]$Sha256) {
+  $shaKey = $Sha256.Substring(0, 16)
+  return [System.IO.Path]::GetFullPath((Join-Path (Resolve-SymppPluginHome) "rt/$Platform/$shaKey"))
+}
+
+function New-SymppArtifactRuntimeDescriptor([string]$ExtractRoot, [string]$Entrypoint, [string]$Workflow, [string[]]$RuntimeArgs, [string]$Sha256, [string]$Platform, [string]$SourceRevision, [string]$PluginVersion, [string]$ManifestPath, [string]$DashboardRoot, [string]$DashboardFingerprint) {
+  $runtimeArgList = @()
+  foreach ($arg in @($RuntimeArgs)) {
+    if ($null -ne $arg) {
+      $runtimeArgList += [string]$arg
+    }
+  }
+
+  return [pscustomobject]@{
+    root = [System.IO.Path]::GetFullPath($ExtractRoot)
+    entrypoint = [System.IO.Path]::GetFullPath((Join-Path $ExtractRoot $Entrypoint))
+    entrypoint_relative = $Entrypoint
+    workflow = if ($Workflow) { [System.IO.Path]::GetFullPath((Join-Path $ExtractRoot $Workflow)) } else { $null }
+    dashboard_root = if ($DashboardRoot) { [System.IO.Path]::GetFullPath((Join-Path $ExtractRoot $DashboardRoot)) } else { $null }
+    dashboard_fingerprint = $DashboardFingerprint
+    runtime_args = if ($runtimeArgList.Count -gt 0) { $runtimeArgList } else { $null }
+    command_contract = "runtime_wrapper"
+    sha256 = $Sha256
+    platform = $Platform
+    source_revision = $SourceRevision
+    plugin_version = $PluginVersion
+    manifest_path = $ManifestPath
+  }
+}
+
+function Get-SymppArtifactDirectoryFingerprint([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+    return $null
+  }
+
+  $lines = New-Object System.Collections.Generic.List[string]
+  $rootPrefix = ([System.IO.Path]::GetFullPath($Root)).TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
+  # Cache metadata is written after extraction and is not dashboard content.
+  $cacheMarker = [System.IO.Path]::GetFullPath((Join-Path $Root ".sympp-artifact.json"))
+  foreach ($file in @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object { $_.FullName -ne $cacheMarker })) {
+    $relativePath = ([System.IO.Path]::GetFullPath($file.FullName)).Substring($rootPrefix.Length).Replace("\", "/")
+    $lines.Add("$relativePath $(Get-FileSha256 $file.FullName)")
+  }
+
+  $lines.Sort([System.StringComparer]::Ordinal)
+  $payload = [string]::Join("`n", $lines)
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+    return [System.BitConverter]::ToString($sha.ComputeHash($bytes)).Replace("-", "").ToLowerInvariant()
+  } finally {
+    $sha.Dispose()
+  }
+}
+
+function Test-SymppArtifactDashboardReady([string]$ExtractRoot, [string]$DashboardRoot, [string]$DashboardFingerprint) {
+  if ([string]::IsNullOrWhiteSpace($DashboardRoot)) {
+    return $false
+  }
+
+  $dashboardPath = Join-Path $ExtractRoot $DashboardRoot
+  if (-not (Test-Path -LiteralPath $dashboardPath -PathType Container)) {
+    return $false
+  }
+  if ([string]::IsNullOrWhiteSpace($DashboardFingerprint)) {
+    return $false
+  }
+
+  $actual = Get-SymppArtifactDirectoryFingerprint $dashboardPath
+  return $actual -and [System.StringComparer]::OrdinalIgnoreCase.Equals($actual, $DashboardFingerprint)
+}
+
+function Test-SymppArtifactCacheReady([string]$ExtractRoot, [string]$Entrypoint, [string]$Sha256, [string]$DashboardRoot, [string]$DashboardFingerprint) {
+  $markerPath = Join-Path $ExtractRoot ".sympp-artifact.json"
+  $entrypointPath = Join-Path $ExtractRoot $Entrypoint
+  if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $entrypointPath -PathType Leaf)) {
+    return $false
+  }
+
+  try {
+    $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$marker.sha256, $Sha256)) {
+      return $false
+    }
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$marker.dashboard_root, $DashboardRoot)) {
+      return $false
+    }
+    if ([string]::IsNullOrWhiteSpace($DashboardFingerprint)) {
+      return $false
+    }
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$marker.dashboard_fingerprint, $DashboardFingerprint)) {
+      return $false
+    }
+    return Test-SymppArtifactDashboardReady $ExtractRoot $DashboardRoot $DashboardFingerprint
+  } catch {
+    return $false
+  }
+}
+
+function Assert-SymppArtifactArchiveVerified([string]$ArchivePath, [string]$ExpectedSha256) {
+  $actual = Get-FileSha256 $ArchivePath
+  if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($actual, $ExpectedSha256)) {
+    throw "artifact_verification_failed: expected sha256 $ExpectedSha256 but got $actual for $ArchivePath."
+  }
+}
+
+function Copy-SymppArtifactArchive([string]$SourceUri, [string]$TargetPath) {
+  $targetDir = Split-Path -Parent $TargetPath
+  New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+  $tempPath = "$TargetPath.tmp-$PID"
+
+  try {
+    if ([System.Uri]::IsWellFormedUriString($SourceUri, [System.UriKind]::Absolute)) {
+      $uri = [System.Uri]$SourceUri
+      if ($uri.Scheme -eq "file") {
+        Copy-Item -LiteralPath $uri.LocalPath -Destination $tempPath -Force
+      } elseif ($uri.Scheme -eq "https" -or ($uri.Scheme -eq "http" -and $uri.IsLoopback)) {
+        Invoke-SymppBoundedDownload $SourceUri $tempPath 180 "runtime artifact download"
+      } else {
+        throw "artifact_download_blocked: Symphony++ runtime artifacts must use https, file, or loopback http URLs."
+      }
+    } else {
+      Copy-Item -LiteralPath $SourceUri -Destination $tempPath -Force
+    }
+
+    Move-Item -LiteralPath $tempPath -Destination $TargetPath -Force
+  } finally {
+    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Remove-SymppArtifactExtractionStaging([string]$ExtractRoot) {
+  $parent = Split-Path -Parent $ExtractRoot
+  $leaf = Split-Path -Leaf $ExtractRoot
+  foreach ($path in @(Get-ChildItem -LiteralPath $parent -Directory -Filter "$leaf.extracting-*" -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $path.FullName -Recurse -Force
+  }
+}
+
+function Expand-SymppArtifactArchive([string]$ArchivePath, [string]$ExtractRoot, [string]$Entrypoint, [string]$Sha256, [string]$Platform, [string]$SourceRevision, [string]$PluginVersion, [string]$ManifestPath, [string]$DashboardRoot, [string]$DashboardFingerprint) {
+  if (-not ("System.IO.Compression.ZipFile" -as [type])) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+  }
+  $parent = Split-Path -Parent $ExtractRoot
+  $staging = "$ExtractRoot.extracting-$PID"
+  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  try {
+    Write-Diagnostic "artifact_extracting: extracting verified Symphony++ runtime artifact to $ExtractRoot."
+    $extractWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath, $staging)
+    $extractWatch.Stop()
+    $entrypointPath = Join-Path $staging $Entrypoint
+    if (-not (Test-Path -LiteralPath $entrypointPath -PathType Leaf)) {
+      throw "artifact_missing: extracted Symphony++ runtime artifact did not contain entrypoint $Entrypoint."
+    }
+    if (-not (Test-SymppWindowsPlatform)) {
+      try {
+        & chmod +x $entrypointPath
+        if ($LASTEXITCODE -ne 0) {
+          throw "chmod exited with $LASTEXITCODE"
+        }
+      } catch {
+        throw "artifact_verification_failed: could not mark extracted Symphony++ runtime artifact entrypoint executable. detail=$($_.Exception.Message)"
+      }
+    }
+
+    $effectiveDashboardFingerprint = $DashboardFingerprint
+    if ([string]::IsNullOrWhiteSpace($effectiveDashboardFingerprint)) {
+      $effectiveDashboardFingerprint = Get-SymppArtifactDirectoryFingerprint (Join-Path $staging $DashboardRoot)
+    }
+    $dashboardWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $dashboardReady = Test-SymppArtifactDashboardReady $staging $DashboardRoot $effectiveDashboardFingerprint
+    $dashboardWatch.Stop()
+    if (-not $dashboardReady) {
+      throw "artifact_verification_failed: extracted Symphony++ runtime artifact dashboard assets did not match declared fingerprint."
+    }
+
+    $marker = [pscustomobject]@{
+      sha256 = $Sha256
+      platform = $Platform
+      source_revision = $SourceRevision
+      plugin_version = $PluginVersion
+      manifest_path = $ManifestPath
+      dashboard_root = $DashboardRoot
+      dashboard_fingerprint = $effectiveDashboardFingerprint
+      extracted_at = (Get-Date).ToString("o")
+    }
+    $marker | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $staging ".sympp-artifact.json") -Encoding UTF8
+    $promotionWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    Remove-Item -LiteralPath $ExtractRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Move-Item -LiteralPath $staging -Destination $ExtractRoot -Force
+    $promotionWatch.Stop()
+    return [pscustomobject]@{
+      extract_ms = [Math]::Round($extractWatch.Elapsed.TotalMilliseconds, 2)
+      dashboard_proof_ms = [Math]::Round($dashboardWatch.Elapsed.TotalMilliseconds, 2)
+      promotion_ms = [Math]::Round($promotionWatch.Elapsed.TotalMilliseconds, 2)
+    }
+  } finally {
+    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Ensure-SymppArtifactPrepared(
+  [object]$Artifact,
+  [string]$ManifestPath,
+  [string]$CacheRoot,
+  [string]$ArchivePath,
+  [string]$ExtractRoot,
+  [string]$Entrypoint,
+  [string]$Sha256,
+  [string]$Platform,
+  [string]$SourceRevision,
+  [string]$PluginVersion,
+  [string]$DashboardRoot,
+  [string]$DashboardFingerprint
+) {
+  $totalWatch = [System.Diagnostics.Stopwatch]::StartNew()
+  $readyWatch = [System.Diagnostics.Stopwatch]::StartNew()
+  $cacheReady = Test-SymppArtifactCacheReady $ExtractRoot $Entrypoint $Sha256 $DashboardRoot $DashboardFingerprint
+  $readyWatch.Stop()
+  if ($cacheReady) {
+    $totalWatch.Stop()
+    Write-Diagnostic "artifact_phases: cache=prepared download_ms=0 hash_ms=0 extract_ms=0 dashboard_proof_ms=$([Math]::Round($readyWatch.Elapsed.TotalMilliseconds, 2)) promotion_ms=0 total_ms=$([Math]::Round($totalWatch.Elapsed.TotalMilliseconds, 2))"
+    return "cache_ready"
+  }
+
+  $lockWatch = [System.Diagnostics.Stopwatch]::StartNew()
+  $lock = Enter-FileLock (Join-Path $CacheRoot "artifact.lock") (Get-SymppRemainingTimeoutSec 600 "artifact cache lock")
+  $lockWatch.Stop()
+  try {
+    Get-ChildItem -LiteralPath $CacheRoot -File -Filter "artifact.zip.tmp-*" -ErrorAction SilentlyContinue |
+      Remove-Item -Force -ErrorAction SilentlyContinue
+    Remove-SymppArtifactExtractionStaging $ExtractRoot
+    $readyWatch.Restart()
+    $cacheReady = Test-SymppArtifactCacheReady $ExtractRoot $Entrypoint $Sha256 $DashboardRoot $DashboardFingerprint
+    $readyWatch.Stop()
+    if ($cacheReady) {
+      $totalWatch.Stop()
+      Write-Diagnostic "artifact_phases: cache=prepared_after_lock lock_wait_ms=$([Math]::Round($lockWatch.Elapsed.TotalMilliseconds, 2)) download_ms=0 hash_ms=0 extract_ms=0 dashboard_proof_ms=$([Math]::Round($readyWatch.Elapsed.TotalMilliseconds, 2)) promotion_ms=0 total_ms=$([Math]::Round($totalWatch.Elapsed.TotalMilliseconds, 2))"
+      return "cache_ready"
+    }
+
+    $downloadMs = 0.0
+    if (-not (Test-Path -LiteralPath $ArchivePath -PathType Leaf)) {
+      $sourceUri = Resolve-SymppArtifactSourceUri $Artifact $ManifestPath
+      Assert-SymppArtifactSourceUsable $sourceUri
+      Write-Diagnostic "artifact_downloading: downloading Symphony++ runtime artifact for $Platform."
+      Write-SymppLauncherTrace "artifact_prepare_begin"
+      $downloadWatch = [System.Diagnostics.Stopwatch]::StartNew()
+      Copy-SymppArtifactArchive $sourceUri $ArchivePath
+      $downloadWatch.Stop()
+      $downloadMs += $downloadWatch.Elapsed.TotalMilliseconds
+    }
+
+    $hashMs = 0.0
+    try {
+      $hashWatch = [System.Diagnostics.Stopwatch]::StartNew()
+      Assert-SymppArtifactArchiveVerified $ArchivePath $Sha256
+      $hashWatch.Stop()
+      $hashMs += $hashWatch.Elapsed.TotalMilliseconds
+    } catch {
+      if ($hashWatch) {
+        $hashWatch.Stop()
+        $hashMs += $hashWatch.Elapsed.TotalMilliseconds
+      }
+      $sourceUri = Resolve-SymppArtifactSourceUri $Artifact $ManifestPath
+      Assert-SymppArtifactSourceUsable $sourceUri
+      Write-Diagnostic "artifact_redownloading: cached Symphony++ runtime artifact failed verification; downloading again. detail=$($_.Exception.Message)"
+      Remove-Item -LiteralPath $ArchivePath -Force -ErrorAction SilentlyContinue
+      $downloadWatch = [System.Diagnostics.Stopwatch]::StartNew()
+      Copy-SymppArtifactArchive $sourceUri $ArchivePath
+      $downloadWatch.Stop()
+      $downloadMs += $downloadWatch.Elapsed.TotalMilliseconds
+      $hashWatch = [System.Diagnostics.Stopwatch]::StartNew()
+      Assert-SymppArtifactArchiveVerified $ArchivePath $Sha256
+      $hashWatch.Stop()
+      $hashMs += $hashWatch.Elapsed.TotalMilliseconds
+    }
+
+    $extraction = Expand-SymppArtifactArchive $ArchivePath $ExtractRoot $Entrypoint $Sha256 $Platform $SourceRevision $PluginVersion $ManifestPath $DashboardRoot $DashboardFingerprint
+    Write-SymppLauncherTrace "artifact_prepare_end"
+    $totalWatch.Stop()
+    Write-Diagnostic "artifact_phases: cache=miss lock_wait_ms=$([Math]::Round($lockWatch.Elapsed.TotalMilliseconds, 2)) download_ms=$([Math]::Round($downloadMs, 2)) hash_ms=$([Math]::Round($hashMs, 2)) extract_ms=$($extraction.extract_ms) dashboard_proof_ms=$($extraction.dashboard_proof_ms) promotion_ms=$($extraction.promotion_ms) total_ms=$([Math]::Round($totalWatch.Elapsed.TotalMilliseconds, 2))"
+    return "cache_prepared"
+  } finally {
+    Exit-FileLock $lock
+  }
+}
+
+function Resolve-SymppPreparedArtifactRuntime([string]$PluginRoot, [string]$ExpectedSourceRevision, [string]$ExpectedContractFingerprint, [switch]$ValidateOnly, [switch]$PrepareArtifact) {
+  $platform = Get-SymppRuntimePlatformKey
+  if ([string]::IsNullOrWhiteSpace($platform)) {
+    return [pscustomobject]@{ status = "artifact_missing"; detail = "platform_unknown"; runtime = $null }
+  }
+
+  $manifest = Read-SymppArtifactManifest $PluginRoot
+  if ($null -eq $manifest) {
+    return [pscustomobject]@{ status = "artifact_missing"; detail = "manifest_missing"; platform = $platform; runtime = $null }
+  }
+
+  $pluginName = Get-SymppPluginName $PluginRoot
+  $pluginVersion = Get-SymppPluginVersion $PluginRoot
+  $requireSourceRevision = Test-SourceCheckoutLaunch $PluginRoot
+  $artifact = Select-SymppArtifact $manifest $platform $ExpectedSourceRevision $ExpectedContractFingerprint $pluginName $pluginVersion $requireSourceRevision
+  if ($null -eq $artifact) {
+    $detail = Get-SymppArtifactSelectionMissDetail $manifest $platform $ExpectedSourceRevision $ExpectedContractFingerprint $pluginName $pluginVersion $requireSourceRevision
+    return [pscustomobject]@{ status = "artifact_missing"; detail = $detail; platform = $platform; manifest_path = $manifest.manifest_path; runtime = $null }
+  }
+
+  $sha256 = Get-SymppArtifactSha256 $artifact
+  if (-not $sha256) {
+    throw "artifact_verification_failed: selected Symphony++ runtime artifact does not declare a valid sha256."
+  }
+
+  $entrypoint = Resolve-SymppArtifactEntrypoint $artifact
+  $workflow = Resolve-SymppArtifactWorkflow $artifact
+  $dashboardRoot = Resolve-SymppArtifactDashboardRoot $artifact
+  $dashboardFingerprint = Resolve-SymppArtifactDashboardFingerprint $artifact
+  if ([string]::IsNullOrWhiteSpace($dashboardRoot)) {
+    throw "artifact_manifest_invalid: selected Symphony++ runtime artifact must declare dashboard asset_root."
+  }
+  $runtimeArgs = Resolve-SymppArtifactRuntimeArgs $artifact
+  $cacheSourceRevision = Resolve-SymppArtifactCacheSourceRevision $manifest $artifact $ExpectedSourceRevision $requireSourceRevision
+  $cacheRoot = Resolve-SymppArtifactCacheRoot $platform $sha256
+  $extractRoot = Join-Path $cacheRoot "runtime"
+  $archivePath = Join-Path $cacheRoot "artifact.zip"
+  $runtimeDescriptor = New-SymppArtifactRuntimeDescriptor $extractRoot $entrypoint $workflow $runtimeArgs $sha256 $platform $cacheSourceRevision $pluginVersion $manifest.manifest_path $dashboardRoot $dashboardFingerprint
+
+  if ($ValidateOnly) {
+    if (-not $PrepareArtifact) {
+      return [pscustomobject]@{
+        status = "artifact_selected"
+        detail = "metadata_selected"
+        platform = $platform
+        manifest_path = $manifest.manifest_path
+        cache_root = $cacheRoot
+        runtime = $runtimeDescriptor
+        selected_artifact = $artifact
+      }
+    }
+
+    $prepareDetail = Ensure-SymppArtifactPrepared $artifact $manifest.manifest_path $cacheRoot $archivePath $extractRoot $entrypoint $sha256 $platform $cacheSourceRevision $pluginVersion $dashboardRoot $dashboardFingerprint
+    return [pscustomobject]@{
+      status = "artifact_selected"
+      detail = $prepareDetail
+      platform = $platform
+      manifest_path = $manifest.manifest_path
+      cache_root = $cacheRoot
+      runtime = $runtimeDescriptor
+    }
+  }
+
+  $prepareDetail = Ensure-SymppArtifactPrepared $artifact $manifest.manifest_path $cacheRoot $archivePath $extractRoot $entrypoint $sha256 $platform $cacheSourceRevision $pluginVersion $dashboardRoot $dashboardFingerprint
+  if ($prepareDetail -eq "cache_ready") {
+    Write-Diagnostic "ready: reusing verified Symphony++ runtime artifact at $extractRoot."
+  }
+
+  return [pscustomobject]@{
+    status = "ready"
+    detail = "artifact_ready"
+    platform = $platform
+    manifest_path = $manifest.manifest_path
+    cache_root = $cacheRoot
+    runtime = $runtimeDescriptor
+  }
+}
+
+function Resolve-SymppArtifactProbe([string]$PluginRoot, [string]$ExpectedSourceRevision, [string]$ExpectedContractFingerprint, [bool]$ArtifactRuntimeAllowed, [bool]$SourceFallbackAllowed, [switch]$ValidateOnly, [switch]$PrepareArtifact) {
+  if (-not $ArtifactRuntimeAllowed) {
+    return [pscustomobject]@{
+      status = "artifact_skipped"
+      detail = "source_checkout"
+      platform = Get-SymppRuntimePlatformKey
+      runtime = $null
+    }
+  }
+
+  try {
+    return Resolve-SymppPreparedArtifactRuntime $PluginRoot $ExpectedSourceRevision $ExpectedContractFingerprint -ValidateOnly:$ValidateOnly -PrepareArtifact:$PrepareArtifact
+  } catch {
+    if ($SourceFallbackAllowed) {
+      return [pscustomobject]@{
+        status = "artifact_unavailable"
+        detail = $_.Exception.Message
+        platform = Get-SymppRuntimePlatformKey
+        runtime = $null
+      }
+    }
+
+    throw
+  }
+}
+
+function Resolve-LaunchArtifactSelection(
+  [string]$PluginRoot,
+  [string]$RepoRoot,
+  $ArtifactProbe,
+  [string]$ExpectedSourceRevision,
+  [string]$ExpectedContractFingerprint,
+  [bool]$ArtifactRuntimeAllowed,
+  [bool]$SourceFallbackAllowed
+) {
+  $artifactRuntime = $null
+  $runtimeMode = "source"
+  $sourceRevision = $ExpectedSourceRevision
+
+  if ($ArtifactProbe.status -eq "ready" -or $ArtifactProbe.status -eq "artifact_selected") {
+    try {
+      $preparedArtifact = if ($ArtifactProbe.status -eq "ready" -and $ArtifactProbe.runtime) {
+        $ArtifactProbe
+      } elseif ($ArtifactProbe.PSObject.Properties["selected_artifact"] -and $ArtifactProbe.selected_artifact -and $ArtifactProbe.runtime) {
+        $runtime = $ArtifactProbe.runtime
+        $runtimeRoot = ([System.IO.Path]::GetFullPath([string]$runtime.root)).TrimEnd("\", "/")
+        $dashboardPath = ([System.IO.Path]::GetFullPath([string]$runtime.dashboard_root)).TrimEnd("\", "/")
+        $dashboardRoot = if ([System.StringComparer]::OrdinalIgnoreCase.Equals($runtimeRoot, $dashboardPath)) { "." } else { $dashboardPath.Substring($runtimeRoot.Length + 1) }
+        $prepareDetail = Ensure-SymppArtifactPrepared $ArtifactProbe.selected_artifact $ArtifactProbe.manifest_path $ArtifactProbe.cache_root (Join-Path $ArtifactProbe.cache_root "artifact.zip") $runtime.root $runtime.entrypoint_relative $runtime.sha256 $runtime.platform $runtime.source_revision $runtime.plugin_version $dashboardRoot $runtime.dashboard_fingerprint
+        if ($prepareDetail -eq "cache_ready") {
+          Write-Diagnostic "ready: reusing verified Symphony++ runtime artifact at $($runtime.root)."
+        }
+        [pscustomobject]@{ status = "ready"; detail = "artifact_ready"; runtime = $runtime }
+      } else {
+        Resolve-SymppArtifactProbe $PluginRoot $sourceRevision $ExpectedContractFingerprint $ArtifactRuntimeAllowed $SourceFallbackAllowed
+      }
+      if ($preparedArtifact.status -eq "ready" -and $preparedArtifact.runtime) {
+        $artifactRuntime = $preparedArtifact.runtime
+        $runtimeMode = "artifact"
+        $sourceRevision = [string]$artifactRuntime.source_revision
+        Set-SymppSourceRevisionEnvironment $sourceRevision
+        Write-Diagnostic "ready: verified Symphony++ runtime artifact selected for $($artifactRuntime.platform)."
+      } elseif (-not $SourceFallbackAllowed) {
+        Write-Diagnostic "$($preparedArtifact.status): $($preparedArtifact.detail)"
+        Write-Diagnostic "source_fallback_disabled: set SYMPP_SOURCE_FALLBACK=1 or SYMPP_DEVELOPER_MODE=1 to compile from a source checkout."
+        throw "source_fallback_disabled: no verified Symphony++ runtime artifact is ready for this installed launcher."
+      }
+    } catch {
+      if (-not $SourceFallbackAllowed) {
+        Write-Diagnostic "source_fallback_disabled: set SYMPP_SOURCE_FALLBACK=1 or SYMPP_DEVELOPER_MODE=1 to compile from a source checkout."
+        throw
+      }
+      Write-Diagnostic "source_fallback_compiling: artifact startup failed under explicit source fallback control. detail=$($_.Exception.Message)"
+      if ([string]::IsNullOrWhiteSpace($sourceRevision) -and -not [string]::IsNullOrWhiteSpace($RepoRoot)) {
+        $sourceRevision = Resolve-SymppSourceRevision $RepoRoot $PluginRoot
+        Set-SymppSourceRevisionEnvironment $sourceRevision
+      }
+    }
+  } elseif ($ArtifactProbe.status -eq "artifact_unavailable" -and $SourceFallbackAllowed) {
+    Write-Diagnostic "source_fallback_compiling: artifact probe failed under source fallback control. detail=$($ArtifactProbe.detail)"
+  } elseif (-not $SourceFallbackAllowed) {
+    Write-Diagnostic "$($ArtifactProbe.status): $($ArtifactProbe.detail)"
+    Write-Diagnostic "source_fallback_disabled: set SYMPP_SOURCE_FALLBACK=1 or SYMPP_DEVELOPER_MODE=1 to compile from a source checkout."
+    throw "source_fallback_disabled: no verified Symphony++ runtime artifact is ready for this installed launcher."
+  }
+
+  return [pscustomobject]@{
+    artifact_runtime = $artifactRuntime
+    runtime_mode = $runtimeMode
+    expected_source_revision = $sourceRevision
+  }
+}
+
+function Test-ArtifactBackendProvidesDashboard($RuntimeState, $BackendPlan, [string]$RuntimeMode) {
+  if ($RuntimeMode -eq "artifact") {
+    return $true
+  }
+
+  return $null -ne $RuntimeState -and
+    $RuntimeState.PSObject.Properties["runtime_kind"] -and
+    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$RuntimeState.runtime_kind, "artifact") -and
+    (Test-RuntimeEntryEndpointMatches "backend" $RuntimeState.backend $BackendPlan.url)
+}

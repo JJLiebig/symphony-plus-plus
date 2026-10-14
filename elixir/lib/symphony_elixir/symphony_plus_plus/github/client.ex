@@ -2,12 +2,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.Client do
   @moduledoc false
 
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
 
   @callback fetch_pull_request(PullRequest.ref(), keyword()) :: {:ok, term()} | {:error, term()}
 
   @spec fetch_pull_request(module(), PullRequest.ref(), keyword()) :: {:ok, term()} | {:error, term()}
   def fetch_pull_request(client, ref, opts \\ []) when is_atom(client) and is_map(ref) do
-    client.fetch_pull_request(ref, opts)
+    with :ok <- OfflineSandbox.require_online(), do: client.fetch_pull_request(ref, opts)
   end
 end
 
@@ -51,6 +52,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.HttpClient do
   end
 
   def fetch_pull_request(_ref, _opts), do: {:error, :invalid_pr_reference}
+
+  @spec get_json(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_json("repos/" <> _rest = path, opts) do
+    case Req.get("https://api.github.com/" <> path,
+           headers: headers(),
+           receive_timeout: receive_timeout(opts),
+           connect_options: [timeout: receive_timeout(opts)],
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_map(body) -> {:ok, body}
+      _unavailable -> {:error, :request_failed}
+    end
+  end
 
   defp handle_pull_request_response({:ok, %Req.Response{status: status, body: body}}) when status in 200..299 do
     if is_map(body), do: {:ok, Map.put(body, "provider_snapshot_complete", false)}, else: {:error, :invalid_github_response}
@@ -124,6 +138,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
     "isDraft",
     "mergeable",
     "mergeStateStatus",
+    "createdAt",
+    "updatedAt",
     "mergedAt",
     "mergeCommit"
   ]
@@ -157,6 +173,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
   end
 
   def fetch_pull_request(_ref, _opts), do: {:error, :invalid_pr_reference}
+
+  @spec get_json(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_json("repos/" <> _rest = path, opts) do
+    with {:ok, output} <- run_gh(["api", "--hostname", "github.com", "--method", "GET", path], opts) do
+      decode_json(output)
+    end
+  end
 
   @spec system_cmd(String.t(), [String.t()], keyword()) :: {:ok, String.t()} | {:error, term()}
   def system_cmd(executable, args, opts) when is_binary(executable) and is_list(args) and is_list(opts) do
@@ -265,6 +288,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
       "mergeable_state" => normalized_gh_string(Map.get(metadata, "mergeStateStatus")),
       "merged" => merged?,
       "merged_at" => blank_to_nil(Map.get(metadata, "mergedAt")),
+      "created_at" => blank_to_nil(Map.get(metadata, "createdAt")),
+      "updated_at" => blank_to_nil(Map.get(metadata, "updatedAt")),
       "merge_commit_sha" => merge_commit_sha(metadata)
     }
     |> reject_nil_values()
@@ -311,9 +336,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
   @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
 
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{GhCliClient, HttpClient}
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
 
   @spec auth_status(keyword()) :: :ok | {:error, atom()}
   def auth_status(opts \\ []) do
+    with :ok <- OfflineSandbox.require_online(), do: online_auth_status(opts)
+  end
+
+  defp online_auth_status(opts) do
     case GhCliClient.auth_status(opts) do
       :ok ->
         :ok
@@ -327,6 +357,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
 
   @impl true
   def fetch_pull_request(ref, opts) do
+    with :ok <- OfflineSandbox.require_online(), do: online_fetch_pull_request(ref, opts)
+  end
+
+  defp online_fetch_pull_request(ref, opts) do
     case GhCliClient.fetch_pull_request(ref, opts) do
       {:error, reason}
       when reason in [:gh_not_found, :gh_unauthorized, :gh_unavailable, :request_failed, :invalid_github_response] ->
@@ -336,6 +370,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
 
       result ->
         result
+    end
+  end
+
+  @spec get_json(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_json(path, opts) do
+    with :ok <- OfflineSandbox.require_online() do
+      if HttpClient.authenticated?(), do: HttpClient.get_json(path, opts), else: GhCliClient.get_json(path, opts)
     end
   end
 

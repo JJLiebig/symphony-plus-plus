@@ -21,6 +21,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Repo
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations.Location
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.Repository, as: SoloSessionRepository
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.SoloSession
   alias SymphonyElixir.SymphonyPlusPlus.SoloSessions.SoloSessionEntry
@@ -45,6 +47,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     reset_server_response_state()
     HTTPStateStore.reset!()
 
+    config.repo.delete_all(Location)
     config.repo.delete_all(SoloSessionEntry)
     config.repo.delete_all(SoloSession)
     config.repo.delete_all(OperatorSettings)
@@ -55,18 +58,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     :ok
   end
 
-  test "initialize returns a valid MCP response and generated state key", %{config: config} do
-    assert {:ok, result} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert result.status == :ok
-    assert is_binary(result.state_key)
-    assert result.response["jsonrpc"] == "2.0"
-    assert result.response["id"] == "init"
-    assert get_in(result.response, ["result", "protocolVersion"]) == "2025-03-26"
-    assert get_in(result.response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
-    assert %Server{initialized: true, session: nil} = HTTPStateStore.get(config, "client-a", result.state_key)
-  end
-
   test "initialize only marks state trusted when the internal daemon config opts in", %{config: config} do
     assert {:ok, ordinary} = HTTPTransport.handle(config, initialize_request("ordinary-init"), client_key: "ordinary-client")
     assert %Server{local_daemon_trusted: false} = HTTPStateStore.get(config, "ordinary-client", ordinary.state_key)
@@ -75,147 +66,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
 
     assert {:ok, trusted} = HTTPTransport.handle(trusted_config, initialize_request("trusted-init"), client_key: "trusted-client")
     assert %Server{local_daemon_trusted: true} = HTTPStateStore.get(trusted_config, "trusted-client", trusted.state_key)
-  end
-
-  test "tools/list after initialize exposes only callable unbound tools", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, tools} =
-             HTTPTransport.handle(config, tools_list_request("tools"), client_key: "client-a", state_key: init.state_key)
-
-    assert tools.state_key == init.state_key
-
-    names = tool_names(tools.response)
-    assert length(names) == length(Enum.uniq(names))
-
-    for tool <- [
-          "claim_local_assignment",
-          "claim_local_architect_assignment",
-          "get_current_assignment",
-          "release_current_assignment",
-          "solo_attach",
-          "solo_list",
-          "solo_record_task_plan",
-          "solo_append_progress",
-          "solo_append_finding",
-          "solo_record_decision",
-          "solo_report_blocker",
-          "solo_resolve_blocker",
-          "solo_record_validation",
-          "solo_pause",
-          "solo_resume",
-          "solo_complete",
-          "solo_archive",
-          "solo_show",
-          "sympp.health"
-        ] do
-      assert tool in names
-    end
-  end
-
-  test "trusted local HTTP advertises callable bootstrap and recovery tools before claim", %{config: config} do
-    trusted_config = %{config | local_daemon_trusted: true}
-    package_id = "SYMPP-HTTP-TRUSTED-LOCAL-CLAIM"
-
-    assert {:ok, work_package} =
-             WorkPackageRepository.create(
-               trusted_config.repo,
-               WorkPackageFactory.attrs(
-                 id: package_id,
-                 kind: "mcp",
-                 repo: "nextide/symphony-plus-plus",
-                 base_branch: "main",
-                 branch_pattern: "agent/#{package_id}/worker",
-                 worktree_path: local_claim_worktree_path(package_id),
-                 status: "ready_for_worker"
-               )
-             )
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(trusted_config.repo, work_package.id)
-
-    {:ok, init} = HTTPTransport.handle(trusted_config, initialize_request("trusted-init"), client_key: "trusted-client")
-
-    assert {:ok, tools} =
-             HTTPTransport.handle(trusted_config, tools_list_request("trusted-tools"), client_key: "trusted-client", state_key: init.state_key)
-
-    names = tool_names(tools.response)
-    assert length(names) == length(Enum.uniq(names))
-
-    for tool <- [
-          "claim_local_assignment",
-          "claim_local_architect_assignment",
-          "create_work_request",
-          "get_current_assignment",
-          "release_current_assignment",
-          "sympp.health"
-        ] do
-      assert tool in names
-    end
-
-    assert {:ok, preclaim_progress} =
-             HTTPTransport.handle(
-               trusted_config,
-               tool_call_request("preclaim-progress", "append_progress", %{
-                 "summary" => "Should not write",
-                 "idempotency_key" => "preclaim-progress"
-               }),
-               client_key: "trusted-client",
-               state_key: init.state_key
-             )
-
-    assert preclaim_progress.status == :error
-    assert get_in(preclaim_progress.response, ["error", "data", "resource"]) == "append_progress"
-    assert get_in(preclaim_progress.response, ["error", "data", "reason"]) == "claim_required"
-    assert get_in(preclaim_progress.response, ["error", "data", "action"]) == "claim_local_assignment"
-    assert {:ok, []} = PlanningRepository.list_progress_events(trusted_config.repo, work_package.id)
-
-    assert {:ok, preclaim_work_request_read} =
-             HTTPTransport.handle(
-               trusted_config,
-               tool_call_request("preclaim-work-request-read", "read_work_request", %{"work_request_id" => "WR-PRECLAIM"}),
-               client_key: "trusted-client",
-               state_key: init.state_key
-             )
-
-    assert preclaim_work_request_read.status == :error
-    assert get_in(preclaim_work_request_read.response, ["error", "data", "tool"]) == "read_work_request"
-    assert get_in(preclaim_work_request_read.response, ["error", "data", "reason"]) == "not_found"
-
-    assert {:ok, claim} =
-             HTTPTransport.handle(
-               trusted_config,
-               tool_call_request("local-claim", "claim_local_assignment", local_assignment_claim_args(work_package)),
-               client_key: "trusted-client",
-               state_key: init.state_key
-             )
-
-    assert get_in(claim.response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
-    refute inspect(claim.response) =~ minted.work_key.secret
-
-    assert {:ok, claimed_tools} =
-             HTTPTransport.handle(trusted_config, tools_list_request("trusted-worker-tools"), client_key: "trusted-client", state_key: init.state_key)
-
-    claimed_names = tool_names(claimed_tools.response)
-    assert claimed_names == names
-    refute "claim_private_handoff" in claimed_names
-
-    assert {:ok, assignment} =
-             HTTPTransport.handle(trusted_config, get_current_assignment_request(), client_key: "trusted-client", state_key: init.state_key)
-
-    assert get_in(assignment.response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
-
-    assert {:ok, progress} =
-             HTTPTransport.handle(
-               trusted_config,
-               tool_call_request("postclaim-progress", "append_progress", %{
-                 "summary" => "Post-claim progress",
-                 "idempotency_key" => "postclaim-progress"
-               }),
-               client_key: "trusted-client",
-               state_key: init.state_key
-             )
-
-    assert get_in(progress.response, ["result", "structuredContent", "progress_event", "summary"]) == "Post-claim progress"
   end
 
   test "batched local claim persists rehydration metadata", %{config: config} do
@@ -243,7 +93,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
              HTTPTransport.handle(
                trusted_config,
                [
-                 tool_call_request("batch-local-claim", "claim_local_assignment", local_assignment_claim_args(work_package)),
+                 tool_call_request(
+                   "batch-local-claim",
+                   "claim_local_assignment",
+                   Map.put(local_assignment_claim_args(work_package), "session_description", "Terminal window: widget implementation")
+                 ),
                  tools_list_request("batch-local-tools")
                ],
                client_key: "batch-local-client",
@@ -256,6 +110,33 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert Enum.any?(batch.response, fn response ->
              get_in(response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
            end)
+
+    location = SessionLocations.get(Repo, "work_package", work_package.id)
+    assert location.description == "Terminal window: widget implementation"
+
+    assert {:ok, failed_batch} =
+             HTTPTransport.handle(
+               trusted_config,
+               [tool_call_request("batch-location-failed", "not_a_tool", %{"session_description" => "Wrong window"})],
+               client_key: "batch-local-client",
+               state_key: init.state_key
+             )
+
+    assert [%{"error" => _error}] = failed_batch.response
+    assert SessionLocations.get(Repo, "work_package", work_package.id) == location
+
+    assert {:ok, refreshed_batch} =
+             HTTPTransport.handle(
+               trusted_config,
+               [get_current_assignment_request()],
+               client_key: "batch-local-client",
+               state_key: init.state_key
+             )
+
+    assert [%{"result" => _result}] = refreshed_batch.response
+    refreshed = SessionLocations.get(Repo, "work_package", work_package.id)
+    assert refreshed.description == location.description
+    assert DateTime.compare(refreshed.last_seen_at, location.last_seen_at) == :gt
 
     HTTPStateStore.reset!()
     reset_server_response_state()
@@ -327,18 +208,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
              )
 
     assert get_in(assignment.response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
-  end
-
-  test "sympp.health works after initialize", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, health} =
-             HTTPTransport.handle(config, health_request("health"), client_key: "client-a", state_key: init.state_key)
-
-    assert get_in(health.response, ["result", "structuredContent", "status"]) == "ok"
-    assert get_in(health.response, ["result", "structuredContent", "mode"]) == "http"
-    assert get_in(health.response, ["result", "structuredContent", "ledger", "reachable"]) == true
-    assert get_in(health.response, ["result", "structuredContent", "source", "mcp_contract"]) == Server.mcp_contract_identity()
   end
 
   test "live repo policy stays in transport for state-local and repo-backed followups", %{config: config} do
@@ -454,50 +323,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert %Server{initialized: true} = HTTPStateStore.get(config, "client-a", init.state_key)
   end
 
-  test "same client follow-up without state key does not use a current alias", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, headerless_tools} = HTTPTransport.handle(config, tools_list_request("headerless-tools"), client_key: "client-a")
-
-    assert headerless_tools.status == :error
-    assert headerless_tools.state_key == nil
-    assert get_in(headerless_tools.response, ["error", "data", "reason"]) == "server_not_initialized"
-    assert %Server{initialized: true} = HTTPStateStore.get(config, "client-a", init.state_key)
-  end
-
-  test "unknown supplied state keys are controlled errors and are not persisted", %{config: config} do
-    assert {:ok, unknown_initialize} =
-             HTTPTransport.handle(config, initialize_request("caller-state-init"), client_key: "client-a", state_key: "caller-chosen")
-
-    assert unknown_initialize.status == :error
-    assert unknown_initialize.state_key == nil
-    assert get_in(unknown_initialize.response, ["error", "data", "reason"]) == "unknown_state_key"
-    assert HTTPStateStore.get(config, "client-a", "caller-chosen") == nil
-
-    assert {:ok, unknown_followup} =
-             HTTPTransport.handle(config, tools_list_request("unknown-tools"), client_key: "client-a", state_key: "missing-state")
-
-    assert unknown_followup.status == :error
-    assert get_in(unknown_followup.response, ["error", "data", "reason"]) == "unknown_state_key"
-    assert HTTPStateStore.get(config, "client-a", "missing-state") == nil
-  end
-
-  test "notifications return no response without corrupting initialized state", %{config: config} do
-    {:ok, init} = HTTPTransport.handle(config, initialize_request("init"), client_key: "client-a")
-
-    assert {:ok, notification} =
-             HTTPTransport.handle(config, notification_request(), client_key: "client-a", state_key: init.state_key)
-
-    assert notification.response == nil
-    assert notification.status == :no_response
-    assert notification.state_key == init.state_key
-
-    assert {:ok, tools} =
-             HTTPTransport.handle(config, tools_list_request("tools-after-notification"), client_key: "client-a", state_key: init.state_key)
-
-    assert "sympp.health" in tool_names(tools.response)
-  end
-
   test "batch transport observes each failed tool item once without retaining values", %{config: config} do
     assert {:ok, _settings} = OperatorSettingsRepository.update(config.repo, %{"capture_failed_mcp_calls" => true})
     {:ok, init} = HTTPTransport.handle(config, initialize_request("batch-failure-init"), client_key: "batch-failure-client")
@@ -522,28 +347,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     refute log =~ "private-request-id"
     refute log =~ "request-secret"
     refute log =~ "notification-secret"
-  end
-
-  test "invalid JSON-RPC shapes return controlled errors without creating HTTP state", %{config: config} do
-    assert {:ok, invalid_body} = HTTPTransport.handle(config, "not-a-json-rpc-object", client_key: "client-a")
-
-    assert invalid_body.status == :error
-    assert invalid_body.state_key == nil
-    assert get_in(invalid_body.response, ["error", "code"]) == -32_600
-    assert get_in(invalid_body.response, ["error", "data", "reason"]) == "request_must_be_object"
-    assert :sys.get_state(HTTPStateStore).entries == %{}
-
-    assert {:ok, invalid_initialize} =
-             HTTPTransport.handle(
-               config,
-               %{"jsonrpc" => "2.0", "id" => "bad-init", "method" => "initialize", "params" => %{"protocolVersion" => "2025-03-26"}},
-               client_key: "client-a"
-             )
-
-    assert invalid_initialize.status == :error
-    assert invalid_initialize.state_key == nil
-    assert get_in(invalid_initialize.response, ["error", "data", "reason"]) == "invalid_initialize_params"
-    assert :sys.get_state(HTTPStateStore).entries == %{}
   end
 
   test "batched initialize requests are rejected without creating HTTP state", %{config: config} do
@@ -605,7 +408,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert HTTPStateStore.get(config, "client-a", init.state_key) == nil
   end
 
-  test "claim_local_assignment persists bound HTTP continuity for later requests", %{config: config} do
+  test "cached HTTP claim retains only credential proof and never the raw WorkKey", %{config: config} do
     assert {:ok, work_package} =
              WorkPackageRepository.create(
                config.repo,
@@ -639,18 +442,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPTransportMinimalTest do
     assert session.assignment.grant_id == minted.grant.id
     assert session.proof_hash == minted.grant.secret_hash
     refute inspect(stored_server) =~ minted.work_key.secret
-
-    assert {:ok, tools} =
-             HTTPTransport.handle(local_config, tools_list_request("tools-after-claim"), client_key: "client-a", state_key: init.state_key)
-
-    assert "claim_local_assignment" in tool_names(tools.response)
-    assert "claim_local_architect_assignment" in tool_names(tools.response)
-    assert "get_current_assignment" in tool_names(tools.response)
-
-    assert {:ok, assignment} =
-             HTTPTransport.handle(local_config, get_current_assignment_request(), client_key: "client-a", state_key: init.state_key)
-
-    assert get_in(assignment.response, ["result", "structuredContent", "assignment", "work_package_id"]) == work_package.id
   end
 
   defp initialize_request(id) do

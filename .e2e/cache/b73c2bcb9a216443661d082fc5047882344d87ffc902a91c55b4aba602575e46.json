@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-10-14T15:30:03.414Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"S++ settings\"",
+        "target": {
+          "role": "button",
+          "name": "S++ settings",
+          "text": "S++"
+        }
+      }
+    ],
+    "executor": {
+      "name": "e2e-default-agent",
+      "version": "2"
+    },
+    "recordedFor": {
+      "testId": "tests/acceptance/operator-board.e2e.ts::operator%20sees%20dependency%20ordering%2C%20pending%20qualification%20and%20actual%20delivered%20completion",
+      "targetId": "browser",
+      "instructionDigest": "519104357c71eb715fb8221c82f8126bb584e019872fc88f1bde7bce51ed03eb",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "Opened the S++ settings menu; the settings panel is visible with retention options and machine settings.",
+    "startPath": "/sympp/board",
+    "endPath": "/sympp/board",
+    "endAnchors": [
+      {
+        "role": "button",
+        "name": "S++ settings",
+        "text": "S++",
+        "states": [
+          "expanded"
+        ]
+      },
+      {
+        "text": "Leaving the board"
+      },
+      {
+        "text": "Finished goals are archived after"
+      },
+      {
+        "role": "spinbutton",
+        "name": "Finished goals are archived after days",
+        "value": "3"
+      },
+      {
+        "text": "Goals that never started, after"
+      },
+      {
+        "role": "spinbutton",
+        "name": "Goals that never started, after days",
+        "value": "30"
+      },
+      {
+        "text": "Archived goals are deleted for good after"
+      },
+      {
+        "role": "spinbutton",
+        "name": "Archived goals are deleted for good after days",
+        "value": "30"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "button",
+        "name": "S++ settings",
+        "text": "S++"
+      }
+    ],
+    "endWaitMs": 12001
+  }
+}

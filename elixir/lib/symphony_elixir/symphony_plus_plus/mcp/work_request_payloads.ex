@@ -9,6 +9,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DecisionLogEntry
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
@@ -24,7 +25,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     with {:ok, work_request} <- WorkRequestService.get(repo, context_anchor.work_request_id),
          {:ok, work_packages} <- WorkRequestService.list_work_packages(repo, work_request.id),
          {:ok, tree} <- ProductTree.tree_for_work_request(repo, work_request.id),
-         execution_graph = ProductTree.ExecutionGraph.evaluate(tree, work_packages, []),
+         {:ok, execution_graph} <- ProductTree.ExecutionGraph.evaluate(repo, work_request.id, work_packages),
          {:ok, selected_decisions} <-
            selected_worker_decisions(
              repo,
@@ -54,6 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
          "status" => work_request.status
        })
        |> Map.put("direct_dependencies", direct_dependencies)
+       |> Map.put("dependency_selections", Enum.filter(execution_graph.effective_edges, &(&1.dependent_work_package_id == context_anchor.id)))
        |> Map.put("selected_decisions", selected_decisions)}
     end
   end
@@ -151,12 +153,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     with {:ok, questions} <- WorkRequestService.list_questions(repo, work_request.id),
          {:ok, decisions} <- WorkRequestService.list_decisions(repo, work_request.id),
          {:ok, work_packages} <- WorkRequestService.list_work_packages(repo, work_request.id),
-         {:ok, slice_visibility} <- DeliveryBoard.work_package_visibility(repo, work_request.id, work_packages) do
+         {:ok, slice_visibility} <- DeliveryBoard.work_package_visibility(repo, work_request.id, work_packages),
+         {:ok, operator_reports} <- OperatorReport.load_many(repo, [work_request]) do
       visible_work_packages = Map.fetch!(slice_visibility, :visible_work_packages)
 
       {:ok,
        %{
-         "work_request" => work_request(work_request),
+         "work_request" => Map.put(work_request(work_request), "operator_report", Map.fetch!(operator_reports, work_request.id)),
          "clarification_questions" => Enum.map(questions, &clarification_question/1),
          "decision_log_entries" => Enum.map(decisions, &decision_log_entry/1),
          "work_packages" => Enum.map(visible_work_packages, &work_package/1),
@@ -171,6 +174,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       delivery_board
       |> Map.fetch!(:work_packages)
       |> json_safe_payload()
+      |> Enum.filter(&is_binary(get_in(&1, ["operational_state", "work_package_status"])))
       |> merge_projection_group_ids(work_packages)
 
     visible_work_packages = visible_work_packages_from_projection(work_packages, projection_work_package_payloads)
@@ -178,7 +182,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
 
     product_tree =
       repo
-      |> ProductTree.project(work_request.id, projection_work_package_payloads, product_tree_projection_opts())
+      |> ProductTree.project(work_request.id, projection_work_package_payloads, product_tree_projection_opts(work_packages, projection_work_package_payloads))
       |> public_product_tree()
       |> product_tree_view_payload(work_package_payloads, view)
 
@@ -317,6 +321,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       "dependent" => dependency_endpoint_payload(dependent),
       "prerequisite" => dependency_endpoint_payload(prerequisite),
       "reason" => Redactor.redact_text(edge.reason),
+      "candidate_head_sha" => edge.candidate_head_sha,
       "decision_ref" => Redactor.redact_output(edge.decision_ref),
       "created_by" => Redactor.redact_text(edge.created_by),
       "created_at" => timestamp(edge.created_at)
@@ -416,7 +421,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     end)
   end
 
-  defp product_tree_projection_opts, do: [visible_only?: true, include_unowned_nodes?: true]
+  defp product_tree_projection_opts(work_packages, projection_work_package_payloads) do
+    all_ids = MapSet.new(work_packages, & &1.id)
+    visible_ids = MapSet.new(projection_work_package_payloads, &map_get(&1, :id))
+
+    [visible_only?: true, include_unowned_nodes?: MapSet.equal?(all_ids, visible_ids)]
+  end
 
   defp product_tree_operational_work_package_fields(projection_work_package_payload) when is_map(projection_work_package_payload) do
     projection_work_package_payload
@@ -465,7 +475,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
   defp map_get(_value, _key), do: nil
 
   defp worker_completion do
-    %{"completion" => %{"next_owner" => "architect", "next_action" => "return_ready_or_terminal_work_package"}}
+    %{"completion" => %{"next_owner" => "architect", "next_action" => "return_pr_or_evidence"}}
   end
 
   defp worker_dependency(%WorkPackage{} = work_package) do
@@ -507,7 +517,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       {dependent, prerequisite} = dependency_endpoints(Map.get(edge, "kind"), endpoint_tuple(source), endpoint_tuple(target))
 
       edge
-      |> Map.take(["id", "reason", "decision_ref", "created_by", "created_at"])
+      |> Map.take(["id", "reason", "candidate_head_sha", "decision_ref", "created_by", "created_at"])
       |> Map.put("dependent", dependency_endpoint_payload(dependent))
       |> Map.put("prerequisite", dependency_endpoint_payload(prerequisite))
     end)

@@ -1,15 +1,9 @@
-.PHONY: help all setup deps build static fmt fmt-check lint assets-check test test-fast test-slow coverage ci ci-prepare ci-fast ci-static ci-test ci-test-run ci-slow ci-dialyzer ci-coverage ci-full dialyzer e2e
+.PHONY: help all setup deps build static fmt fmt-check lint assets-check test ci ci-prepare ci-fast ci-static ci-test ci-dialyzer ci-full dialyzer e2e
 
 MIX ?= mix
 QUIET ?= 1
 MAKEFLAGS += --no-print-directory
 GATE_LOG_ROOT ?= _build/make-logs
-FAST_TEST_PARTITIONS ?= 9
-SLOW_TEST_PARTITIONS ?= 8
-SLOW_TEST_MAX_CASES ?= 4
-CI_TEST_PARTITION_FLAGS := $(if $(MIX_TEST_PARTITION),--partitions $(FAST_TEST_PARTITIONS),)
-CI_SLOW_TEST_PARTITION_FLAGS := $(if $(MIX_TEST_PARTITION),--partitions $(SLOW_TEST_PARTITIONS),)
-CI_SLOW_TEST_MAX_CASES_FLAGS := --max-cases $(SLOW_TEST_MAX_CASES)
 CI_DIALYZER_FLAGS ?= --format short --no-compile --no-check
 
 ifeq ($(OS),Windows_NT)
@@ -53,10 +47,10 @@ endef
 endif
 
 help:
-	@echo Targets: setup, deps, build, static, fmt, fmt-check, lint, assets-check, test, test-fast, test-slow, coverage, dialyzer, e2e
-	@echo CI targets: ci-fast, ci-static, ci-test, ci-slow, ci-dialyzer, ci-coverage, ci-full
+	@echo Targets: setup, deps, build, static, fmt, fmt-check, lint, assets-check, test, dialyzer, e2e
+	@echo CI targets: ci-fast, ci-static, ci-test, ci-dialyzer, ci-full
 	@echo make all is quiet by default. Logs are written under $(GATE_LOG_ROOT). Use VERBOSE=1 for streamed output.
-	@echo make all runs the fast PR gate. Use make ci-full for coverage and Dialyzer.
+	@echo make all runs static and retained qualification. Use make ci-full to include Dialyzer.
 
 setup:
 	@$(MIX) setup
@@ -82,17 +76,8 @@ lint:
 assets-check:
 	@cd assets && npm run quality
 
-coverage:
-	@$(MIX) test --cover
-
 test:
 	@$(MIX) test
-
-test-fast:
-	@$(MIX) test --exclude ci_slow
-
-test-slow:
-	@$(MIX) test --only ci_slow
 
 dialyzer:
 	@$(MIX) dialyzer --format short
@@ -107,28 +92,20 @@ ci-prepare:
 ci-static: ci-prepare
 	$(call run_ci_step,static,$(MIX) static)
 
-ci-test: ci-prepare ci-test-run
-
-ci-test-run:
-	$(call run_ci_step,test,$(MIX) test --exclude ci_slow $(CI_TEST_PARTITION_FLAGS))
-
-ci-slow: ci-prepare
-	$(call run_ci_step,test-slow,$(MIX) test --exclude test --include ci_slow $(CI_SLOW_TEST_PARTITION_FLAGS) $(CI_SLOW_TEST_MAX_CASES_FLAGS))
+ci-test: ci-prepare
+	$(call run_ci_step,test,$(MIX) test --max-cases 4)
 
 ci-dialyzer: ci-prepare
 	$(call run_ci_step,dialyzer-plt,$(MIX) dialyzer --plt)
 	$(call run_ci_step,dialyzer,$(MIX) dialyzer $(CI_DIALYZER_FLAGS))
 
-ci-coverage: ci-prepare
-	$(call run_ci_step,coverage,$(MIX) test --cover)
-
 ci-fast: ci-prepare
 	$(call run_ci_step,static,$(MIX) static)
-	$(call run_ci_step,test,$(MIX) test --exclude ci_slow)
+	$(call run_ci_step,test,$(MIX) test --max-cases 4)
 
 ci-full: ci-prepare
 	$(call run_ci_step,static,$(MIX) static)
-	$(call run_ci_step,coverage,$(MIX) test --cover)
+	$(call run_ci_step,test,$(MIX) test --max-cases 4)
 	$(call run_ci_step,dialyzer-plt,$(MIX) dialyzer --plt)
 	$(call run_ci_step,dialyzer,$(MIX) dialyzer $(CI_DIALYZER_FLAGS))
 

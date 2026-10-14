@@ -5,6 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{Client, DefaultClient, HttpClient, PullRequest}
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{PullRequestArtifact, PullRequestProgress}
   alias SymphonyElixir.SymphonyPlusPlus.Lifecycle.StateMachine
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
@@ -23,7 +24,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     client = Keyword.get(opts, :client, github_client())
     client_opts = Keyword.drop(opts, [:client])
 
-    with :ok <- validate_periodic_auth(client, opts),
+    with :ok <- OfflineSandbox.require_online(),
+         :ok <- validate_periodic_auth(client, opts),
          {:ok, work_packages} <- WorkPackageRepository.list(repo) do
       work_packages
       |> Enum.filter(&merge_ready_candidate?/1)
@@ -43,7 +45,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     client_opts = Keyword.drop(opts, [:client, :pr_payload])
     pr_payload = Keyword.get(opts, :pr_payload)
 
-    with {:ok, work_package} <- WorkPackageRepository.get(repo, work_package_id),
+    with :ok <- OfflineSandbox.require_online(),
+         {:ok, work_package} <- WorkPackageRepository.get(repo, work_package_id),
          {:ok, state} <- PlanningRepository.get_state(repo, work_package.id) do
       if terminal_candidate?(work_package) do
         fetch_and_reconcile_terminal(repo, work_package, state.progress_events, pr_payload, client, client_opts)

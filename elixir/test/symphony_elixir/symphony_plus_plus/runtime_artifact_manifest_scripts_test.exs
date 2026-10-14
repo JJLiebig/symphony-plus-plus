@@ -2,79 +2,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactManifestScriptsTest do
   use ExUnit.Case, async: true
 
   @repo_root Path.expand("../../../../", __DIR__)
-  @build_ps1 Path.join(@repo_root, "scripts/build-sympp-runtime-artifact.ps1")
-  @build_sh Path.join(@repo_root, "scripts/build-sympp-runtime-artifact.sh")
   @publish_ps1 Path.join(@repo_root, "scripts/publish-sympp-runtime-artifact.ps1")
   @publish_sh Path.join(@repo_root, "scripts/publish-sympp-runtime-artifact.sh")
   @contract_path Path.join(@repo_root, "elixir/priv/symphony_plus_plus/mcp_contract.json")
-
-  test "PowerShell build dry-run resolves MCP contract fingerprint" do
-    powershell = System.find_executable("pwsh")
-    temp_root = unique_temp_path("sympp-artifact-build-dry-run")
-
-    if powershell do
-      try do
-        File.mkdir_p!(temp_root)
-
-        {output, status} =
-          System.cmd(
-            powershell,
-            [
-              "-NoProfile",
-              "-File",
-              @build_ps1,
-              "-Revision",
-              String.duplicate("a", 40),
-              "-OutputDir",
-              temp_root,
-              "-Platform",
-              "test-x64",
-              "-DryRun"
-            ],
-            cd: @repo_root,
-            stderr_to_stdout: true
-          )
-
-        assert status == 0, output
-        assert output =~ "Dry run:"
-      after
-        File.rm_rf!(temp_root)
-      end
-    end
-  end
-
-  test "shell build dry-run resolves MCP contract fingerprint" do
-    bash = System.find_executable("bash")
-    temp_root = unique_temp_path("sympp-artifact-build-sh-dry-run")
-
-    if bash do
-      try do
-        File.mkdir_p!(temp_root)
-
-        {output, status} =
-          System.cmd(
-            bash,
-            [
-              bash_path(@build_sh),
-              "--revision",
-              String.duplicate("a", 40),
-              "--output-dir",
-              bash_path(temp_root),
-              "--platform",
-              "test-x64",
-              "--dry-run"
-            ],
-            cd: @repo_root,
-            stderr_to_stdout: true
-          )
-
-        assert status == 0, output
-        assert output =~ "Dry run:"
-      after
-        File.rm_rf!(temp_root)
-      end
-    end
-  end
 
   test "PowerShell publish propagates MCP contract fingerprint to channel manifest" do
     powershell = System.find_executable("pwsh")

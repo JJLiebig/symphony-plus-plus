@@ -9,6 +9,16 @@
       "scripts\\start-sympp-mcp.cmd"
     ],
     "cwd": ".",
+    "env_vars": [
+      "CODEX_HOME",
+      "SYMPP_HOME",
+      "SYMPP_DATABASE",
+      "SYMPP_BACKEND_PORT",
+      "SYMPP_RUNTIME_FILE",
+      "SYMPP_LOG_DIR",
+      "SYMPP_OPEN_DASHBOARD",
+      "SYMPP_LAUNCHER_TRACE_DIR"
+    ],
     "startup_timeout_sec": 360.0,
     "tool_timeout_sec": 300.0
   }

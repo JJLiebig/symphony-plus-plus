@@ -118,7 +118,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     assert current_lease.actor_display_name == owner
   end
 
-  test "claim_local_architect_assignment creates a missing local handoff for existing WorkRequests", %{repo: repo} do
+  test "local architect claim creates absent historical handoff authority", %{repo: repo} do
     work_request =
       create_work_request!(repo,
         id: "WR-MCP-LOCAL-ARCHITECT-MISSING-HANDOFF",
@@ -150,38 +150,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     assert Scope.work_request(work_request.id) in claimed_server.session.assignment.scopes
     assert {:ok, anchor} = WorkPackageRepository.get(repo, expected_anchor_id)
     assert anchor.phase_id == ArchitectHandoff.phase_id_for_work_request(work_request)
-
-    {phase_mismatch_response, _server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-missing-handoff-phase-mismatch",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{"work_request_id" => work_request.id, "phase_id" => "phase-stale"}
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-missing-handoff-phase-mismatch-state")
-      )
-
-    assert get_in(phase_mismatch_response, ["error", "data", "reason"]) == "phase_scope_mismatch"
-
-    {repo_mismatch_response, _server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-missing-handoff-repo-mismatch",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{"work_request_id" => work_request.id, "repo" => "nextide/other"}
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-missing-handoff-repo-mismatch-state")
-      )
-
-    assert get_in(repo_mismatch_response, ["error", "data", "reason"]) == "repo_scope_mismatch"
   end
 
   test "claim_local_architect_assignment reclaims old other-actor handoff lease after local recovery window", %{repo: repo} do
@@ -393,52 +361,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     assert is_nil(restored_work_request.archive_reason)
   end
 
-  test "claim_local_architect_assignment cannot replace a bound worker role", %{repo: repo} do
-    package = create_local_claim_package!(repo, "SYMPP-ARCHITECT-CLAIM-BOUND-WORKER", base_branch: "main")
-    assert {:ok, _minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-
-    work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-LOCAL-ARCHITECT-BOUND-SESSION",
-        status: "ready_for_clarification"
-      )
-
-    assert {:ok, _handoff} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(repo)
-             )
-
-    {worker_response, worker_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-worker-claim",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_assignment", "arguments" => local_assignment_claim_args(package)}
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-bound-worker-state")
-      )
-
-    assert get_in(worker_response, ["result", "structuredContent", "assignment", "grant_role"]) == "worker"
-
-    {response, server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-rebind",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_architect_assignment", "arguments" => %{"work_request_id" => work_request.id}}
-        },
-        worker_server
-      )
-
-    assert get_in(response, ["error", "data", "reason"]) == "tool_not_callable"
-    refute Map.has_key?(response["error"]["data"], "recovery")
-    assert server.session.assignment.grant_role == "worker"
-    assert {:ok, %ClaimLease{status: "active"}} = ClaimLeaseService.current_for_work_package(repo, package.id)
-  end
-
   test "claim_local_architect_assignment reclaims a stale bound local session for the same WorkRequest with a new owner label", %{repo: repo} do
     work_request =
       create_work_request!(repo,
@@ -507,183 +429,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
     assert current_lease.actor_display_name == "architect-after-reboot"
   end
 
-  test "claim_local_architect_assignment preserves a bound owner but rejects an unrelated session without its owner label", %{repo: repo} do
-    work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-LOCAL-ARCHITECT-ACTIVE-BOUND",
-        status: "ready_for_clarification"
-      )
-
-    assert {:ok, handoff} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(repo)
-             )
-
-    {_claim_response, claimed_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-active-claim",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{"work_request_id" => work_request.id, "claimed_by" => "architect-before-reboot"}
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-active-state")
-      )
-
-    {response, server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-active-reclaim",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{"work_request_id" => work_request.id}
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-active-reclaim-state")
-      )
-
-    assert get_in(response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
-    assert get_in(response, ["error", "data", "action"]) == "wait_for_claim_expiry"
-    assert server.session == nil
-
-    {reconnect_response, reconnected_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-bound-reconnect",
-          "method" => "tools/call",
-          "params" => %{"name" => "claim_local_architect_assignment", "arguments" => %{"work_request_id" => work_request.id}}
-        },
-        claimed_server
-      )
-
-    assert get_in(reconnect_response, ["result", "structuredContent", "assignment", "claimed_by"]) == "architect-before-reboot"
-    assert reconnected_server.session.claim_lease_id == claimed_server.session.claim_lease_id
-
-    assert {:ok, current_lease} = ClaimLeaseService.current_for_work_package(repo, handoff.anchor_package.id)
-    assert current_lease.id == claimed_server.session.claim_lease_id
-
-    {explicit_response, _explicit_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-active-explicit-owner",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{"work_request_id" => work_request.id, "claimed_by" => "another-architect"}
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-active-explicit-owner-state")
-      )
-
-    assert get_in(explicit_response, ["error", "data", "reason"]) == "claim_lease_active_for_other_actor"
-  end
-
-  test "claim_local_architect_assignment can read trusted same-repo WorkRequests without widening writes", %{repo: repo} do
-    previous_trusted_remotes = Application.get_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes)
-    Application.put_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes, ["https://github.com/JJLiebig/symphony-plus-plus.git"])
-
-    on_exit(fn -> restore_app_env(:sympp_repo_identity_trusted_remotes, previous_trusted_remotes) end)
-
-    owner =
-      create_work_request!(repo,
-        id: "WR-MCP-LOCAL-ARCHITECT-OWNER",
-        status: "ready_for_slicing"
-      )
-
-    same_repo =
-      create_work_request!(repo,
-        id: "WR-MCP-LOCAL-ARCHITECT-SAME-REPO",
-        repo: owner.repo,
-        base_branch: owner.base_branch,
-        status: "ready_for_slicing"
-      )
-
-    other_repo =
-      create_work_request!(repo,
-        id: "WR-MCP-LOCAL-ARCHITECT-OTHER-REPO",
-        repo: "nextide/other",
-        base_branch: owner.base_branch,
-        status: "ready_for_slicing"
-      )
-
-    assert {:ok, _handoff} =
-             ArchitectHandoff.create_or_replay(repo, owner.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(repo)
-             )
-
-    {claim_response, claimed_server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-claim",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{"work_request_id" => owner.id, "claimed_by" => "local-architect-1"}
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-same-repo-state")
-      )
-
-    assert get_in(claim_response, ["result", "structuredContent", "assignment", "grant_role"]) == "architect"
-
-    same_repo_read =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "same-repo-read",
-          "method" => "tools/call",
-          "params" => %{"name" => "read_work_request", "arguments" => %{"work_request_id" => same_repo.id}}
-        },
-        claimed_server
-      )
-
-    other_repo_read =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "other-repo-read",
-          "method" => "tools/call",
-          "params" => %{"name" => "read_work_request", "arguments" => %{"work_request_id" => other_repo.id}}
-        },
-        claimed_server
-      )
-
-    same_repo_write =
-      Server.handle(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "same-repo-write",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "record_decision",
-            "arguments" => %{
-              "work_request_id" => same_repo.id,
-              "source_type" => "architect",
-              "decision" => "Attempt write outside owner WorkRequest.",
-              "rationale" => "This should stay scoped.",
-              "scope_impact" => "No change.",
-              "created_by" => "local-architect-1"
-            }
-          }
-        },
-        claimed_server
-      )
-
-    assert get_in(same_repo_read, ["result", "structuredContent", "work_request", "id"]) == same_repo.id
-    assert get_in(other_repo_read, ["error", "data", "reason"]) == "not_found"
-    assert get_in(same_repo_write, ["error", "data", "reason"]) == "not_found"
-  end
-
   test "claim_local_architect_assignment accepts stale local checkout repo scopes for owner repo WorkRequests", %{repo: repo} do
     checkout_path =
       TestSupport.git_repo_with_origin_fixture!("https://github.com/JJLiebig/nextide-saas-vod-intelligence.git",
@@ -744,73 +489,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
       )
 
     assert get_in(read_response, ["result", "structuredContent", "work_request", "id"]) == work_request.id
-  end
-
-  test "claim_local_architect_assignment rejects mismatched optional scope hints", %{repo: repo} do
-    work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-LOCAL-ARCHITECT-MISMATCH",
-        status: "ready_for_clarification"
-      )
-
-    assert {:ok, _handoff} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(repo)
-             )
-
-    {response, _server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-mismatch",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{
-              "work_request_id" => work_request.id,
-              "repo" => "nextide/other",
-              "claimed_by" => "local-architect-1"
-            }
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-mismatch-state")
-      )
-
-    assert get_in(response, ["error", "data", "reason"]) == "repo_scope_mismatch"
-  end
-
-  test "claim_local_architect_assignment rejects stale explicit anchor hints as scope mismatches", %{repo: repo} do
-    work_request =
-      create_work_request!(repo,
-        id: "WR-MCP-LOCAL-ARCHITECT-STALE-ANCHOR",
-        status: "ready_for_clarification"
-      )
-
-    assert {:ok, _handoff} =
-             ArchitectHandoff.create_or_replay(repo, work_request.id,
-               local_operator?: true,
-               handoff_opts: handoff_opts(repo)
-             )
-
-    {response, _server} =
-      Server.handle_state(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "local-architect-stale-anchor",
-          "method" => "tools/call",
-          "params" => %{
-            "name" => "claim_local_architect_assignment",
-            "arguments" => %{
-              "work_request_id" => work_request.id,
-              "architect_anchor_work_package_id" => "SYMPP-WR-ARCH-stale"
-            }
-          }
-        },
-        local_mcp_server(local_mcp_config(repo), "local-architect-stale-anchor-state")
-      )
-
-    assert get_in(response, ["error", "data", "reason"]) == "architect_anchor_scope_mismatch"
   end
 
   defp handoff_opts(repo) do

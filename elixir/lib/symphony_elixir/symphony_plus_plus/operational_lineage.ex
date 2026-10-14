@@ -8,6 +8,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion
 
   @type repo :: module()
   @type relationship :: String.t()
@@ -142,6 +143,29 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
     end
   end
 
+  @spec delivery_successors(repo(), [WorkPackage.t()]) ::
+          {:ok, %{String.t() => [String.t()]}} | {:error, lineage_error()}
+  def delivery_successors(repo, work_packages) do
+    packages = packages_by_id(work_packages)
+
+    with {:ok, events} <- lineage_progress_events(repo, {:related_to, Map.keys(packages)}),
+         {:ok, related_packages} <- lineage_packages_by_id(repo, events) do
+      successors =
+        events
+        |> Enum.flat_map(&event_to_relationship_list(&1, related_packages))
+        |> Enum.filter(fn relationship ->
+          source = Map.get(packages, relationship.source_work_package_id)
+          target = Map.get(related_packages, relationship.target_work_package_id)
+
+          successor_relationship?(relationship) and not is_nil(source) and
+            (is_nil(target) or source.work_request_id == target.work_request_id)
+        end)
+        |> Enum.group_by(& &1.source_work_package_id, & &1.target_work_package_id)
+
+      {:ok, Map.new(successors, fn {id, ids} -> {id, Enum.uniq(ids)} end)}
+    end
+  end
+
   defp list_relationships(repo, work_package_ids) when is_atom(repo) and is_list(work_package_ids) do
     with {:ok, work_package_ids} <- normalize_work_package_ids(work_package_ids),
          {:ok, events} <- lineage_progress_events(repo, {:related_to, work_package_ids}),
@@ -165,13 +189,33 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineage do
       "oracle_preserved" => oracle_preserved?(relationship, attrs)
     }
 
-    PlanningRepository.append_progress_event(repo, %{
-      work_package_id: source.id,
-      summary: "Recorded #{relationship} lineage to #{target.id}",
-      status: "operational_lineage_recorded",
-      idempotency_key: lineage_idempotency_key(source.id, relationship, target.id, attrs),
-      payload: payload
-    })
+    repo.transaction(fn ->
+      with {:ok, event} <-
+             PlanningRepository.append_progress_event(repo, %{
+               work_package_id: source.id,
+               summary: "Recorded #{relationship} lineage to #{target.id}",
+               status: "operational_lineage_recorded",
+               idempotency_key: lineage_idempotency_key(source.id, relationship, target.id, attrs),
+               payload: payload
+             }),
+           :ok <- refresh_successor_completion(repo, source, relationship, target) do
+        event
+      else
+        {:error, reason} -> repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp refresh_successor_completion(repo, source, relationship, target) do
+    if relationship in @successor_relationships and is_binary(source.work_request_id) and
+         source.work_request_id == target.work_request_id do
+      case Completion.refresh_in_transaction(repo, source.work_request_id) do
+        {:ok, _request} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      :ok
+    end
   end
 
   defp package_lineage(%WorkPackage{} = work_package, relationships) do

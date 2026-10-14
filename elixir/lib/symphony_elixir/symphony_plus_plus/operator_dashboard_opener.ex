@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener do
   require Logger
 
   alias SymphonyElixir.HttpServer
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixirWeb.Endpoint
   alias SymphonyElixirWeb.SymppDashboardApi.Runtime
@@ -54,7 +55,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener do
   @doc false
   @spec open_once(keyword()) :: :ok
   def open_once(opts \\ []) do
-    with true <- open_dashboard_on_boot?(opts),
+    with :ok <- OfflineSandbox.require_online(),
+         true <- open_dashboard_on_boot?(opts),
          port when is_integer(port) and port > 0 <- Keyword.get(opts, :port) || HttpServer.bound_port() do
       port
       |> dashboard_url()

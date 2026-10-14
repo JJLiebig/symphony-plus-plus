@@ -1,7 +1,9 @@
 # Symphony++ Documentation
 
-This directory documents the running Symphony++ product. It is not a roadmap,
-design archive, or copy of the agent skills.
+The guides describe the current beta product. The [factory workflow](design/factory-workflow.md)
+preserves its approved contract and editable diagram.
+[Branch runtime and cutover](runbooks/beta-release-cutover.md)
+record exact tested builds and hosts.
 
 ## Sources Of Truth
 
@@ -9,10 +11,10 @@ design archive, or copy of the agent skills.
 |---|---|
 | Runtime behavior and state transitions | Elixir code and behavior tests |
 | Agent operating procedure | Packaged `plugins/**/skills/**/SKILL.md` files |
-| Human concepts and operations | This directory |
-| Product direction | `PRODUCT.md` |
-| Interface design | `DESIGN.md` |
-| Upstream Symphony behavior | `SPEC.md` and `elixir/` |
+| Human concepts and operations | Current guides in this directory |
+| Product direction | [Product](../PRODUCT.md) and the labeled factory target contract |
+| Interface design | [Design](../DESIGN.md) |
+| Upstream Symphony behavior | [Specification](../SPEC.md) and `elixir/` |
 | MCP artifact identity | MCP server identity and runtime artifact tests |
 
 Use Git history for completed designs, cutovers, and experiments. Historical
@@ -20,20 +22,31 @@ documents do not remain in the active documentation tree.
 
 ## Read By Goal
 
-- Understand the model: [Concepts](concepts.md)
+- Understand the model and boundaries: [Current system](system.md)
 - Operate Symphony++: [Operations](operations.md)
-- Understand the system: [Architecture](architecture.md)
+- Configure deploy observations: [Operator board deployments](operator-board-deployments.md)
+- Configure board area and machine labels: [Operator board labels](operator-board-configuration.md)
+- Read operator board fields and notifications: [Operator board API](operator-board-api.md)
 - Review trust boundaries: [Security](security.md)
 - Develop and validate changes: [Development](development.md)
-- Diagnose installed runtime behavior: [Runtime](runtime.md)
+- Install, connect, upgrade or recover: [Runtime](runtime.md)
+- Publish a beta and move an existing factory: [Release and cutover](runbooks/beta-release-cutover.md)
 - Install portable Codex/Claude procedures: [Portable skills](portable-skills.md)
 - Repair delivery state: [Delivery recovery](runbooks/delivery-recovery.md)
 - Respond to a permission or secret incident:
   [Security incident](runbooks/security-incident.md)
 
+## Beta Contract
+
+- [Factory workflow](design/factory-workflow.md): roles, small-work and
+  architect/UI loops, delivery semantics and visibility.
+- [Editable diagram](design/factory-workflow.excalidraw) and
+  [SVG](design/factory-workflow.svg): the approved human workflow sketch.
+
 ## Documentation Rules
 
-- Describe only current behavior.
+- Keep current guides factual; label approved target contracts and link to them
+  instead of describing proposed behavior as available.
 - Link to packaged skills instead of copying agent procedures.
 - Link to code-owned schemas instead of maintaining a second tool inventory.
 - Put machine-consumed files with the runtime or plugin that owns them.

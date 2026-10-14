@@ -5,6 +5,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
 
   alias SymphonyElixir.HttpServer
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config, as: MCPConfig
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.Repo
@@ -173,6 +174,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
     original_dynamic_repo = Repo.get_dynamic_repo()
 
     try do
+      :ok = OfflineSandbox.verify!(Keyword.get(opts, :database) || Repo.database_path_without_side_effects())
       :ok = ensure_dashboard_assets(opts)
       # Freeze daemon source identity at startup so smoke checks can detect a later checkout update.
       MCPConfig.source_revision()
@@ -420,10 +422,10 @@ defmodule Mix.Tasks.Sympp.Cockpit do
   end
 
   defp put_open_dashboard_default(opts) do
-    if Keyword.has_key?(opts, :open_dashboard) do
-      opts
-    else
-      Keyword.put(opts, :open_dashboard, open_dashboard_from_settings?())
+    cond do
+      OfflineSandbox.enabled?() -> Keyword.put(opts, :open_dashboard, false)
+      Keyword.has_key?(opts, :open_dashboard) -> opts
+      true -> Keyword.put(opts, :open_dashboard, open_dashboard_from_settings?())
     end
   end
 
@@ -489,7 +491,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
   end
 
   defp maybe_open_operator_dashboard(opts, port) do
-    if Keyword.get(opts, :open_dashboard, false) and not defer_dashboard_open?() do
+    if not OfflineSandbox.enabled?() and Keyword.get(opts, :open_dashboard, false) and not defer_dashboard_open?() do
       open_operator_dashboard(opts, port)
     else
       :ok

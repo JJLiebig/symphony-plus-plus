@@ -12,9 +12,11 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.Service, as: GuidanceRequestService
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
   alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
+  alias SymphonyElixir.SymphonyPlusPlus.SessionFocus
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
@@ -232,7 +234,16 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   @spec herdr_events(Conn.t(), map()) :: Conn.t()
   def herdr_events(conn, _params) do
-    with true <- herdr_consumer?(conn),
+    notification_events(conn, herdr_consumer?(conn))
+  end
+
+  @spec operator_events(Conn.t(), map()) :: Conn.t()
+  def operator_events(conn, _params) do
+    notification_events(conn, local_operator_browser?(conn))
+  end
+
+  defp notification_events(conn, authorized?) do
+    with true <- authorized?,
          :ok <- DashboardPubSub.subscribe() do
       conn =
         conn
@@ -592,8 +603,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
                WorkPackageDispatch.dispatch(
                  repo,
                  work_request_id,
-                 work_package_id,
-                 LocalOperatorActions.dispatch_handoff_opts(repo)
+                 work_package_id
                ) do
           refresh = %{work_request_id: work_request_id, work_package_id: work_package_id}
           payload = %{dispatch: WorkPackageDispatch.response_payload(dispatch)}
@@ -604,8 +614,39 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
     )
   end
 
-  defp send_local_operator_response(conn, action, %Target{} = target, tool_name, fun)
-       when is_atom(action) and is_atom(tool_name) and is_function(fun, 1) do
+  @spec operator_focus_work_package(Conn.t(), map()) :: Conn.t()
+  def operator_focus_work_package(conn, %{"work_package_id" => id}), do: focus_session(conn, "work_package", id)
+
+  @spec operator_focus_work_request(Conn.t(), map()) :: Conn.t()
+  def operator_focus_work_request(conn, %{"work_request_id" => id}), do: focus_session(conn, "work_request", id)
+
+  defp focus_session(conn, target_kind, target_id) do
+    cond do
+      OfflineSandbox.enabled?() ->
+        conn |> put_status(403) |> json(%{error: "This action is unavailable in the offline beta sandbox."})
+
+      not local_operator_browser?(conn) ->
+        error_response(conn, :unauthorized)
+
+      true ->
+        case Runtime.with_dashboard_repo(&SessionFocus.focus(&1, target_kind, target_id), migrate?: false) do
+          {:error, reason} -> error_response(conn, reason)
+          result -> json(conn, result)
+        end
+    end
+  end
+
+  defp send_local_operator_response(conn, action, %Target{} = target, tool, fun)
+       when is_atom(action) and is_atom(tool) and is_function(fun, 1) do
+    if OfflineSandbox.enabled?() and
+         tool in [:operator_sync_github_prs, :operator_create_architect_handoff, :operator_dispatch_work_package] do
+      conn |> put_status(403) |> json(%{error: "This action is unavailable in the offline beta sandbox."})
+    else
+      send_online_or_local_response(conn, action, target, tool, fun)
+    end
+  end
+
+  defp send_online_or_local_response(conn, action, target, tool_name, fun) do
     if local_operator_browser?(conn) do
       Runtime.with_dashboard_repo(fn repo ->
         local_operator_response(repo, conn, action, target, tool_name, fun)

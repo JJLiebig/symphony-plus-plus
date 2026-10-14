@@ -57,6 +57,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
       @worker_tools [
         "get_current_assignment",
         "read_context",
+        "read_work_package_document",
         "read_task_plan",
         "update_task_plan",
         "append_finding",
@@ -101,49 +102,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
         assert command =~ "codex plugin marketplace upgrade"
         assert command =~ "CODEX_HOME"
         assert normalize_path_fragment(command) =~ normalize_path_fragment(codex_home)
-      end
-
-      defp fake_mix_executable(temp_root) do
-        path = Path.join(temp_root, if(windows?(), do: "mix.cmd", else: "mix"))
-        File.mkdir_p!(Path.dirname(path))
-
-        File.write!(path, fake_mix_script())
-
-        unless windows?() do
-          File.chmod!(path, 0o755)
-        end
-
-        path
-      end
-
-      defp fake_mix_script do
-        if windows?() do
-          """
-          @echo off
-          if "%~1"=="--version" (
-            echo Mix 1.99.0 test
-            exit /b 0
-          )
-          if "%~1"=="deps.get" if "%~2"=="--check-locked" (
-            exit /b 0
-          )
-          echo unexpected mix args: %*
-          exit /b 2
-          """
-        else
-          """
-          #!/usr/bin/env sh
-          if [ "$1" = "--version" ]; then
-            echo "Mix 1.99.0 test"
-            exit 0
-          fi
-          if [ "$1" = "deps.get" ] && [ "$2" = "--check-locked" ]; then
-            exit 0
-          fi
-          echo "unexpected mix args: $*" >&2
-          exit 2
-          """
-        end
       end
 
       defp windows?, do: match?({:win32, _name}, :os.type())

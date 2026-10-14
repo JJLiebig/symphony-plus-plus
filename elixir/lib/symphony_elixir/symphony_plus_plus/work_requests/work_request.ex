@@ -55,6 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
           completion_source: String.t() | nil,
           archived_at: DateTime.t() | nil,
           archive_reason: String.t() | nil,
+          never_started_restored_at: DateTime.t() | nil,
           inserted_at: DateTime.t() | nil,
           updated_at: DateTime.t() | nil
         }
@@ -75,6 +76,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
     field(:completion_source, :string)
     field(:archived_at, :utc_datetime_usec)
     field(:archive_reason, :string)
+    field(:never_started_restored_at, :utc_datetime_usec)
 
     timestamps(type: :utc_datetime_usec)
   end

@@ -1,6 +1,7 @@
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = resolve(repo, 'plugins/symphony-plus-plus-mcp/skills');
@@ -32,6 +33,28 @@ async function collect(directory) {
 }
 
 await collect(source);
+// Ship the authoritative launcher, not a separately maintained implementation.
+const plugin = resolve(repo, 'plugins/symphony-plus-plus-mcp');
+const runtimeFiles = (await readdir(resolve(plugin, 'scripts')))
+  .filter(name => /\.(ps1|cmd|js)$/.test(name)).map(name => `scripts/${name}`);
+runtimeFiles.push('assets/sympp-runtime-artifacts.json');
+const payloadHash = createHash('sha256');
+for (const name of runtimeFiles.sort()) {
+  const body = (await readFile(resolve(plugin, name), 'utf8')).replace(/\r\n/g, '\n');
+  outputs.set(resolve(bundle, name), body);
+}
+outputs.set(resolve(bundle, 'scripts/sympp_beta_snapshot.py'),
+  (await readFile(resolve(repo, 'scripts/sympp_beta_snapshot.py'), 'utf8')).replace(/\r\n/g, '\n'));
+for (const name of [...outputs.keys()].map(path => portablePath(relative(bundle, path))).sort()) {
+  payloadHash.update(`${name}\n${outputs.get(resolve(bundle, name))}\n`);
+}
+const manifest = JSON.parse(await readFile(resolve(plugin, '.codex-plugin/plugin.json'), 'utf8'));
+const contract = JSON.parse(await readFile(resolve(repo, 'elixir/priv/symphony_plus_plus/mcp_contract.json'), 'utf8'));
+outputs.set(resolve(bundle, '.sympp-install.json'), JSON.stringify({
+  schema_version: 1, distribution: 'skills', name: manifest.name, version: manifest.version,
+  contract_fingerprint: contract.mcp_contract_fingerprint,
+  payload_sha256: payloadHash.digest('hex'),
+}, null, 2) + '\n');
 for (const [path, body] of outputs) {
   if (check) {
     const actual = await readFile(path, 'utf8').catch(() => '');
@@ -41,9 +64,9 @@ for (const [path, body] of outputs) {
     await writeFile(path, body);
   }
 }
-const installedFiles = await readdir(resolve(bundle, 'references'), { recursive: true, withFileTypes: true });
+const installedFiles = await readdir(bundle, { recursive: true, withFileTypes: true });
 for (const entry of installedFiles.filter(entry => entry.isFile())) {
   const path = resolve(entry.parentPath, entry.name);
-  if (!outputs.has(path)) throw new Error(`Unexpected portable payload: ${portablePath(relative(repo, path))}`);
+  if (!outputs.has(path) && !['SKILL.md', 'connection.md'].includes(relative(bundle, path))) throw new Error(`Unexpected portable payload: ${portablePath(relative(repo, path))}`);
 }
 console.log(`Portable procedures ${check ? 'verified' : 'packaged'} (${outputs.size} files).`);

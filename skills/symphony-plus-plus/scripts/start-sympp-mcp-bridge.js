@@ -1,0 +1,1498 @@
+"use strict";
+
+const crypto = require("crypto");
+const fs = require("fs");
+const http = require("http");
+const net = require("net");
+const os = require("os");
+const path = require("path");
+const readline = require("readline");
+const { spawn, spawnSync } = require("child_process");
+const sessionLocation = require("./sympp-session-location.js").createReporter();
+
+const WARM_MISS = 42;
+const POWERSHELL_FALLBACK = 43;
+const COLD_TIMEOUT = 44;
+const GENERATION_SETTLE_MS = 100;
+const HEALTH_CACHE_TTL_MS = 10000;
+const EXTERNAL_HEALTH_CACHE_TTL_MS = 2000;
+const HEALTH_PROBE_TIMEOUT_MS = 10000;
+const HEALTH_COALESCE_TIMEOUT_MS = 30000;
+const CLEANUP_SOURCE_CHANGED = Symbol("cleanup_source_changed");
+const agent = new http.Agent({ keepAlive: true });
+const generationWatchers = [];
+let generationWatchReady = false;
+let generationWatchVersion = 0;
+let generationWatchStartedAtMs = 0;
+let livenessServer = null;
+let livenessPipe = null;
+let livenessToken = null;
+let preparationChild = null;
+let herdrBinding = null;
+let herdrBackend = null;
+let herdrMetadataChild = null;
+let herdrMetadataOwned = false;
+let herdrMetadataPending = null;
+let herdrInspectorChild = null;
+let herdrRefresh = null;
+let herdrReportedAt = 0;
+let herdrInspectorPending = false;
+let herdrInspectorRevision = 0;
+
+const HERDR_METADATA_SOURCE = "symphony-plus-plus";
+const HERDR_METADATA_COMMAND_TIMEOUT_MS = 5000;
+const HERDR_METADATA_TTL_MS = 150000;
+const HERDR_METADATA_REFRESH_MS = 60000;
+const HERDR_METADATA_TOKENS = ["sympp_role", "sympp_work_request_id", "sympp_work_package_id", "sympp_show_inspector", "sympp_endpoint", "sympp_session_location_id"];
+const HERDR_INSPECTOR_PLUGIN = "symphony-plus-plus.execution-inspector";
+
+function trace(event, fields) {
+  const dir = process.env.SYMPP_LAUNCHER_TRACE_DIR;
+  if (!dir) return;
+  try {
+    const record = { at_ms: Date.now(), pid: process.pid, test_client: process.env.SYMPP_BENCH_CLIENT_ID || null, ...(fields || {}) };
+    fs.appendFileSync(path.join(dir, `${process.pid}.log`), `${event}\t${JSON.stringify(record)}\n`);
+  } catch (_) {
+  }
+}
+
+function diagnostic(message) {
+  process.stderr.write(`${message}\n`);
+}
+
+function herdrAvailable() {
+  return process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID);
+}
+
+function decodeHerdrBinding(value) {
+  if (!value) return undefined;
+  if (value === "clear") return null;
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  return JSON.parse(Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/") + padding, "base64").toString("utf8"));
+}
+
+function runHerdrMetadata(args) {
+  if (!herdrAvailable()) return;
+  herdrMetadataPending = args;
+  startHerdrMetadata();
+}
+
+function startHerdrMetadata() {
+  if (herdrMetadataChild || !herdrMetadataPending || !herdrAvailable()) return;
+  const args = herdrMetadataPending;
+  herdrMetadataPending = null;
+  const commands = process.platform === "win32" ? ["herdr.exe", "herdr.cmd"] : ["herdr"];
+  const commandArgs = ["pane", "report-metadata", process.env.HERDR_PANE_ID, "--source", HERDR_METADATA_SOURCE, ...args];
+  const launch = (index) => {
+    if (index >= commands.length) return;
+    let child;
+    try {
+      child = spawn(commands[index], commandArgs, { stdio: "ignore", windowsHide: true });
+    } catch (_) {
+      return launch(index + 1);
+    }
+    herdrMetadataChild = child;
+    let finished = false;
+    const finish = (retry, succeeded = false) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      if (herdrMetadataChild !== child) return;
+      herdrMetadataChild = null;
+      if (retry) launch(index + 1);
+      else if (succeeded) {
+        startHerdrMetadata();
+        if (herdrInspectorPending) {
+          if (!herdrMetadataChild && !herdrMetadataPending) {
+            startHerdrInspectorSync();
+          }
+        }
+      }
+    };
+    const timeout = setTimeout(() => {
+      try { child.kill(); } catch (_) { }
+      finish(true);
+    }, HERDR_METADATA_COMMAND_TIMEOUT_MS);
+    timeout.unref();
+    child.once("error", () => finish(true));
+    child.once("exit", (code) => finish(code !== 0, code === 0));
+    child.unref();
+  };
+  launch(0);
+}
+
+function startHerdrInspectorSync() {
+  if (herdrInspectorChild) return;
+  const revision = herdrInspectorRevision;
+  const commands = process.platform === "win32" ? ["herdr.exe", "herdr.cmd"] : ["herdr"];
+  const launch = (index) => {
+    if (index >= commands.length) {
+      herdrInspectorPending = true;
+      return;
+    }
+    let child;
+    try {
+      child = spawn(commands[index], ["plugin", "action", "invoke", "sync", "--plugin", HERDR_INSPECTOR_PLUGIN], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+    } catch (_) {
+      return launch(index + 1);
+    }
+    herdrInspectorChild = child;
+    let finished = false;
+    const finish = (succeeded) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      if (herdrInspectorChild !== child) return;
+      herdrInspectorChild = null;
+      if (!succeeded) {
+        launch(index + 1);
+        return;
+      }
+      if (revision === herdrInspectorRevision) herdrInspectorPending = false;
+      if (herdrInspectorPending && !herdrMetadataChild && !herdrMetadataPending) startHerdrInspectorSync();
+    };
+    const timeout = setTimeout(() => {
+      try { child.kill(); } catch (_) { }
+      finish(false);
+    }, HERDR_METADATA_COMMAND_TIMEOUT_MS);
+    timeout.unref();
+    child.once("error", () => finish(false));
+    child.once("exit", (code) => finish(code === 0));
+    child.unref();
+  };
+  launch(0);
+}
+
+function herdrMetadataArgs(binding, backend) {
+  const values = {
+    sympp_role: binding.role,
+    sympp_work_request_id: binding.work_request_id,
+    sympp_work_package_id: binding.work_package_id,
+    sympp_show_inspector: String(binding.show_inspector === true),
+    sympp_endpoint: trimOrigin(backend),
+    sympp_session_location_id: sessionLocation.clientId,
+  };
+  const args = ["--ttl-ms", String(HERDR_METADATA_TTL_MS)];
+  for (const name of HERDR_METADATA_TOKENS) {
+    if (values[name]) args.push("--token", `${name}=${values[name]}`);
+    else args.push("--clear-token", name);
+  }
+  return args;
+}
+
+function reportHerdrBinding(force = false) {
+  if (!herdrBinding || !herdrBackend || !herdrAvailable()) return;
+  if (!force && Date.now() - herdrReportedAt < HERDR_METADATA_REFRESH_MS) return;
+  herdrMetadataOwned = true;
+  runHerdrMetadata(herdrMetadataArgs(herdrBinding, herdrBackend));
+  herdrReportedAt = Date.now();
+}
+
+function clearHerdrBinding() {
+  const owned = herdrMetadataOwned;
+  herdrBinding = null;
+  herdrBackend = null;
+  herdrMetadataOwned = false;
+  herdrReportedAt = 0;
+  herdrInspectorPending = false;
+  herdrInspectorRevision += 1;
+  if (herdrInspectorChild) {
+    const child = herdrInspectorChild;
+    herdrInspectorChild = null;
+    try { child.kill(); } catch (_) { }
+  }
+  herdrMetadataPending = null;
+  if (herdrRefresh) clearInterval(herdrRefresh);
+  herdrRefresh = null;
+  if (!owned) return;
+  const args = [];
+  for (const name of HERDR_METADATA_TOKENS) args.push("--clear-token", name);
+  runHerdrMetadata(args);
+}
+
+async function clearHerdrBindingAndDrain() {
+  if (herdrMetadataOwned) {
+    herdrMetadataPending = null;
+    const previousChild = herdrMetadataChild;
+    herdrMetadataChild = null;
+    if (previousChild) {
+      try { previousChild.kill(); } catch (_) { }
+    }
+  }
+  clearHerdrBinding();
+  const deadline = Date.now() + HERDR_METADATA_COMMAND_TIMEOUT_MS + 1000;
+  while ((herdrMetadataChild || herdrMetadataPending) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  herdrMetadataPending = null;
+  if (herdrMetadataChild) {
+    const child = herdrMetadataChild;
+    herdrMetadataChild = null;
+    try { child.kill(); } catch (_) { }
+  }
+}
+
+function updateHerdrBinding(response, backend) {
+  let next;
+  try { next = decodeHerdrBinding(response && response.headers && response.headers["sympp-herdr-binding"]); } catch (_) { return; }
+  if (next === undefined) return;
+  if (next === null) return clearHerdrBinding();
+  const changed = JSON.stringify(next) !== JSON.stringify(herdrBinding) || trimOrigin(backend) !== herdrBackend;
+  herdrBinding = next;
+  herdrBackend = trimOrigin(backend);
+  if (changed) {
+    herdrInspectorPending = true;
+    herdrInspectorRevision += 1;
+  }
+  reportHerdrBinding(changed);
+  if (!herdrRefresh) {
+    herdrRefresh = setInterval(() => reportHerdrBinding(), HERDR_METADATA_REFRESH_MS);
+    herdrRefresh.unref();
+  }
+}
+
+function updateHerdrBackend(backend) {
+  if (!herdrBinding) return;
+  herdrBackend = trimOrigin(backend);
+  reportHerdrBinding(true);
+}
+
+function resolveHome() {
+  if (process.env.SYMPP_HOME) return path.resolve(process.env.SYMPP_HOME);
+  const home = process.env.HOME || process.env.USERPROFILE;
+  return path.resolve(home || require("os").tmpdir(), ".agents", "splusplus");
+}
+
+function resolveRuntimeFile() {
+  return process.env.SYMPP_RUNTIME_FILE
+    ? path.resolve(process.env.SYMPP_RUNTIME_FILE)
+    : path.join(resolveHome(), "runtime", "codex-plugin.json");
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (_) {
+    return null;
+  }
+}
+
+function generationKey(pluginRoot, sourceRoot) {
+  try {
+    if (!fs.statSync(pluginRoot).isDirectory()) return null;
+    const portable = portableInstall(pluginRoot);
+    if (portable) return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${process.env.SYMPP_RUNTIME_CHANNEL || "stable"}\n${portable.contract_fingerprint}\n${portable.payload_sha256}`);
+    const install = readJson(path.join(sourceRoot, ".codex-marketplace-install.json"));
+    const contract = readJson(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"));
+    const revision = String(install && (install.revision || install.source_revision || install.sourceRevision) || "").toLowerCase();
+    const fingerprint = String(contract && contract.mcp_contract_fingerprint || "").toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(revision) || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
+    const ref = String(install.ref_name || "main");
+    return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${revision}\n${fingerprint}${ref === "main" ? "" : `\n${ref}`}`);
+  } catch (_) {
+    return null;
+  }
+}
+
+function portableInstall(pluginRoot) {
+  const install = readJson(path.join(pluginRoot, ".sympp-install.json"));
+  if (!install || install.schema_version !== 1 || install.distribution !== "skills" ||
+      !/^[0-9a-f]{64}$/.test(install.contract_fingerprint || "") ||
+      !/^[0-9a-f]{64}$/.test(install.payload_sha256 || "")) return null;
+  return install;
+}
+
+function installedScripts(identity) {
+  return portableInstall(identity.pluginRoot) ? path.join(identity.pluginRoot, "scripts") :
+    path.join(identity.sourceRoot, "plugins", path.basename(path.dirname(identity.pluginRoot)), "scripts");
+}
+
+function validPid(pid) {
+  return Number.isInteger(Number(pid)) && Number(pid) > 0 && Number(pid) <= 0x7fffffff;
+}
+
+function processAlive(pid) {
+  if (!validPid(pid)) return false;
+  // Permission to signal a process is not required to attach to its healthy endpoint.
+  try { process.kill(Number(pid), 0); return true; } catch (error) { return error.code !== "ESRCH"; }
+}
+
+function ensureLivenessProbe() {
+  if (livenessServer) return Promise.resolve();
+  livenessPipe = `\\\\.\\pipe\\sympp-mcp-${process.pid}-${crypto.randomUUID().replace(/-/g, "")}`;
+  livenessToken = crypto.randomBytes(32).toString("hex");
+  return new Promise((resolve, reject) => {
+    const server = net.createServer((socket) => {
+      socket.on("error", () => {}); // Probes can time out or exit before the reply.
+      socket.end(livenessToken);
+    });
+    const failed = (error) => { try { server.close(); } catch (_) { } reject(error); };
+    server.once("error", failed);
+    server.listen(livenessPipe, () => {
+      server.removeListener("error", failed);
+      livenessServer = server;
+      resolve();
+    });
+  });
+}
+
+async function livenessMatches(pid, pipe, token) {
+  if (!pipe || !token || !processAlive(pid)) return false;
+  if (Number(pid) === process.pid) return pipe === livenessPipe && token === livenessToken;
+  return new Promise((resolve) => {
+    const socket = net.createConnection(pipe);
+    let response = "";
+    const finish = (alive) => { socket.destroy(); resolve(alive && processAlive(pid)); };
+    socket.setEncoding("utf8");
+    // A busy owner remains authoritative; its stalled probe must not stall ours.
+    socket.setTimeout(1000, () => finish(true));
+    socket.on("data", (chunk) => { response += chunk; });
+    socket.once("end", () => finish(response === token));
+    socket.once("error", (error) => finish(!["ENOENT", "ENXIO", "ECONNREFUSED"].includes(error.code)));
+  });
+}
+
+function closeLivenessProbe() {
+  if (livenessServer) { try { livenessServer.close(); } catch (_) { } }
+  livenessServer = null;
+  livenessPipe = null;
+  livenessToken = null;
+}
+
+async function tryAcquireProcessLock(lockFile) {
+  fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+  try {
+    const fd = fs.openSync(lockFile, "wx");
+    const lockId = crypto.randomUUID();
+    fs.writeFileSync(fd, `${JSON.stringify({ lock_id: lockId, owner_pid: process.pid, owner_pipe: livenessPipe, owner_token: livenessToken })}\n`);
+    fs.fsyncSync(fd);
+    return { fd, lockId };
+  } catch (error) {
+    if (["EACCES", "EBUSY", "EPERM"].includes(error.code)) return null;
+    if (error.code !== "EEXIST") throw error;
+    const owner = readJson(lockFile);
+    const ownerValid = owner && owner.lock_id && owner.owner_pipe && owner.owner_token && validPid(owner.owner_pid);
+    let reclaim = ownerValid && !await livenessMatches(owner.owner_pid, owner.owner_pipe, owner.owner_token);
+    let staleStamp;
+    if (!ownerValid) {
+      try { staleStamp = fs.statSync(lockFile); reclaim = Date.now() - staleStamp.mtimeMs > 5000; } catch (_) { return null; }
+    }
+    if (reclaim) {
+      try {
+        const current = readJson(lockFile);
+        const sameOwner = ownerValid ? current?.lock_id === owner.lock_id :
+          !current?.lock_id && fs.statSync(lockFile).mtimeMs === staleStamp.mtimeMs;
+        if (sameOwner) { fs.unlinkSync(lockFile); trace("abandoned_lock_reclaimed"); }
+      } catch (_) { }
+    }
+    return null;
+  }
+}
+
+function releaseProcessLock(lockFile, lock) {
+  if (!lock) return;
+  try { fs.closeSync(lock.fd); } catch (_) { }
+  const owner = readJson(lockFile);
+  if (owner && owner.lock_id === lock.lockId) { try { fs.unlinkSync(lockFile); } catch (_) { } }
+}
+
+async function claimPortableLedger(runtimeFile) {
+  const requested = path.resolve(process.env.SYMPP_DATABASE || path.join(os.homedir(), ".agents", "splusplus", "symphony_plus_plus.sqlite3"));
+  fs.mkdirSync(path.dirname(requested), { recursive: true });
+  const database = fs.existsSync(requested) ? fs.realpathSync.native(requested) : path.join(fs.realpathSync.native(path.dirname(requested)), path.basename(requested));
+  const receiptFile = `${database}.sympp-owner.json`;
+  const lockFile = `${receiptFile}.lock`;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const lock = await tryAcquireProcessLock(lockFile);
+    if (!lock) { await new Promise(resolve => setTimeout(resolve, 25)); continue; }
+    try {
+      const receipt = readJson(receiptFile);
+      if (fs.existsSync(receiptFile) && (!receipt || typeof receipt.runtime_file !== "string" || !Array.isArray(receipt.clients))) {
+        throw new Error("The ledger ownership receipt is unreadable. Close all Symphony++ clients and inspect the adjacent .sympp-owner.json file before retrying.");
+      }
+      const clients = [];
+      for (const client of receipt?.clients || []) {
+        if (await livenessMatches(client.pid, client.pipe, client.token)) clients.push(client);
+      }
+      if (receipt && path.resolve(receipt.runtime_file).toLowerCase() !== path.resolve(runtimeFile).toLowerCase()) {
+        const state = readJson(receipt.runtime_file);
+        const health = state?.backend?.managed && state.backend.url ? await backendHealth(state.backend.url) : null;
+        if (clients.length || health?.healthy) {
+          throw new Error("This ledger is already owned by another Symphony++ home. Use its SYMPP_HOME and SYMPP_RUNTIME_FILE to share, or choose a separate SYMPP_DATABASE. Close all clients before moving a ledger.");
+        }
+      }
+      clients.push({ pid: process.pid, pipe: livenessPipe, token: livenessToken });
+      fs.writeFileSync(receiptFile, JSON.stringify({ runtime_file: path.resolve(runtimeFile), clients }) + "\n");
+      return;
+    } finally { releaseProcessLock(lockFile, lock); }
+  }
+  throw new Error("Another Symphony++ client is selecting this ledger. Retry the connection.");
+}
+
+function closeGenerationWatchers() {
+  const count = generationWatchers.length;
+  for (const watcher of generationWatchers.splice(0)) {
+    try { watcher.close(); } catch (_) { }
+  }
+  generationWatchReady = false;
+  generationWatchStartedAtMs = 0;
+  if (count) trace("generation_watchers_closed");
+}
+process.on("exit", closeGenerationWatchers);
+process.on("exit", closeLivenessProbe);
+
+function watchGeneration(paths, markerFile) {
+  if (generationWatchers.length) return generationWatchReady;
+  generationWatchStartedAtMs = performance.timeOrigin + performance.now();
+  const invalidate = (event, filename) => {
+    generationWatchVersion += 1;
+    try { fs.unlinkSync(markerFile); } catch (_) { }
+    trace("generation_watch_invalidated", { event, filename: String(filename) });
+  };
+  for (const entry of paths) {
+    try {
+      generationWatchers.push(fs.watch(entry.path, { recursive: entry.recursive }, (event, filename) => {
+        // Windows directory access timestamps can change when cleanup reads installed scripts.
+        if (process.platform === "win32" && entry.recursive && event === "change" && filename) {
+          try { if (fs.lstatSync(path.join(entry.path, String(filename))).isDirectory()) return; } catch (_) { }
+        }
+        invalidate(event, filename);
+      }));
+    } catch (_) { closeGenerationWatchers(); generationWatchReady = false; return false; }
+  }
+  generationWatchReady = true;
+  return true;
+}
+
+function generationFromMarker(marker, watchStartedAtMs) {
+  const validatedAtMs = Number(marker && marker.validated_at_ms);
+  return marker && /^[0-9a-f]{64}$/i.test(String(marker.generation_key || "")) &&
+    Number.isFinite(validatedAtMs) && validatedAtMs >= watchStartedAtMs ? marker.generation_key : null;
+}
+
+function liveGeneration(markerFile) {
+  return generationFromMarker(readJson(markerFile), generationWatchStartedAtMs);
+}
+
+async function coalescedGenerationKey(pluginRoot, sourceRoot, markerFile) {
+  const paths = portableInstall(pluginRoot) ? [{ path: pluginRoot, recursive: true }] : [
+    { path: pluginRoot, recursive: true },
+    { path: path.join(sourceRoot, ".codex-marketplace-install.json"), recursive: false },
+    { path: path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"), recursive: false },
+  ];
+  const watched = watchGeneration(paths, markerFile);
+  if (!watched) return null;
+
+  let watchVersion = generationWatchVersion;
+  let generation = liveGeneration(markerFile);
+  if (generation && generationWatchVersion === watchVersion) {
+    trace("generation_cache_hit");
+    return { key: generation, watchVersion };
+  }
+
+  const lockFile = `${markerFile}.lock`;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const lock = await tryAcquireProcessLock(lockFile);
+    if (lock !== null) {
+      try {
+        watchVersion = generationWatchVersion;
+        generation = liveGeneration(markerFile);
+        if (generation && generationWatchVersion === watchVersion) return { key: generation, watchVersion };
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          watchVersion = generationWatchVersion;
+          generation = generationKey(pluginRoot, sourceRoot);
+          if (!generation) return null;
+          trace("generation_scan_complete");
+          await new Promise((resolve) => setTimeout(resolve, GENERATION_SETTLE_MS));
+          const confirmed = generationKey(pluginRoot, sourceRoot);
+          if (!confirmed || confirmed !== generation || generationWatchVersion !== watchVersion) {
+            trace("generation_scan_retry");
+            continue;
+          }
+          const temporary = `${markerFile}.${process.pid}.tmp`;
+          fs.writeFileSync(temporary, `${JSON.stringify({ generation_key: generation, validated_at_ms: performance.timeOrigin + performance.now() })}\n`);
+          try { fs.unlinkSync(markerFile); } catch (_) { }
+          fs.renameSync(temporary, markerFile);
+          if (generationWatchVersion !== watchVersion || liveGeneration(markerFile) !== generation) {
+            trace("generation_scan_retry");
+            continue;
+          }
+          trace("generation_full_scan");
+          return { key: generation, watchVersion };
+        }
+        return null;
+      } finally {
+        releaseProcessLock(lockFile, lock);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    watchVersion = generationWatchVersion;
+    generation = liveGeneration(markerFile);
+    if (generation && generationWatchVersion === watchVersion) {
+      trace("generation_cache_hit");
+      return { key: generation, watchVersion };
+    }
+  }
+  return null;
+}
+
+async function resolveCachedIdentity(pluginRoot) {
+  const versionRoot = path.resolve(pluginRoot);
+  const packageRoot = path.dirname(versionRoot);
+  const marketplaceRoot = path.dirname(packageRoot);
+  const cacheRoot = path.dirname(marketplaceRoot);
+  const pluginsRoot = path.dirname(cacheRoot);
+  const portable = portableInstall(versionRoot);
+  if (!portable && (path.basename(cacheRoot).toLowerCase() !== "cache" || path.basename(pluginsRoot).toLowerCase() !== "plugins")) return null;
+
+  const codexHome = path.dirname(pluginsRoot);
+  const marketplaceName = path.basename(marketplaceRoot);
+  const sourceRoot = portable ? versionRoot : path.resolve(codexHome, ".tmp", "marketplaces", marketplaceName);
+  const cacheName = sha256(versionRoot.toLowerCase()).slice(0, 12) + ".json";
+  const cacheFile = path.join(resolveHome(), "runtime", "launcher-validation", cacheName);
+  const generationMarker = `${cacheFile}.${portable ? process.env.SYMPP_RUNTIME_CHANNEL || "stable" : "marketplace"}.generation`;
+  const generation = await coalescedGenerationKey(versionRoot, sourceRoot, generationMarker);
+  if (!generation) return null;
+  const cache = readJson(cacheFile);
+  if (!cache || cache.schema_version !== 1 ||
+      path.resolve(String(cache.plugin_root || "")).toLowerCase() !== versionRoot.toLowerCase() ||
+      path.resolve(String(cache.source_root || "")).toLowerCase() !== sourceRoot.toLowerCase() ||
+      cache.generation_key !== generation.key ||
+      !/^[0-9a-f]{40}$/i.test(String(cache.revision || "")) ||
+      !/^[0-9a-f]{64}$/i.test(String(cache.contract_fingerprint || ""))) return null;
+
+  trace("installed_identity_cache_hit");
+  return { ...cache, generation_marker: generationMarker, generation_watch_version: generation.watchVersion };
+}
+
+function generationStillValid(identity) {
+  return identity && generationWatchReady && generationWatchVersion === identity.generationWatchVersion;
+}
+
+function generationValidForAttachment(identity) {
+  if (generationStillValid(identity)) return true;
+  trace("warm_miss_generation");
+  if (prepareCleanupScript(identity) === CLEANUP_SOURCE_CHANGED) {
+    throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+  }
+  return false;
+}
+
+function prepareCleanupScript(identity) {
+  if (!identity || !/^[0-9a-f]{40}$/i.test(String(identity.revision || "")) ||
+      !/^[0-9a-f]{64}$/i.test(String(identity.generationKey || ""))) return null;
+  try {
+    const names = fs.readdirSync(__dirname).filter((name) => name.toLowerCase().endsWith(".ps1")).sort();
+    const directory = path.join(resolveHome(), "runtime", "launcher-cleanup", `${identity.revision}-${identity.generationKey.slice(0, 12)}`);
+    const marketplaceScripts = installedScripts(identity);
+    fs.mkdirSync(directory, { recursive: true });
+    const script = path.join(directory, "start-sympp-mcp.ps1");
+    const markerFile = path.join(directory, "validated.json");
+    const marker = readJson(markerFile);
+    const fileStamps = () => Object.fromEntries(names.map((name) => [name, [
+      path.join(__dirname, name), path.join(marketplaceScripts, name), path.join(directory, name),
+    ].map((file) => { const stat = fs.statSync(file); return `${stat.size}:${stat.mtimeMs}`; }).join("|")]));
+    let currentStamps = null;
+    try { if (marker) currentStamps = fileStamps(); } catch (_) { }
+    if (marker && marker.generation_key === identity.generationKey && generationStillValid(identity) &&
+        JSON.stringify(marker.files) === JSON.stringify(currentStamps)) {
+      trace("cleanup_scripts_cached");
+      return script;
+    }
+    for (const name of names) {
+      const source = path.join(__dirname, name);
+      const destination = path.join(directory, name);
+      const sourceHash = sha256(fs.readFileSync(source));
+      let marketplaceHash;
+      try { marketplaceHash = sha256(fs.readFileSync(path.join(marketplaceScripts, name))); } catch (_) { return CLEANUP_SOURCE_CHANGED; }
+      if (sourceHash !== marketplaceHash) return CLEANUP_SOURCE_CHANGED;
+      if (!fs.existsSync(destination)) {
+        const temporary = `${destination}.${process.pid}.${crypto.randomUUID()}.tmp`;
+        try {
+          fs.copyFileSync(source, temporary, fs.constants.COPYFILE_EXCL);
+          if (sha256(fs.readFileSync(temporary)) !== sourceHash) return null;
+          try { fs.renameSync(temporary, destination); } catch (error) {
+            if (!["EACCES", "EEXIST", "EPERM"].includes(error.code)) throw error;
+          }
+        } finally {
+          try { fs.unlinkSync(temporary); } catch (_) { }
+        }
+      }
+      if (sha256(fs.readFileSync(destination)) !== sourceHash) return null;
+    }
+    if (!fs.existsSync(script)) return null;
+    const markerTemp = `${markerFile}.${process.pid}.tmp`;
+    fs.writeFileSync(markerTemp, `${JSON.stringify({ generation_key: identity.generationKey, files: fileStamps() })}\n`);
+    let published = false;
+    for (let attempt = 0; attempt < 3 && !published; attempt += 1) {
+      try {
+        fs.renameSync(markerTemp, markerFile);
+        published = true;
+      } catch (error) {
+        if (!["EACCES", "EEXIST", "EPERM"].includes(error.code)) throw error;
+        const concurrent = readJson(markerFile);
+        if (concurrent && concurrent.generation_key === identity.generationKey && generationStillValid(identity) &&
+            JSON.stringify(concurrent.files) === JSON.stringify(fileStamps())) {
+          try { fs.unlinkSync(markerTemp); } catch (_) { }
+          trace("cleanup_scripts_cached");
+          return script;
+        }
+        try { fs.unlinkSync(markerFile); } catch (_) { }
+      }
+    }
+    if (!published) {
+      try { fs.unlinkSync(markerTemp); } catch (_) { }
+      return null;
+    }
+    trace("cleanup_scripts_staged");
+    return script;
+  } catch (_) {
+    return null;
+  }
+}
+
+function cleanupSourcesChanged(identity, script) {
+  try {
+    const marketplaceScripts = installedScripts(identity);
+    const directories = [__dirname, marketplaceScripts, path.dirname(script)];
+    const fileSets = directories.map((directory) => fs.readdirSync(directory).filter((name) => name.toLowerCase().endsWith(".ps1")).sort());
+    if (fileSets.some((names) => names.join("\n") !== fileSets[0].join("\n"))) return true;
+    return fileSets[0].some((name) => {
+      const stagedHash = sha256(fs.readFileSync(path.join(path.dirname(script), name)));
+      return sha256(fs.readFileSync(path.join(__dirname, name))) !== stagedHash ||
+        sha256(fs.readFileSync(path.join(marketplaceScripts, name))) !== stagedHash;
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
+function beginGenerationAttachmentValidation(identity) {
+  if (!generationValidForAttachment(identity)) return null;
+  const token = {
+    startedAt: performance.now(),
+    generation: generationKey(identity.pluginRoot, identity.sourceRoot),
+    identity,
+    watchVersion: generationWatchVersion,
+  };
+  return token;
+}
+
+async function finishGenerationAttachmentValidation(token, identity, phase) {
+  if (!token) return false;
+  let elapsed = performance.now() - token.startedAt;
+  const overlapMs = Math.min(GENERATION_SETTLE_MS, elapsed);
+  while (elapsed < GENERATION_SETTLE_MS) {
+    await new Promise((resolve) => setTimeout(resolve, Math.ceil(GENERATION_SETTLE_MS - elapsed)));
+    elapsed = performance.now() - token.startedAt;
+  }
+  const confirmed = generationKey(identity.pluginRoot, identity.sourceRoot);
+  const sameIdentity = runtimeIdentityChanges(token.identity, identity).length === 0;
+  const attachmentValid = generationValidForAttachment(identity);
+  const valid = sameIdentity && token.watchVersion === generationWatchVersion &&
+    attachmentValid && token.generation === identity.generationKey && confirmed === identity.generationKey;
+  trace(`generation_attach_${phase}_validation`, {
+    elapsed_ms: Math.round(elapsed * 100) / 100,
+    overlap_ms: Math.round(overlapMs * 100) / 100,
+    valid,
+    watcher_unchanged: token.watchVersion === generationWatchVersion,
+    generation: identity.generationKey.slice(0, 12),
+  });
+  return valid;
+}
+
+function trimOrigin(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function loopbackOrigin(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(url.hostname.toLowerCase());
+  } catch (_) {
+    return false;
+  }
+}
+
+function configuredPortMatches(name, origin) {
+  if (!process.env[name]) return true;
+  const configured = Number(process.env[name]);
+  if (!Number.isInteger(configured) || configured < 0 || configured > 65535) return false;
+  return configured === 0 || Number(new URL(origin).port || 80) === configured;
+}
+
+function runtimeKey(backend, dashboard, contract) {
+  return `contract=${contract.toLowerCase()};backend=${trimOrigin(backend).toLowerCase()};dashboard=${dashboard ? trimOrigin(dashboard).toLowerCase() : "none"}`;
+}
+
+function runtimeIdentityChanges(previous, next) {
+  const fields = ["revision", "generationKey", "contract", "runtimeKey", "epoch", "backend", "dashboard"];
+  return fields.filter((field) => String(previous[field] || "").toLowerCase() !== String(next[field] || "").toLowerCase());
+}
+
+function tracedRuntimeIdentity(identity) {
+  return {
+    revision: identity.revision.slice(0, 12),
+    generation: identity.generationKey.slice(0, 12),
+    contract: identity.contract.slice(0, 12),
+    runtime_key: sha256(identity.runtimeKey).slice(0, 12),
+    epoch: identity.epoch,
+  };
+}
+
+function databasePath(database, displayPath = false) {
+  if (!database || !String(database).trim()) return null;
+  const value = displayPath ? String(database).replace(/^\$HOME(?=\/|$)/, os.homedir()) : String(database);
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function requestedDatabaseMatches(ledgerIdentity) {
+  const requested = databasePath(process.env.SYMPP_DATABASE);
+  if (requested) return ledgerIdentity?.kind === "sqlite" && databasePath(ledgerIdentity.display_path, true) === requested;
+  if (String(process.env.SYMPP_REPO_ROOT || "").trim() || String(process.env.SYMPP_BACKEND_URL || "").trim()) return true;
+  return ledgerIdentity?.kind === "sqlite" && ledgerIdentity.default_home === true;
+}
+
+function resolveStateIdentity(state, pluginRoot, cachedIdentity) {
+  if (!state || !state.backend || !state.frontend || !state.plugin_root) return null;
+  if (path.resolve(String(state.plugin_root)).toLowerCase() !== path.resolve(pluginRoot).toLowerCase()) return null;
+  if (databasePath(state.publication?.controls?.database) !== databasePath(process.env.SYMPP_DATABASE)) return null;
+  const identity = cachedIdentity;
+  const sourceRoot = identity && (identity.source_root || identity.sourceRoot);
+  if (!sourceRoot) return null;
+
+  const contract = String(identity.contract_fingerprint || identity.contract).toLowerCase();
+  if (String(state.backend.expected_contract_fingerprint || "").toLowerCase() !== contract ||
+      String(state.backend.contract_fingerprint || "").toLowerCase() !== contract) return null;
+  const backend = trimOrigin(state.backend.url);
+  const dashboard = trimOrigin(state.frontend.origin);
+  if (!loopbackOrigin(backend) || (dashboard && !loopbackOrigin(dashboard))) return null;
+  if (!configuredPortMatches("SYMPP_BACKEND_PORT", backend) ||
+      (dashboard && !configuredPortMatches("SYMPP_DASHBOARD_PORT", dashboard)) ||
+      (process.env.SYMPP_BACKEND_URL && trimOrigin(process.env.SYMPP_BACKEND_URL) !== backend) ||
+      (process.env.SYMPP_DASHBOARD_ORIGIN && trimOrigin(process.env.SYMPP_DASHBOARD_ORIGIN) !== dashboard)) return null;
+
+  const artifactStatic = state.runtime_mode === "artifact" && state.frontend.status === "artifact_static" &&
+    (state.backend.managed === true || (state.backend.status === "external_loopback" && state.frontend.managed !== true));
+  const managed = state.backend.managed === true && state.frontend.managed === true;
+  const headless = state.backend.managed === true && !dashboard && /^(disabled|failed)/.test(String(state.frontend.status));
+  const external = state.backend.managed !== true && state.frontend.managed !== true && state.backend.status === "external_loopback" && state.frontend.status === "external_loopback";
+  if (!artifactStatic && !managed && !headless && !external) return null;
+  const key = runtimeKey(backend, dashboard, contract);
+  if (String(state.runtime_key || "").toLowerCase() !== key.toLowerCase()) return null;
+  return {
+    backend, dashboard, contract, runtimeKey: key, revision: String(state.backend.source_revision || identity.revision), headless,
+    epoch: `${Number(state.backend.pid) || 0}:${String(state.publication && state.publication.backend && state.publication.backend.process_start_time_utc_ticks || "external")}`,
+    pluginRoot: path.resolve(pluginRoot), sourceRoot: path.resolve(String(sourceRoot)),
+    generationKey: identity.generation_key || identity.generationKey,
+    generationMarker: identity.generation_marker || identity.generationMarker,
+    generationWatchVersion: Number(identity.generation_watch_version ?? identity.generationWatchVersion),
+  };
+}
+
+function request(urlString, method, body, headers, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlString);
+    if (!loopbackOrigin(url.origin)) return reject(new Error(`non-loopback URL rejected: ${url.origin}`));
+    let connected = false;
+    const req = http.request(url, { method, headers: headers || {}, agent }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode || 0, headers: res.headers, body: Buffer.concat(chunks).toString("utf8") }));
+      res.once("aborted", () => { const error = new Error("response aborted before completion"); error.symppRequestMayHaveReachedBackend = true; reject(error); });
+      res.once("error", (error) => { error.symppRequestMayHaveReachedBackend = true; reject(error); });
+    });
+    req.once("socket", (socket) => {
+      if (socket.connecting) socket.once("connect", () => { connected = true; });
+      else connected = true;
+    });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`request timed out after ${timeoutMs}ms`)));
+    req.on("error", (error) => {
+      error.symppRequestMayHaveReachedBackend = connected;
+      reject(error);
+    });
+    if (body !== undefined && body !== null) req.end(body);
+    else req.end();
+  });
+}
+
+function responseLines(response) {
+  const content = response.body.trim();
+  if (!content) return [];
+  if (!String(response.headers["content-type"] || "").toLowerCase().includes("text/event-stream")) return [content];
+  const lines = [];
+  for (const event of content.split(/\r?\n\r?\n/)) {
+    const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+    if (data && data !== "[DONE]") lines.push(data);
+  }
+  return lines;
+}
+
+async function mcpPost(url, body, sessionId, protocol, timeoutMs) {
+  body = await sessionLocation.attach(body);
+  const headers = { Accept: "application/json, text/event-stream", "Content-Type": "application/json" };
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  if (protocol) headers["MCP-Protocol-Version"] = protocol;
+  const response = await request(url, "POST", body, headers, timeoutMs);
+  return { ok: response.status >= 200 && response.status < 300, status: response.status, headers: response.headers, lines: responseLines(response), error: response.body || `HTTP ${response.status}`, mayHaveReachedBackend: true };
+}
+
+function replayableDeliveryFailure(parsed, response) {
+  const key = parsed && parsed.method === "tools/call" && parsed.params && parsed.params.name === "record_work_package_delivery" && parsed.params.arguments && parsed.params.arguments.idempotency_key;
+  if (typeof key !== "string" || !key.trim()) return false;
+  if (response.status === 500 || response.status === 503) return true;
+  return response.lines.some((line) => {
+    try { return JSON.parse(line).error?.data?.reason === "ledger_unavailable"; } catch (_) { return false; }
+  });
+}
+
+function initializeBody() {
+  return JSON.stringify({ jsonrpc: "2.0", id: "sympp-plugin-launcher-init", method: "initialize", params: { protocolVersion: "2025-03-26", clientInfo: { name: "sympp-plugin-launcher", version: "0.1.0" }, capabilities: {} } });
+}
+
+function protocolFrom(lines) {
+  for (const line of lines) {
+    try {
+      const payload = JSON.parse(line);
+      if (payload.result && payload.result.protocolVersion) return String(payload.result.protocolVersion);
+    } catch (_) {
+    }
+  }
+  return null;
+}
+
+async function backendHealth(origin) {
+  try {
+    const mcpUrl = `${trimOrigin(origin)}/mcp`;
+    const response = await request(`${trimOrigin(origin)}/mcp/readiness`, "GET", null, { Accept: "application/json" }, HEALTH_PROBE_TIMEOUT_MS);
+    if (response.status === 404) return legacyBackendHealth(mcpUrl);
+    if (response.status < 200 || response.status >= 300 || !response.body) return null;
+    const readiness = JSON.parse(response.body);
+    const contract = String((readiness.source && readiness.source.mcp_contract && readiness.source.mcp_contract.fingerprint) || "").toLowerCase();
+    const ledgerIdentity = readiness.ledger?.identity;
+    const healthy = readiness.status === "ok" && readiness.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity);
+    return { healthy, contract, ledgerIdentity, retryable: false };
+  } catch (error) {
+    return { healthy: false, contract: "", retryable: /timed out/i.test(String(error && error.message)) };
+  }
+}
+
+async function legacyBackendHealth(mcpUrl) {
+  const initialized = await mcpPost(mcpUrl, initializeBody(), null, null, HEALTH_PROBE_TIMEOUT_MS);
+  const session = initialized.headers["mcp-session-id"];
+  if (!initialized.ok || !session) return null;
+  const protocol = protocolFrom(initialized.lines) || "2025-03-26";
+  const body = JSON.stringify({ jsonrpc: "2.0", id: "sympp-plugin-launcher-health", method: "tools/call", params: { name: "sympp.health", arguments: {} } });
+  const health = await mcpPost(mcpUrl, body, session, protocol, HEALTH_PROBE_TIMEOUT_MS);
+  if (!health.ok || !health.lines.length) return null;
+  const payload = JSON.parse(health.lines[0]);
+  const structured = payload.result && payload.result.structuredContent;
+  if (!structured) return null;
+  const contract = String((structured.source && structured.source.mcp_contract && structured.source.mcp_contract.fingerprint) || (structured.mcp_contract && structured.mcp_contract.fingerprint) || "").toLowerCase();
+  const ledgerIdentity = structured.ledger?.identity;
+  return { healthy: structured.status === "ok" && structured.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity), contract, ledgerIdentity };
+}
+
+function healthCacheMatches(cache, state, identity) {
+  const backendPid = Number(state.backend.pid);
+  const ttl = backendPid > 0 ? HEALTH_CACHE_TTL_MS : EXTERNAL_HEALTH_CACHE_TTL_MS;
+  return !!cache && cache.runtime_key === identity.runtimeKey &&
+    Number(cache.backend_pid) === backendPid && cache.contract === identity.contract &&
+    requestedDatabaseMatches(cache.ledger_identity) &&
+    Date.now() - Number(cache.validated_at_ms) <= ttl;
+}
+
+async function ensureRuntimeHealth(runtimeFile, state, identity, clientId) {
+  const cacheFile = path.join(path.dirname(runtimeFile), "codex-plugin-health.json");
+  const lockFile = `${cacheFile}.lock`;
+  if (healthCacheMatches(readJson(cacheFile), state, identity)) return { healthy: true, attachedResponse: null };
+  const deadline = Date.now() + HEALTH_COALESCE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const lock = await tryAcquireProcessLock(lockFile);
+    if (lock !== null) {
+      let attachedResponse = null;
+      try {
+        if (healthCacheMatches(readJson(cacheFile), state, identity)) return { healthy: true, attachedResponse: null };
+        try {
+          attachedResponse = await clientLease(`${identity.backend}/mcp`, clientId, "attach", true);
+        } catch (_) {
+          return { healthy: false, attachedResponse: null };
+        }
+        while (Date.now() < deadline) {
+          const health = await backendHealth(identity.backend);
+          if (health && health.contract === identity.contract && health.healthy) {
+            const temporary = `${cacheFile}.${process.pid}.tmp`;
+            fs.writeFileSync(temporary, `${JSON.stringify({ runtime_key: identity.runtimeKey, backend_pid: Number(state.backend.pid), contract: identity.contract, ledger_identity: health.ledgerIdentity, validated_at_ms: Date.now() })}\n`);
+            try { fs.unlinkSync(cacheFile); } catch (_) { }
+            fs.renameSync(temporary, cacheFile);
+            return { healthy: true, attachedResponse };
+          }
+          if (!health || !health.retryable) return { healthy: false, attachedResponse };
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return { healthy: false, attachedResponse };
+      } catch (_) {
+        return { healthy: false, attachedResponse };
+      } finally {
+        releaseProcessLock(lockFile, lock);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (healthCacheMatches(readJson(cacheFile), state, identity)) return { healthy: true, attachedResponse: null };
+  }
+  return { healthy: false, attachedResponse: null };
+}
+
+async function clientLease(mcpUrl, clientId, action, required) {
+  try {
+    const response = await request(`${trimOrigin(mcpUrl)}/client-lease`, "POST", JSON.stringify({ client_id: clientId, action }), { "Content-Type": "application/json" }, required ? HEALTH_PROBE_TIMEOUT_MS : 2000);
+    if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
+    const result = response.body ? JSON.parse(response.body) : {};
+    if (action !== "heartbeat") trace(`client_lease_${action}_ok`, { active_clients: Number(result.active_client_count) || 0 });
+    return result;
+  } catch (error) {
+    trace(`client_lease_${action}_failed`, { error_code: String(error && error.code || "unknown") });
+    if (required) throw error;
+    return null;
+  }
+}
+
+function leaseDirectory(runtimeFile) {
+  return path.join(path.dirname(runtimeFile), "codex-plugin-leases");
+}
+
+function createLocalLease(runtimeFile, state, identity, clientId) {
+  const directory = leaseDirectory(runtimeFile);
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, `bridge-${process.pid}-${crypto.randomUUID().replace(/-/g, "")}.json`);
+  const temporary = `${file}.tmp`;
+  const lease = {
+    client_id: clientId,
+    pid: process.pid,
+    process_liveness_pipe: livenessPipe,
+    process_liveness_token: livenessToken,
+    created_at: new Date().toISOString(),
+    runtime_key: identity.runtimeKey,
+    runtime_kind: state.backend.managed === true ? "managed" : String(state.backend.status || ""),
+    source_revision: identity.revision,
+    backend_epoch: identity.epoch,
+    backend_url: identity.backend,
+    dashboard_origin: identity.dashboard,
+  };
+  fs.writeFileSync(temporary, `${JSON.stringify(lease, null, 2)}\n`);
+  fs.renameSync(temporary, file);
+  return file;
+}
+
+async function sameRuntimeNodeLeaseExists(runtimeFile, key) {
+  const directory = leaseDirectory(runtimeFile);
+  let files;
+  try { files = fs.readdirSync(directory).filter((name) => /^bridge-.*\.json$/.test(name)); } catch (_) { return false; }
+  for (const name of files) {
+    const file = path.join(directory, name);
+    const lease = readJson(file);
+    if (!lease || !lease.process_liveness_pipe || !lease.process_liveness_token) continue;
+    const active = await livenessMatches(lease.pid, lease.process_liveness_pipe, lease.process_liveness_token);
+    if (!active) {
+      try { fs.unlinkSync(file); } catch (_) { }
+    } else if (String(lease.runtime_key || "").toLowerCase() === key.toLowerCase()) return true;
+  }
+  return false;
+}
+
+async function cleanupLastDetach(runtimeFile, key, cleanupScript) {
+  if (await sameRuntimeNodeLeaseExists(runtimeFile, key)) return;
+  const script = cleanupScript || path.join(__dirname, "start-sympp-mcp.ps1");
+  const args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-CleanupRuntimeKey", key];
+  let result = spawnSync("pwsh.exe", args, { stdio: ["ignore", "ignore", "inherit"] });
+  if (result.error && result.error.code === "ENOENT") result = spawnSync("powershell.exe", args, { stdio: ["ignore", "ignore", "inherit"] });
+  if (result.error || result.status !== 0) diagnostic(`Symphony++ last-detach cleanup failed: ${result.error ? result.error.message : `exit ${result.status}`}`);
+  else trace("last_detach_cleanup_completed");
+}
+
+function indeterminateToolCall(id) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    error: {
+      code: -32001,
+      message: "Symphony++ tool call outcome is indeterminate.",
+      data: { reason: "backend_lost_after_request_started", replayed: false },
+    },
+  };
+}
+
+async function resolveHealthyRuntime(runtimeFile, pluginRoot, cancelled) {
+  const lockFile = `${runtimeFile}.cold.lock`;
+  const configuredSeconds = Number(process.env.SYMPP_COLD_START_TIMEOUT_SEC || 300);
+  const deadline = Date.now() + (Number.isFinite(configuredSeconds) ? Math.max(30, Math.min(330, configuredSeconds)) : 300) * 1000;
+  while (!cancelled() && Date.now() < deadline) {
+    const state = readJson(runtimeFile);
+    const identity = state && (!state.publication || state.publication.status === "ready")
+      ? resolveStateIdentity(state, pluginRoot, await resolveCachedIdentity(pluginRoot))
+      : null;
+    if (identity) {
+      const health = await backendHealth(identity.backend);
+      if (health && health.healthy && health.contract === identity.contract) return { state, identity };
+      if (state.backend.managed !== true) return null;
+    }
+    if (cancelled()) return null;
+    const lock = await tryAcquireProcessLock(lockFile);
+    if (lock) {
+      try {
+        const confirmed = readJson(runtimeFile);
+        const confirmedIdentity = confirmed && (!confirmed.publication || confirmed.publication.status === "ready")
+          ? resolveStateIdentity(confirmed, pluginRoot, await resolveCachedIdentity(pluginRoot))
+          : null;
+        const health = confirmedIdentity && await backendHealth(confirmedIdentity.backend);
+        if (!(health && health.healthy && health.contract === confirmedIdentity.contract)) {
+          try { fs.unlinkSync(path.join(path.dirname(runtimeFile), "codex-plugin-health.json")); } catch (_) { }
+          trace("backend_recovery_leader");
+          if (!cancelled()) await prepareColdRuntime();
+        }
+      } finally {
+        releaseProcessLock(lockFile, lock);
+      }
+    } else {
+      await waitForRuntimePublication(runtimeFile);
+    }
+  }
+  return null;
+}
+
+async function bridge(identity, state, runtimeFile) {
+  const pluginRoot = path.resolve(__dirname, "..");
+  const clientId = `bridge-${process.pid}-${crypto.randomUUID().replace(/-/g, "")}`;
+  let current = { identity, state, mcpUrl: `${identity.backend}/mcp` };
+  let localLease = null;
+  let cleanupScript = null;
+  let cleanupAllowed = true;
+  let attached = false;
+  let heartbeat = null;
+  let recoveryPromise = null;
+  let closing = false;
+  let fatalRecoveryError = null;
+  let input = null;
+  let sessionId = null;
+  let protocol = null;
+  const timeoutMs = Math.max(1, Math.min(3600, Number(process.env.SYMPP_MCP_HTTP_TIMEOUT_SEC || 300))) * 1000;
+  const scheduleHeartbeat = (attachedResponse) => {
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = null;
+    if (closing) return;
+    const requested = Math.max(5, Math.min(540, Number(process.env.SYMPP_MCP_CLIENT_HEARTBEAT_SEC || 300))) * 1000;
+    const stale = Number(attachedResponse && attachedResponse.stale_after_ms) || 0;
+    const interval = stale > 1000 ? Math.min(requested, Math.max(1000, stale - Math.min(60000, Math.max(1000, Math.floor(stale / 10))))) : requested;
+    heartbeat = setInterval(() => {
+      clientLease(current.mcpUrl, clientId, "heartbeat", false).then((response) => {
+        if (!response && !closing && current.state.backend.managed === true) {
+          trace("backend_recovery_trigger", { source: "heartbeat", session_present: Boolean(sessionId) });
+          recover("heartbeat").catch((error) => {
+            if (error.symppFatal) {
+              fatalRecoveryError = error;
+              if (input) input.close();
+            } else diagnostic(`Symphony++ backend recovery failed: ${error.message}`);
+          });
+        }
+      });
+    }, interval);
+  };
+  const adopt = async (runtime) => {
+    const next = { ...runtime, mcpUrl: `${runtime.identity.backend}/mcp` };
+    const generationValidation = beginGenerationAttachmentValidation(next.identity);
+    const replacementLease = next.identity.runtimeKey.toLowerCase() === current.identity.runtimeKey.toLowerCase()
+      ? localLease
+      : createLocalLease(runtimeFile, next.state, next.identity, clientId);
+    let attachedResponse;
+    let nextCleanupScript;
+    let replacementAttached = false;
+    try {
+      attachedResponse = await clientLease(next.mcpUrl, clientId, "attach", true);
+      replacementAttached = true;
+      trace("replacement_lease_attached");
+      nextCleanupScript = prepareCleanupScript(next.identity);
+      if (nextCleanupScript === CLEANUP_SOURCE_CHANGED) {
+        const error = new Error("Installed Symphony++ cleanup scripts changed during backend recovery.");
+        error.symppFatal = true;
+        throw error;
+      }
+      if (!nextCleanupScript) throw new Error("Symphony++ cleanup scripts were unavailable during backend recovery.");
+      if (!await finishGenerationAttachmentValidation(generationValidation, next.identity, "recovery")) {
+        const error = new Error("Installed Symphony++ generation changed during backend recovery.");
+        error.symppFatal = true;
+        throw error;
+      }
+      const nextCleanupChanged = cleanupSourcesChanged(next.identity, nextCleanupScript);
+      if (nextCleanupChanged !== false) {
+        const error = new Error(nextCleanupChanged
+          ? "Installed Symphony++ cleanup scripts changed during backend recovery."
+          : "Symphony++ cleanup scripts were unavailable during backend recovery.");
+        if (nextCleanupChanged) {
+          cleanupAllowed = false;
+          error.symppFatal = true;
+        }
+        throw error;
+      }
+    } catch (error) {
+      const reusedLease = attached && current.identity.epoch === next.identity.epoch && current.identity.runtimeKey === next.identity.runtimeKey;
+      if (replacementAttached && !reusedLease) await clientLease(next.mcpUrl, clientId, "detach", false);
+      if (replacementLease !== localLease) { try { fs.unlinkSync(replacementLease); } catch (_) { } }
+      throw error;
+    }
+    if (attached && current.mcpUrl !== next.mcpUrl) await clientLease(current.mcpUrl, clientId, "detach", false);
+    if (replacementLease !== localLease) { try { fs.unlinkSync(localLease); } catch (_) { } }
+    localLease = replacementLease;
+    current = next;
+    updateHerdrBackend(next.identity.backend);
+    cleanupScript = nextCleanupScript;
+    attached = true;
+    sessionId = null;
+    scheduleHeartbeat(attachedResponse);
+    closeGenerationWatchers();
+    trace("backend_recovery_ready", { action: "full_adopt" });
+  };
+  const recover = (source) => {
+    if (!recoveryPromise) {
+      recoveryPromise = (async () => {
+        const runtime = await resolveHealthyRuntime(runtimeFile, pluginRoot, () => closing);
+        if (!runtime) throw new Error("No healthy managed Symphony++ backend was elected.");
+        const changedFields = runtimeIdentityChanges(current.identity, runtime.identity);
+        const identityChanged = changedFields.length > 0;
+        const action = identityChanged ? "full_adopt" : "lease_repair";
+        trace("backend_recovery_decision", {
+          action,
+          source,
+          reason: identityChanged ? "runtime_identity_changed" : (sessionId ? "lease_uncertain" : "session_absent"),
+          changed_fields: changedFields,
+          session_present: Boolean(sessionId),
+          session_action: identityChanged ? "reset" : (sessionId ? "preserve" : "caller_reinitialize"),
+          previous_identity: tracedRuntimeIdentity(current.identity),
+          next_identity: tracedRuntimeIdentity(runtime.identity),
+        });
+        if (identityChanged) {
+          await adopt(runtime);
+        } else {
+          const attachedResponse = await clientLease(current.mcpUrl, clientId, "attach", true);
+          attached = true;
+          scheduleHeartbeat(attachedResponse);
+          closeGenerationWatchers();
+          trace("backend_lease_repaired", { source, session_present: Boolean(sessionId) });
+        }
+      })().finally(() => { recoveryPromise = null; });
+    }
+    return recoveryPromise;
+  };
+  const initializeSession = async () => {
+    const initialized = await mcpPost(current.mcpUrl, initializeBody(), null, null, timeoutMs);
+    if (!initialized.ok) {
+      const error = new Error(initialized.error || "Symphony++ MCP session reinitialization failed.");
+      error.symppHttpStatus = initialized.status;
+      throw error;
+    }
+    sessionId = String(initialized.headers["mcp-session-id"] || "");
+    protocol = protocolFrom(initialized.lines) || protocol || "2025-03-26";
+  };
+  try {
+    trace("generation_attach_preflight");
+    if (!generationValidForAttachment(identity)) return false;
+    const generationValidation = beginGenerationAttachmentValidation(identity);
+    cleanupScript = prepareCleanupScript(identity);
+    if (cleanupScript === CLEANUP_SOURCE_CHANGED) {
+      trace("warm_miss_generation");
+      cleanupAllowed = false;
+      cleanupScript = null;
+      throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+    }
+    if (!cleanupScript) {
+      trace("warm_miss_cleanup");
+      return false;
+    }
+    localLease = createLocalLease(runtimeFile, state, identity, clientId);
+    const confirmedState = readJson(runtimeFile);
+    const confirmed = resolveStateIdentity(confirmedState, path.resolve(__dirname, ".."), identity);
+    if (!confirmed || confirmed.runtimeKey.toLowerCase() !== identity.runtimeKey.toLowerCase()) {
+      trace("warm_miss_state");
+      return false;
+    }
+    current = { identity: confirmed, state: confirmedState, mcpUrl: `${confirmed.backend}/mcp` };
+    const preflight = await ensureRuntimeHealth(runtimeFile, confirmedState, confirmed, clientId);
+    if (preflight.attachedResponse) {
+      attached = true;
+    }
+    if (!preflight.healthy) {
+      trace("warm_miss_health");
+      return false;
+    }
+    let attachedResponse = preflight.attachedResponse;
+    if (!attachedResponse) {
+      try {
+        attachedResponse = await clientLease(current.mcpUrl, clientId, "attach", true);
+        attached = true;
+      } catch (_) {
+        trace("warm_miss_backend");
+        return false;
+      }
+    }
+    if (!await finishGenerationAttachmentValidation(generationValidation, identity, "initial")) {
+      trace("warm_miss_generation");
+      return false;
+    }
+    const cleanupChanged = cleanupSourcesChanged(identity, cleanupScript);
+    if (cleanupChanged === null) {
+      trace("warm_miss_cleanup");
+      return false;
+    }
+    if (cleanupChanged) {
+      trace("warm_miss_generation");
+      cleanupAllowed = false;
+      throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+    }
+    if (!generationValidForAttachment(identity)) return false;
+    closeGenerationWatchers();
+    trace("generation_attach_handles_released");
+    scheduleHeartbeat(attachedResponse);
+    trace("node_bridge_selected");
+    diagnostic(`Symphony++ MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
+
+    input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity, terminal: false });
+    for await (const line of input) {
+      if (!line.trim()) continue;
+      let parsed = null;
+      try { parsed = JSON.parse(line); } catch (_) { }
+      trace("mcp_request_begin", { method: parsed && parsed.method });
+      const requestProtocol = parsed && parsed.method === "initialize" && parsed.params ? String(parsed.params.protocolVersion || "") : null;
+      let response;
+      let requestStarted = false;
+      try {
+        if (!requestProtocol && !sessionId && protocol) await initializeSession();
+        requestStarted = true;
+        response = await mcpPost(current.mcpUrl, line, sessionId, protocol, timeoutMs);
+        const nextSession = response.headers["mcp-session-id"];
+        if (nextSession) sessionId = String(nextSession);
+        if (!response.ok && response.status === 404 && sessionId && !requestProtocol) {
+          requestStarted = false;
+          await initializeSession();
+          requestStarted = true;
+          response = await mcpPost(current.mcpUrl, line, sessionId, protocol, timeoutMs);
+          const recoverySession = response.headers["mcp-session-id"];
+          if (recoverySession) sessionId = String(recoverySession);
+        }
+        if (replayableDeliveryFailure(parsed, response)) {
+          response = await mcpPost(current.mcpUrl, line, sessionId, protocol, timeoutMs);
+          const replaySession = response.headers["mcp-session-id"];
+          if (replaySession) sessionId = String(replaySession);
+        }
+      } catch (error) {
+        response = { ok: false, status: error.symppHttpStatus, error: error.message, lines: [], mayHaveReachedBackend: error.symppRequestMayHaveReachedBackend };
+      }
+      if (!response.ok && !Number.isInteger(response.status) && current.state.backend.managed === true) {
+        const ambiguousToolCall = requestStarted && parsed && parsed.method === "tools/call" && response.mayHaveReachedBackend !== false;
+        let recovered = false;
+        trace("backend_recovery_trigger", { source: "request_transport", session_present: Boolean(sessionId), request_started: requestStarted });
+        try { await recover("request_transport"); recovered = true; } catch (error) {
+          if (error.symppFatal) throw error;
+          response.error = `${response.error} Recovery failed: ${error.message}`;
+        }
+        if (ambiguousToolCall) {
+          process.stdout.write(`${JSON.stringify(indeterminateToolCall(parsed.id))}\n`);
+          continue;
+        }
+        if (recovered && (!requestStarted || response.mayHaveReachedBackend === false || !parsed || parsed.method !== "tools/call")) {
+          try {
+            requestStarted = false;
+            if (!requestProtocol) await initializeSession();
+            requestStarted = true;
+            response = await mcpPost(current.mcpUrl, line, sessionId, protocol, timeoutMs);
+            const nextSession = response.headers["mcp-session-id"];
+            if (nextSession) sessionId = String(nextSession);
+          } catch (error) {
+            response = { ok: false, status: error.symppHttpStatus, error: error.message, lines: [], mayHaveReachedBackend: error.symppRequestMayHaveReachedBackend };
+          }
+          if (!response.ok && !Number.isInteger(response.status) && requestStarted && parsed && parsed.method === "tools/call" && response.mayHaveReachedBackend !== false) {
+            process.stdout.write(`${JSON.stringify(indeterminateToolCall(parsed.id))}\n`);
+            continue;
+          }
+        }
+      }
+      trace("mcp_request_end", { method: parsed && parsed.method });
+      updateHerdrBinding(response, current.identity.backend);
+      if (!response.ok) {
+        process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: parsed ? parsed.id : null, error: { code: -32000, message: "Symphony++ HTTP MCP bridge request failed.", data: { detail: response.error } } })}\n`);
+        continue;
+      }
+      if (requestProtocol) {
+        protocol = protocolFrom(response.lines) || requestProtocol;
+      }
+      for (const content of response.lines) process.stdout.write(`${content.replace(/\r?\n/g, "")}\n`);
+    }
+    if (fatalRecoveryError) throw fatalRecoveryError;
+    return true;
+  } finally {
+    closing = true;
+    if (heartbeat) clearInterval(heartbeat);
+    agent.destroy();
+    cancelPreparation();
+    if (recoveryPromise) { try { await recoveryPromise; } catch (_) { } }
+    if (localLease) { try { fs.unlinkSync(localLease); } catch (_) { } }
+    if (attached) await clientLease(current.mcpUrl, clientId, "detach", false);
+    closeGenerationWatchers();
+    if (cleanupAllowed && cleanupScript) await cleanupLastDetach(runtimeFile, current.identity.runtimeKey, cleanupScript);
+    await clearHerdrBindingAndDrain();
+    closeLivenessProbe();
+  }
+}
+
+function runPreparation(executable, args) {
+  return new Promise((resolve, reject) => {
+    // Windows PowerShell children inherit extra handles. Keep the MCP stderr
+    // pipe out of its process tree, and forward the complete diagnostic file on exit.
+    const stderrFile = `${resolveRuntimeFile()}.prepare-${process.pid}.log`;
+    const stderrFd = fs.openSync(stderrFile, "w");
+    let child;
+    try {
+      child = spawn(executable, args, { env: { ...process.env, SYMPP_BACKEND_OWNER_PID: String(process.pid) }, stdio: ["ignore", "ignore", stderrFd], windowsHide: true });
+    } finally { fs.closeSync(stderrFd); }
+    preparationChild = child;
+    const finish = (code, error) => {
+      if (preparationChild === child) preparationChild = null;
+      try { process.stderr.write(fs.readFileSync(stderrFile)); } catch (_) { }
+      try { fs.unlinkSync(stderrFile); } catch (_) { }
+      if (error) reject(error); else resolve(code ?? 1);
+    };
+    child.once("error", (error) => finish(null, error));
+    child.once("exit", (code) => finish(code));
+  });
+}
+
+function cancelPreparation() {
+  const child = preparationChild;
+  if (!child || !child.pid || child.exitCode !== null) return;
+  if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+  else child.kill("SIGTERM");
+}
+
+async function prepareColdRuntime() {
+  const configured = process.env.SYMPP_POWERSHELL;
+  const state = readJson(resolveRuntimeFile());
+  const preparedBackendStopped = state?.backend?.status === "stopped" ||
+    (state?.backend?.status === "started" && validPid(state.backend.pid) && !processAlive(state.backend.pid));
+  if (process.platform === "win32" && process.argv.length === 2 && preparedBackendStopped && state?.artifact?.prepared_release) {
+    const code = await runPreparation(configured || "powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "start-sympp-mcp.ps1"), "-TryPreparedRuntime"]).catch((error) => {
+      if (!configured && error.code === "ENOENT") return 42;
+      throw error;
+    });
+    if (code === 0) return;
+    if (code !== 42) throw new Error(`Symphony++ prepared runtime startup failed with exit code ${code}.`);
+  }
+  const candidates = configured ? [configured] : (process.platform === "win32" ? ["pwsh.exe", "powershell.exe"] : ["pwsh"]);
+  const args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "start-sympp-mcp.ps1"), "-PrepareRuntimeOnly", ...process.argv.slice(2)];
+  for (const executable of candidates) {
+    try {
+      const code = await runPreparation(executable, args);
+      if (code !== 0) throw new Error(`Symphony++ cold runtime preparation failed with exit code ${code}.`);
+      return;
+    } catch (error) {
+      if (error && error.code === "ENOENT" && executable !== candidates[candidates.length - 1]) continue;
+      throw error;
+    }
+  }
+}
+
+function waitForRuntimePublication(runtimeFile) {
+  return new Promise((resolve) => {
+    let watcher;
+    const done = () => { clearTimeout(timer); if (watcher) watcher.close(); resolve(); };
+    const timer = setTimeout(done, 100 + Math.floor(Math.random() * 201));
+    try {
+      watcher = fs.watch(path.dirname(runtimeFile), (_event, filename) => {
+        if (!filename || String(filename) === path.basename(runtimeFile)) done();
+      });
+      watcher.on("error", done);
+    } catch (_) { /* The timer still covers missing directories and missed events. */ }
+  });
+}
+
+async function resolveColdRuntime(runtimeFile, pluginRoot) {
+  const lockFile = `${runtimeFile}.cold.lock`;
+  const configuredSeconds = Number(process.env.SYMPP_COLD_START_TIMEOUT_SEC || 300);
+  const deadline = Date.now() + (Number.isFinite(configuredSeconds) ? Math.max(30, Math.min(330, configuredSeconds)) : 300) * 1000;
+  while (Date.now() < deadline) {
+    const state = readJson(runtimeFile);
+    if (state && (state.backend?.managed !== true || processAlive(Number(state.backend.pid))) && (!state.publication || state.publication.status === "ready")) {
+      const cachedIdentity = await resolveCachedIdentity(pluginRoot);
+      const identity = resolveStateIdentity(state, pluginRoot, cachedIdentity);
+      if (identity) return { state, identity };
+    }
+    const lock = await tryAcquireProcessLock(lockFile);
+    if (lock) {
+      try {
+        const confirmed = readJson(runtimeFile);
+        let confirmedIdentity = null;
+        if (confirmed && (confirmed.backend?.managed !== true || processAlive(Number(confirmed.backend.pid))) && (!confirmed.publication || confirmed.publication.status === "ready")) {
+          confirmedIdentity = resolveStateIdentity(confirmed, pluginRoot, await resolveCachedIdentity(pluginRoot));
+        }
+        if (!confirmedIdentity) await prepareColdRuntime();
+      } finally {
+        releaseProcessLock(lockFile, lock);
+      }
+    } else {
+      await waitForRuntimePublication(runtimeFile);
+    }
+  }
+  return null;
+}
+
+async function main() {
+  if (process.argv.includes("--probe-client-leases")) {
+    try {
+      const input = readline.createInterface({ input: process.stdin, terminal: false });
+      for await (const line of input) {
+        const dead = await Promise.all(JSON.parse(line).map(async ({ id, pid, pipe, token }) =>
+          await livenessMatches(pid, pipe, token) ? null : id));
+        process.stdout.write(JSON.stringify(dead.filter((id) => id !== null)), () => process.exit(0));
+        return;
+      }
+    } catch (_) { }
+    process.exit(1);
+  }
+  if (Number(process.versions.node.split(".")[0]) < 18) process.exit(POWERSHELL_FALLBACK);
+  if (process.argv.includes("--runtime-supported")) {
+    process.exit(0);
+  }
+  if (process.argv.some((arg) => /^-(Help|ValidateOnly)$/i.test(arg)) || process.env.SYMPP_REPO_ROOT || String(process.env.SYMPP_MCP_BRIDGE_MODE || "http").toLowerCase() !== "http") process.exit(POWERSHELL_FALLBACK);
+
+  const pluginRoot = path.resolve(__dirname, "..");
+  const portable = portableInstall(pluginRoot);
+  if (portable) {
+    if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Symphony++ Skills supports Windows x64 only.");
+    // Preserve the cmd entrypoint's neutral directory for native executable lookup.
+    process.chdir(process.env.SystemRoot);
+  }
+  await ensureLivenessProbe();
+  const runtimeFile = resolveRuntimeFile();
+  if (portable) await claimPortableLedger(runtimeFile);
+  const runtime = await resolveColdRuntime(runtimeFile, pluginRoot);
+  if (!runtime) { trace("cold_start_timeout"); process.exit(COLD_TIMEOUT); }
+  const { state, identity } = runtime;
+  trace("generation_identity_resolved");
+  if (!await bridge(identity, state, runtimeFile)) process.exit(WARM_MISS);
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    diagnostic(error && error.stack ? error.stack : String(error));
+    process.exit(1);
+  });
+} else {
+  module.exports = { ensureLivenessProbe, closeLivenessProbe, claimPortableLedger, createLocalLease, tryAcquireProcessLock, releaseProcessLock, livenessMatches, decodeHerdrBinding, generationFromMarker, generationKey, herdrMetadataArgs, resolveStateIdentity, requestedDatabaseMatches };
+}

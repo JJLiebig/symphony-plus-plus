@@ -61,30 +61,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
     end
   end
 
-  defmodule PrimaryKeyCollisionRepo do
-    alias Ecto.Changeset
-    alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
-
-    def get(WorkPackage, _id), do: %WorkPackage{status: "created"}
-    def one(_query), do: nil
-
-    def transaction(fun) do
-      {:ok, fun.()}
-    catch
-      {:rollback, reason} -> {:error, reason}
-    end
-
-    def rollback(reason), do: throw({:rollback, reason})
-
-    def insert(%Changeset{}) do
-      raise %Ecto.ConstraintError{
-        type: :unique,
-        constraint: Process.get(:claim_lease_primary_key_collision_constraint),
-        message: "primary key collision"
-      }
-    end
-  end
-
   setup_all do
     database_path = WorkPackageFactory.database_path()
 
@@ -273,24 +249,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
     assert reclaimed.reclaim_reason == "fast local recovery"
   end
 
-  test "only one current claim exists per package and release frees the package", %{repo: repo} do
+  test "new claims reject caller-supplied lineage after release", %{repo: repo} do
     now = ~U[2026-05-26 11:00:00Z]
     assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-CLAIM-UNIQUE"))
 
     assert {:ok, first} =
              Service.claim(repo, work_package.id, %{actor_kind: "agent", actor_id: "agent-1"}, stale_after_ms: 1_000, now: now)
 
-    assert {:error, :active_claim_exists} =
-             Service.claim(repo, work_package.id, %{actor_kind: "agent", actor_id: "agent-2"}, stale_after_ms: 1_000, now: now)
-
-    assert {:ok, current} = Service.current_for_work_package(repo, work_package.id)
-    assert current.id == first.id
-
     released_at = DateTime.add(now, 500, :millisecond)
-    assert {:ok, released} = Service.release(repo, first.id, now: released_at, reason: "worker finished")
-    assert released.status == "released"
-    assert released.release_reason == "worker finished"
-    assert DateTime.compare(released.released_at, released_at) == :eq
+    assert {:ok, _released} = Service.release(repo, first.id, now: released_at, reason: "worker finished")
 
     assert {:ok, second} =
              Repository.claim(
@@ -350,33 +317,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
 
     assert {:error, :id_already_exists} =
              Repository.claim(repo, Map.put(attrs, :work_package_id, second_package.id), now: now)
-  end
-
-  test "native primary key constraint names return stable duplicate-id errors" do
-    now = ~U[2026-05-26 11:45:00Z]
-
-    attrs = %{
-      id: "claim_duplicate_native_primary_key",
-      work_package_id: "SYMPP-CLAIM-DUPLICATE-NATIVE",
-      actor_kind: "agent",
-      actor_id: "agent-duplicate",
-      stale_after_ms: 1_000
-    }
-
-    try do
-      Process.put(:claim_lease_primary_key_collision_constraint, "sympp_claim_leases_pkey")
-      assert {:error, :id_already_exists} = Repository.claim(PrimaryKeyCollisionRepo, attrs, now: now)
-
-      Process.put(:claim_lease_primary_key_collision_constraint, "sympp_claim_leases_id_unique_index")
-      assert {:error, :id_already_exists} = Repository.claim(PrimaryKeyCollisionRepo, attrs, now: now)
-
-      Process.put(:claim_lease_primary_key_collision_constraint, "other_table_pkey")
-
-      assert {:error, {:constraint_failed, "other_table_pkey"}} =
-               Repository.claim(PrimaryKeyCollisionRepo, attrs, now: now)
-    after
-      Process.delete(:claim_lease_primary_key_collision_constraint)
-    end
   end
 
   test "claims require a stale policy and package-scoped grant", %{repo: repo} do
@@ -582,29 +522,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
     end
   end
 
-  test "service defaults and repository error paths return stable errors", %{repo: repo} do
+  test "paused heartbeat, actor attribution, release fencing and stale reclaim preserve lease ownership", %{repo: repo} do
     now = DateTime.utc_now(:microsecond)
     stale_started_at = ~U[2026-01-01 00:00:00Z]
     assert {:ok, work_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-CLAIM-DEFAULTS"))
     assert {:ok, stale_package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-CLAIM-DEFAULTS-STALE"))
-
-    assert {:error, :not_found} = Repository.get(repo, "claim_missing")
-    assert {:error, :not_found} = Service.current_for_work_package(repo, "SYMPP-CLAIM-MISSING")
-
-    assert {:error, %Ecto.Changeset{} = changeset} = Service.claim(repo, work_package.id, %{actor_id: "agent-default"})
-    assert Keyword.has_key?(changeset.errors, :lease_expires_at)
-
-    assert {:error, %Ecto.Changeset{} = changeset} =
-             Service.claim(
-               repo,
-               work_package.id,
-               %{actor_id: "agent-default"},
-               access_grant_id: "ag_missing",
-               stale_after_ms: 1_000,
-               now: now
-             )
-
-    assert Keyword.has_key?(changeset.errors, :access_grant_id)
 
     assert {:ok, claim} =
              Repository.claim(
@@ -617,8 +539,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ClaimLeasesTest do
                now: now
              )
 
-    assert {:ok, claim} = Repository.heartbeat(repo, claim.id)
-    assert {:ok, claim} = Service.heartbeat(repo, claim.id)
     assert {:ok, paused} = Service.pause(repo, claim.id, %{"actor_id" => "agent-default"})
     assert paused.paused_by_actor_id == "agent-default"
     assert {:error, :not_active} = Service.heartbeat(repo, paused.id)

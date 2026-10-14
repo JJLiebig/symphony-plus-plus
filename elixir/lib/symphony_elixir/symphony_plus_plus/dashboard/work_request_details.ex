@@ -8,12 +8,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.BulkRepository, as: WorkRequestBulkRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
   import Ecto.Query, only: [from: 2]
 
   @work_request_detail_comment_target_chunk_size 500
-  @delivery_signal_keys [:dependency_signal, :pr_signal, :review_signal, :worker_signal]
+  @delivery_signal_keys [:dependency_signal, :pr_signal, :review_signal, :worker_signal, :activity_signal, :board_state]
 
   @type repo :: module()
   @type dashboard_error :: Dashboard.dashboard_error()
@@ -35,6 +36,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
   defp work_request_details_context(repo, work_request_ids, opts) do
     with {:ok, work_requests_by_id} <- WorkRequestBulkRepository.get_many(repo, work_request_ids),
          {:ok, work_requests} <- Dashboard.work_requests_in_input_order(work_request_ids, work_requests_by_id),
+         {:ok, operator_reports} <- OperatorReport.load_many(repo, work_requests),
          {:ok, questions_by_request} <- WorkRequestBulkRepository.list_questions_many(repo, work_request_ids),
          {:ok, decisions_by_request} <- WorkRequestBulkRepository.list_decisions_many(repo, work_request_ids),
          {:ok, work_packages_by_request} <- WorkRequestBulkRepository.list_work_packages_many(repo, work_request_ids),
@@ -44,6 +46,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
       {:ok,
        %{
          work_requests: work_requests,
+         operator_reports: operator_reports,
          questions_by_request: questions_by_request,
          decisions_by_request: decisions_by_request,
          work_packages_by_request: work_packages_by_request,
@@ -70,6 +73,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
 
   defp work_request_board_details_context(repo, work_request_ids, opts) do
     with {:ok, work_requests} <- board_work_requests(repo, work_request_ids, opts),
+         {:ok, operator_reports} <- OperatorReport.load_many(repo, work_requests),
          {:ok, questions_by_request} <- WorkRequestBulkRepository.list_questions_many(repo, work_request_ids),
          {:ok, work_packages_by_request} <- board_work_packages_by_request(repo, work_request_ids, work_requests, opts),
          all_work_packages = Dashboard.all_work_packages(work_requests, work_packages_by_request),
@@ -79,6 +83,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
       {:ok,
        %{
          work_requests: work_requests,
+         operator_reports: operator_reports,
          questions_by_request: questions_by_request,
          work_packages_by_request: work_packages_by_request,
          work_package_contexts: work_package_contexts,
@@ -198,6 +203,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
          repo,
          %WorkRequest{} = work_request,
          %{
+           operator_reports: operator_reports,
            questions_by_request: questions_by_request,
            work_packages_by_request: work_packages_by_request,
            work_package_contexts: work_package_contexts,
@@ -230,9 +236,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
         repo_identity_catalog,
         work_request_comment_context,
         delivery_board: delivery_board,
+        operator_report: Map.get(operator_reports, work_request.id),
         comment_work_packages: all_work_packages
       )
       |> Map.drop([:human_description, :constraints, :creator])
+      |> Map.update(:operational_state, %{}, &Map.delete(&1, :activity_signal))
 
     work_package_payloads =
       work_packages
@@ -269,13 +277,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
           |> Map.get(:work_package)
           |> Kernel.||(%{})
           |> Map.take(@delivery_signal_keys)
+          |> Map.put(:merge_eligibility, Map.fetch!(item, :merge_eligibility))
           |> Map.reject(fn {_key, value} -> is_nil(value) end)
           |> Map.new(fn {key, value} -> {key, Dashboard.redacted_json(value)} end)
 
         {Map.fetch!(item, :id), signals}
       end)
 
-    Enum.map(work_packages, &Map.merge(&1, Map.get(signals_by_id, Map.fetch!(&1, :id), %{})))
+    Enum.map(work_packages, fn work_package ->
+      work_package
+      |> Map.merge(Map.get(signals_by_id, Map.fetch!(work_package, :id), %{}))
+      |> Map.update(:operational_state, %{}, &Map.delete(&1, :activity_signal))
+    end)
   end
 
   defp work_request_board_detail_comment_context(repo, work_requests, work_packages, opts) do
@@ -312,6 +325,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
          repo,
          %WorkRequest{} = work_request,
          %{
+           operator_reports: operator_reports,
            questions_by_request: questions_by_request,
            decisions_by_request: decisions_by_request,
            work_packages_by_request: work_packages_by_request,
@@ -350,8 +364,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
           repo_identity_catalog,
           comment_context,
           delivery_board: delivery_board,
+          operator_report: Map.get(operator_reports, work_request.id),
           comment_work_packages: all_work_packages
         )
+        |> Map.update(:operational_state, %{}, &Map.delete(&1, :activity_signal))
 
       work_package_payloads =
         Dashboard.work_package_payloads(
@@ -361,6 +377,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
           comment_context,
           delivery_board: delivery_board
         )
+        |> put_delivery_signals(delivery_board)
 
       {:ok,
        %{

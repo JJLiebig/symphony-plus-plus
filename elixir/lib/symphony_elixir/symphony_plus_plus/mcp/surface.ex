@@ -87,20 +87,28 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Surface do
         ) ::
           {:ok, map()} | {:error, integer(), String.t(), map()}
   def read_work_package_virtual_resource(repo, session, work_package_id, file_name, uri) do
+    with {:ok, state, session} <- read_work_package_document_state(repo, session, work_package_id, file_name, nil) do
+      virtual_resource_result(uri, state, file_name, worker_session?(session))
+    end
+  end
+
+  @spec read_work_package_document_state(module(), term(), String.t(), String.t(), pos_integer() | nil) ::
+          {:ok, struct(), Session.t()} | {:error, integer(), String.t(), map()}
+  def read_work_package_document_state(repo, session, work_package_id, file_name, before_sequence) do
+    uri = "sympp://work-packages/#{work_package_id}/#{file_name}"
     resource_type = resource_type_for_virtual_file(file_name)
     action = action_for_virtual_file(file_name)
 
     with {:ok, session} <- Auth.require_session(session, repo),
          {:ok, actor} <- actor_for_package_resource(repo, session, resource_type, work_package_id),
-         :ok <- PlanningService.authorize_package_action(repo, actor, action, work_package_id, resource_type) do
-      read_virtual_resource(
-        repo,
-        work_package_id,
-        file_name,
-        uri,
-        worker_session?(session)
-      )
+         :ok <- PlanningService.authorize_package_action(repo, actor, action, work_package_id, resource_type),
+         true <- file_name in PlanningRenderer.virtual_files() do
+      case PlanningRepository.get_render_state(repo, work_package_id, file_name, before_sequence) do
+        {:ok, state} -> {:ok, state, session}
+        {:error, reason} -> service_error(reason, uri)
+      end
     else
+      false -> {:error, -32_601, "Method not found", %{"resource" => uri, "reason" => "unknown_virtual_file"}}
       {:error, {:authorization_policy_denied, %Decision{} = decision}} -> MCPError.from_decision(decision, uri)
       {:error, reason} -> auth_error(reason, uri)
     end
@@ -198,17 +206,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Surface do
         "mimeType" => "application/json"
       }
     ]
-  end
-
-  defp read_virtual_resource(repo, work_package_id, file_name, uri, agent_text?) do
-    with true <- file_name in PlanningRenderer.virtual_files(),
-         {:ok, state} <- PlanningRepository.get_render_state(repo, work_package_id),
-         {:ok, resource} <- virtual_resource_result(uri, state, file_name, agent_text?) do
-      {:ok, resource}
-    else
-      false -> {:error, -32_601, "Method not found", %{"resource" => uri, "reason" => "unknown_virtual_file"}}
-      {:error, reason} -> service_error(reason, uri)
-    end
   end
 
   defp virtual_resource_result(uri, state, file_name, agent_text?) do

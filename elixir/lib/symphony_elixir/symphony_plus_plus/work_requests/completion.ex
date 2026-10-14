@@ -2,13 +2,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   @moduledoc false
 
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Service, as: CommentService
+  alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.ClarificationQuestion
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryResolution
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.NeverStartedRetention
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
@@ -19,7 +24,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   @completion_blocking_work_request_statuses ["human_info_needed"]
   @operator_completion_source "operator"
   @restorable_archive_reasons ["age"]
-  @default_archive_after_days 14
+  @default_archive_after_days 3
   @completed_visible_limit 10
   @delete_work_request_chunk_size 500
 
@@ -37,6 +42,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
           delete_error()
           | :active_runtime
           | :invalid_archive_after_days
+          | :invalid_never_started_archive_after_days
           | :invalid_delete_after_days
           | :not_completed
 
@@ -109,7 +115,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     %{
       completed?: completed?,
       completed_at: completed_at,
-      archived_at: if(completed?, do: work_request.archived_at)
+      archived_at: if(completed? or work_request.archive_reason == "never_started", do: work_request.archived_at)
     }
   end
 
@@ -120,15 +126,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
          work_package_contexts,
          deliveries_by_slice_id
        ) do
+    packages_by_id = Map.new(work_packages, &{&1.id, &1})
+    successors = delivery_successors(work_package_contexts)
+
+    required_packages =
+      Enum.reject(work_packages, fn work_package ->
+        work_package.status == "skipped" and not Map.has_key?(deliveries_by_slice_id, work_package.id) and
+          DeliveryResolution.successor_ids(work_package.id, deliveries_by_slice_id, successors) == []
+      end)
+
     completion_status_allowed?(work_request) and
       Map.get(question_state, :open_count, 0) == 0 and
-      work_packages != [] and
-      Enum.all?(work_packages, fn work_package ->
-        terminal_slice?(
-          work_package,
-          Map.get(work_package_contexts, work_package.id),
-          Map.get(deliveries_by_slice_id, work_package.id)
-        )
+      required_packages != [] and
+      Enum.all?(required_packages, fn work_package ->
+        DeliveryResolution.resolved?(work_package.id, packages_by_id, deliveries_by_slice_id, successors) and
+          terminal_slice?(
+            work_package,
+            Map.get(work_package_contexts, work_package.id),
+            Map.get(deliveries_by_slice_id, work_package.id)
+          )
       end)
   end
 
@@ -158,15 +174,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
       )
       when is_map(question_state) and is_list(work_packages) and is_map(work_package_contexts) and
              is_map(deliveries_by_slice_id) do
-    work_request
-    |> state(question_state, work_packages, work_package_contexts, deliveries_by_slice_id)
-    |> preserve_persisted_visible_state(
-      work_request,
-      question_state,
-      work_packages,
-      work_package_contexts,
-      deliveries_by_slice_id
-    )
+    state(work_request, question_state, work_packages, work_package_contexts, deliveries_by_slice_id)
   end
 
   @spec refresh(Repository.repo(), String.t()) :: {:ok, WorkRequest.t()} | {:error, Repository.error()}
@@ -184,8 +192,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   @doc false
   @spec refresh_in_transaction(Repository.repo(), String.t()) :: {:ok, WorkRequest.t()} | {:error, Repository.error()}
   def refresh_in_transaction(repo, work_request_id) do
-    with {:ok, work_request} <- Repository.get(repo, work_request_id),
-         {:ok, question_state} <- question_state(repo, work_request_id),
+    with {:ok, work_request} <- Repository.get(repo, work_request_id) do
+      refresh_work_request(repo, work_request)
+    end
+  end
+
+  defp refresh_work_request(_repo, %WorkRequest{archive_reason: "never_started", archived_at: %DateTime{}} = work_request), do: {:ok, work_request}
+
+  defp refresh_work_request(repo, %WorkRequest{id: work_request_id} = work_request) do
+    with {:ok, question_state} <- question_state(repo, work_request_id),
          {:ok, work_packages} <- Repository.list_work_packages(repo, work_request_id),
          {:ok, deliveries_by_slice_id} <- work_package_deliveries_by_id(repo, work_packages),
          :ok <- clear_terminal_work_package_attention(repo, work_packages, deliveries_by_slice_id),
@@ -244,7 +259,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     now = Keyword.get_lazy(opts, :now, fn -> DateTime.utc_now(:microsecond) end)
 
     with {:ok, archive_after_days} <- archive_after_days(opts),
+         {:ok, never_started_days} <- never_started_archive_after_days(opts),
          {:ok, delete_after_days} <- delete_after_days(opts),
+         {:ok, archived_never_started} <- NeverStartedRetention.archive(repo, now, never_started_days),
          {:ok, age_candidates} <- retention_age_candidates(repo, now, archive_after_days),
          {:ok, refreshed} <- refresh_all(repo, age_candidates),
          {:ok, _restored_for_age} <- restore_unexpired(repo, refreshed, now, archive_after_days),
@@ -252,7 +269,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
          {:ok, visible_completed} <- completed_unarchived(repo),
          {:ok, archived_for_limit, overflow_refreshed_count} <- archive_overflow(repo, visible_completed),
          {:ok, deleted_ids} <- delete_expired_archived(repo, now, delete_after_days) do
-      archived_ids = archived_for_age ++ archived_for_limit
+      archived_ids = archived_for_age ++ archived_for_limit ++ archived_never_started
 
       {:ok,
        %{
@@ -302,24 +319,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     end
   end
 
-  defp preserve_persisted_visible_state(
-         %{completed?: false} = state,
-         %WorkRequest{completed_at: %DateTime{} = completed_at} = work_request,
-         question_state,
-         work_packages,
-         work_package_contexts,
-         deliveries_by_slice_id
-       ) do
-    if completion_status_allowed?(work_request) and
-         filtered_completion_context?(question_state, work_packages, work_package_contexts, deliveries_by_slice_id) do
-      %{state | completed?: true, completed_at: completed_at, archived_at: work_request.archived_at}
-    else
-      state
-    end
-  end
-
-  defp preserve_persisted_visible_state(state, %WorkRequest{}, _question_state, _work_packages, _work_package_contexts, _deliveries_by_slice_id), do: state
-
   defp force_complete_work_request(repo, %WorkRequest{} = work_request) do
     attrs = %{
       completed_at: work_request.completed_at || DateTime.utc_now(:microsecond),
@@ -358,23 +357,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
   defp operator_completed?(%WorkRequest{completed_at: %DateTime{}, completion_source: @operator_completion_source}), do: true
   defp operator_completed?(%WorkRequest{}), do: false
 
-  defp filtered_completion_context?(question_state, work_packages, work_package_contexts, deliveries_by_slice_id) do
-    Map.get(question_state, :open_count, 0) == 0 and work_packages != [] and
-      Enum.all?(work_packages, &terminal_or_filtered_slice?(&1, work_package_contexts, deliveries_by_slice_id))
-  end
-
-  defp terminal_or_filtered_slice?(%WorkPackage{status: status, id: id}, work_package_contexts, deliveries_by_slice_id)
-       when status in @terminal_work_package_statuses do
-    context = Map.get(work_package_contexts, id)
-    delivery = Map.get(deliveries_by_slice_id, id)
-
-    not active_blocker_context?(context) and
-      (terminal_delivery?(delivery) or not active_runtime_context?(context))
-  end
-
-  defp terminal_or_filtered_slice?(%WorkPackage{id: id}, _work_package_contexts, deliveries_by_slice_id),
-    do: terminal_delivery?(Map.get(deliveries_by_slice_id, id))
-
   defp completion_status_allowed?(%WorkRequest{status: status}), do: status not in @completion_blocking_work_request_statuses
 
   defp refresh_all(repo, work_requests) do
@@ -395,6 +377,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
       nil -> {:ok, nil}
       days when is_integer(days) and days >= 1 -> {:ok, days}
       _days -> {:error, :invalid_delete_after_days}
+    end
+  end
+
+  defp never_started_archive_after_days(opts) do
+    case Keyword.get(opts, :never_started_archive_after_days, Settings.default().work_request_never_started_archive_after_days) do
+      days when is_integer(days) and days >= 1 -> {:ok, days}
+      _days -> {:error, :invalid_never_started_archive_after_days}
     end
   end
 
@@ -558,6 +547,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
       repo.all(
         from(work_request in WorkRequest,
           where: not is_nil(work_request.archived_at),
+          where: is_nil(work_request.archive_reason) or work_request.archive_reason != "never_started",
           where: work_request.archived_at < ^cutoff,
           order_by: [asc: work_request.archived_at, asc: work_request.id],
           select: work_request.id
@@ -667,7 +657,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
 
   defp delete_work_request_dependents(repo, work_request_ids, work_package_ids) do
     with :ok <- preserve_archived_work_package_hides(repo, work_package_ids),
-         :ok <- delete_archived_comments(repo, work_request_ids, work_package_ids) do
+         :ok <- delete_archived_comments(repo, work_request_ids, work_package_ids),
+         :ok <- SessionLocations.delete_for_targets(repo, "work_request", work_request_ids),
+         :ok <- SessionLocations.delete_for_targets(repo, "work_package", work_package_ids) do
       delete_archived_grant_scopes(repo, work_request_ids, work_package_ids)
     end
   end
@@ -890,6 +882,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
 
   defp restore_completed(repo, %WorkRequest{} = work_request), do: restore_completed(repo, work_request, reset_completed_at?: true)
 
+  defp restore_completed(repo, %WorkRequest{archive_reason: "never_started", archived_at: %DateTime{}} = work_request, _opts) do
+    work_request
+    |> Ecto.Changeset.change(archived_at: nil, archive_reason: nil, never_started_restored_at: DateTime.utc_now(:microsecond))
+    |> update_work_request(repo)
+  end
+
   defp restore_completed(_repo, %WorkRequest{archived_at: nil, archive_reason: nil} = work_request, _opts), do: {:ok, work_request}
 
   defp restore_completed(repo, %WorkRequest{} = work_request, opts) do
@@ -937,15 +935,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
 
     activity_contexts = WorkPackageActivity.contexts(repo, work_package_ids)
 
-    contexts =
-      Map.new(work_packages, fn %WorkPackage{} = work_package ->
-        {work_package.id,
-         activity_contexts
-         |> Map.get(work_package.id, WorkPackageActivity.empty_context())
-         |> Map.put(:work_package, work_package)}
-      end)
+    with {:ok, successors} <- OperationalLineage.delivery_successors(repo, work_packages) do
+      contexts =
+        Map.new(work_packages, fn %WorkPackage{} = work_package ->
+          {work_package.id,
+           activity_contexts
+           |> Map.get(work_package.id, WorkPackageActivity.empty_context())
+           |> Map.put(:work_package, work_package)
+           |> Map.put(:delivery_successor_ids, Map.get(successors, work_package.id, []))}
+        end)
 
-    {:ok, contexts}
+      {:ok, contexts}
+    end
   rescue
     error in Exqlite.Error -> normalize_exqlite_error(error)
   end
@@ -965,6 +966,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.Completion do
     {:ok, Map.new(deliveries, &{&1.work_package_id, &1})}
   rescue
     error in Exqlite.Error -> normalize_exqlite_error(error)
+  end
+
+  defp delivery_successors(contexts) do
+    Map.new(contexts, fn {id, context} ->
+      lineage = Map.get(context, :lineage, %{})
+
+      ids =
+        cond do
+          Map.has_key?(context, :delivery_successor_ids) -> context.delivery_successor_ids
+          Map.get(lineage, :unavailable) == true -> ["lineage_unavailable"]
+          true -> Enum.map(Map.get(lineage, :successor_work, []), &map_value(&1, :work_package_id))
+        end
+
+      {id, ids}
+    end)
   end
 
   defp terminal_slice?(work_package, context, delivery)

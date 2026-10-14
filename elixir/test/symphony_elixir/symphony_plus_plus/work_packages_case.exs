@@ -16,14 +16,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesCase do
       alias SymphonyElixir.TestSupport
       alias SymphonyElixir.WorkPackageFactory
 
-      defmodule LockedWorkPackageRepo do
-        def get(_schema, _id), do: raise(%Exqlite.Error{message: "database is locked"})
-      end
-
-      defmodule BrokenWorkPackageRepo do
-        def get(_schema, _id), do: raise(%Exqlite.Error{message: "disk I/O failed"})
-      end
-
       defmodule UpdateFailsWorkPackageRepo do
         alias SymphonyElixir.SymphonyPlusPlus.Repo
 
@@ -45,14 +37,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackagesCase do
       setup %{repo: repo} do
         repo.delete_all(WorkPackage)
         :ok
-      end
-
-      defp errors_on(changeset) do
-        Ecto.Changeset.traverse_errors(changeset, fn {message, options} ->
-          Enum.reduce(options, message, fn {key, value}, acc ->
-            String.replace(acc, "%{#{key}}", inspect(value))
-          end)
-        end)
       end
 
       defp normalized_path(path) do

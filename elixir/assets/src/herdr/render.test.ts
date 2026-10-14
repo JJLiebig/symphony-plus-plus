@@ -1,59 +1,24 @@
+import type { ExecutionGraphWorkPackageRef, ExecutionGraphWorkPackageSignals } from "./execution-graph/model";
 import { describe, expect, it } from "vitest";
 
 import { renderInspector, stripAnsi, terminalCellWidth } from "./render";
 import type { InspectorState } from "./types";
 
 describe("execution inspector rendering", () => {
-  it("keeps a trivial WorkRequest compact", () => {
-    const output = stripAnsi(renderInspector(state([pkg("wp-a", "Review", "review")]), 44));
-    expect(output).toContain("Review");
-    expect(output).not.toContain("Previous");
-    expect(output.split("\n").length).toBeLessThan(9);
+  it("withholds merge readiness when canonical eligibility is absent", () => {
+    const qualified = { ...pkg("wp-a", "Qualified UI", "ready_for_merge"), operational_state: { key: "merge_ready", label: "Ready For Merge" } };
+    expect(stripAnsi(renderInspector(state([qualified]), 80, 20))).not.toMatch(/ready (for|to) merge/i);
   });
 
-  it("renders branching topology without horizontal overflow", () => {
-    const current = pkg("wp-a", "Build", "implementing");
-    const left = pkg("wp-b", "Review API", "planned");
-    const right = pkg("wp-c", "Review UI", "planned");
-    const value = state([current, left, right], [
-      edge("wp-a", "wp-b"),
-      edge("wp-a", "wp-c"),
-    ]);
-    const output = stripAnsi(renderInspector(value, 58, 24));
-    expect(output).toContain("← wp-a");
-    expect(output).toContain("Review API");
-    expect(output).toContain("Review UI");
-    expect(output.match(/planned/g)).toHaveLength(2);
-    expect(Math.max(...output.split("\n").map((line) => Array.from(line).length))).toBeLessThanOrEqual(58);
-  });
-
-  it("marks a wide rank that continues on another row", () => {
-    const current = pkg("wp-a", "Build", "implementing");
-    const following = Array.from({ length: 4 }, (_, index) => pkg(`wp-${index + 1}`, `Review ${index + 1}`, "planned"));
-    const value = state([current, ...following], following.map((item) => edge(current.id, item.id)));
-    const output = stripAnsi(renderInspector(value, 58, 30));
-    expect(output).toContain("↓");
-  });
-
-  it("keeps a large graph inside the current viewport", () => {
-    const packages = Array.from({ length: 12 }, (_, index) => pkg(`wp-${index}`, `Package ${index}`, "implementing"));
-    const edges = packages.slice(1).map((item, index) => edge(packages[index].id, item.id));
-    const value = state(packages, edges);
-    value.detail!.attention_keys = ["work_package:wp-0"];
-    const output = stripAnsi(renderInspector(value, 28, 21));
-    expect(output).toContain("Package 0");
-    expect(output).toContain("Later 10");
-    expect(output.split("\n").length).toBeLessThanOrEqual(21);
-  });
-
-  it("uses compact metadata below the minimum card width", () => {
-    const current = pkg("wp-a", "Build", "implementing");
-    const next = pkg("wp-b", "Review", "planned");
-    const value = state([current, next], [edge("wp-a", "wp-b")]);
-    value.detail!.attention_keys = ["work_package:wp-a"];
-    const output = stripAnsi(renderInspector(value, 12, 16));
-    expect(output).not.toContain("┌");
-    expect(Math.max(...output.split("\n").map((line) => Array.from(line).length))).toBeLessThanOrEqual(12);
+  it("keeps review round timing distinct from total review time", () => {
+    const current: ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals = {
+      ...pkg("wp-a", "Review", "reviewing"),
+      activity_signal: { stage: "reviewing", started_at: "2026-10-05T03:00:00Z", elapsed_seconds: 3600 },
+      review_signal: { status: "in_progress", round: "2", started_at: "2026-10-05T01:00:00Z", round_started_at: "2026-10-05T03:00:00Z" },
+    };
+    expect(stripAnsi(renderInspector(state([current]), 100, 40))).toContain("Round 2 · 1h 0m this round");
+    current.activity_signal = { stage: "reviewing", started_at: "2026-10-05T01:00:00Z", elapsed_seconds: 10800 };
+    expect(stripAnsi(renderInspector(state([current]), 100, 40))).toContain("3h 0m in review");
   });
 
   it("sanitizes ledger control characters and measures wide terminal cells", () => {
@@ -68,7 +33,7 @@ describe("execution inspector rendering", () => {
   });
 });
 
-function state(workPackages: ReturnType<typeof pkg>[], effectiveEdges: ReturnType<typeof edge>[] = []): InspectorState {
+function state(workPackages: Array<ExecutionGraphWorkPackageRef & ExecutionGraphWorkPackageSignals>, effectiveEdges: ReturnType<typeof edge>[] = []): InspectorState {
   return {
     binding: {
       paneId: "pane-a",

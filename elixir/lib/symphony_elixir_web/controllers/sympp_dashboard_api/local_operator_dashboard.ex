@@ -10,11 +10,14 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
     WorkRequestCards
   }
 
+  alias SymphonyElixir.SymphonyPlusPlus.DeploymentObservation
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
   alias SymphonyElixir.SymphonyPlusPlus.Repo
   alias SymphonyElixir.SymphonyPlusPlus.ReviewObservation
+  alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -29,9 +32,11 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec operator_dashboard_payload(module()) :: {:ok, map()} | {:error, term()}
   def operator_dashboard_payload(repo) do
+    operator_config = OperatorConfig.load()
+
     with {:ok, context} <- operator_dashboard_context(repo),
          {:ok, work_requests} <- WorkRequestRepository.list(repo) do
-      priority_dashboard_payload(repo, context, work_requests)
+      priority_dashboard_payload(repo, Map.put(context, :operator_config, operator_config), work_requests)
     end
   end
 
@@ -48,7 +53,10 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
        context
        |> base_payload()
        |> Map.merge(%{
-         work_requests: %{work_requests: cards, total_count: length(cards)},
+         work_requests: %{
+           work_requests: Enum.map(cards, &put_work_request_location(put_area_path(&1, context), context, projection_context)),
+           total_count: length(cards)
+         },
          deferred: %{dashboard_sections: true}
        })}
     end
@@ -56,10 +64,12 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec operator_dashboard_deferred_payload(module()) :: {:ok, map()} | {:error, term()}
   def operator_dashboard_deferred_payload(repo) do
+    operator_config = OperatorConfig.load()
+
     with {:ok, work_requests} <- WorkRequestRepository.list(repo),
          {:ok, context} <- operator_execution_context(repo, work_requests),
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context) do
-      execution_dashboard_payload(repo, context, work_requests, projection_context)
+      execution_dashboard_payload(repo, Map.put(context, :operator_config, operator_config), work_requests, projection_context)
     end
   end
 
@@ -81,7 +91,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
          generated_at: DateTime.utc_now(:microsecond) |> DateTime.to_iso8601(),
          active_blocking_edges: execution_signals.active_blocking_edges,
          work_packages: execution_signals.work_packages,
-         work_request_details: work_request_details,
+         work_request_details: operator_board_labels(work_request_details, context, projection_context),
          guidance_requests: guidance_requests,
          deferred: %{dashboard_sections: false}
        }}
@@ -110,15 +120,19 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec operator_dashboard_hydrated_payload(module()) :: {:ok, map()} | {:error, term()}
   def operator_dashboard_hydrated_payload(repo) do
-    case repo.transaction(fn -> hydrated_dashboard_payload(repo) end) do
+    operator_config = OperatorConfig.load()
+
+    case repo.transaction(fn -> hydrated_dashboard_payload(repo, operator_config) end) do
+      {:ok, {:ok, payload}} -> {:ok, DeploymentObservation.enrich(payload, operator_config)}
       {:ok, result} -> result
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp hydrated_dashboard_payload(repo) do
+  defp hydrated_dashboard_payload(repo, operator_config) do
     with {:ok, work_requests} <- WorkRequestRepository.list(repo),
          {:ok, context} <- operator_execution_context(repo, work_requests),
+         context = Map.put(context, :operator_config, operator_config),
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context),
          {:ok, base} <- priority_dashboard_payload(repo, context, work_requests, projection_context),
          {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
@@ -126,8 +140,47 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
     end
   end
 
+  defp put_area_path(work_request, context) do
+    Map.put(work_request, :area_path, OperatorConfig.area_path(context.operator_config, work_request))
+  end
+
+  defp operator_board_labels(details, context, projection_context) do
+    Enum.map(details, fn detail ->
+      work_packages =
+        Enum.map(detail.work_packages, &put_session_location(&1, context.operator_config, projection_context))
+
+      work_request =
+        detail.work_request
+        |> put_area_path(context)
+        |> put_work_request_location(context, projection_context)
+
+      %{detail | work_request: work_request, work_packages: work_packages}
+    end)
+  end
+
+  defp put_session_location(work_package, operator_config, projection_context) do
+    session = get_in(projection_context, [:work_package_contexts, work_package.id, :current_worker_session])
+    observed = get_in(projection_context, [:package_locations, work_package.id])
+    location = SessionLocations.public(observed, operator_config) || OperatorConfig.session_location(operator_config, session)
+    if location, do: Map.put(work_package, :session_location, location), else: work_package
+  end
+
+  defp put_work_request_location(work_request, context, projection_context) do
+    observed = get_in(projection_context, [:architect_locations, work_request.id])
+
+    case SessionLocations.public(observed, context.operator_config) do
+      nil -> work_request
+      location -> Map.put(work_request, :architect_session_location, location)
+    end
+  end
+
   defp operator_projection_context(repo, work_requests, context) do
-    Dashboard.operator_projection_context(repo, work_requests, context.work_packages)
+    with {:ok, projection} <- Dashboard.operator_projection_context(repo, work_requests, context.work_packages) do
+      {:ok,
+       projection
+       |> Map.put(:architect_locations, SessionLocations.for_targets(repo, "work_request", Enum.map(work_requests, & &1.id)))
+       |> Map.put(:package_locations, SessionLocations.for_targets(repo, "work_package", Enum.map(context.work_packages, & &1.id)))}
+    end
   end
 
   defp operator_dashboard_context(repo) do
@@ -389,7 +442,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   @spec herdr_work_request_detail_payload(module(), String.t()) :: {:ok, map()} | {:error, term()}
   def herdr_work_request_detail_payload(repo, work_request_id) when is_binary(work_request_id) do
     with {:ok, payload} <- operator_work_request_detail_payload(repo, work_request_id),
-         {:ok, [board_detail]} <- Dashboard.work_request_board_details(repo, [work_request_id]),
+         {:ok, [board_detail]} <- operator_work_request_board_details(repo, [%{id: work_request_id}], nil),
          {:ok, work_packages} <- WorkRequestRepository.list_work_packages(repo, work_request_id),
          {:ok, contexts} <- Dashboard.work_package_work_package_contexts(repo, work_packages) do
       graph = get_in(board_detail, [:product_tree, :execution_graph])
@@ -565,6 +618,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   def operator_settings_attrs(params) do
     %{}
     |> put_settings_param(params, "work_request_archive_after_days")
+    |> put_settings_param(params, "work_request_never_started_archive_after_days")
     |> put_settings_param(params, "solo_session_delete_after_days")
     |> put_settings_param(params, "open_dashboard_on_boot")
     |> put_settings_param(params, "capture_failed_mcp_calls")
@@ -590,6 +644,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   def operator_settings_payload(%OperatorSettings{} = settings) do
     %{
       work_request_archive_after_days: settings.work_request_archive_after_days,
+      work_request_never_started_archive_after_days: settings.work_request_never_started_archive_after_days,
       solo_session_delete_after_days: settings.solo_session_delete_after_days,
       open_dashboard_on_boot: settings.open_dashboard_on_boot,
       capture_failed_mcp_calls: settings.capture_failed_mcp_calls,

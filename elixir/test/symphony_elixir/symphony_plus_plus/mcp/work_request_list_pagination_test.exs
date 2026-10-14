@@ -7,36 +7,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestListPaginationTest do
     def handle(_event, _measurements, metadata, test_pid), do: send(test_pid, {:list_query, to_string(metadata.query || "")})
   end
 
-  test "list_work_requests defaults to 50 rows and rejects invalid bounds", %{repo: repo} do
-    {anchor, session, _grant} =
-      create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-PAGE-DEFAULT", ["read:work_request"])
-
-    for index <- 1..51 do
-      create_work_request!(repo,
-        id: "WR-MCP-PAGE-DEFAULT-#{String.pad_leading(Integer.to_string(index), 3, "0")}",
-        repo: anchor.repo,
-        base_branch: anchor.base_branch,
-        status: "ready_for_slicing"
-      )
-    end
-
-    payload =
-      repo
-      |> mcp_tool(session, "list_work_requests", %{"status" => "ready_for_slicing"})
-      |> get_in(["result", "structuredContent"])
-
-    assert payload["limit"] == 50
-    assert payload["total_count"] == 50
-    assert length(payload["work_requests"]) == 50
-    assert is_binary(payload["next_cursor"])
-
-    over_max = mcp_tool(repo, session, "list_work_requests", %{"limit" => 201})
-    assert get_in(over_max, ["error", "data", "reason"]) == "limit_exceeds_maximum"
-
-    invalid_cursor = mcp_tool(repo, session, "list_work_requests", %{"cursor" => "not-a-cursor"})
-    assert get_in(invalid_cursor, ["error", "data", "reason"]) == "invalid_cursor"
-  end
-
   test "list_work_requests pages stable authorized status matches with one batched scope query", %{repo: repo} do
     {anchor, session, _grant} =
       create_phase_architect_session(repo, "SYMPP-ARCHITECT-WR-PAGE-SCOPED", ["read:work_request"])

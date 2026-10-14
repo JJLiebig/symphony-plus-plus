@@ -629,7 +629,7 @@ function Resolve-ManagedArtifactRuntimeContext(
       return $null
     }
 
-    $artifactCacheRoot = ConvertTo-FullPath (Join-Path $SymppHome "artifacts\mcp")
+    $artifactCacheRoot = ConvertTo-FullPath (Join-Path $SymppHome "rt")
     if (-not (Test-Path -LiteralPath $artifactCacheRoot -PathType Container)) {
       return $null
     }
@@ -687,17 +687,17 @@ function Test-ManagedArtifactRuntimeProcess($Process, $Context) {
     $revision = ([string]$Context.SourceRevision).Trim().ToLowerInvariant()
     $contract = Normalize-McpContractFingerprint ([string]$Context.ContractFingerprint)
     $manifestContract = Normalize-McpContractFingerprint ([string]$manifest.launcher_contract.mcp_contract_fingerprint)
-    if ($parts.Count -ne 4 -or $parts[3] -ne "runtime" -or
+    $relativeExecutable = $executable.FullName.Substring($runtimeRoot.TrimEnd("\").Length).TrimStart("\")
+    if ($parts.Count -ne 3 -or $parts[2] -ne "runtime" -or
         -not [System.StringComparer]::OrdinalIgnoreCase.Equals($parts[0], ([string]$marker.platform).Trim()) -or
-        -not [System.StringComparer]::OrdinalIgnoreCase.Equals($parts[1], $revision.Substring(0, 12)) -or
         $sha256 -notmatch "^[0-9a-f]{64}$" -or
-        -not [System.StringComparer]::OrdinalIgnoreCase.Equals($parts[2], $sha256.Substring(0, 16)) -or
+        -not [System.StringComparer]::OrdinalIgnoreCase.Equals($parts[1], $sha256.Substring(0, 16)) -or
         -not [System.StringComparer]::OrdinalIgnoreCase.Equals(([string]$marker.source_revision).Trim(), $revision) -or
         -not [System.StringComparer]::OrdinalIgnoreCase.Equals(([string]$manifest.source_revision).Trim(), $revision) -or
         -not [System.StringComparer]::OrdinalIgnoreCase.Equals(([string]$manifest.plugin.name).Trim(), "symphony-plus-plus-mcp") -or
-        [string]$manifest.backend.kind -ne "mix_release" -or [string]$manifest.backend.relative_path -ne "runtime" -or
+        [string]$manifest.backend.kind -ne "mix_release" -or [string]$manifest.backend.relative_path -ne "." -or
         -not $contract -or -not [System.StringComparer]::OrdinalIgnoreCase.Equals($manifestContract, $contract) -or
-        -not (Test-CutoverPathWithinRoot $executable.FullName (Join-Path $runtimeRoot "runtime"))) {
+        $relativeExecutable -notmatch '^erts-[^\\/]+[\\/]bin[\\/]erl\.exe$') {
       return $false
     }
 

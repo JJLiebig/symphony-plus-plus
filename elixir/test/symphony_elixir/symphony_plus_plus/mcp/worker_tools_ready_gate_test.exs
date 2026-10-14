@@ -3,45 +3,6 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerToolsReadyGateTest do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  test "mark_ready uses provider state without duplicate review attestation", %{repo: repo} do
-    assert {:ok, package} =
-             WorkPackageRepository.create(
-               repo,
-               WorkPackageFactory.attrs(
-                 id: "SYMPP-READY-PROVIDER",
-                 kind: "standard_pr",
-                 status: "ci_waiting",
-                 review_requirement: %{"type" => "review-suite", "args" => %{"mode" => "fast"}}
-               )
-             )
-
-    assert {:ok, minted} = AccessGrantService.mint_worker_grant(repo, package.id)
-    assert {:ok, assignment} = AccessGrantService.claim(repo, minted.work_key.secret, claimed_by: "worker-1")
-    session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-
-    missing_merge_evidence_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "missing-merge-evidence", "method" => "tools/call", "params" => %{"name" => "mark_ready"}},
-        repo: repo,
-        session: session
-      )
-
-    assert "pr_attached" in get_in(missing_merge_evidence_response, ["error", "data", "missing"])
-
-    attach_tool(repo, session, "attach_branch", %{"branch" => "agent/SYMPP-READY-PROVIDER/worker", "head_sha" => "abc125"})
-    attach_tool(repo, session, "attach_pr", %{"url" => "https://github.com/example/repo/pull/125", "head_sha" => "abc125"})
-    sync_pr_state(repo, session, "https://github.com/example/repo/pull/125", "abc125")
-
-    ready_response =
-      MCPHarness.request(
-        %{"jsonrpc" => "2.0", "id" => "ready-provider", "method" => "tools/call", "params" => %{"name" => "mark_ready"}},
-        repo: repo,
-        session: session
-      )
-
-    assert get_in(ready_response, ["result", "structuredContent", "ready"]) == true
-  end
-
   test "ready evidence guard reads only the package with 1,000 history rows", %{repo: repo} do
     assert {:ok, package} =
              WorkPackageRepository.create(

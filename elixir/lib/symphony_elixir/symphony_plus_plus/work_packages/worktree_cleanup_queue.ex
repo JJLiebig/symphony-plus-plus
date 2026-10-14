@@ -7,6 +7,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue do
 
   import Ecto.Query, only: [from: 2]
 
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.Repository, as: MCPRepository
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
@@ -119,6 +121,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue do
   @doc false
   @spec reconcile(module(), keyword()) :: :ok | {:error, term()}
   def reconcile(repo, opts \\ []) do
+    if OfflineSandbox.enabled?(), do: :ok, else: reconcile_online(repo, opts)
+  end
+
+  defp reconcile_online(repo, opts) do
     now = DateTime.utc_now(:microsecond)
 
     repo.all(
@@ -150,7 +156,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue do
 
   @impl true
   def handle_continue(:startup, state) do
-    case Repository.migrate(state.repo) do
+    case MCPRepository.ensure_migrated(state.repo) do
       :ok ->
         {:noreply, run_and_schedule(state)}
 
@@ -169,6 +175,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeCleanupQueue do
   defp enqueue(_repo, %WorkPackage{worktree_path: nil}, _opts), do: :ok
 
   defp enqueue(repo, %WorkPackage{} = work_package, opts) do
+    if OfflineSandbox.enabled?(), do: :ok, else: enqueue_online(repo, work_package, opts)
+  end
+
+  defp enqueue_online(repo, work_package, opts) do
     case WorktreeLifecycle.cleanup_obligation(work_package, opts) do
       {:ok, attrs} ->
         now = DateTime.utc_now(:microsecond)

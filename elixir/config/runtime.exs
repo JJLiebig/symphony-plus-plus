@@ -28,6 +28,7 @@ if config_env() == :prod do
 
     workflow_file = System.get_env("SYMPP_WORKFLOW_FILE", "") |> String.trim()
     logs_root = System.get_env("SYMPP_LOGS_ROOT", "") |> String.trim()
+    database = System.get_env("SYMPP_DATABASE", "") |> String.trim()
 
     if workflow_file != "" and not File.regular?(workflow_file) do
       raise "SYMPP_WORKFLOW_FILE must point to a readable WORKFLOW.md file"
@@ -39,6 +40,10 @@ if config_env() == :prod do
 
     if workflow_file != "" do
       config :symphony_elixir, :workflow_file_path, Path.expand(workflow_file)
+    end
+
+    if database != "" do
+      config :symphony_elixir, :sympp_repo_database, Path.expand(database)
     end
 
     config :symphony_elixir, :log_file, Path.join(Path.expand(logs_root), "log/symphony.log")

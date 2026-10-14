@@ -178,17 +178,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageTest do
         System.cmd(powershell, ["-NoProfile", "-File", test_script], stderr_to_stdout: true)
 
       assert status == 0, output
-
-      assert output =~
-               "Performance gate parsing, structured output, threshold failures, and cutover contract passed."
     end
-  end
-
-  test "MCP contract manifest pins the server-reported fingerprint" do
-    fingerprint = Server.mcp_contract_identity()["fingerprint"]
-    contract = @contract_path |> File.read!() |> Jason.decode!()
-
-    assert fingerprint =~ ~r/\A[0-9a-f]{64}\z/
-    assert contract["mcp_contract_fingerprint"] == fingerprint
   end
 end

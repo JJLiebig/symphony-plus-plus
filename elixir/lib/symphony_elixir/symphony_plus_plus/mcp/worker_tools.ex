@@ -31,6 +31,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
     PullRequestMetadata,
     ReviewReadiness,
     Session,
+    Surface,
     TaskPlanTools,
     ToolResult,
     WorkRequestPayloads,
@@ -44,9 +45,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Service, as: PlanningService
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.OperatorReport
 
   @tools [
     "read_context",
+    "read_work_package_document",
     "read_task_plan",
     "update_task_plan",
     "append_finding",
@@ -67,6 +70,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
   @spec call(String.t(), Config.t(), Session.t() | nil, map()) :: result()
   def call("read_context", %Config{} = config, session, _arguments) do
     read_current_virtual_file(config, session, "context.md")
+  end
+
+  def call("read_work_package_document", %Config{repo: repo}, session, arguments) do
+    with {:ok, session} <- scoped_session(repo, session, arguments),
+         {:ok, document} <- required_argument(arguments, "document"),
+         :ok <- validate_document_cursor(document, Map.get(arguments, "before_sequence")),
+         work_package_id = Session.work_package_id(session),
+         {:ok, state, _session} <- Surface.read_work_package_document_state(repo, session, work_package_id, document, Map.get(arguments, "before_sequence")),
+         {:ok, payload} <- WorkerContext.virtual_file_payload(state, document, uri: "sympp://work-packages/#{work_package_id}/#{document}") do
+      {:ok,
+       ToolResult.with_text_profile(:full, fn ->
+         ToolResult.agent_tool_result(payload, fn ->
+           {:ok, toon} = WorkerContext.encode_virtual_file(state, document, uri: payload["uri"])
+           toon
+         end)
+       end)}
+    else
+      {:error, _code, _message, _data} = error -> error
+      {:tool_error, reason} -> invalid_params_error("read_work_package_document", reason)
+      {:error, reason} -> worker_error(reason, "read_work_package_document")
+    end
   end
 
   def call("read_task_plan", %Config{} = config, %Session{assignment: %{grant_role: "architect"}} = session, arguments) do
@@ -123,10 +147,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
 
   def call("append_finding", %Config{} = config, session, arguments), do: append_finding_tool(config.repo, session, arguments)
 
+  def call("append_progress", %Config{} = config, session, %{"payload" => %{"type" => "architect_operator_report"}} = arguments) do
+    with {:ok, session} <- Auth.require_session(session, config.repo),
+         {:ok, work_package_id, payload} <- OperatorReport.authorized_payload(config.repo, session, arguments) do
+      arguments = Map.put(arguments, "payload", %{})
+      append_progress_for_package(config.repo, session, work_package_id, arguments, "append_progress", payload)
+    else
+      {:tool_error, reason} -> invalid_params_error("append_progress", reason)
+      {:error, reason} -> worker_error(reason, "append_progress")
+    end
+  end
+
   def call("append_progress", %Config{} = config, %Session{assignment: %{grant_role: "architect"}} = session, arguments) do
     case architect_package_scope(config.repo, session, arguments, :progress_append, "append_progress") do
       {:ok, session, work_package_id} ->
-        append_progress_for_package(config.repo, session, work_package_id, arguments, "append_progress", %{})
+        payload =
+          case Map.get(arguments, "payload") do
+            %{"type" => "blocker", "active" => true} -> %{"type" => "blocker", "source_tool" => "report_blocker", "active" => true}
+            _ordinary_progress -> %{}
+          end
+
+        append_progress_for_package(config.repo, session, work_package_id, arguments, "append_progress", payload)
 
       {:tool_error, reason} ->
         invalid_params_error("append_progress", reason)
@@ -202,13 +243,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
         invalid_params_error("mark_ready", reason)
 
       {:error, {:readiness_failed, missing, reasons}} ->
-        {:error, -32_602, "Invalid params", %{"tool" => "mark_ready", "reason" => "readiness_failed", "missing" => missing, "reasons" => reasons}}
+        message = Enum.map_join(reasons, " ", &Map.fetch!(&1, "message"))
+        {:error, -32_602, message, %{"tool" => "mark_ready", "reason" => "readiness_failed", "missing" => missing, "reasons" => reasons}}
 
       {:error, {:readiness_failed, missing}} ->
         {:error, -32_602, "Invalid params", %{"tool" => "mark_ready", "reason" => "readiness_failed", "missing" => missing}}
 
       {:error, reason} ->
         worker_error(reason, "mark_ready")
+    end
+  end
+
+  defp validate_document_cursor(document, cursor) do
+    cond do
+      document not in PlanningRenderer.virtual_files() -> {:error, :unknown_virtual_file}
+      is_nil(cursor) -> :ok
+      document not in ["findings.md", "progress.md", "handoff.md"] -> {:error, :unsupported_document_cursor}
+      not is_integer(cursor) or cursor < 1 -> {:error, :invalid_before_sequence}
+      true -> :ok
     end
   end
 
@@ -385,6 +437,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
     {:error, -32_602, "Invalid params", data}
   end
 
+  defp stringify_keys(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp stringify_keys(%{} = map), do: Map.new(map, fn {key, value} -> {to_string(key), stringify_keys(value)} end)
   defp stringify_keys(values) when is_list(values), do: Enum.map(values, &stringify_keys/1)
   defp stringify_keys(value), do: value

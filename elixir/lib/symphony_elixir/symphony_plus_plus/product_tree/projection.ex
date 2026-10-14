@@ -30,13 +30,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
   @spec project(module(), String.t(), [map()], keyword()) :: map()
   def project(repo, work_request_id, work_package_payloads, opts \\ [])
       when is_atom(repo) and is_binary(work_request_id) and is_list(work_package_payloads) and is_list(opts) do
-    case product_tree_context(repo, work_request_id, opts) do
-      {:ok, tree} ->
-        execution_graph = ExecutionGraph.evaluate(tree, work_package_payloads, [])
-        project_tree(tree, execution_graph, work_package_payloads, opts)
-
-      {:error, reason} ->
-        unavailable_projection(reason, work_package_payloads)
+    with {:ok, tree} <- product_tree_context(repo, work_request_id, opts),
+         {:ok, execution_graph} <- ExecutionGraph.evaluate(repo, work_request_id, work_package_payloads, tree) do
+      project_tree(tree, execution_graph, work_package_payloads, opts)
+    else
+      {:error, reason} -> unavailable_projection(reason, work_package_payloads)
     end
   end
 
@@ -100,11 +98,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
       root_work_package_ids: root_work_package_ids,
       nodes: projected_nodes,
       dependency_edges: Enum.map(dependency_edges, &dependency_edge_payload/1),
-      execution_graph: execution_graph,
+      execution_graph: public_execution_graph(execution_graph),
       summary: summary(projected_nodes, length(root_ids), root_work_package_ids, work_package_payloads),
       latest_revision: revision_payload(latest_revision)
     }
   end
+
+  defp public_execution_graph(graph) do
+    edges =
+      Enum.map(graph.effective_edges, fn edge ->
+        %{edge | constraints: Enum.map(edge.constraints, &public_constraint/1)}
+      end)
+
+    graph |> Map.drop([:merge_eligibility]) |> Map.put(:effective_edges, edges)
+  end
+
+  defp public_constraint(%{candidate_head_sha: nil} = constraint),
+    do: Map.take(constraint, [:dependency_id, :available, :delivered])
+
+  defp public_constraint(constraint), do: Map.drop(constraint, [:selection_updated_at])
 
   defp scope_execution_graph(execution_graph, visible_work_package_ids, opts) do
     if Keyword.get(opts, :visible_only?, false) do
@@ -297,6 +309,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.Projection do
       source: %{kind: edge.source_kind, id: edge.source_id},
       target: %{kind: edge.target_kind, id: edge.target_id},
       kind: edge.kind,
+      candidate_head_sha: edge.candidate_head_sha,
       reason: Sanitizer.redacted_text(edge.reason),
       decision_ref: Sanitizer.redacted_json(edge.decision_ref),
       created_by: Sanitizer.redacted_text(edge.created_by),

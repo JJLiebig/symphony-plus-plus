@@ -1,8 +1,15 @@
 defmodule Mix.Tasks.Sympp.CockpitTest do
   use ExUnit.Case, async: false
 
+  alias Mix.Tasks.Sympp.BetaMigrate
   alias Mix.Tasks.Sympp.Cockpit, as: CockpitTask
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.{Config, Server, Stdio}
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.Repo
+  alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
+  alias SymphonyElixir.SymphonyPlusPlus.ReviewObservation
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -37,177 +44,81 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
     :ok
   end
 
-  test "prints help" do
-    CockpitTask.run(["--help"])
-    assert_received {:mix_shell, :info, [message]}
-    assert message =~ "mix sympp.cockpit"
-    assert message =~ "--database <sqlite-path>"
-  end
-
-  test "parses safe defaults and explicit options" do
-    relative_database = Path.join("tmp", "sympp-cockpit-#{System.unique_integer([:positive])}.sqlite3")
+  test "marked snapshots refuse an unprotected boot and serve local actions with MCP and probes disabled" do
+    database = WorkPackageFactory.database_path()
+    previous = System.get_env("SYMPP_OFFLINE_SANDBOX")
+    {:ok, connection} = Exqlite.Sqlite3.open(database)
+    :ok = Exqlite.Sqlite3.execute(connection, "CREATE TABLE sympp_offline_sandbox (created_at TEXT NOT NULL)")
+    :ok = Exqlite.Sqlite3.close(connection)
 
     try do
-      assert {:ok, default_opts} = CockpitTask.parse_args_for_test([])
-      assert Keyword.fetch!(default_opts, :host) == "127.0.0.1"
-      assert Keyword.fetch!(default_opts, :port) == 19_998
-      refute Keyword.has_key?(default_opts, :open_dashboard)
-      refute Keyword.has_key?(default_opts, :dashboard_origin)
-      assert CockpitTask.cockpit_url_for_test(default_opts, 19_998) == "http://127.0.0.1:19998/sympp/board"
+      System.delete_env("SYMPP_OFFLINE_SANDBOX")
+      assert {:ok, opts} = CockpitTask.parse_args_for_test(["--database", database, "--port", "0", "--open-dashboard"])
 
-      assert {:ok, opts} =
-               CockpitTask.parse_args_for_test([
-                 "--database",
-                 relative_database,
-                 "--host",
-                 "localhost",
-                 "--port",
-                 "0",
-                 "--dashboard-origin",
-                 "http://127.0.0.1:5174"
-               ])
+      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+        CockpitTask.run_cockpit_for_test(opts, fn -> flunk("unprotected HTTP server started") end)
+      end
 
-      assert Keyword.fetch!(opts, :host) == "localhost"
-      assert Keyword.fetch!(opts, :port) == 0
-      assert Keyword.fetch!(opts, :dashboard_origin) == "http://127.0.0.1:5174"
-      assert Repo.same_database_path?(Keyword.fetch!(opts, :database), Path.expand(relative_database))
+      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+        Repo.init(:supervisor, database: database)
+      end
 
-      endpoint_config = CockpitTask.endpoint_config_for_test(opts)
-      refute Keyword.has_key?(endpoint_config, :sympp_local_operator)
-      refute Keyword.has_key?(endpoint_config, :sympp_local_operator_bootstrap_token)
-      assert endpoint_config[:sympp_repo] == Repo
-      assert endpoint_config[:server] == false
-      assert endpoint_config[:sympp_dashboard_origin] == "http://127.0.0.1:5174"
+      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+        OfflineSandbox.verify!("file:#{URI.encode(database)}?mode=rwc")
+      end
 
-      assert CockpitTask.endpoint_config_for_test(open_dashboard: false)[:sympp_open_dashboard_override] == false
-      assert CockpitTask.endpoint_config_for_test(open_dashboard: true)[:sympp_open_dashboard_override] == true
+      System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
+      assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> OfflineSandbox.verify!(database <> ".missing") end
+      BetaMigrate.run(["--database", database])
+      assert :ok = OfflineSandbox.verify!(database)
 
-      assert CockpitTask.cockpit_url_for_test(opts, 4567) == "http://127.0.0.1:5174/sympp/board"
-
-      assert {:ok, ipv6_opts} = CockpitTask.parse_args_for_test(["--host", "[::1]"])
-      assert CockpitTask.cockpit_url_for_test(ipv6_opts, 4567) == "http://[::1]:4567/sympp/board"
-    after
-      File.rm(Path.expand(relative_database))
-    end
-  end
-
-  test "preserves configured custom repo unless database is explicit" do
-    custom_repo = Module.concat(__MODULE__, CustomRepo)
-    original_config = [sympp_repo: custom_repo, other: :kept]
-
-    no_database_config = CockpitTask.endpoint_config_for_test(endpoint_config: original_config)
-
-    refute Keyword.has_key?(no_database_config, :sympp_local_operator)
-    assert no_database_config[:sympp_repo] == custom_repo
-    assert no_database_config[:other] == :kept
-    refute Keyword.has_key?(no_database_config, :sympp_dashboard_origin)
-
-    database_config = CockpitTask.endpoint_config_for_test(endpoint_config: original_config, database: ":memory:")
-
-    refute Keyword.has_key?(database_config, :sympp_local_operator)
-    assert database_config[:sympp_repo] == Repo
-    assert database_config[:other] == :kept
-  end
-
-  test "rejects blank options, non-loopback hosts, and invalid ports" do
-    assert {:error, usage} = CockpitTask.parse_args_for_test(["--database", " "])
-    assert usage =~ "mix sympp.cockpit"
-
-    assert {:error, host_error} = CockpitTask.parse_args_for_test(["--host", "0.0.0.0"])
-    assert host_error =~ "host must be loopback"
-
-    assert {:error, dashboard_origin_usage} = CockpitTask.parse_args_for_test(["--dashboard-origin", " "])
-    assert dashboard_origin_usage =~ "mix sympp.cockpit"
-
-    assert {:error, remote_dashboard_origin_error} = CockpitTask.parse_args_for_test(["--dashboard-origin", "http://example.com:5174"])
-    assert remote_dashboard_origin_error =~ "dashboard origin must be a loopback http origin"
-
-    assert {:ok, spp_dashboard_origin_opts} = CockpitTask.parse_args_for_test(["--dashboard-origin", "http://spp.localhost:5174"])
-    assert Keyword.fetch!(spp_dashboard_origin_opts, :dashboard_origin) == "http://spp.localhost:5174"
-
-    assert {:error, port_error} = CockpitTask.parse_args_for_test(["--port", "65536"])
-    assert port_error =~ "port must be an integer"
-  end
-
-  test "validates dashboard origin from environment fallback" do
-    System.put_env("SYMPP_DASHBOARD_ORIGIN", "http://example.com:5174")
-
-    assert {:error, remote_dashboard_origin_error} = CockpitTask.parse_args_for_test([])
-    assert remote_dashboard_origin_error =~ "dashboard origin must be a loopback http origin"
-
-    System.put_env("SYMPP_DASHBOARD_ORIGIN", "http://spp.localhost:5174")
-
-    assert {:ok, opts} = CockpitTask.parse_args_for_test([])
-    assert Keyword.fetch!(opts, :dashboard_origin) == "http://spp.localhost:5174"
-  end
-
-  test "parses dashboard browser opener opt-in from flag and environment" do
-    assert {:ok, flag_opts} = CockpitTask.parse_args_for_test(["--open-dashboard"])
-    assert Keyword.fetch!(flag_opts, :open_dashboard) == true
-
-    System.put_env("SYMPP_OPEN_DASHBOARD", "1")
-
-    assert {:ok, env_opts} = CockpitTask.parse_args_for_test([])
-    assert Keyword.fetch!(env_opts, :open_dashboard) == true
-
-    System.put_env("SYMPP_OPEN_DASHBOARD", "false")
-
-    assert {:ok, disabled_env_opts} = CockpitTask.parse_args_for_test([])
-    assert Keyword.fetch!(disabled_env_opts, :open_dashboard) == false
-  end
-
-  test "starts a local operator cockpit, prints bridge URLs, and serves an empty ledger API" do
-    database_path = WorkPackageFactory.database_path()
-
-    try do
-      assert {:ok, opts} = CockpitTask.parse_args_for_test(["--database", database_path, "--port", "0"])
-
-      opts =
-        Keyword.put(opts, :operator_dashboard_opener, fn url ->
-          send(self(), {:operator_dashboard_opened, url})
-          :ok
-        end)
+      opts = Keyword.put(opts, :operator_dashboard_opener, fn _url -> flunk("browser opened") end)
 
       CockpitTask.run_cockpit_for_test(opts, fn ->
+        assert is_list(Repo.config())
         port = wait_for_bound_port()
+        origin = "http://127.0.0.1:#{port}"
+        assert Req.get!(origin <> "/api/v1/sympp/operator/dashboard", headers: browser_api_headers()).status == 200
+        assert Req.post!(origin <> "/mcp", json: %{jsonrpc: "2.0", id: 1, method: "initialize"}).status == 403
+        assert Req.post!(origin <> "/mcp/client-lease", json: %{}).status == 403
+        assert Req.get!(origin <> "/mcp/readiness").status == 200
 
-        response =
-          Req.get!(operator_shell_url(port),
-            headers: browser_navigation_headers(),
-            redirect: false
-          )
+        assert {:ok, request} =
+                 WorkRequestRepository.create(Repo, %{
+                   title: "Copied goal",
+                   repo: "example/widget",
+                   base_branch: "main",
+                   work_type: "feature",
+                   human_description: "Exercise a copied goal.",
+                   desired_dispatch_shape: "single_package"
+                 })
 
-        direct_api_response =
-          Req.get!("http://127.0.0.1:#{port}/api/v1/sympp/operator/dashboard",
-            headers: browser_api_headers()
-          )
+        path = origin <> "/api/v1/sympp/operator/work-requests/#{request.id}"
+        assert Req.post!(path <> "/state", json: %{state: "completed"}, headers: browser_api_headers()).status == 200
+        assert Req.post!(path <> "/archive", json: %{}, headers: browser_api_headers()).status == 200
+        assert Req.post!(path <> "/delete", json: %{}, headers: browser_api_headers()).status == 200
+        assert Repo.get(WorkRequest, request.id) == nil
+        assert Req.post!(path <> "/architect-handoff", json: %{}, headers: browser_api_headers()).status == 403
 
-        api_response =
-          Req.get!("http://127.0.0.1:#{port}/api/v1/sympp/operator/dashboard",
-            headers: browser_api_headers(local_operator_session_cookie(response))
-          )
+        server = Server.new(Config.default())
+        response = Stdio.handle_payload(%{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize"}, server)
+        assert response["error"]["data"]["reason"] == "offline_sandbox"
 
-        send(
-          self(),
-          {:cockpit_response, response.status, response.headers["location"], direct_api_response.status, api_response.status, api_response.body}
-        )
+        package = %WorkPackage{id: "WP-OFFLINE", status: "active", worktree_path: File.cwd!(), review_requirement: %{"type" => "review-suite"}}
+
+        assert ReviewObservation.observe([package],
+                 find_executable: fn _name -> "/unused/probe" end,
+                 runner: fn _, _, _, _ -> flunk("review probe") end
+               ) == %{}
+
+        assert RepoIdentity.local_git_origin_remote(File.cwd!()) == nil
+        assert {:error, :offline_sandbox} = DefaultClient.auth_status()
+        assert {:error, :offline_sandbox} = DefaultClient.get_json("repos/example/widget", [])
+        assert :ok = OperatorDashboardOpener.open_once(opener: fn _url -> flunk("browser opened") end)
       end)
-
-      assert_received {:mix_shell, :info, [url]}
-      assert url =~ ~r{Symphony\+\+ local operator dashboard: http://127\.0\.0\.1:\d+/sympp/board}
-      assert_received {:operator_dashboard_opened, opened_url}
-      assert opened_url =~ ~r{http://127\.0\.0\.1:\d+/sympp/board}
-      assert_received {:mix_shell, :info, [bridge]}
-      assert bridge =~ ~r{Symphony\+\+ API bridge: http://127\.0\.0\.1:\d+}
-      assert_received {:mix_shell, :info, ["Dashboard browser open attempted."]}
-      assert_received {:mix_shell, :info, ["Press Ctrl+C to stop."]}
-      assert_received {:cockpit_response, 200, nil, 200, 200, payload}
-      assert payload["work_requests"]["total_count"] == 0
-      assert payload["deferred"] == %{"dashboard_sections" => true}
-      refute Map.has_key?(payload, "board")
-      assert File.exists?(database_path)
     after
-      File.rm(database_path)
+      restore_system_env("SYMPP_OFFLINE_SANDBOX", previous)
+      File.rm(database)
     end
   end
 
@@ -263,38 +174,6 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
       assert [_slice] = Repo.all(WorkPackage)
     after
       Repo.put_dynamic_repo(original_dynamic_repo)
-      File.rm(database_path)
-    end
-  end
-
-  test "opens the dashboard when explicitly requested" do
-    database_path = WorkPackageFactory.database_path()
-
-    try do
-      assert {:ok, opts} =
-               CockpitTask.parse_args_for_test([
-                 "--database",
-                 database_path,
-                 "--port",
-                 "0",
-                 "--dashboard-origin",
-                 "http://127.0.0.1:5174",
-                 "--open-dashboard"
-               ])
-
-      opts =
-        Keyword.put(opts, :operator_dashboard_opener, fn url ->
-          send(self(), {:operator_dashboard_opened, url})
-          :ok
-        end)
-
-      CockpitTask.run_cockpit_for_test(opts, fn -> :ok end)
-
-      assert_received {:operator_dashboard_opened, dashboard_url}
-      assert dashboard_url == "http://127.0.0.1:5174/sympp/board"
-      refute_received {:operator_dashboard_opened, _other_url}
-      assert_received {:mix_shell, :info, ["Dashboard browser open attempted."]}
-    after
       File.rm(database_path)
     end
   end
@@ -457,10 +336,6 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
           {:cont, nil}
       end
     end)
-  end
-
-  defp operator_shell_url(port) do
-    "http://127.0.0.1:#{port}/sympp/board"
   end
 
   defp operator_config_url(port) do

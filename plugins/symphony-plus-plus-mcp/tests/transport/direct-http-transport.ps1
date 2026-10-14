@@ -54,8 +54,8 @@ function Assert-CutoverProcessClassifier([string]$CutoverPath) {
   $installedPluginRoot = Join-Path $tempRoot "installed\symphony-plus-plus-mcp\0.1.9"
   $previousInstalledPluginRoot = Join-Path (Split-Path -Parent $installedPluginRoot) "0.1.8"
   $runtimeFile = Join-Path $symppHome "runtime\codex-plugin.json"
-  $artifactRoot = Join-Path $symppHome "artifacts\mcp\$platform\$($artifactRevision.Substring(0, 12))\$($sha256.Substring(0, 16))\runtime"
-  $executable = Join-Path $artifactRoot "runtime\erts-17.0.2\bin\erl.exe"
+  $artifactRoot = Join-Path $symppHome "rt\$platform\$($sha256.Substring(0, 16))\runtime"
+  $executable = Join-Path $artifactRoot "erts-17.0.2\bin\erl.exe"
 
   try {
     New-Item -ItemType Directory -Path (Split-Path -Parent $executable), $marketplaceSourceRoot, $installedPluginRoot, $previousInstalledPluginRoot, (Split-Path -Parent $runtimeFile) -Force | Out-Null
@@ -64,7 +64,7 @@ function Assert-CutoverProcessClassifier([string]$CutoverPath) {
     $manifest = [pscustomobject]@{
       source_revision = $artifactRevision
       plugin = [pscustomobject]@{ name = "symphony-plus-plus-mcp" }
-      backend = [pscustomobject]@{ kind = "mix_release"; relative_path = "runtime" }
+      backend = [pscustomobject]@{ kind = "mix_release"; relative_path = "." }
       launcher_contract = [pscustomobject]@{ mcp_contract_fingerprint = $contract }
     }
     $state = [pscustomobject]@{
@@ -114,6 +114,14 @@ function Assert-CutoverProcessClassifier([string]$CutoverPath) {
       }
     }
 
+    $foreignExecutable = Join-Path $artifactRoot "dashboard-static\erl.exe"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $foreignExecutable) -Force | Out-Null
+    Set-Content -LiteralPath $foreignExecutable -Value "fixture" -Encoding UTF8
+    $foreignProcess = [pscustomobject]@{ ProcessId = 4242; Name = "erl.exe"; ExecutablePath = $foreignExecutable; CommandLine = "`"$foreignExecutable`" -mode embedded" }
+    if (Get-SymppProcessKind $foreignProcess $marketplaceSourceRoot $installedPluginRoot $context) {
+      throw "an executable outside the Erlang release directory was classified"
+    }
+
     $state.plugin_root = Join-Path $tempRoot "unmanaged-plugin-root\0.1.8"
     $state | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeFile -Encoding UTF8
     if (Resolve-ManagedArtifactRuntimeContext $runtimeFile $symppHome $installedPluginRoot $contract) {
@@ -160,6 +168,16 @@ function Assert-StaticContract {
   $cutoverPath = Join-Path $repoRoot "scripts/sympp-mcp-cutover.ps1"
   $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
   $server = $config.symphony_plus_plus
+
+  $expectedEnvVars = @(
+    "CODEX_HOME", "SYMPP_HOME", "SYMPP_DATABASE", "SYMPP_BACKEND_PORT",
+    "SYMPP_RUNTIME_FILE", "SYMPP_LOG_DIR", "SYMPP_OPEN_DASHBOARD", "SYMPP_LAUNCHER_TRACE_DIR"
+  )
+  $actualEnvVars = @($server.env_vars)
+  if ($actualEnvVars.Count -ne $expectedEnvVars.Count -or
+      @(Compare-Object -ReferenceObject $expectedEnvVars -DifferenceObject $actualEnvVars -CaseSensitive).Count -ne 0) {
+    throw "plugin MCP config must forward exactly the approved launch environment variables"
+  }
 
   if ($server.PSObject.Properties["url"]) {
     throw "plugin MCP config bypasses the cold-start launcher"

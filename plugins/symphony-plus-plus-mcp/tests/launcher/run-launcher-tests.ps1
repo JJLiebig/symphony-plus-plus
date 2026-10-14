@@ -30,7 +30,23 @@ $processRuntimePath = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp/script
 $betaPath = Join-Path $repoRoot "scripts/sympp-beta.ps1"
 . $runtimePath
 . $helperPath
+. (Join-Path $repoRoot "plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-artifact-manifest.ps1")
 . $processRuntimePath
+Import-ScriptFunction $scriptPath "Test-HealthySymppDashboard"
+$BoardPath = "/sympp/board"
+$script:DashboardResponse = @{ StatusCode = 200; Content = Get-Content -LiteralPath (Join-Path $repoRoot "elixir/assets/index.html") -Raw }
+function Invoke-WebRequest { return $script:DashboardResponse }
+Assert-True (Test-HealthySymppDashboard "http://127.0.0.1:21000") "The shipped dashboard HTML must pass launcher readiness"
+$script:DashboardResponse.StatusCode = 503
+Assert-True (-not (Test-HealthySymppDashboard "http://127.0.0.1:21000")) "A failed dashboard response must not pass readiness"
+$script:DashboardResponse = @{ StatusCode = 200; Content = "<html><title>Unrelated application</title></html>" }
+Assert-True (-not (Test-HealthySymppDashboard "http://127.0.0.1:21000")) "An unrelated HTML listener must not pass dashboard readiness"
+Remove-Item Function:Invoke-WebRequest
+$script:SymppSessionLocation = @{ client_id = "client-ps"; machine_id = "build-desk"; machine_label = "Build-Desk" }
+$locatedRequest = Add-SymppSessionLocation '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_context","arguments":{},"_meta":{"another":true}}}' | ConvertFrom-Json
+Assert-True ($locatedRequest.params._meta.another -and $locatedRequest.params._meta.sympp_session_location.client_id -eq "client-ps") "PowerShell location transport must preserve other MCP metadata"
+Assert-True ($locatedRequest.params.name -eq "read_context" -and $locatedRequest.params._meta.sympp_session_location.machine_id -eq "build-desk") "PowerShell location transport must preserve the tool and client machine"
+$script:SymppSessionLocation = $null
 & (Join-Path $PSScriptRoot "port-selection-tests.ps1")
 $herdrBindingJson = '{"role":"architect","work_request_id":"wr-test","show_inspector":true}'
 $herdrBindingEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($herdrBindingJson)).TrimEnd("=").Replace("+", "-").Replace("/", "_")
@@ -66,10 +82,10 @@ Assert-True ($boundedState.buffered_lines.Count -eq 1 -and $boundedState.pending
 Assert-True (-not (Test-McpBackendUnavailableResponse ([pscustomobject]@{ ok = $false; statusCode = 503 }))) "HTTP errors must remain backend responses"
 Assert-True (Test-McpBackendUnavailableResponse ([pscustomobject]@{ ok = $false; statusCode = $null })) "Transport failures without a status must trigger recovery"
 foreach ($name in @(
-    "Normalize-McpContractFingerprint", "Get-McpContractFingerprintFromContractFile",
+    "Get-McpContractFingerprintFromContractFile",
     "Get-McpContractFingerprintFromMarketplaceSource", "Resolve-LocalMcpContractFingerprint",
     "New-RuntimeKey", "Get-RuntimeStateKey", "Get-PortFromOrigin", "Test-EndpointMatches", "Test-BackendShouldShutdownOnIdle",
-    "Test-PortSelectionAllowsReuse", "Test-BackendContractMatches", "Test-BackendLaunchCompatible",
+    "Test-PortSelectionAllowsReuse", "Test-BackendContractMatches", "Resolve-SymppDatabasePath", "Test-SymppDatabasePathsMatch", "Test-BackendLaunchCompatible",
     "Test-RuntimeStateExternalLoopback", "Test-RuntimeEntryEndpointMatches", "Test-SymppReleaseWrapperCommandLine", "Test-SymppBackendCommandLine", "Get-ProcessCommandIdentity", "New-SymppPublicationControls", "Test-SymppPublicationControlsMatch",
     "Test-SymppPublishedRuntimeReadyLocally", "Resolve-SymppPendingBackendProcess", "Test-SymppStartingBackendOwned", "New-ReusedBackendPlan", "New-ReusedDashboardPlan",
     "Resolve-LocalWarmAttachIdentity", "Resolve-FastAttachRuntimePlan", "Resolve-DashboardPlan", "Set-SymppSourceRevisionEnvironment"
@@ -109,6 +125,9 @@ try {
 foreach ($name in @("Get-PathIdentity", "Test-SamePath", "Test-SameDatabasePath", "Test-PathInside", "Resolve-BetaConfiguration", "Invoke-BetaGit", "Invoke-BetaGitNullPaths", "Get-BetaGitWorktrees", "Assert-BetaWorktreeIdentity", "Initialize-BetaWorktree", "Assert-BetaPackageSource", "Get-BetaEnvironment", "Invoke-WithBetaEnvironment", "Get-BetaCodexArguments", "Assert-BetaRuntimeIdentity", "Test-BetaRuntimeProcessRunning")) {
   Import-ScriptFunction $betaPath $name
 }
+foreach ($name in @("Get-BetaRuntimeState", "Assert-BetaSnapshotStopped", "Invoke-WithBetaLedgerLock", "New-BetaSnapshot", "Get-BetaPython")) {
+  Import-ScriptFunction $betaPath $name
+}
 function script:git { Write-Error "normal git progress"; $script:LASTEXITCODE = 0; "ok" }
 try { $gitOutput = @(Invoke-BetaGit $repoRoot @("fetch")) } finally { Remove-Item Function:git }
 Assert-True ($gitOutput -contains "ok") "Successful git stderr must not terminate the beta launcher"
@@ -121,7 +140,7 @@ function Write-CompatibleSourceMismatchDiagnostic { }
     $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     Invoke-Expression $fn.Extent.Text
   }
-  $testPath = 'C:\cache\artifacts\mcp\windows-x86_64\abc\runtime\erts-16.0\bin\erl.exe'
+  $testPath = 'C:\cache\rt\windows-x86_64\0123456789abcdef\runtime\erts-16.0\bin\erl.exe'
   function Test-SymppWindowsPlatform { $true }
   function Get-CimInstance { throw 'CIM unavailable' }
   function Get-Process { [pscustomobject]@{ Path = $testPath } }
@@ -153,6 +172,43 @@ $state = [pscustomobject]@{
 }
 $identity = Resolve-LocalWarmAttachIdentity $state $pluginRoot 19998 19999 $false $false $null $null
 Assert-True ($null -ne $identity) "Current-contract artifact-static runtime should be eligible for PowerShell fallback warm attach"
+$previousDatabase = $env:SYMPP_DATABASE
+$previousRepoRoot = $env:SYMPP_REPO_ROOT
+$previousBackendUrl = $env:SYMPP_BACKEND_URL
+try {
+  $env:SYMPP_REPO_ROOT = $null
+  $env:SYMPP_BACKEND_URL = $null
+  $env:SYMPP_DATABASE = Join-Path $env:USERPROFILE "fixture ledger/first.sqlite3"
+  $databaseControls = New-SymppPublicationControls 19998 19999 $false $false $null $null
+  $databaseState = $state | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $databaseState | Add-Member -NotePropertyName publication -NotePropertyValue ([pscustomobject]@{ controls = $databaseControls })
+  Assert-True ($null -ne (Resolve-LocalWarmAttachIdentity $databaseState $pluginRoot 19998 19999 $false $false $null $null)) "Same explicit database must retain recorded attachment"
+  $databaseHealth = New-SymppBackendHealth $true $null $null $true $true $true "ok" $fingerprint ([pscustomobject]@{ kind = "sqlite"; display_path = '$HOME/fixture ledger/first.sqlite3' })
+  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Live safe home-relative identity must match the requested database"
+  $databaseControls.database = $databaseControls.database.ToUpperInvariant().Replace('\', '/')
+  Assert-True (Test-SymppPublicationControlsMatch $databaseControls (New-SymppPublicationControls 19998 19999 $false $false $null $null)) "Windows case and separator changes must match publication controls"
+  $env:SYMPP_DATABASE = Join-Path $env:USERPROFILE "fixture ledger/different.sqlite3"
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "A healthy same-contract backend with another database must be incompatible"
+  Assert-True ($null -eq (Resolve-LocalWarmAttachIdentity $databaseState $pluginRoot 19998 19999 $false $false $null $null)) "Different explicit database must reject recorded attachment"
+  Assert-True (-not (Test-SymppPublicationControlsMatch $databaseControls (New-SymppPublicationControls 19998 19999 $false $false $null $null))) "Database mismatch must reject publication and prepared restart"
+  $env:SYMPP_DATABASE = " "
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "Blank installed request cannot adopt another live ledger"
+  $env:SYMPP_DATABASE = $null
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "Unset installed request cannot adopt another live ledger"
+  $defaultHealth = New-SymppBackendHealth $true $null $null $true $true $true "ok" $fingerprint ([pscustomobject]@{ kind = "sqlite"; default_home = $true })
+  Assert-True (Test-BackendLaunchCompatible $defaultHealth $fingerprint) "Default installed ledger remains attachable"
+  $env:SYMPP_REPO_ROOT = $repoRoot
+  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Deliberate source attachment keeps its ledger choice"
+  $env:SYMPP_REPO_ROOT = $null
+  $env:SYMPP_BACKEND_URL = $backendUrl
+  Assert-True (Test-BackendLaunchCompatible $databaseHealth $fingerprint) "Deliberate backend attachment keeps its ledger choice"
+  $env:SYMPP_DATABASE = Join-Path $env:USERPROFILE "fixture ledger/different.sqlite3"
+  Assert-True (-not (Test-BackendLaunchCompatible $databaseHealth $fingerprint)) "Explicit database still constrains deliberate backend attachment"
+} finally {
+  $env:SYMPP_DATABASE = $previousDatabase
+  $env:SYMPP_REPO_ROOT = $previousRepoRoot
+  $env:SYMPP_BACKEND_URL = $previousBackendUrl
+}
 $publishedControls = New-SymppPublicationControls 19998 19999 $false $false $null $null
 $publishedState = $state | ConvertTo-Json -Depth 8 | ConvertFrom-Json
 $publishedState.backend.managed = $false
@@ -167,7 +223,7 @@ try {
   Assert-True (-not (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $null $publishedControls)) "A stopped external backend must not satisfy initial ready publication"
   $script:publishedExternalHealth = [pscustomobject]@{ healthy = $true; contract_fingerprint = $staleFingerprint }
   Assert-True (-not (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $null $publishedControls)) "A live incompatible external backend must not satisfy initial ready publication"
-  $script:publishedExternalHealth = [pscustomobject]@{ healthy = $true; contract_fingerprint = $fingerprint }
+  $script:publishedExternalHealth = [pscustomobject]@{ healthy = $true; contract_fingerprint = $fingerprint; ledger_identity = [pscustomobject]@{ kind = "sqlite"; default_home = $true } }
   Assert-True (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $null $publishedControls) "A live compatible external backend should satisfy local readiness"
   Assert-True (Test-SymppPublishedRuntimeReadyLocally $publishedState $pluginRoot $publishedIdentity $publishedControls) "A live compatible external backend should satisfy ready publication"
   $mismatchedIdentity = [pscustomobject]@{ generation_key = "other-generation"; contract_fingerprint = $fingerprint }
@@ -184,12 +240,13 @@ $staleState.runtime_key = New-RuntimeKey $backendUrl $backendUrl $staleFingerpri
 $staleState.backend.expected_contract_fingerprint = $staleFingerprint
 $staleState.backend.contract_fingerprint = $staleFingerprint
 Assert-True ($null -eq (Resolve-LocalWarmAttachIdentity $staleState $pluginRoot 19998 19999 $false $false $null $null)) "Stale fallback state must take the cold validation path"
-$health = [pscustomobject]@{ healthy = $true; source_revision = $state.backend.source_revision; contract_fingerprint = $fingerprint }
+$health = [pscustomobject]@{ healthy = $true; source_revision = $state.backend.source_revision; contract_fingerprint = $fingerprint; ledger_identity = [pscustomobject]@{ kind = "sqlite"; default_home = $true } }
 $plan = Resolve-FastAttachRuntimePlan $state $state.backend.source_revision $fingerprint 0 0 $false $false $null $null $health $true $true
 Assert-True ($null -ne $plan -and -not $plan.dashboard_plan.managed) "Artifact-static runtime should produce an unmanaged-dashboard fallback plan"
 Assert-True (Test-BackendShouldShutdownOnIdle $state.backend $state.frontend) "Managed backends without a managed dashboard must shut down on idle in source and artifact modes"
-Assert-True (Test-SymppBackendCommandLine 'cmd.exe /c C:\cache\artifacts\mcp\windows-x86_64\abc\runtime\start-runtime.cmd') "Supported artifact command wrappers must remain recoverable before binding"
-Assert-True (Test-SymppBackendCommandLine 'C:\cache\artifacts\mcp\windows-x86_64\abc\runtime\erts-16.0\bin\erl.exe') "A packaged Erlang executable identifies the artifact listener without command-line discovery"
+Assert-True (Test-SymppBackendCommandLine 'cmd.exe /c C:\cache\rt\windows-x86_64\0123456789abcdef\runtime\start-runtime.cmd') "Supported artifact command wrappers must remain recoverable before binding"
+Assert-True (Test-SymppBackendCommandLine 'C:\cache\rt\windows-x86_64\0123456789abcdef\runtime\erts-16.0\bin\erl.exe') "A packaged Erlang executable identifies the artifact listener without command-line discovery"
+Assert-True (-not (Test-SymppBackendCommandLine 'C:\other\rt\unmanaged\erts-16.0\bin\erl.exe')) "An arbitrary rt directory must not identify a managed artifact listener"
 Assert-True (-not (Test-SymppBackendCommandLine 'C:\Program Files\Erlang\erts-16.0\bin\erl.exe')) "A foreign Erlang executable must not identify a managed artifact listener"
 $sourceState = [pscustomobject]@{ runtime_kind = "managed"; backend = [pscustomobject]@{ url = "http://127.0.0.1:20000" } }
 $reusedSourcePlan = [pscustomobject]@{ reused = $true; should_start = $false; url = "http://127.0.0.1:20000" }
@@ -202,10 +259,9 @@ function Test-HealthySymppDashboard([string]$Origin) { return $true }
 function Test-SymppDashboardMcpProxyMatches([string]$Origin, [string]$ExpectedContractFingerprint) { return $false }
 $restartDashboardPlan = Resolve-DashboardPlan 20001 $null "http://127.0.0.1:20000" ("b" * 40) $sourceDashboardState $true ("b" * 40) $fingerprint $true $true
 Assert-True ($restartDashboardPlan.reused -and $restartDashboardPlan.managed -and $restartDashboardPlan.pid -eq 123) "Backend restart must preserve a healthy recorded managed dashboard while its proxy is temporarily unavailable"
-$nodePath = Join-Path $pluginRoot "scripts/start-sympp-mcp-bridge.js"
 
 $pendingBase = Join-Path ([System.IO.Path]::GetTempPath()) "sympp-pending-launch-$([guid]::NewGuid().ToString('N'))"
-$pendingRoot = Join-Path $pendingBase "artifacts/mcp/test/runtime"
+$pendingRoot = Join-Path $pendingBase "rt/windows-x64/0123456789abcdef/runtime"
 $leader = $null; $wrapperPid = 0; $unrelated = $null; $ownedPid = 0
 try {
   New-Item -ItemType Directory -Path $pendingRoot -Force | Out-Null
@@ -231,15 +287,17 @@ try {
   $wrapper = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($leader.Id)" -ErrorAction SilentlyContinue | Where-Object { [string]$_.CommandLine -match 'wrapper\.ps1' } | Select-Object -First 1
   Assert-True ($null -ne $wrapper) "Pending-launch fixture did not create the published wrapper"
   $wrapperPid = [int]$wrapper.ProcessId
-  $wrapperIdentity = Get-ProcessStartIdentity (Get-Process -Id $wrapperPid)
+  $wrapperProcess = Get-Process -Id $wrapperPid
+  $wrapperIdentity = Get-ProcessStartIdentity $wrapperProcess
   Set-Content -LiteralPath $wrapperRelease -Value "ready" -NoNewline
+  $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
   $owned = $null
   while ($null -eq $owned -and [DateTimeOffset]::UtcNow -lt $deadline) {
     $owned = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapperPid" -ErrorAction SilentlyContinue | Where-Object { [string]$_.CommandLine -match 'start-runtime\.cmd' } | Select-Object -First 1
     if ($null -eq $owned) { Start-Sleep -Milliseconds 25 }
   }
-  while ((Get-Process -Id $wrapperPid -ErrorAction SilentlyContinue) -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 25 }
-  Assert-True ($null -ne $owned -and $null -eq (Get-Process -Id $wrapperPid -ErrorAction SilentlyContinue)) "Published wrapper did not exit after creating its backend child"
+  # Wrapper startup and CIM child discovery must not consume the separate exit allowance.
+  Assert-True ($null -ne $owned -and $wrapperProcess.WaitForExit(10000)) "Published wrapper did not exit after creating its backend child"
   $ownedPid = [int]$owned.ProcessId
   Stop-Process -Id $leader.Id -Force; [void]$leader.WaitForExit(5000)
   $unrelated = Start-Process cmd.exe -ArgumentList @('/d', '/s', '/c', "call `"$runtimeCmd`"") -WorkingDirectory $pendingRoot -WindowStyle Hidden -PassThru
@@ -262,6 +320,7 @@ try {
   Remove-Item Env:SYMPP_TEST_WRAPPER_READY,Env:SYMPP_TEST_WRAPPER_RELEASE,Env:SYMPP_TEST_RUNTIME_CMD,Env:SYMPP_TEST_RUNTIME_ROOT -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $pendingBase -Recurse -Force -ErrorAction SilentlyContinue
 }
+& (Join-Path $PSScriptRoot "artifact-fingerprint-tests.ps1")
 $artifactTemp = Join-Path $PSScriptRoot (".artifact-runtime-" + [guid]::NewGuid().ToString("N"))
 try {
   $payload = Join-Path $artifactTemp "payload"
@@ -290,12 +349,6 @@ try {
 } finally {
   Remove-Item -LiteralPath $artifactTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
-& (Get-Command node.exe -ErrorAction Stop).Source --check $nodePath
-$nodeExitCode = $LASTEXITCODE
-Assert-True ($nodeExitCode -eq 0) "Node bridge must parse"
-& (Get-Command node.exe -ErrorAction Stop).Source $nodePath --runtime-supported
-$nodeExitCode = $LASTEXITCODE
-Assert-True ($nodeExitCode -eq 0) "Current Node runtime must satisfy the conservative bridge check"
 & (Get-Command node.exe -ErrorAction Stop).Source (Join-Path $PSScriptRoot "state-identity-tests.js")
 $nodeExitCode = $LASTEXITCODE
 Assert-True ($nodeExitCode -eq 0) "Node state identity tests must pass"
@@ -303,9 +356,11 @@ Assert-True ($nodeExitCode -eq 0) "Node state identity tests must pass"
 $nodeExitCode = $LASTEXITCODE
 Assert-True ($nodeExitCode -eq 0) "Node bridge response forwarding test must pass"
 $artifactCommandTemp = Join-Path ([IO.Path]::GetTempPath()) ("sympp-command-" + [guid]::NewGuid().ToString("N"))
+$previousDatabase = $env:SYMPP_DATABASE
 try {
+  $env:SYMPP_DATABASE = "fixture ledger/explicit.sqlite3"
   $artifactRoot = Join-Path $artifactCommandTemp "artifact & command%TEMP%"
-  $releaseEntrypoint = Join-Path $artifactRoot "runtime/bin/symphony_elixir.bat"
+  $releaseEntrypoint = Join-Path $artifactRoot "bin/symphony_elixir.bat"
   New-Item -ItemType Directory -Path (Split-Path -Parent $releaseEntrypoint) -Force | Out-Null
   Set-Content -LiteralPath $releaseEntrypoint -Value "@exit /b 23" -Encoding ascii
   $artifactRuntime = [pscustomobject]@{
@@ -321,10 +376,13 @@ try {
   Assert-True ($artifactCommand.working_directory -eq $artifactRoot) "Direct artifact startup must preserve the artifact working directory"
   Assert-True ($artifactCommand.environment.SYMPP_RUNTIME_ARTIFACT_ACKNOWLEDGED -eq "1" -and $artifactCommand.environment.PHX_SERVER -eq "true") "Direct artifact startup must preserve release safety and server environment"
   Assert-True ((Test-Path -LiteralPath $artifactCommand.environment.RELEASE_TMP -PathType Container)) "Direct artifact startup must provide an isolated release temp directory"
+  Assert-True ($artifactCommand.environment.SYMPP_DATABASE -eq [IO.Path]::GetFullPath($env:SYMPP_DATABASE)) "Release startup resolves database before changing artifact working directory"
   $artifactRuntime.runtime_args = @("-Port", "{port}")
   $customCommand = Get-ArtifactBackendCommand $artifactRuntime $artifactPlan $null $null (Join-Path $artifactCommandTemp "custom-logs")
   Assert-True ($customCommand.file -eq $artifactRuntime.entrypoint -and (@($customCommand.args) -join "|") -eq "-Port|20000") "Artifacts with custom manifest arguments must retain the declared wrapper contract"
+  Assert-True ($customCommand.environment.SYMPP_DATABASE -eq $artifactCommand.environment.SYMPP_DATABASE) "Generic artifact wrappers receive the same database selection"
 } finally {
+  $env:SYMPP_DATABASE = $previousDatabase
   Remove-Item -LiteralPath $artifactCommandTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
 $process = Get-Process -Id $PID
@@ -448,6 +506,20 @@ try {
   Assert-True ($environment.SYMPP_HOME -eq $betaConfig.sympp_home -and $environment.SYMPP_RUNTIME_FILE -eq $betaConfig.runtime_file -and $environment.SYMPP_LOG_DIR -eq $betaConfig.log_dir) "Beta runtime state and logs must use the isolated home"
   Assert-True ($environment.MIX_BUILD_ROOT -eq $betaConfig.mix_build_root -and $environment.SYMPP_DATABASE -eq $betaConfig.database -and $environment.SYMPP_REPO_ROOT -eq $betaWorktree) "Beta source build and ledger must use isolated paths"
   Assert-True (-not $environment.Contains("CODEX_HOME")) "Source beta Codex must inherit the normal authenticated Codex home"
+  $previousHerdr = $env:HERDR_ENV
+  $previousProbe = $env:SYMPP_MCP_BRIDGE_PROBE
+  try {
+    $env:HERDR_ENV = "1"
+    $env:SYMPP_MCP_BRIDGE_PROBE = "do-not-run"
+    Invoke-WithBetaEnvironment $betaConfig {
+      Assert-True ($env:SYMPP_OFFLINE_SANDBOX -eq "1" -and -not $env:HERDR_ENV -and -not $env:SYMPP_MCP_BRIDGE_PROBE) "Offline launch must neutralize inherited Herdr and probe execution"
+      Assert-True (Test-PathInside $env:TEMP $betaHome) "Offline launch must confine temporary files"
+    }
+    Assert-True ($env:HERDR_ENV -eq "1" -and $env:SYMPP_MCP_BRIDGE_PROBE -eq "do-not-run") "Beta environment must restore its caller's values"
+  } finally {
+    $env:HERDR_ENV = $previousHerdr
+    $env:SYMPP_MCP_BRIDGE_PROBE = $previousProbe
+  }
   Assert-True ($environment.SYMPP_BACKEND_PORT -eq "20000" -and $environment.SYMPP_DASHBOARD_PORT -eq "20001") "Beta ports must remain separate from stable"
   Assert-True ($null -eq $environment.SYMPP_BACKEND_URL -and $null -eq $environment.SYMPP_DASHBOARD_ORIGIN -and $null -eq $environment.SYMPP_AUTOSTART_SERVERS) "Beta commands must clear inherited runtime overrides"
   $previousCodexHome = $env:CODEX_HOME
@@ -495,6 +567,17 @@ try {
     frontend = [pscustomobject]@{ port = 20001; origin = "http://127.0.0.1:20001" }
   }
   Assert-BetaRuntimeIdentity $betaConfig $state
+  New-Item -ItemType Directory -Path (Split-Path -Parent $betaConfig.runtime_file) -Force | Out-Null
+  $state.backend | Add-Member -NotePropertyName managed -NotePropertyValue $true
+  $state.backend | Add-Member -NotePropertyName pid -NotePropertyValue $PID
+  $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $betaConfig.runtime_file
+  $activeSnapshotRejected = $false
+  try { New-BetaSnapshot $betaConfig $ledgerTarget $true } catch { $activeSnapshotRejected = $_.Exception.Message -like "Stop the beta runtime*" }
+  Assert-True $activeSnapshotRejected "Snapshot must refuse a running beta backend before executing the backup or migrations"
+  Remove-Item -LiteralPath $betaConfig.runtime_file
+  $expectedControls = [pscustomobject]@{ database = $ledgerTarget; offline_sandbox = $true }
+  $oldControls = [pscustomobject]@{ database = $ledgerTarget }
+  Assert-True (-not (Test-SymppPublicationControlsMatch $oldControls $expectedControls)) "Offline beta must not reuse an unprotected runtime on the same ledger"
   Assert-True (Test-BetaRuntimeProcessRunning ([pscustomobject]@{ managed = $true; pid = $PID })) "Status must recognize a live recorded managed process"
   foreach ($pidValue in @($null, 0, 2147483647)) {
     Assert-True (-not (Test-BetaRuntimeProcessRunning ([pscustomobject]@{ managed = $true; pid = $pidValue }))) "Status must reject null, zero, and dead PIDs"
@@ -571,6 +654,7 @@ try {
 }
 
 $benchmark = & (Join-Path $PSScriptRoot "warm-attach-benchmark.ps1") | ConvertFrom-Json
+Write-Host ("Fallback warm burst: " + ($benchmark | ConvertTo-Json -Depth 8 -Compress))
 Assert-True ($benchmark.clients -eq 100 -and $benchmark.p95_ms -lt 2000) "100-client PowerShell fallback warm attach p95 must stay below 2 seconds"
 Assert-True ($benchmark.backend_processes -eq 1 -and $benchmark.leases_peak -eq 100 -and $benchmark.leases_after -eq 0) "Fallback warm burst must preserve one listener and exact lease lifecycle"
 Assert-True ($benchmark.remote_resolution_attempts -eq 0) "Fallback warm burst must make zero artifact or remote resolution attempts"

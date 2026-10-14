@@ -40,6 +40,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog do
   @worker_tools [
     "get_current_assignment",
     "read_context",
+    "read_work_package_document",
     "read_task_plan",
     "update_task_plan",
     "append_finding",

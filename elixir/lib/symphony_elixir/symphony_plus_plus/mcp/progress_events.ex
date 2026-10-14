@@ -11,6 +11,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Service, as: PlanningService
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
 
@@ -179,7 +180,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
   defp append_new_or_replay(repo, %Session{} = session, work_package_id, attrs, idempotency_key, tool) do
     transaction_fun = fn ->
       with :ok <- PlanningService.require_valid_assignment(repo, session.assignment),
-           :ok <- reject_ready_evidence_mutation(repo, session, work_package_id, tool) do
+           :ok <- reject_ready_evidence_mutation(repo, session, work_package_id, tool),
+           :ok <- DependencyInputs.validate_progress(repo, work_package_id, attrs) do
         PlanningService.append_authenticated_progress_event_for_work_package(
           repo,
           session.assignment,
@@ -318,8 +320,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
       progress_payload_replay_matches?(event.payload, normalized_payload)
   end
 
-  defp progress_payload_replay_matches?(%{"type" => "pr", "source_tool" => "attach_pr"} = existing, %{"type" => "pr", "source_tool" => "attach_pr"} = normalized) do
-    existing == normalized or legacy_attach_pr_replay_matches?(existing, normalized)
+  defp progress_payload_replay_matches?(%{"type" => "pr"} = existing, %{"type" => "pr"} = normalized) do
+    existing = Map.drop(existing, ["head_changed_at", "checks_changed_at"])
+    normalized = Map.drop(normalized, ["head_changed_at", "checks_changed_at"])
+    absent_provider_dates = Enum.reject(["created_at", "updated_at"], &Map.has_key?(existing, &1))
+    normalized = Map.drop(normalized, absent_provider_dates)
+
+    existing == normalized or
+      (existing["source_tool"] == "attach_pr" and normalized["source_tool"] == "attach_pr" and
+         legacy_attach_pr_replay_matches?(existing, normalized))
   end
 
   defp progress_payload_replay_matches?(existing, normalized), do: existing == normalized

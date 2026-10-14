@@ -5,7 +5,8 @@ dashboard improve workflow but cannot grant authority.
 
 ## Claims
 
-- A worker claims exactly one WorkPackage.
+- Ordinary workers need no MCP calls. Optional worker MCP access claims exactly
+  one WorkPackage; the architect owns dispatch and delivery coordination.
 - An architect claims exactly one WorkRequest.
 - Trusted local architect calls acquire or recover the claim automatically
   when the WorkRequest is known. Read-only browsing does not claim work.
@@ -17,8 +18,9 @@ dashboard improve workflow but cannot grant authority.
 
 ## Capabilities And Scope
 
-Workers may update their own plan, progress, findings, blockers, comments,
-branch, pull request, review, and readiness evidence. They cannot mint grants,
+Authenticated workers may optionally update their own plan, progress, findings,
+comments, branch, pull request, and readiness evidence. Only architects declare
+and resolve work blockers; questions and ordinary waits do not change them. They cannot mint grants,
 dispatch siblings, expand scope silently, merge pull requests, or record
 WorkRequest delivery.
 

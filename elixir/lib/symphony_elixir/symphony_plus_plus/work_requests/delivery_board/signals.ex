@@ -6,7 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.Sanitizer
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
-  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.{DependencyEdge, ExecutionGraph, Node}
+  alias SymphonyElixir.SymphonyPlusPlus.ProductTree.{DependencyEdge, DependencyInputs, ExecutionGraph, Node}
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageActivity
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
@@ -34,25 +34,29 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       |> Map.values()
       |> Enum.group_by(& &1.work_request_id)
 
-    graphs =
-      Map.new(work_requests, fn %WorkRequest{} = work_request ->
-        work_packages = Map.get(work_packages_by_request, work_request.id, [])
-        deliveries = Map.get(deliveries_by_request, work_request.id, [])
+    Enum.reduce_while(work_requests, {:ok, %{}}, fn %WorkRequest{} = work_request, {:ok, graphs} ->
+      work_packages = Map.get(work_packages_by_request, work_request.id, [])
+      deliveries = Map.get(deliveries_by_request, work_request.id, [])
 
-        product_tree =
-          product_tree_for_request(
-            work_request.id,
-            product_trees_by_request,
-            nodes_by_request,
-            edges_by_request
-          )
+      product_tree =
+        product_tree_for_request(
+          work_request.id,
+          product_trees_by_request,
+          nodes_by_request,
+          edges_by_request
+        )
 
-        graph = ExecutionGraph.evaluate(product_tree, work_packages, deliveries)
+      candidates? = Enum.any?(product_tree.dependency_edges, &(&1.candidate_head_sha || &1.selection_updated_at))
 
-        {work_request.id, scope_execution_graph(graph, work_packages, opts)}
-      end)
+      case DependencyInputs.context(repo, work_packages, candidates?) do
+        {:ok, input_context} ->
+          graph = ExecutionGraph.evaluate(product_tree, work_packages, deliveries, input_context)
+          {:cont, {:ok, Map.put(graphs, work_request.id, scope_execution_graph(graph, work_packages, opts))}}
 
-    {:ok, graphs}
+        {:error, _reason} = error ->
+          {:halt, error}
+      end
+    end)
   rescue
     error in Exqlite.Error ->
       if missing_product_tree_schema_error?(error), do: {:ok, %{}}, else: normalize_exqlite_error(error)
@@ -137,11 +141,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
           repository: bounded_string(first_map_value(pr, ["repository", "pr_repository"])),
           head_sha: head_sha,
           current_head_sha: current_head_sha,
+          created_at: map_value(pr, "created_at"),
+          updated_at: map_value(pr, "updated_at"),
+          observed_at: map_value(pr, "observed_at"),
+          source: if(map_value(pr, "provider_reference"), do: "provider", else: "recorded_pr"),
+          merged_at: map_value(pr, "merged_at"),
+          head_changed_at: map_value(pr, "head_changed_at"),
           head_matches:
             if(filled_string?(raw_head_sha) and filled_string?(raw_current_head_sha),
               do: PullRequest.head_sha_matches?(raw_head_sha, raw_current_head_sha)
             ),
-          checks: checks(map_value(pr, "check_summary"))
+          checks: checks(map_value(pr, "check_summary"), map_value(pr, "checks_changed_at"))
         }
         |> reject_nil_values()
 
@@ -164,18 +174,212 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
 
     %{
       type: type,
+      mode: evidence |> signal_value(["mode"]) |> bounded_string(),
       args: if(is_map(args), do: Sanitizer.redacted_json(args)),
       status: map_value(observation, "status") || if(filled_string?(type), do: "pending", else: "unavailable"),
       current: evidence |> signal_value(["current", "completed", "completed_count"]) |> integer_value(),
       total: evidence |> signal_value(["total", "total_count"]) |> integer_value(),
       step: evidence |> signal_value(["step", "stage"]) |> bounded_string(),
       evidence_id: evidence |> signal_value(["evidence_id", "reference", "id"]) |> bounded_string(),
-      reviewed_head: evidence |> signal_value(["head_sha", "reviewed_head"]) |> bounded_string()
+      reviewed_head: evidence |> signal_value(["head_sha", "reviewed_head"]) |> bounded_string(),
+      provider_status: observation |> map_value("provider_status") |> bounded_string(),
+      next_action: observation |> map_value("next_action") |> bounded_string(),
+      round: observation |> map_value("round") |> bounded_string(),
+      started_at: map_value(observation, "started_at"),
+      round_started_at: map_value(observation, "round_started_at"),
+      observed_at: map_value(observation, "observed_at"),
+      observation_state: review_observation_state(observation)
     }
     |> reject_nil_values()
   end
 
   def review(%WorkPackage{}, _metadata, _observation), do: %{status: "unavailable"}
+
+  @spec board_state(WorkPackage.t(), map(), map() | nil) :: map()
+  def board_state(work_package, summary, delivery) do
+    pr = Map.get(summary, :pr_signal, %{})
+    review = Map.get(summary, :review_signal) || %{}
+    outcome = delivery && delivery.outcome
+    track = board_track(summary, pr, outcome)
+    {stage, entered_at, source} = board_stage(work_package, pr, review, delivery)
+
+    %{
+      stage: stage,
+      entered_at: stage_timestamp(entered_at),
+      source: source,
+      track: track,
+      outcome: outcome,
+      delivered: if(outcome, do: outcome in ["pr_merged", "completed_no_pr"], else: pr[:status] == "merged" or work_package.status == "merged")
+    }
+  end
+
+  defp board_track(_summary, _pr, "completed_no_pr"), do: "no_pr"
+  defp board_track(_summary, _pr, "pr_merged"), do: "pr"
+
+  defp board_track(summary, pr, _outcome) do
+    if summary[:merge_required] == true or is_integer(pr[:number]) or is_binary(pr[:url]), do: "pr", else: "no_pr"
+  end
+
+  defp board_stage(_package, _pr, _review, %{outcome: "pr_merged"} = delivery),
+    do: {"done", delivery.pr_merged_at, "recorded_delivery"}
+
+  defp board_stage(_package, _pr, _review, %{outcome: "completed_no_pr"} = delivery),
+    do: {"done", delivery.recorded_at, "recorded_delivery"}
+
+  defp board_stage(_package, _pr, _review, %{outcome: outcome}) when outcome in ["superseded", "abandoned"],
+    do: {nil, nil, "recorded_delivery"}
+
+  defp board_stage(_package, %{status: "merged"} = pr, _review, _delivery),
+    do: {"done", pr[:merged_at], pr[:source] || "recorded_pr"}
+
+  defp board_stage(%{status: "merged"}, _pr, _review, _delivery), do: {"done", nil, "recorded_status"}
+
+  defp board_stage(%{status: status}, _pr, _review, _delivery) when status in ["skipped", "closed", "abandoned"],
+    do: {nil, nil, "recorded_status"}
+
+  defp board_stage(_package, _pr, %{status: "in_progress"} = review, _delivery),
+    do: {"review", review[:round_started_at] || review[:started_at], "provider"}
+
+  defp board_stage(%{status: "ready_for_merge"}, _pr, _review, _delivery), do: {"merge", nil, "recorded_status"}
+
+  defp board_stage(%{status: "reviewing"}, _pr, review, _delivery),
+    do: {"review", review[:round_started_at] || review[:started_at], "recorded_status"}
+
+  defp board_stage(package, pr, _review, _delivery) do
+    cond do
+      pr[:status] == "open" and pr[:head_matches] != false ->
+        {"checks", nil, pr[:source] || "recorded_pr"}
+
+      package.status == "ci_waiting" ->
+        {"checks", nil, "recorded_status"}
+
+      package.dispatched_at ->
+        {"build", package.dispatched_at, "dispatched"}
+
+      package.status in ["active", "claimed", "planning", "implementing", "blocked"] ->
+        {"build", nil, "recorded_status"}
+
+      true ->
+        {"queued", package.inserted_at, "created"}
+    end
+  end
+
+  defp stage_timestamp(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> DateTime.to_iso8601(datetime)
+      _invalid -> nil
+    end
+  end
+
+  defp stage_timestamp(value), do: Sanitizer.timestamp(value)
+
+  defp review_observation_state(nil), do: "unknown"
+
+  defp review_observation_state(observation) do
+    if map_value(observation, "provider_status") in ["stale", "invalidated", "head_changed_after_review"], do: "stale", else: "current"
+  end
+
+  @spec activity(WorkPackage.t(), map(), map(), [map()], [map()]) :: map()
+  def activity(work_package, summary, operational_state, events, guidance) do
+    worker = map_value(summary, "worker_signal") || %{}
+    review = map_value(summary, "review_signal") || %{}
+    runtime = map_value(summary, "runtime_state") || %{}
+    stage = activity_stage(work_package, operational_state, review)
+    latest_event = List.last(events)
+    started_at = review_started_at(stage, review)
+    {waiting_reason, next_actor, next_action} = next_activity(work_package, summary, guidance, review, worker)
+
+    %{
+      work_package_id: work_package.id,
+      accountable_owner: accountable_owner(work_package.owner_id),
+      current_actor: runtime[:current_actor],
+      stage: stage,
+      started_at: started_at,
+      elapsed_seconds: elapsed_seconds(started_at),
+      waiting_reason: waiting_reason,
+      next_actor: next_actor,
+      next_action: next_action,
+      last_update_at: latest_timestamp([work_package.updated_at, map_value(latest_event, "created_at"), worker[:last_activity]]),
+      last_update: latest_event |> map_value("summary") |> bounded_string(),
+      observation_state: observation_state(runtime),
+      observed_at: review[:observed_at]
+    }
+    |> reject_nil_values()
+    |> Sanitizer.redacted_json()
+  end
+
+  defp accountable_owner(nil), do: nil
+  defp accountable_owner(id), do: %{id: id, source: "work_package"}
+
+  defp activity_stage(%{status: status}, _operational_state, %{status: "in_progress"})
+       when status not in ["skipped", "merged", "closed", "abandoned"], do: "reviewing"
+
+  defp activity_stage(%{status: status}, _operational_state, _review)
+       when status in ["planning", "implementing", "reviewing", "ci_waiting", "ready_for_merge"], do: status
+
+  defp activity_stage(_work_package, operational_state, _review), do: operational_state.key
+
+  defp review_started_at("reviewing", review), do: review[:round_started_at] || review[:started_at]
+  defp review_started_at(_stage, _review), do: nil
+
+  defp elapsed_seconds(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> max(DateTime.diff(DateTime.utc_now(), datetime, :second), 0)
+      _invalid -> nil
+    end
+  end
+
+  defp elapsed_seconds(_value), do: nil
+
+  defp latest_timestamp(values) do
+    values
+    |> Enum.reject(&is_nil/1)
+    |> Enum.max_by(&Sanitizer.timestamp_sort_value/1, fn -> nil end)
+    |> Sanitizer.timestamp()
+  end
+
+  defp next_activity(work_package, summary, guidance, review, worker) do
+    guidance_wait = guidance_wait(guidance)
+    dependency = map_value(summary, "dependency_signal") || %{}
+    eligibility = Map.get(summary, :merge_eligibility, %{})
+    dependency_reason = Enum.find(Map.get(eligibility, :reason_codes, []), &(&1 != "not_ready"))
+
+    cond do
+      work_package.status in ["skipped", "merged", "closed", "abandoned"] -> {nil, nil, nil}
+      guidance_wait -> guidance_wait
+      dependency_reason -> {dependency_reason, "architect", eligibility[:next_action]}
+      Map.get(dependency, :unmet_work_package_ids, []) != [] -> {"unmet_dependencies", "prerequisite_owner", "resolve_dependencies"}
+      get_in(summary, [:blocker_state, :active?]) -> {"active_blocker", nil, "resolve_blocker"}
+      true -> next_runtime_activity(work_package, review, worker, eligibility)
+    end
+  end
+
+  defp guidance_wait(guidance) do
+    human = Enum.find(guidance, &(&1.status == "human_info_needed"))
+    open = Enum.find(guidance, &(&1.status == "open"))
+
+    cond do
+      human -> {human.human_info_reason || human.summary, "human", "answer_guidance"}
+      open -> {open.summary, "architect", "answer_guidance"}
+      true -> nil
+    end
+  end
+
+  defp next_runtime_activity(work_package, review, worker, eligibility) do
+    cond do
+      worker[:status] == "paused" -> {"worker_paused", "worker", "resume"}
+      worker[:status] == "stale" -> {"runtime_stale", nil, "inspect_runtime"}
+      review[:next_action] not in [nil, "none"] -> {if(review[:next_action] == "wait", do: "review_in_progress"), "worker", review[:next_action]}
+      work_package.status == "ready_for_merge" -> {"awaiting_integration", "architect", eligibility[:next_action]}
+      work_package.status == "ci_waiting" -> {"validation_pending", "worker", "check_validation"}
+      true -> {nil, nil, nil}
+    end
+  end
+
+  defp observation_state(%{stale?: true}), do: "stale"
+  defp observation_state(%{paused?: true}), do: "paused"
+  defp observation_state(%{current_actor: actor}) when is_map(actor), do: "current"
+  defp observation_state(_worker), do: "unknown"
 
   @spec dependency_context(map()) :: map()
   def dependency_context(execution_graphs) when is_map(execution_graphs) do
@@ -280,28 +484,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   defp override_pr_status(signal, %{outcome: "pr_merged"}), do: %{signal | status: "merged"}
   defp override_pr_status(signal, _delivery), do: signal
 
-  defp checks(nil), do: nil
-  defp checks(value) when not is_map(value), do: %{status: "unavailable"}
+  defp checks(nil, _changed_at), do: nil
+  defp checks(value, _changed_at) when not is_map(value), do: %{status: "unavailable"}
 
-  defp checks(value) do
+  defp checks(value, changed_at) do
     %{
-      status: value |> first_map_value(["conclusion", "state", "status"]) |> check_status(),
+      status: value |> first_map_value(["conclusion", "state", "status"]) |> PullRequestProgress.check_status(),
       current: integer_value(first_map_value(value, ["current", "completed", "completed_count"])),
-      total: integer_value(first_map_value(value, ["total", "total_count", "check_count"]))
+      total: integer_value(first_map_value(value, ["total", "total_count", "check_count"])),
+      changed_at: changed_at
     }
     |> reject_nil_values()
   end
-
-  defp check_status(value) when is_binary(value) do
-    case value |> String.trim() |> String.downcase() do
-      status when status in ["success", "succeeded", "passed", "passing", "complete", "completed"] -> "passing"
-      status when status in ["failure", "failed", "failing", "error", "cancelled", "timed_out"] -> "failing"
-      status when status in ["pending", "queued", "running", "in_progress", "in progress", "waiting"] -> "pending"
-      _status -> "unavailable"
-    end
-  end
-
-  defp check_status(_value), do: "unavailable"
 
   defp dependency_input_status(work_package_id, unmet_ids, context) do
     activity = get_in(context, [:activity_contexts, work_package_id]) || WorkPackageActivity.empty_context()

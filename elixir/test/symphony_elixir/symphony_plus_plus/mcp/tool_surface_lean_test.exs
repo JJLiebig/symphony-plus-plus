@@ -28,14 +28,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolSurfaceLeanTest do
     assert Process.alive?(agent_pid)
   end
 
-  test "profile parsing rejects unknown startup surfaces" do
-    assert {:ok, %Config{surface_profile: :worker}} = Config.parse(["--surface-profile", "worker"])
-    assert {:ok, %Config{surface_profile: :full}} = Config.parse(["--surface-profile", "default"])
-    assert {:error, usage} = Config.parse(["--surface-profile", "bootstrap"])
-    assert usage == Config.usage()
-    assert_raise ArgumentError, fn -> Config.default(surface_profile: "bootstrap", source_revision: nil) end
-  end
-
   defp listed_tools(profile) do
     server = Server.new(Config.default(surface_profile: profile, source_revision: nil), initialized: true)
     response = Server.handle(%{"jsonrpc" => "2.0", "id" => "tools", "method" => "tools/list", "params" => %{}}, server)

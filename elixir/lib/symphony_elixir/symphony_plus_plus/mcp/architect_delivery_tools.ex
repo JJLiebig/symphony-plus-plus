@@ -29,9 +29,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.BlockerProjection
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
-  alias SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler
 
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{
+    ArchitectPRSync,
     Auth,
     Config,
     CurrentWorkRequest,
@@ -140,7 +140,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
              :review_evidence_append,
              "sync_pr"
            ),
-         {:ok, pr_sync} <- MergeReconciler.reconcile_work_package(config.repo, work_package.id),
+         {:ok, pr_sync} <- ArchitectPRSync.sync(config.repo, live_session, work_package, arguments),
          {:ok, result} <- architect_sync_pr_result(config.repo, work_package.id, pr_sync, scope) do
       {:ok, result}
     else
@@ -738,7 +738,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
   end
 
   defp architect_sync_pr_result(repo, work_package_id, %{status: status} = pr_sync, scope)
-       when status in ["merged", "already_merged"] do
+       when status in ["merged", "already_merged", "ready_for_worker", "active", "reviewing", "ci_waiting", "ready_for_merge"] do
     with {:ok, work_package} <- WorkPackageRepository.get(repo, work_package_id) do
       {:ok,
        ToolResult.tool_result(%{

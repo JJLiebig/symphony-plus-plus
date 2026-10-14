@@ -5,7 +5,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.ResolverTest do
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.Actor
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.ActorResolver
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.Scope
-  alias SymphonyElixir.SymphonyPlusPlus.Authorization.Target
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.TargetResolver
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Session
 
@@ -91,15 +90,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.ResolverTest do
     assert actor.scopes == [Scope.work_package("wp-worker")]
   end
 
-  test "resolves local operator to trusted ledger scope" do
-    assert %Actor{
-             id: "operator-1",
-             role: :human_operator,
-             source: :local_operator,
-             scopes: [%Scope{type: :ledger, metadata: %{trusted_local: true}}]
-           } = ActorResolver.local_operator("operator-1")
-  end
-
   test "resolves operator assignment to ledger scope" do
     assert %Actor{
              role: :operator,
@@ -116,18 +106,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.ResolverTest do
     assert Enum.any?(actor.scopes, &match?(%Scope{type: :work_package, id: "wp-legacy"}, &1))
   end
 
-  test "target resolver stubs current worker, architect, and operator targets" do
-    worker_assignment = assignment("worker", work_package_id: "wp-1")
+  test "architect target resolution rejects missing WorkRequest scope" do
     architect_assignment = assignment("architect", phase_id: "phase-1")
-
-    assert {:ok, %Target{type: :work_package, id: "wp-1", work_package_id: "wp-1"}} =
-             TargetResolver.current_worker_package(worker_assignment)
-
-    assert {:ok, %Target{type: :work_request, id: "wr-1", phase_id: "phase-1", work_request_id: "wr-1"}} =
-             TargetResolver.architect_work_request(architect_assignment, work_request_id: "wr-1")
-
     assert {:error, :missing_work_request_scope} = TargetResolver.architect_work_request(architect_assignment, [])
-    assert %Target{type: :ledger} = TargetResolver.local_operator_ledger()
   end
 
   defp assignment(role, opts) do

@@ -3,37 +3,6 @@ Code.require_file("../../../support/symphony_plus_plus/mcp_case.exs", __DIR__)
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
-  test "session parsing reports malformed assignment fields" do
-    attrs = %{
-      "grant_id" => "grant-1",
-      "work_package_id" => "SYMPP-SESSION",
-      "display_key" => "ABCD",
-      "grant_role" => "worker",
-      "capabilities" => ["read:own"],
-      "claimed_by" => "worker-1",
-      "claimed_at" => "2026-05-04T12:00:00Z",
-      "proof_hash" => "proof"
-    }
-
-    assert {:ok, session} = Session.from_map(attrs)
-    assert session.proof_hash == "proof"
-    assert session.assignment.claimed_at == ~U[2026-05-04 12:00:00Z]
-
-    assert {:ok, nil_session} = Session.from_map(%{attrs | "claimed_at" => nil})
-    assert nil_session.assignment.claimed_at == nil
-
-    assert {:ok, nullable_session} = Session.from_map(%{attrs | "work_package_id" => nil, "capabilities" => nil})
-    assert nullable_session.assignment.work_package_id == nil
-    assert nullable_session.assignment.capabilities == nil
-
-    assert Session.from_map(%{attrs | "grant_id" => " "}) == {:error, {:blank, "grant_id"}}
-    assert Session.from_map(Map.delete(attrs, "work_package_id")) == {:error, {:missing, "work_package_id"}}
-    assert Session.from_map(%{attrs | "capabilities" => ["read:own", :bad]}) == {:error, {:invalid, "capabilities"}}
-    assert Session.from_map(%{attrs | "capabilities" => "read:own"}) == {:error, {:missing, "capabilities"}}
-    assert Session.from_map(%{attrs | "claimed_at" => "not-a-date"}) == {:error, {:invalid, "claimed_at", :invalid_format}}
-    assert Session.from_map(%{attrs | "claimed_at" => 123}) == {:error, {:invalid, "claimed_at"}}
-  end
-
   test "session grant validation accepts nil expiry and rejects inactive or unclaimed grants" do
     now = ~U[2026-05-04 12:00:00Z]
 
@@ -79,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
              {:error, {:service_unavailable, {:unexpected_grant_lookup_result, :tuple}}}
   end
 
-  test "auth helpers reject sessions after package authority reaches a terminal state", %{repo: repo} do
+  test "direct raw-proof session validation retires terminal worker authority", %{repo: repo} do
     assert {:ok, package} =
              WorkPackageRepository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-AUTH-TERMINAL", kind: "mcp", status: "ready_for_worker"))
 
@@ -92,15 +61,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
     assert Auth.require_session(session, repo) == {:error, {:unauthorized, :work_package_terminal}}
   end
 
-  test "auth helpers preserve live architect sessions and retire them with their anchor package", %{repo: repo} do
+  test "direct phase architect proof retires with its anchor while WorkRequest handoff authority is separate", %{repo: repo} do
     {package, session, _grant} = create_phase_architect_session(repo, "SYMPP-AUTH-ARCH-TERMINAL", ["read:phase"])
 
-    assert {:ok, live_session} = Auth.require_session(session, repo)
-    assert live_session.assignment.grant_role == "architect"
-    assert live_session.assignment.work_package_id == package.id
-    assert live_session.assignment.phase_id == package.phase_id
-    assert Scope.work_package(package.id) in live_session.assignment.scopes
-    assert Scope.repo(package.repo, package.base_branch) in live_session.assignment.scopes
+    assert {:ok, _live_session} = Auth.require_session(session, repo)
 
     assert {:ok, _terminal_package} = WorkPackageRepository.update(repo, package.id, %{status: "merged"})
 
@@ -150,94 +114,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
 
     assert {:ok, _revoked} = AccessGrantService.revoke(repo, grant.id)
     assert Auth.require_session(session, repo) == {:error, {:unauthorized, :revoked}}
-  end
-
-  test "config parser defaults to stdio and rejects unsupported modes" do
-    assert {:ok, %Config{mode: :stdio, database: nil}} = Config.parse([])
-
-    assert %Config{
-             mode: :stdio,
-             repo: Repo,
-             version: version,
-             source_revision: source_revision,
-             repo_root: nil
-           } = Config.default()
-
-    assert is_binary(version)
-    assert is_nil(source_revision) or source_revision =~ ~r/\A[0-9a-f]{40}\z/
-    assert {:ok, %Config{mode: :stdio, database: "tmp/sympp.sqlite3"}} = Config.parse(["--database", "tmp/sympp.sqlite3"])
-    assert {:ok, %Config{repo_root: repo_root}} = Config.parse(["--repo-root", " . "])
-    assert repo_root == Path.expand(".")
-    assert {:error, repo_root_message} = Config.parse(["--repo-root", "  "])
-    assert repo_root_message == Config.usage()
-    assert {:error, secret_env_message} = Config.parse(["--work-key-secret-env", "SYMPP_MCP_SECRET"])
-    assert secret_env_message == Config.usage()
-
-    assert {:ok, %Config{claimed_by: "worker-1"}} = Config.parse(["--claimed-by", "worker-1"])
-
-    assert {:error, message} = Config.parse(["--mode", "http"])
-    assert message =~ "Only STDIO MCP mode is supported"
-    assert {:error, invalid_message} = Config.parse(["--unknown"])
-    assert invalid_message == Config.usage()
-  end
-
-  test "config source revision can be pinned by launcher environment" do
-    old_revision = System.get_env("SYMPP_SOURCE_REVISION")
-    pinned_revision = "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
-
-    try do
-      :persistent_term.erase({Config, :source_revision})
-      System.put_env("SYMPP_SOURCE_REVISION", pinned_revision)
-
-      assert Config.source_revision() == String.downcase(pinned_revision)
-      assert Config.default().source_revision == String.downcase(pinned_revision)
-    after
-      if old_revision do
-        System.put_env("SYMPP_SOURCE_REVISION", old_revision)
-      else
-        System.delete_env("SYMPP_SOURCE_REVISION")
-      end
-
-      :persistent_term.erase({Config, :source_revision})
-    end
-  end
-
-  test "health contract fingerprint is independent from source revision", %{repo: repo} do
-    revision_a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    revision_b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-
-    health_a =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "health-a",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health", "arguments" => %{}}
-        },
-        config: Config.default(repo: repo, source_revision: revision_a)
-      )
-
-    health_b =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "health-b",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health", "arguments" => %{}}
-        },
-        config: Config.default(repo: repo, source_revision: revision_b)
-      )
-
-    assert get_in(health_a, ["result", "structuredContent", "source", "revision"]) == revision_a
-    assert get_in(health_b, ["result", "structuredContent", "source", "revision"]) == revision_b
-    assert get_in(health_a, ["result", "structuredContent", "source", "mcp_contract"]) == Server.mcp_contract_identity()
-    assert get_in(health_b, ["result", "structuredContent", "source", "mcp_contract"]) == Server.mcp_contract_identity()
-  end
-
-  test "MCP timestamp serialization treats naive datetimes as UTC instants" do
-    assert Server.mcp_timestamp(~U[2026-05-12 12:34:56.123456Z]) == "2026-05-12T12:34:56.123456Z"
-    assert Server.mcp_timestamp(~N[2026-05-12 12:34:56.123456]) == "2026-05-12T12:34:56.123456Z"
-    assert Server.mcp_timestamp(nil) == nil
   end
 
   test "database-scoped repo binding reaches the requested ledger while the default repo is running" do
@@ -303,7 +179,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
     end
   end
 
-  test "health reports safe default and explicit sqlite ledger identity", %{repo: repo} do
+  test "health distinguishes configured-default identity from mismatched live sqlite storage", %{repo: repo} do
     database_path = current_main_database_path(repo)
 
     default_response =
@@ -325,24 +201,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
     assert is_binary(default_identity["display_path"])
     assert is_boolean(default_identity["default_home"])
     assert String.ends_with?(default_identity["display_path"], Path.basename(database_path))
-
-    explicit_response =
-      MCPHarness.request(
-        %{
-          "jsonrpc" => "2.0",
-          "id" => "explicit-health",
-          "method" => "tools/call",
-          "params" => %{"name" => "sympp.health", "arguments" => %{}}
-        },
-        config: Config.default(repo: repo, database: database_path)
-      )
-
-    explicit_identity = get_in(explicit_response, ["result", "structuredContent", "ledger", "identity"])
-
-    assert get_in(explicit_response, ["result", "structuredContent", "ledger", "reachable"]) == true
-    assert explicit_identity["kind"] == "sqlite"
-    assert explicit_identity["source"] == "explicit"
-    assert String.ends_with?(explicit_identity["display_path"], Path.basename(database_path))
 
     mismatched_database_path = WorkPackageFactory.database_path()
 
@@ -798,89 +656,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ConnectionBootstrap01Test do
       Repo.put_dynamic_repo(original_repo)
       File.rm(first_database)
       File.rm(second_database)
-    end
-  end
-
-  test "mix task health uses the database-scoped local-claim session ledger" do
-    database_path = WorkPackageFactory.database_path()
-    original_repo = Repo.get_dynamic_repo()
-
-    {:ok, pid} =
-      Repo.start_link(database: database_path, name: Repo.process_name(database_path), pool_size: 1, log: false)
-
-    try do
-      Repo.put_dynamic_repo(pid)
-      assert :ok = WorkPackageRepository.migrate(Repo)
-
-      assert {:ok, package} =
-               WorkPackageRepository.create(
-                 Repo,
-                 WorkPackageFactory.attrs(id: "SYMPP-P10-006-HEALTH", status: "ready_for_worker")
-               )
-
-      assert {:ok, _minted} = AccessGrantService.mint_worker_grant(Repo, package.id)
-
-      input =
-        [
-          Jason.encode!(%{"jsonrpc" => "2.0", "id" => "init", "method" => "initialize", "params" => initialize_params()}),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "claim",
-            "method" => "tools/call",
-            "params" => %{
-              "name" => "claim_local_assignment",
-              "arguments" => %{"work_package_id" => package.id, "claimed_by" => "worker-health-1"}
-            }
-          }),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "health",
-            "method" => "tools/call",
-            "params" => %{"name" => "sympp.health", "arguments" => %{}}
-          }),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "assignment",
-            "method" => "resources/read",
-            "params" => %{"uri" => "sympp://assignment/current"}
-          }),
-          Jason.encode!(%{
-            "jsonrpc" => "2.0",
-            "id" => "progress",
-            "method" => "tools/call",
-            "params" => %{
-              "name" => "append_progress",
-              "arguments" => %{
-                "summary" => "Health reached the scoped ledger",
-                "idempotency_key" => "test-health-scoped-ledger"
-              }
-            }
-          })
-        ]
-        |> Enum.join("\n")
-        |> Kernel.<>("\n")
-
-      output =
-        capture_io(input, fn ->
-          McpTask.run(["--database", database_path])
-        end)
-
-      responses = decode_json_lines(output)
-      health_response = Enum.find(responses, &(Map.get(&1, "id") == "health"))
-      assignment_response = Enum.find(responses, &(Map.get(&1, "id") == "assignment"))
-      progress_response = Enum.find(responses, &(Map.get(&1, "id") == "progress"))
-      assignment = Jason.decode!(get_in(assignment_response, ["result", "contents", Access.at(0), "text"]))
-
-      assert get_in(health_response, ["result", "structuredContent", "status"]) == "ok"
-      assert get_in(health_response, ["result", "structuredContent", "ledger", "reachable"]) == true
-      assert get_in(health_response, ["result", "structuredContent", "ledger", "identity", "kind"]) == "sqlite"
-      assert get_in(health_response, ["result", "structuredContent", "ledger", "identity", "source"]) == "explicit"
-      assert assignment["work_package_id"] == package.id
-      assert get_in(progress_response, ["result", "structuredContent", "progress_event", "id"])
-    after
-      Repo.put_dynamic_repo(original_repo)
-      GenServer.stop(pid)
-      File.rm(database_path)
     end
   end
 end

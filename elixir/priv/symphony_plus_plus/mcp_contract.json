@@ -1,5 +1,5 @@
 {
-  "mcp_contract_fingerprint": "9b6b66ac107a350aa6932020fa42c06a35bd355bafaca9849ff6e96aed0ffeba",
+  "mcp_contract_fingerprint": "47d3c9ae16d209dd1fef24601b51cd56389fe427a5fc778ed0fd4428aed9e4f3",
   "tool_sets": {
     "architect_tools": [
       "list_work_requests",
@@ -78,6 +78,7 @@
     "worker_tools": [
       "get_current_assignment",
       "read_context",
+      "read_work_package_document",
       "read_task_plan",
       "update_task_plan",
       "append_finding",

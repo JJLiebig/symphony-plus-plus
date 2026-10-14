@@ -150,40 +150,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
     assert get_in(second_worker_read_response, ["error", "data", "reason"]) == "not_found"
   end
 
-  test "worker guidance replay normalizes atom-keyed structured prompt payloads", %{repo: repo} do
-    {_package, worker_session} = create_worker_session(repo, "SYMPP-GUIDANCE-ATOM-PROMPT")
-
-    create_attrs = %{
-      "summary" => "Need prompt replay",
-      "question" => "Can a structured prompt replay cleanly?",
-      "context" => "The worker retries an Elixir-built payload with nested atom keys.",
-      "idempotency_key" => "guidance-atom-prompt",
-      decision_prompt: %{
-        tl_dr: "Choose replay behavior.",
-        details: "The same structured prompt should replay instead of conflicting.",
-        options: [
-          %{
-            id: "continue",
-            label: "Continue",
-            description: "Proceed with the existing path.",
-            pros: ["Keeps retry idempotent"],
-            cons: ["No alternate behavior in this test"],
-            answer: "Continue with the existing path."
-          }
-        ],
-        custom_redirect_label: "No, and tell the agent what to do differently"
-      }
-    }
-
-    assert {:ok, created} = GuidanceRequestService.create_for_worker(repo, worker_session.assignment, create_attrs)
-    assert created.decision_prompt["tl_dr"] == "Choose replay behavior."
-    assert get_in(created.decision_prompt, ["options", Access.at(0), "id"]) == "continue"
-
-    assert {:ok, replayed} = GuidanceRequestService.create_for_worker(repo, worker_session.assignment, create_attrs)
-    assert replayed.id == created.id
-    assert repo.aggregate(GuidanceRequest, :count, :id) == 1
-  end
-
   test "architect lists scoped guidance, reads it, and workers cannot answer", %{repo: repo} do
     {anchor, architect_session} = create_architect_session(repo, "SYMPP-GUIDANCE-ARCHITECT")
     {visible_package, worker_session} = create_worker_session(repo, "SYMPP-GUIDANCE-VISIBLE", phase_id: anchor.phase_id)
@@ -329,7 +295,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
       })
 
     assert get_in(escalation_response, ["result", "structuredContent", "guidance_request", "status"]) == "human_info_needed"
-    assert get_in(escalation_response, ["result", "structuredContent", "blocker", "active"]) == true
+    refute get_in(escalation_response, ["result", "structuredContent", "blocker"])
 
     worker_read_response = mcp_tool(repo, worker_session, "read_guidance_request", %{"guidance_request_id" => guidance_request_id})
 
@@ -428,7 +394,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
     assert get_in(list_response, ["result", "structuredContent", "guidance_requests"]) == []
   end
 
-  test "architect escalation records human_info_needed blocker that blocks readiness", %{repo: repo} do
+  test "questions and human answers leave explicit work blockers unchanged", %{repo: repo} do
     work_request = create_work_request!(repo, id: "WR-GUIDANCE-BLOCKED")
     work_package = create_work_package!(repo, work_request, id: "WRS-GUIDANCE-BLOCKED")
     assert {:ok, approved_slice} = CanonicalWorkPackageFixtures.approve_work_package(repo, work_request.id, work_package.id, "planned")
@@ -477,23 +443,29 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
 
     refute Map.has_key?(get_in(escalation_response, ["result", "structuredContent", "guidance_request"]), "decision_prompt")
 
-    blocker = get_in(escalation_response, ["result", "structuredContent", "blocker"])
-    assert blocker["active"] == true
-    assert blocker["id"] == "guidance_request:#{request_id}"
+    refute get_in(escalation_response, ["result", "structuredContent", "blocker"])
+    assert repo.get!(WorkPackage, package.id).status == "ci_waiting"
+    assert {:ok, events} = SymphonyElixir.SymphonyPlusPlus.Planning.Repository.list_progress_events(repo, package.id)
+    refute Enum.any?(events, &(&1.payload["type"] == "blocker"))
+    unblocked = mcp_tool(repo, worker_session, "mark_ready", %{})
+    refute get_in(unblocked, ["error", "data", "reason_code"]) == "blocker_closeout_required"
 
-    event = repo.get!(ProgressEvent, blocker["progress_event_id"])
-    assert event.work_package_id == package.id
-    assert event.body =~ "The package cannot choose product behavior without human input."
-    assert event.body =~ "Human info needed: choose the package behavior before implementation continues."
-    assert event.payload["type"] == "blocker"
-    assert event.payload["source_tool"] == "report_blocker"
-    assert event.payload["human_info_needed"] == true
-    assert event.payload["recommended_language"] =~ "Human info needed"
+    assert {:ok, _declared} =
+             SymphonyElixir.SymphonyPlusPlus.Planning.Repository.append_audit_progress_event_for_work_package(
+               repo,
+               architect_session.assignment,
+               package.id,
+               %{
+                 "summary" => "Architect declared a concrete work blocker",
+                 "idempotency_key" => "explicit-guidance-blocker",
+                 "payload" => %{"type" => "blocker", "source_tool" => "report_blocker", "blocker_id" => "product-decision", "active" => true}
+               }
+             )
 
     ready_response = mcp_tool(repo, worker_session, "mark_ready", %{})
     assert get_in(ready_response, ["error", "data", "reason_code"]) == "blocker_closeout_required"
     assert [%{"blocker_id" => blocker_id, "work_package_id" => package_id}] = get_in(ready_response, ["error", "data", "active_blockers"])
-    assert blocker_id == "guidance_request:#{request_id}"
+    assert blocker_id == "product-decision"
     assert package_id == package.id
 
     worker_closeout_response =
@@ -530,7 +502,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
     assert invalid_choice_request.status == "human_info_needed"
     refute invalid_choice_request.answer
 
-    assert {:ok, %{guidance_request: answered, blocker_event: resolve_event}} =
+    assert {:ok, %{guidance_request: answered}} =
              GuidanceRequestService.answer_human_info_needed_for_local_operator(
                repo,
                :local_operator,
@@ -545,15 +517,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPGuidanceRequestsTest do
     assert answered.status == "answered"
     assert answered.answered_by == "local-operator"
     assert answered.answer == "Implement the explicit public behavior. Keep the fallback out of this package."
-    assert resolve_event.work_package_id == package.id
-    assert resolve_event.status == "resolved"
-    assert resolve_event.payload["source_tool"] == "resolve_blocker"
-    assert resolve_event.payload["blocker_id"] == "guidance_request:#{request_id}"
-    assert resolve_event.payload["active"] == false
-
-    unblocked_ready_response = mcp_tool(repo, worker_session, "mark_ready", %{})
-    unblocked_missing = get_in(unblocked_ready_response, ["error", "data", "missing"]) || []
-    refute "no_active_blockers" in unblocked_missing
+    still_blocked = mcp_tool(repo, worker_session, "mark_ready", %{})
+    assert get_in(still_blocked, ["error", "data", "reason_code"]) == "blocker_closeout_required"
   end
 
   test "local operator answer path denies ordinary open guidance", %{repo: repo} do

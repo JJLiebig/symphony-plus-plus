@@ -24,6 +24,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
           target_id: String.t() | nil,
           kind: String.t() | nil,
           reason: String.t() | nil,
+          candidate_head_sha: String.t() | nil,
+          selection_updated_at: DateTime.t() | nil,
           decision_ref: map() | nil,
           created_by: String.t() | nil,
           created_at: DateTime.t() | nil,
@@ -39,6 +41,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
     field(:target_id, :string)
     field(:kind, :string)
     field(:reason, :string)
+    field(:candidate_head_sha, :string)
+    field(:selection_updated_at, :utc_datetime_usec)
     field(:decision_ref, :map)
     field(:created_by, :string)
     field(:created_at, :utc_datetime_usec)
@@ -78,6 +82,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
       :target_id,
       :kind,
       :reason,
+      :candidate_head_sha,
       :decision_ref,
       :created_by,
       :created_at
@@ -95,9 +100,34 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyEdge do
     |> validate_inclusion(:source_kind, @ref_kinds)
     |> validate_inclusion(:target_kind, @ref_kinds)
     |> validate_inclusion(:kind, @edge_kinds)
+    |> validate_format(:candidate_head_sha, ~r/\A[0-9a-fA-F]{40}\z/)
+    |> validate_candidate_prerequisite()
     |> validate_hard_edge_context()
     |> validate_not_self_edge()
+    |> stamp_selection_change()
     |> foreign_key_constraint(:work_request_id)
+  end
+
+  defp stamp_selection_change(changeset) do
+    candidate_selection? = get_field(changeset, :candidate_head_sha) || changeset.data.candidate_head_sha || changeset.data.selection_updated_at
+    changed? = Enum.any?([:source_kind, :source_id, :target_kind, :target_id, :kind, :candidate_head_sha], &changed?(changeset, &1))
+
+    if candidate_selection? && changed? do
+      put_change(changeset, :selection_updated_at, DateTime.utc_now(:microsecond))
+    else
+      changeset
+    end
+  end
+
+  defp validate_candidate_prerequisite(changeset) do
+    kind = get_field(changeset, :kind)
+    prerequisite_kind = get_field(changeset, if(kind == "blocks", do: :source_kind, else: :target_kind))
+
+    if get_field(changeset, :candidate_head_sha) && (kind not in @hard_edge_kinds or prerequisite_kind != "work_package") do
+      add_error(changeset, :candidate_head_sha, "requires one concrete prerequisite WorkPackage")
+    else
+      changeset
+    end
   end
 
   defp redact_attrs(attrs) do

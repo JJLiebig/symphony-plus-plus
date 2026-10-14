@@ -1,11 +1,13 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("Setup", "Validate", "Start", "Restart", "Status", "Stop", "Package", "Codex")]
+  [ValidateSet("Setup", "Validate", "Snapshot", "Start", "Restart", "Status", "Stop", "Package", "Codex")]
   [string]$Action = "Setup",
   [string]$RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..")),
   [string]$BetaWorktree,
   [string]$SymppHome,
   [string]$Database,
+  [string]$SourceDatabase,
+  [switch]$ReplaceSnapshot,
   [string]$ResumeSessionId,
   [switch]$LiveLedger,
   [int]$BackendPort = 20000,
@@ -124,6 +126,9 @@ function Resolve-BetaConfiguration(
 
   $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
   $liveDatabase = [System.IO.Path]::GetFullPath((Join-Path $profile ".agents/splusplus/symphony_plus_plus.sqlite3"))
+  if (Test-PathInside $homePath (Split-Path -Parent $liveDatabase)) {
+    throw "Beta home must be separate from the live Symphony++ home."
+  }
   if ([string]::IsNullOrWhiteSpace($DatabasePath)) {
     $DatabasePath = if ($UseLiveLedger) { $liveDatabase } else { Join-Path $homePath "ledger/beta.sqlite3" }
   } else {
@@ -306,6 +311,19 @@ function Get-BetaEnvironment($Config, [switch]$Package) {
     SYMPP_MIX = $null
     SYMPP_MCP_BRIDGE_MODE = $null
   }
+  $environment.SYMPP_OFFLINE_SANDBOX = if ($Config.ledger_mode -eq "live") { $null } else { "1" }
+  if ($Config.ledger_mode -ne "live") {
+    $environment.SYMPP_OPEN_DASHBOARD = "0"
+    $environment.SYMPP_OPERATOR_CONFIG = Join-Path $Config.sympp_home "operator-board.json"
+    $environment.SYMPP_LOGS_ROOT = $Config.log_dir
+    $environment.MIX_BUILD_PATH = $null
+    $environment.TEMP = Join-Path $Config.sympp_home "tmp"
+    $environment.TMP = $environment.TEMP
+    $environment.TMPDIR = $environment.TEMP
+    foreach ($name in @("HERDR_ENV", "HERDR_PANE_ID", "SYMPP_MCP_SHUTDOWN_ON_IDLE", "SYMPP_MCP_BRIDGE_PROBE", "SYMPP_MCP_BRIDGE_LEASE_DIR", "SYMPP_WORKFLOW_FILE", "SYMPP_LAUNCHER_TRACE_DIR")) {
+      $environment[$name] = $null
+    }
+  }
   if ($Package) { $environment.CODEX_HOME = $Config.codex_home }
   return $environment
 }
@@ -314,6 +332,7 @@ function Invoke-WithBetaEnvironment($Config, [scriptblock]$Command, [switch]$Pac
   $previous = @{}
   $environment = Get-BetaEnvironment $Config -Package:$Package
   try {
+    if ($environment.TEMP) { New-Item -ItemType Directory -Path $environment.TEMP -Force | Out-Null }
     foreach ($name in $environment.Keys) {
       $previous[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
       [Environment]::SetEnvironmentVariable($name, [string]$environment[$name], "Process")
@@ -337,6 +356,71 @@ function Get-BetaCodexArguments($Config, [string]$SessionId) {
   $arguments = @("-c", $mcpOverride, "-C", $Config.worktree)
   if (-not [string]::IsNullOrWhiteSpace($SessionId)) { $arguments += @("resume", $SessionId) }
   return $arguments
+}
+
+function Invoke-WithBetaLedgerLock($Config, [scriptblock]$Command) {
+  New-Item -ItemType Directory -Path (Split-Path -Parent $Config.runtime_file) -Force | Out-Null
+  $lockPath = Join-Path (Split-Path -Parent $Config.runtime_file) "beta-ledger.lock"
+  try {
+    $lock = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+  } catch { throw "Another beta start or snapshot is in progress. Try again after it finishes." }
+  try { & $Command } finally { $lock.Dispose() }
+}
+
+function Get-BetaPython {
+  foreach ($name in @("python", "python3")) {
+    $command = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($command) { return $command.Source }
+  }
+  throw "Python 3 is required for a consistent online SQLite snapshot."
+}
+
+function Assert-BetaLedger($Config) {
+  $arguments = @((Join-Path $Config.worktree "scripts/sympp_beta_snapshot.py"), "verify", $Config.database)
+  if ($Config.ledger_mode -eq "live") { $arguments += "--live" }
+  & (Get-BetaPython) @arguments
+  if ($LASTEXITCODE -ne 0) { throw "Beta ledger verification failed." }
+}
+
+function Assert-BetaSnapshotStopped($Config) {
+  $state = Get-BetaRuntimeState $Config
+  if ($state -and ((Test-BetaRuntimeProcessRunning $state.backend) -or (Test-BetaRuntimeProcessRunning $state.frontend))) {
+    throw "Stop the beta runtime before taking a snapshot. The live runtime can keep running."
+  }
+}
+
+function New-BetaSnapshot($Config, [string]$Source, [bool]$Replace) {
+  if ($Config.ledger_mode -eq "live") { throw "Snapshot cannot be combined with -LiveLedger." }
+  if ([string]::IsNullOrWhiteSpace($Source)) {
+    $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    $Source = Join-Path $profile ".agents/splusplus/symphony_plus_plus.sqlite3"
+  }
+  if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) { throw "Snapshot source does not exist: $Source" }
+  if (Test-SameDatabasePath $Source $Config.database) { throw "Snapshot source and destination must be different files." }
+  Invoke-WithBetaLedgerLock $Config {
+    Assert-BetaSnapshotStopped $Config
+    $helper = Join-Path $Config.worktree "scripts/sympp_beta_snapshot.py"
+    $python = Get-BetaPython
+    $pluginScripts = Join-Path $Config.worktree "plugins/symphony-plus-plus-mcp/scripts"
+    . (Join-Path $pluginScripts "sympp-launcher-runtime.ps1")
+    . (Join-Path $pluginScripts "sympp-mcp-launcher-helpers.ps1")
+    Invoke-WithBetaEnvironment $Config {
+      $elixir = Join-Path $Config.worktree "elixir"
+      $launcher = Resolve-SymppDefaultLauncher $elixir "mise"
+      $command = Get-LauncherCommand $launcher "mix" "mise" @("sympp.beta_migrate")
+      $arguments = @($helper, "snapshot", $Source, $Config.database, "--sandbox-root", (Join-Path $Config.sympp_home "ledger"))
+      if ($Replace) { $arguments += "--replace" }
+      $arguments += @("--migrate", $command.file) + @($command.args)
+      Push-Location $elixir
+      try {
+        $dependencies = Get-LauncherCommand $launcher "mix" "mise" @("deps.get", "--check-locked")
+        & $dependencies.file @($dependencies.args)
+        if ($LASTEXITCODE -ne 0) { throw "Beta migration dependencies could not be prepared." }
+        & $python @arguments
+        if ($LASTEXITCODE -ne 0) { throw "Snapshot failed; the previous beta ledger was preserved." }
+      } finally { Pop-Location }
+    }
+  }
 }
 
 function Assert-BetaRuntimeIdentity($Config, $State) {
@@ -404,6 +488,11 @@ function Stop-BetaRuntime($Config, [switch]$BackendOnly) {
 }
 
 function Start-BetaRuntime($Config) {
+  Invoke-WithBetaLedgerLock $Config { Start-BetaRuntimeLocked $Config }
+}
+
+function Start-BetaRuntimeLocked($Config) {
+  Assert-BetaLedger $Config
   if (Test-Path -LiteralPath $Config.runtime_file -PathType Leaf) { [void](Get-BetaRuntimeState $Config) }
   $launcher = Join-Path $Config.worktree "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.ps1"
   if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "Beta MCP launcher is missing: $launcher" }
@@ -472,6 +561,10 @@ switch ($Action) {
     Initialize-BetaWorktree $config
   }
   "Validate" { Test-BetaBootstrap $config }
+  "Snapshot" {
+    Assert-BetaWorktreeIdentity $config
+    New-BetaSnapshot $config $SourceDatabase $ReplaceSnapshot.IsPresent
+  }
   "Start" {
     Assert-BetaWorktreeIdentity $config
     Start-BetaRuntime $config
@@ -489,6 +582,7 @@ switch ($Action) {
     Install-BetaPlugin $config
   }
   "Codex" {
+    if ($config.ledger_mode -ne "live") { throw "Offline beta has no MCP access. Use -Action Start and open the board." }
     Assert-BetaWorktreeIdentity $config
     Start-BetaRuntime $config
     $codexArguments = @(Get-BetaCodexArguments $config $ResumeSessionId)

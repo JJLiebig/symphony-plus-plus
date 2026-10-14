@@ -146,6 +146,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
 
     work_request
     |> base_payload(repo_identity_catalog)
+    |> Map.put(:operator_report, Keyword.get(opts, :operator_report))
     |> Map.put(:completed_at, timestamp(completion_state.completed_at))
     |> Map.put(:completion_source, work_request.completion_source)
     |> Map.put(:archived_at, timestamp(completion_state.archived_at))
@@ -271,6 +272,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
            completed_at: timestamp(completion_state.completed_at),
            completion_source: work_request.completion_source,
            archived_at: timestamp(completion_state.archived_at),
+           archive_reason: work_request.archive_reason,
            operational_state: operational_state
          }}
       end)
@@ -348,23 +350,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
     delivery_board
     |> DeliveryWorkPackageProjection.work_packages_by_id()
     |> Enum.flat_map(fn {slice_id, delivery_work_package} ->
-      case completion_delivery_outcome(delivery_work_package) do
-        outcome when is_binary(outcome) and outcome != "" -> [{slice_id, %{outcome: outcome}}]
-        _outcome -> []
+      delivery = map_value(delivery_work_package, "delivery") || %{}
+
+      case map_value(delivery_work_package, "delivery_outcome") || map_value(delivery, "outcome") do
+        outcome when is_binary(outcome) and outcome != "" ->
+          successor_id = map_value(delivery_work_package, "successor_work_package_id") || map_value(delivery, "successor_work_package_id")
+          [{slice_id, %{outcome: outcome, successor_work_package_id: successor_id}}]
+
+        _outcome ->
+          []
       end
     end)
     |> Map.new()
   end
-
-  defp completion_delivery_outcome(%{} = delivery_work_package) do
-    map_value(delivery_work_package, "delivery_outcome") ||
-      case map_value(delivery_work_package, "delivery") do
-        %{} = delivery -> map_value(delivery, "outcome")
-        _delivery -> nil
-      end
-  end
-
-  defp completion_delivery_outcome(_delivery_work_package), do: nil
 
   defp question_context(repo, work_request_ids) do
     rows =
@@ -514,7 +512,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
 
     cond do
       completion_state.archived_at ->
-        completed_operational_state(work_request, attention_items)
+        archived_operational_state(work_request, attention_items)
 
       operator_completed?(work_request, completion_state) ->
         completed_operational_state(work_request, attention_items)
@@ -536,6 +534,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
         base_operational_state(work_request.status, attention_items)
     end
   end
+
+  defp archived_operational_state(%WorkRequest{archive_reason: "never_started"} = work_request, attention_items) do
+    operational_state_map("archived", "Archived", "neutral", "Goal was archived because no package was ever started.", work_request.status, attention_items)
+  end
+
+  defp archived_operational_state(work_request, attention_items), do: completed_operational_state(work_request, attention_items)
 
   defp operator_completed?(%WorkRequest{completion_source: "operator"}, %{completed?: true}), do: true
   defp operator_completed?(%WorkRequest{}, _completion_state), do: false
