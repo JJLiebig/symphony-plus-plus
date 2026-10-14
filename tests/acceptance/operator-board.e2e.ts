@@ -105,7 +105,7 @@ test('operator sees dependency ordering, pending qualification and actual delive
   expect((await row(client, reviewing, reviewWp)).delivery_outcome).toBeNull();
   const commands = (await readFile(receipt, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   expect(commands.some((entry) => entry.command === 'codex' && JSON.stringify(entry.argv) === JSON.stringify(['plugin', 'list', '--json']))).toBe(true);
-  expect(commands.some((entry) => entry.command === 'python' && entry.argv.includes('--status') && entry.argv.includes('--json') && entry.argv.includes('--cd') && entry.argv.includes('origin/beta'))).toBe(true);
+  expect(commands.some((entry) => entry.command === 'python' && JSON.stringify(entry.argv.slice(1)) === JSON.stringify(['--status', '--json', '--cd', prepared.worktree.path, '--base', 'origin/beta']))).toBe(true);
 });
 
 test('operator attention differs from explicit blockers and settings/archive actions persist', async ({ candidate, app, screen, browser }) => {
@@ -113,6 +113,9 @@ test('operator attention differs from explicit blockers and settings/archive act
   const request = await client.request('Operator choice');
   const [wp] = (await client.call('slice_work_request', { work_packages: [contract('Bounded findings')] })).work_package_ids;
   await client.call('dispatch_work_package', { work_package_id: wp });
+  const prematureArchive = await client.operator(`/api/v1/sympp/operator/work-requests/${request}/archive`, {});
+  expect(prematureArchive.status).toBe(422);
+  expect(prematureArchive.body.error.code).toBe('not_completed');
   const anchor = (await client.call('get_current_assignment')).assignment.work_package_id;
   await client.call('append_progress', {
     work_package_id: anchor, summary: 'An operator scope choice is needed.', idempotency_key: 'browser-escalation',
