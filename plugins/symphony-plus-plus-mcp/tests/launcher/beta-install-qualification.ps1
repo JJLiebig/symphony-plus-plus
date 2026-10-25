@@ -5,7 +5,9 @@ function Get-BetaInstallerEntry {
     $wrapper = Join-Path $tempRoot 'beta-install-hosted.ps1'
     $preload = (Join-Path $PSScriptRoot 'hosted-backend-preload.ps1').Replace("'", "''")
     $entrypoint = $installer.Replace("'", "''")
-    [IO.File]::WriteAllText($wrapper, "param([string]`$SymppHome, [string]`$HerdrAppHome, [string]`$ArtifactManifest)`n`$ErrorActionPreference = 'Stop'`n. '$preload'`n& '$entrypoint' @PSBoundParameters`nexit `$LASTEXITCODE`n")
+    # PowerShell prepends PSHOME to PATH, ahead of the basename fixture.
+    $shim = (Join-Path $tempRoot 'trusted-bin/pwsh.exe').Replace("'", "''")
+    [IO.File]::WriteAllText($wrapper, "param([string]`$SymppHome, [string]`$HerdrAppHome, [string]`$ArtifactManifest)`n`$ErrorActionPreference = 'Stop'`n`$env:SYMPP_POWERSHELL = '$shim'`n. '$preload'`n& '$entrypoint' @PSBoundParameters`nexit `$LASTEXITCODE`n")
     $installer = $wrapper
   }
   return $installer
@@ -155,7 +157,8 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $oldHelper = Get-FileHash -LiteralPath $helper -Algorithm SHA256
   $oldMarker = Get-FileHash -LiteralPath $markerFile -Algorithm SHA256
   $Published | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
-  $prepared = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
+  $prepareHost = if ($HostedProcessCreation) { Join-Path $tempRoot 'trusted-bin/pwsh.exe' } else { $pwsh }
+  $prepared = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
   if ($prepared.exit -ne 0) { throw "Could not start the older contract for bundle qualification: $($prepared.stderr)" }
   $publication = $CandidateManifest | ConvertTo-Json -Depth 30 | ConvertFrom-Json
   $publication | Add-Member -NotePropertyName channel -NotePropertyValue 'beta' -Force
