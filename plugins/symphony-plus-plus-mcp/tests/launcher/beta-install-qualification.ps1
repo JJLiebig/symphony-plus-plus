@@ -219,6 +219,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $Published | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
   $prepared = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
   if ($prepared.exit -ne 0) { throw "Could not prepare the stopped factory: $($prepared.stderr)" }
+  $manifest = $Published
   $stopped = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId
   Wait-ManagedRuntimeStopped $stopped.backend_pid $stopped.backend_port
   $publication | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
@@ -235,7 +236,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
       (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $desired.Hash) {
     throw "Stopped-factory installation did not update and verify the bundle: $($installed.stdout) $($installed.stderr)"
   }
-  $upgrade.pid = [int]$updated.backend.pid
+  $manifest = $CandidateManifest
   $fresh = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId
   Wait-ManagedRuntimeStopped $fresh.backend_pid $fresh.backend_port
   $markerStamp = (Get-Item -LiteralPath $markerFile).LastWriteTimeUtc.Ticks
