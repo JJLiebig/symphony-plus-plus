@@ -155,6 +155,9 @@ function Resolve-SymppInstalledIdentity([string]$PluginRoot, [switch]$ReadOnly) 
   $root = [System.IO.Path]::GetFullPath($PluginRoot)
   # Portable content identifies the install; only a verified artifact identifies runtime source.
   $probe = Resolve-SymppPreparedArtifactRuntime $root $null $portable.contract_fingerprint -ValidateOnly
+  if ($probe.detail -eq 'contract_mismatch') {
+    throw 'The Skills bundle and runtime channel have different MCP contracts. Run scripts/install-sympp-beta.ps1 for beta, or update Skills with npx skills update symphony-plus-plus --project --yes, then open fresh MCP client sessions.'
+  }
   $revision = Normalize-SymppMarketplaceSourceRevision ([string]$probe.runtime.source_revision)
   if (-not $revision) { throw "The selected runtime has no valid source revision." }
   $identity = [pscustomobject]@{

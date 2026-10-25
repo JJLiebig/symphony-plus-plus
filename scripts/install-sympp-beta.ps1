@@ -66,7 +66,7 @@ function Assert-FactoryReady($State, [string]$Revision, [string]$Contract) {
   }
 }
 
-function Stop-InstallBackend($State) {
+function Get-InstallBackend($State) {
   $processId = 0
   if (-not [int]::TryParse([string]$State.backend.pid, [ref]$processId) -or $processId -le 0) { return }
   $backend = Get-Process -Id $processId -ErrorAction SilentlyContinue
@@ -76,6 +76,12 @@ function Stop-InstallBackend($State) {
       (Get-ProcessStartIdentity $backend) -ne [string]$State.publication.backend.process_start_time_utc_ticks) {
     throw 'The recorded beta process identity changed. Refusing to stop it.'
   }
+  return $backend
+}
+
+function Stop-InstallBackend($State) {
+  $backend = Get-InstallBackend $State
+  if (-not $backend) { return }
   $backend.Kill()
   if (-not $backend.WaitForExit(10000)) { throw 'The beta backend did not stop.' }
 }
@@ -223,7 +229,10 @@ try {
   & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home (Join-Path $stage 'herdr') | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'The native view could not be prepared.' }
   $restart = $bundleChanged -or $original.backend.source_revision -ne $revision -or $original.artifact.sha256 -ne $candidate.runtime.sha256
-  if (-not $restart) {
+  $startupLock = Enter-FileLock (Resolve-StartupLockFile $runtimeFile) 10
+  if ((Get-Content -LiteralPath $runtimeFile -Raw) -cne $originalText) { throw 'The beta factory changed during preparation; retry installation.' }
+  $backendRunning = $null -ne (Get-InstallBackend $original)
+  if (-not $restart -and $backendRunning) {
     Assert-FactoryReady $original $revision $install.contract_fingerprint
     & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The native view could not be installed; the beta backend is unchanged.' }
@@ -248,13 +257,15 @@ try {
   Write-InstallJson (Join-Path $stage '.sympp-runtime-artifacts.json') $rollbackManifest
   $rollback = Resolve-SymppPreparedArtifactRuntime $stage $null $originalContract -ValidateOnly -PrepareArtifact
   if ($rollback.runtime.source_revision -ne $original.backend.source_revision) { throw 'The previous beta artifact is unavailable for rollback.' }
-  $startupLock = Enter-FileLock (Resolve-StartupLockFile $runtimeFile) 10
-  if ((Get-Content -LiteralPath $runtimeFile -Raw) -cne $originalText) { throw 'The beta factory changed during preparation; retry installation.' }
-  Assert-FactoryReady $original $original.backend.source_revision $originalContract
-  if ($bundleChanged) { Write-Host 'Restarting beta and updating its Skills bundle. Open fresh sessions for every MCP client afterward. Check an interrupted write before retrying it.' }
+  if ($backendRunning) { Assert-FactoryReady $original $original.backend.source_revision $originalContract }
+  if (-not $backendRunning) {
+    Write-Host 'Starting the stopped beta factory to verify installation. It remains ready for the next MCP client.'
+    if ($bundleChanged) { Write-Host 'Updating beta Skills. Open fresh sessions for every MCP client afterward.' }
+  }
+  elseif ($bundleChanged) { Write-Host 'Restarting beta and updating its Skills bundle. Open fresh sessions for every MCP client afterward. Check an interrupted write before retrying it.' }
   else { Write-Host 'Restarting beta. MCP clients reconnect on their next request; reload the client if it reports a connection error. Check an interrupted write before retrying it.' }
   try {
-    Stop-InstallBackend $original
+    if ($backendRunning) { Stop-InstallBackend $original }
     if ($bundleChanged) {
       Assert-InHome $pluginRoot $workspace
       Assert-InHome $bundleBackup $SymppHome
