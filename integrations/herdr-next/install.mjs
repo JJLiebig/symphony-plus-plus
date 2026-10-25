@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile, rename, readdir, chmod, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -126,13 +126,11 @@ async function main() {
   const target = join(home, 'mods', mod);
   const here = dirname(fileURLToPath(import.meta.url));
   const helper = join(home, 'tools', 'sympp-herdr.js');
-  const httpHelper = join(home, 'tools', 'sympp-http.cjs');
   const source = join(here, 'mods', mod);
   const names = (await readdir(source)).filter(name => name.endsWith('.js') || name === 'mod.json' || name.endsWith('.svg') || name.endsWith('.png'));
   const sources = names.map(name => ({ from: join(source, name), to: join(target, name) }));
   if (!values.lab) {
     sources.push({ from: resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts/sympp-herdr.js'), to: helper });
-    sources.push({ from: join(here, 'http.cjs'), to: httpHelper });
   }
   const files = await Promise.all(sources.map(async ({ from, to }) => ({
     to, body: await readFile(from), existing: await contents(to),
@@ -147,7 +145,7 @@ async function main() {
   if (!values.lab) {
     const session = values.session || process.env.HC_SESSION;
     const hosts = { local: { node: process.execPath, helper, ...(session ? { session } : {}) } };
-    props = { endpoint, hosts, bridge: { node: process.execPath, helper: httpHelper } };
+    props = { endpoint, hosts };
   }
   const chrome = values.chrome ? await planInstall(home, { ...props, role: 'panel' }) : null;
   if (chrome?.missing) {
@@ -159,9 +157,8 @@ async function main() {
     if (!await checkedWrite(home, values, [...writes, ...chrome.writes], ['desk-tabs', 'desk-agents', 'sympp'])) return 1;
   } else await write(writes);
   if (!values.lab) {
-    const requests = join(home, 'data', 'sympp-requests');
-    await mkdir(requests, { recursive: true, mode: 0o700 });
-    if (process.platform !== 'win32') await chmod(requests, 0o700);
+    await rm(join(home, 'tools', 'sympp-http.cjs'), { force: true });
+    await rm(join(home, 'data', 'sympp-requests'), { recursive: true, force: true });
   }
   const command = values.open === 'panel' ? 'pane.split' : 'tab.new';
   const args = values.open === 'panel'

@@ -6,14 +6,13 @@
 // topic with a registered chief shows that chief's desk.
 //
 // Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel", job?: "<work request id>",
-//   bridge: { node, helper },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session? }, "machine": { node, helper, session? } } }
 // Hosts may also be configured explicitly in shared("sympp.hosts").
 //
 // Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel
 // following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
-// transport.js (HTTP through exec), ui.js (shared look), overview.js and jobview.js (what each level
+// transport.js (native HTTP), ui.js (shared look), overview.js and jobview.js (what each level
 // draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
 // list shows on S++ agents).
 
@@ -26,7 +25,7 @@ import * as J from "./job.js";
 import * as R from "./rails.js";
 import * as C from "./controls.js";
 import * as Chrome from "./chrome.js";
-import { createTransport } from "./transport.js";
+import { request } from "./transport.js";
 import { button, message } from "./ui.js";
 import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
@@ -56,7 +55,7 @@ export default class Lens extends View {
     this.dashboard = M.dashboardUrl(this.endpoint, given.dashboardUrl);
     this.repoTopics = given.repoTopics && typeof given.repoTopics === "object" ? given.repoTopics : null;
     this.hosts = given.hosts ?? null;
-    this.request = createTransport(given.bridge);
+    this.request = request;
     this.net = M.initialFetch();
     this.detailNet = { jobId: null, ...M.initialFetch() };
     this.reading = false;

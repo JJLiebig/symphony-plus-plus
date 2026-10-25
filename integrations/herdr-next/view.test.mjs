@@ -21,7 +21,7 @@ export default class SpecLens extends Lens {
   init(_p, cx) {
     // Ages and timings are drawn at the fixture's moment, not the machine's clock.
     Date.now = () => NOW;
-    super.init({ endpoint: "http://127.0.0.1:4000", bridge: { node: "node", helper: "h" }, ...CASE.props }, cx);
+    super.init({ endpoint: "http://127.0.0.1:4000", ...CASE.props }, cx);
     const now = Date.now();
     this.net = M.fetchSucceeded(this.net, M.parseBoard(boardPayload()), now);
     if (CASE.error) this.net = M.fetchFailed(this.net, CASE.error, now);

@@ -18,11 +18,18 @@ test('installs into a home with spaces without replacing personal layout or topi
   const shared = '{"desk.topics":{"groups":[{"id":"my-topic","spaces":["s1"]}]}}\n';
   await writeFile(join(home, 'layouts', 'personal.json'), layout);
   await writeFile(join(home, 'shared.json'), shared);
+  await mkdir(join(home, 'tools'));
+  await mkdir(join(home, 'data', 'sympp-requests'), { recursive: true });
+  await writeFile(join(home, 'tools', 'sympp-http.cjs'), '// obsolete bridge');
+  await writeFile(join(home, 'data', 'sympp-requests', 'old.json'), '{}');
   const result = install(home, '--endpoint', 'http://127.0.0.1:19999');
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(await readFile(join(home, 'layouts', 'personal.json'), 'utf8'), layout);
   assert.equal(await readFile(join(home, 'shared.json'), 'utf8'), shared);
   assert.match(result.stdout, /19999/);
+  await assert.rejects(access(join(home, 'tools', 'sympp-http.cjs')));
+  await assert.rejects(access(join(home, 'data', 'sympp-requests')));
+  await access(join(home, 'tools', 'sympp-herdr.js'));
   assert.deepEqual(await readFile(join(home, 'mods', 'sympp', 'mark.png')), await readFile(join(here, 'mods', 'sympp', 'mark.png')));
   assert.equal(install(home, '--endpoint', 'http://127.0.0.1:19999').status, 0);
 

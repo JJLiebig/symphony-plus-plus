@@ -87,10 +87,10 @@ test("open in tab targets the job's local space and carries this copy's props", 
     { id: 'notes', machine: null, folder: 'C:\\code\\notes', active: true },
     { id: 'web', machine: null, folder: 'C:\\code\\owner\\web\\', active: false },
   ];
-  const given = { endpoint: 'http://127.0.0.1:4000', role: 'panel', bridge: { node: 'node', helper: 'h' } };
+  const given = { endpoint: 'http://127.0.0.1:4000', role: 'panel', hosts: { local: { node: 'node', helper: 'h' } } };
   assert.deepEqual(J.jobTabArgs(given, job, spaces), {
     name: 'Native job tab', space: 'web', mod: 'sympp',
-    props: { endpoint: 'http://127.0.0.1:4000', bridge: { node: 'node', helper: 'h' }, job: 'wr-pr' },
+    props: { endpoint: 'http://127.0.0.1:4000', hosts: { local: { node: 'node', helper: 'h' } }, job: 'wr-pr' },
   });
   assert.equal(J.jobSpace(job, spaces.slice(0, 2)).id, 'notes', 'no local match: the shown space');
   assert.equal(J.jobSpace({ ...job, repos: ['C:/code/owner/web'] }, spaces).id, 'web');
