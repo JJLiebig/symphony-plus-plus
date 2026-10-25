@@ -377,6 +377,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolArguments do
 
   defp validate_bootstrap_arguments(name, arguments) do
     allowed = MapSet.new(allowed_bootstrap_argument_keys(name))
+    arguments = if name == "register_chief", do: Map.take(arguments, MapSet.to_list(allowed)), else: arguments
     unexpected = arguments |> Map.keys() |> Enum.reject(&MapSet.member?(allowed, &1))
 
     if unexpected != [] do

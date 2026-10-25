@@ -1,6 +1,7 @@
 defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.{
@@ -138,6 +139,13 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
          {:ok, base} <- priority_dashboard_payload(repo, context, work_requests, projection_context),
          {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
       {:ok, Map.merge(base, active) |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?()})}
+    end
+  end
+
+  @spec herdr_dashboard_payload(module()) :: {:ok, map()} | {:error, term()}
+  def herdr_dashboard_payload(repo) do
+    with {:ok, payload} <- operator_dashboard_hydrated_payload(repo) do
+      {:ok, Map.put(payload, :chiefs, Chiefs.public_current(repo, OperatorConfig.load()))}
     end
   end
 
@@ -541,6 +549,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
       inserted_at: timestamp(work_request.inserted_at),
       updated_at: timestamp(work_request.updated_at)
     }
+    |> Chiefs.put_attribution(:dispatched_by, work_request.dispatched_by)
   end
 
   @spec operator_work_request_board_details(module(), [map()], term()) :: {:ok, [map()]} | {:error, term()}

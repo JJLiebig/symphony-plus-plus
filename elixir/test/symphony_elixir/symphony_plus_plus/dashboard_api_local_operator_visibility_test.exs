@@ -214,7 +214,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
         |> get("/api/v1/sympp/herdr/dashboard")
         |> json_response(200)
 
-      assert Map.delete(payload, "generated_at") == Map.delete(browser_payload, "generated_at")
+      assert Map.drop(payload, ["generated_at", "chiefs"]) == Map.delete(browser_payload, "generated_at")
+      refute Map.has_key?(browser_payload, "chiefs")
       detail = work_request_detail(payload, request.id)
       architect = detail["work_request"]["architect_session_location"]
       worker = Enum.find(detail["work_packages"], &(&1["id"] == package.id))["session_location"]

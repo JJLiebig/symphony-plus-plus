@@ -87,6 +87,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
     end
   end
 
+  defp location_binding(%{"params" => %{"name" => "register_chief"}}, response, _server) do
+    if id = get_in(response, ["result", "structuredContent", "chief", "id"]) do
+      %{"role" => "chief", "chief_id" => id}
+    end
+  end
+
   defp location_binding(%{"params" => %{"name" => name}} = payload, response, server) when name in @assignment_tools,
     do: HerdrBinding.response_binding(payload, response, server)
 
@@ -98,6 +104,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
 
   defp target(%{"role" => "worker", "work_package_id" => id}, _payload, _repo, _client_id) when is_binary(id),
     do: {"work_package", id, "worker"}
+
+  defp target(%{"role" => "chief", "chief_id" => id}, _payload, _repo, _client_id) when is_binary(id),
+    do: {"chief", id, "chief"}
 
   defp target(%{"role" => "architect", "work_request_id" => id}, _payload, _repo, _client_id) when is_binary(id),
     do: {"work_request", id, "architect"}

@@ -42,10 +42,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
         worker_session_tool_specs() ++ local_assignment_claim_tool_specs(config)
 
       :architect ->
-        architect_session_tool_specs(current_work_request?: true) ++ local_architect_assignment_claim_tool_specs(config)
+        architect_tools = architect_session_tool_specs(current_work_request?: true)
+        architect_tools ++ local_architect_assignment_claim_tool_specs(config) ++ [bootstrap_tool_spec("register_chief")]
 
       profile when profile in [:coordinator, :solo] ->
-        introspection_tool_specs() ++ Enum.map(ToolCatalog.solo_tools(), &SoloTools.tool_spec/1)
+        chief_tools = if(profile == :coordinator, do: [bootstrap_tool_spec("register_chief")], else: [])
+        introspection_tool_specs() ++ Enum.map(ToolCatalog.solo_tools(), &SoloTools.tool_spec/1) ++ chief_tools
 
       :full ->
         unbound_tool_specs_for_config(config) ++ local_operator_tool_specs()
@@ -139,10 +141,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     %{
       "name" => name,
       "title" => name,
-      "description" => "Create a local Symphony++ WorkRequest with creator provenance and return a redacted architect handoff.",
+      "description" => bootstrap_tool_description(name),
       "inputSchema" => InputSchemas.bootstrap_tool_input_schema(name)
     }
   end
+
+  defp bootstrap_tool_description("register_chief"),
+    do: "Register this trusted local session as the current chief for a domain. Records attribution and location only; grants no claim or dispatch authority."
+
+  defp bootstrap_tool_description("create_work_request"),
+    do: "Create a local Symphony++ WorkRequest with creator provenance and return a redacted architect handoff."
 
   defp local_architect_assignment_claim_tool_spec do
     name = ToolCatalog.local_architect_assignment_claim_tool()

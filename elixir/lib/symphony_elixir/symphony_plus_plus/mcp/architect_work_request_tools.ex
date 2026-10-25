@@ -416,7 +416,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
     end
   end
 
-  defp call_tool("dispatch_work_package", config, session, arguments, _opts) do
+  defp call_tool("dispatch_work_package", config, session, arguments, opts) do
     with {:ok, session} <- Auth.require_session(session, config.repo),
          {:ok, work_request_id} <- CurrentWorkRequest.id_argument(arguments, session),
          {:ok, work_package_id} <- required_argument(arguments, "work_package_id"),
@@ -430,7 +430,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              "dispatch_work_package"
            ),
          :ok <- require_planned_dispatch_work_package(work_package),
-         {:ok, dispatch} <- WorkPackageDispatch.dispatch(config.repo, work_request_id, work_package_id) do
+         {:ok, dispatch} <- WorkPackageDispatch.dispatch(config.repo, work_request_id, work_package_id, server: Keyword.get(opts, :server)) do
       payload = dispatch_work_package_result_payload(dispatch, scope)
       {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.tool_result(payload) end)}
     else

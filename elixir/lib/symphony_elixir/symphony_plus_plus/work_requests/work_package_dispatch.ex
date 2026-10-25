@@ -3,6 +3,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
 
   alias SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext
   alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.CreateWork
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
   alias SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads
@@ -24,13 +25,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
           worker_bootstrap: map()
         }
 
-  @spec dispatch(module(), String.t(), String.t()) ::
+  @spec dispatch(module(), String.t(), String.t(), keyword()) ::
           {:ok, dispatch_result()} | {:error, term()}
-  def dispatch(repo, work_request_id, work_package_id)
+  def dispatch(repo, work_request_id, work_package_id, opts \\ [])
       when is_atom(repo) and is_binary(work_request_id) and is_binary(work_package_id) do
     repo.transaction(
       fn ->
-        case dispatch_transaction(repo, work_request_id, work_package_id) do
+        case dispatch_transaction(repo, work_request_id, work_package_id, opts) do
           {:ok, result} -> result
           {:error, reason} -> repo.rollback(reason)
         end
@@ -44,7 +45,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
     |> DashboardPubSub.broadcast_changed_on_success()
   end
 
-  defp dispatch_transaction(repo, work_request_id, work_package_id) do
+  defp dispatch_transaction(repo, work_request_id, work_package_id, opts) do
     with {:ok, %WorkRequest{status: "sliced"} = work_request} <- Repository.get(repo, work_request_id),
          {:ok, %WorkPackage{status: "planned"} = work_package} <-
            Repository.get_work_package(repo, work_request_id, work_package_id),
@@ -52,6 +53,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
          :ok <- ExecutionGraph.require_ready(execution_graph, work_package_id),
          :ok <- validate_contract(repo, work_request, work_package),
          {:ok, creation} <- CreateWork.activate(repo, work_package, broadcast?: false),
+         {:ok, activated} <-
+           creation.work_package
+           |> Ecto.Changeset.change(dispatched_by: Chiefs.attribution(Keyword.get(opts, :server)))
+           |> repo.update(),
+         creation = %{creation | work_package: activated},
          {:ok, state} <- PlanningRepository.get_state(repo, creation.work_package.id),
          {:ok, context} <- WorkRequestPayloads.worker_context(repo, creation.work_package, creation.work_package),
          {:ok, findings} <- WorkerContext.virtual_file_payload(state, "findings.md", []),

@@ -227,7 +227,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   end
 
   defp herdr_dashboard_response(repo, conn) do
-    with {:ok, payload} <- LocalOperatorDashboard.operator_dashboard_hydrated_payload(repo) do
+    with {:ok, payload} <- LocalOperatorDashboard.herdr_dashboard_payload(repo) do
       json(conn, payload)
     end
   end

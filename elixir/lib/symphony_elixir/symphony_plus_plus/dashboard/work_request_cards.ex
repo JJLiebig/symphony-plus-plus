@@ -2,6 +2,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
   @moduledoc false
 
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.{
     CommentProjection,
@@ -467,6 +468,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
       inserted_at: timestamp(work_request.inserted_at),
       updated_at: timestamp(work_request.updated_at)
     })
+    |> Chiefs.put_attribution(:dispatched_by, work_request.dispatched_by)
     |> put_repo_identity_fields(repo_identity_catalog, work_request.repo)
   end
 
@@ -485,6 +487,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
       inserted_at: timestamp(work_request.inserted_at),
       updated_at: timestamp(work_request.updated_at)
     }
+    |> Chiefs.put_attribution(:dispatched_by, work_request.dispatched_by)
     |> put_repo_identity_fields(repo_identity_catalog, work_request.repo)
   end
 

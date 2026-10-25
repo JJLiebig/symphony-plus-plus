@@ -22,6 +22,14 @@ payloads, claim secrets, or secret-bearing commands.
 
 ## Start
 
+When the human names this session a domain chief, call
+`register_chief({domain: "Kraken", repos?: ["owner/repo"], session_description?: "Terminal: Kraken chief"})`
+once through trusted local MCP. The bridge reports Herdr location automatically.
+Registration replaces the current chief for that domain, ignoring case, and
+attributes this session's new requests and dispatches; it grants no claim or
+dispatch authority. Ordinary work needs no registration. If this session registers
+several domains, attribution uses its most recent still-current registration.
+
 1. Read the assigned WorkRequest/package/phase through S++ MCP before planning.
    Trusted local architect calls automatically claim the WorkRequest. Supply
    `work_request_id` on the first scoped call; reconnects retain known scope.

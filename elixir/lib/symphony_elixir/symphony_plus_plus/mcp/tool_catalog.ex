@@ -17,7 +17,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog do
   ]
   @solo_tools SoloTools.tool_names()
   @assignment_release_tool "release_current_assignment"
-  @bootstrap_tools ["create_work_request"]
+  @bootstrap_tools ["create_work_request", "register_chief"]
   @local_operator_tools ["add_work_request_comment", "record_work_request_operator_decision", "summarize_failed_mcp_calls"]
   @blocker_closeout_decisions ["resolved", "still_active"]
   @local_assignment_claim_tool "claim_local_assignment"
