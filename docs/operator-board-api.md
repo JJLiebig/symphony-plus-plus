@@ -97,11 +97,24 @@ response. Existing fields retain their meaning. Read each entry of
 | `pr_signal.head_changed_at` | First observed time of the current PR/head, recorded on snapshot append. |
 | `pr_signal.checks.changed_at` | First observed time of the current check status for that PR/head. |
 | `review_signal.mode` | Native provider mode, falling back to the configured requirement. |
+| `review_signal.round` | Integer count from Review Suite's `rounds`, including zero before its first round. |
+| `review_signal.provider_status` | Review Suite's raw stage; `status` keeps its existing normalized meaning. |
+| `review_signal.steps` | Optional ordered ladder of `{index, name, state}` entries (`done`, `current`, or `pending`). |
+| `review_signal.round_history` | Optional oldest-first list of the latest 20 provider rounds. |
 
 Review progress remains in `review_signal.step`, `current`, `total`, `round`,
 `evidence_id`, `reviewed_head`, `started_at`, `round_started_at`, `observed_at` and
 `observation_state`. `pr_signal.checks.status` remains `passing`, `pending`,
 `failing`, or `unavailable`; missing checks never imply success.
+
+Each round-history entry contains `number`, `round_id`, `lane`, `step`, `status`,
+`outcome` (`findings`, `clean`, `blocked`, or `null`), `findings` (integer or
+`null`), `started_at`, and `finished_at`. Provider strings are trimmed and capped
+at 240 characters; steps are capped at 20 entries. Round timestamps must be ISO
+8601; unavailable or invalid history timestamps are `null`. Top-level
+`started_at` and `round_started_at` follow the same timestamp validation and are
+omitted when unavailable. Older Review Suite versions that omit `steps` or
+`round_history` leave those fields absent from the signal.
 
 A dispatched package is building from `dispatched_at`, without worker reports,
 runtime observations, or a reporting cadence. Native review observations augment

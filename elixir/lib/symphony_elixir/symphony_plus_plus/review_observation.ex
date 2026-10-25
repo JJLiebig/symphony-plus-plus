@@ -185,7 +185,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
          status: observed_status(payload),
          provider_status: bounded_string(map_value(payload, "status")),
          next_action: bounded_string(map_value(payload, "next_action")),
-         round: bounded_string(map_value(payload, "round")),
+         round: non_negative_integer(map_value(payload, "rounds")),
+         steps: steps(map_value(payload, "steps")),
+         round_history: round_history(map_value(payload, "round_history")),
          started_at: timestamp(map_value(payload, "started_at")),
          round_started_at: timestamp(map_value(payload, "round_started_at")),
          observed_at: DateTime.to_iso8601(DateTime.utc_now(:microsecond)),
@@ -228,6 +230,46 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
   end
 
   defp progress(_value), do: %{}
+
+  defp steps(value) when is_list(value) do
+    value
+    |> Enum.take(20)
+    |> Enum.filter(&is_map/1)
+    |> Enum.map(fn step ->
+      %{
+        index: non_negative_integer(map_value(step, "index")),
+        name: bounded_string(map_value(step, "name")),
+        state: bounded_string(map_value(step, "state"))
+      }
+      |> reject_nil_values()
+    end)
+  end
+
+  defp steps(_value), do: nil
+
+  defp round_history(value) when is_list(value) do
+    value
+    |> Enum.take(-20)
+    |> Enum.filter(&is_map/1)
+    |> Enum.map(fn round ->
+      %{
+        number: non_negative_integer(map_value(round, "number")),
+        round_id: bounded_string(map_value(round, "round_id")),
+        lane: bounded_string(map_value(round, "lane")),
+        step: bounded_string(map_value(round, "step")),
+        status: bounded_string(map_value(round, "status")),
+        outcome: bounded_string(map_value(round, "outcome")),
+        findings: non_negative_integer(map_value(round, "findings")),
+        started_at: timestamp(map_value(round, "started_at")),
+        finished_at: timestamp(map_value(round, "finished_at"))
+      }
+    end)
+  end
+
+  defp round_history(_value), do: nil
+
+  defp non_negative_integer(value) when is_integer(value) and value >= 0, do: value
+  defp non_negative_integer(_value), do: nil
 
   defp run(executable, args, timeout_ms, max_output_bytes) do
     if String.downcase(Path.extname(executable)) in [".cmd", ".bat"] do
@@ -327,7 +369,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
     end
   end
 
-  defp bounded_string(value) when is_binary(value), do: value |> String.trim() |> String.slice(0, 240)
+  defp bounded_string(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> String.slice(trimmed, 0, 240)
+    end
+  end
+
   defp bounded_string(_value), do: nil
 
   defp timestamp(value) when is_binary(value) do
