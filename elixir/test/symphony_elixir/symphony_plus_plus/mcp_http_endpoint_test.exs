@@ -98,8 +98,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert location.herdr["pid"] == 123
     assert location.herdr["process_id"] == 456
     public = SessionLocations.public(location, %{})
-    assert public.herdr["core_id"] == "core-one"
-    assert public.herdr["terminal_id"] == "t8"
+    assert public["herdr"]["core_id"] == "core-one"
+    assert public["herdr"]["terminal_id"] == "t8"
     refute inspect(public) =~ "private-"
     refute Map.has_key?(location.herdr, "process_liveness_token")
   end
