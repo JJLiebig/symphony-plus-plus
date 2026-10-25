@@ -153,12 +153,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     native = %{"core_id" => "core-chief", "terminal_id" => "t9", "pid" => 321, "process_id" => 654, "client_id" => "chief-client"}
     claims_before = Repo.aggregate(ClaimLease, :count)
 
-    registered =
+    registration =
       tool_call_request("chief", "register_chief", %{"domain" => " Kraken ", "repos" => ["nextide/example"], "future_field" => true})
       |> with_location("chief-client", "build-desk", native)
       |> post_json(first)
-      |> json_response(200)
 
+    [binding] = get_resp_header(registration, "sympp-herdr-binding")
+    assert binding |> Base.url_decode64!(padding: false) |> Jason.decode!() == %{"role" => "chief", "domain" => "Kraken"}
+    registered = json_response(registration, 200)
     chief_id = get_in(registered, ["result", "structuredContent", "chief", "id"])
     assert is_binary(chief_id)
     assert Repo.aggregate(ClaimLease, :count) == claims_before

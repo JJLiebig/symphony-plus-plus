@@ -403,6 +403,19 @@ test("hand-started MCP bridges report native identity and require an authenticat
     assert.equal(observed.herdr.pane_id, undefined, "new core context wins over inherited legacy context");
     assert.doesNotMatch(JSON.stringify(observed), /private-core-selector|process_liveness/);
 
+    const chiefBinding = bridge.decodeHerdrBinding(Buffer.from(JSON.stringify({ role: "chief", domain: "Herdr" })).toString("base64url"));
+    await reporter.report(chiefBinding, probe);
+    const chiefLabels = state().terminal.labels;
+    assert.equal(chiefLabels["sympp.session_id"], observed.client_id);
+    assert.equal(chiefLabels["sympp.session_role"], "chief");
+    const chief = await run(["check", "--receipt", chiefLabels["sympp.session_receipt"]]);
+    assert.equal(chief.code, 0);
+    assert.equal(chief.body.state, "live");
+    assert.equal(chief.body.role, "chief");
+    assert.equal(chief.body.work_request_id, null);
+    assert.equal(chief.body.work_package_id, null);
+    for (const [key, value] of Object.entries(original)) assert.equal(chiefLabels[key], value);
+
     await reporter.report({ role: "architect", work_request_id: "wr-manual" }, probe);
     const labels = state().terminal.labels;
     for (const [key, value] of Object.entries(original)) assert.equal(labels[key], value);
