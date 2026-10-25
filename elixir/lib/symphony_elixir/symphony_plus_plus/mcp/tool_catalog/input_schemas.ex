@@ -15,6 +15,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   def solo_tool_input_schema(name), do: SoloTools.input_schema(name)
 
   @spec bootstrap_tool_input_schema(tool_name()) :: input_schema()
+  def bootstrap_tool_input_schema("register_chief") do
+    schema(
+      %{
+        "domain" => string_schema(),
+        "repos" => %{"type" => "array", "items" => string_schema()},
+        "session_description" => session_description_schema()
+      },
+      ["domain"]
+    )
+    |> Map.put("additionalProperties", true)
+  end
+
   def bootstrap_tool_input_schema("create_work_request") do
     schema(
       %{

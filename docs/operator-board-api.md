@@ -6,6 +6,17 @@ canonical product tree, attention, package/delivery signals and sanitized sessio
 locations; locations remain last observed addresses, not proof of live agents.
 The normal standalone web board and its authorization are unchanged.
 
+The native dashboard also includes `chiefs: [{domain, repos, registered_at,
+session_location}]` for current optional domain chiefs. Locations use the existing
+sanitized shape with `role: "chief"`; absent locations are `null`, and a recorded
+address is not proof of liveness. Registrations for the same domain ignore case;
+only the newest is current, with earlier registrations retained in the ledger.
+Attributed request cards and request/package details carry optional
+`dispatched_by: {kind: "chief", domain}` captured when a registered session creates
+a request or dispatches a package. Supersession does not rewrite this attribution
+or existing creator fields. Repository lists describe the chief's domain; they
+do not grant repository, claim or dispatch authority.
+
 Both hydrated routes include `runtime: {offline: boolean}` from the running
 backend's sandbox mode. A Copy-and-View snapshot reports `true` even though its
 request/package ids match the live ledger. Native clients must disable agent

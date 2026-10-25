@@ -46,7 +46,8 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
     expect(nativeBoard.status).toBe(200);
     expect(nativeBoard.body.runtime).toEqual({ offline: true });
     const { generated_at: browserTime, ...browserProjection } = browserBoard;
-    const { generated_at: nativeTime, ...nativeProjection } = nativeBoard.body;
+    const { generated_at: nativeTime, chiefs, ...nativeProjection } = nativeBoard.body;
+    expect(chiefs).toEqual([]);
     expect(nativeProjection).toEqual(browserProjection);
     const copiedRequest = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === request);
     expect(copiedRequest.work_packages.map((entry: any) => entry.id)).toContain(wp);

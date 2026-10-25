@@ -33,6 +33,13 @@ entrypoint. Chiefs understand service responsibilities and coordinate decisions
 across domains. They do not all need to sit under a machine-wide LLM supervisor.
 A current calling agent can own small work without introducing another chief.
 
+Optional chief self-registration and attribution are implemented through the
+packaged [architect](../../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#start)
+and [coordinator](../../plugins/symphony-plus-plus-mcp/skills/symphony-coordinator/SKILL.md#start)
+procedures. Registration records domain and session location, never ownership
+or dispatch authority; native boards expose the current chiefs as last-known
+locations.
+
 The feature architect owns one substantial request: clarify intent, review the
 plan, slice and dispatch work, resolve findings, integrate, and oversee merges.
 The human may keep speaking to the chief or work directly with the architect

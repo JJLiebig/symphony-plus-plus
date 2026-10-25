@@ -60,7 +60,8 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   const nativeBoard = await native.raw(null, {}, 'GET', nativePath);
   expect(nativeBoard.status).toBe(200);
   const { generated_at: browserTime, ...browserProjection } = browserBoard;
-  const { generated_at: nativeTime, ...nativeProjection } = nativeBoard.body;
+  const { generated_at: nativeTime, chiefs, ...nativeProjection } = nativeBoard.body;
+  expect(chiefs).toEqual([]);
   expect(nativeProjection).toEqual(browserProjection);
   const detail = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === id);
   expect(detail.product_tree.root_work_package_ids).toContain(nativePackage);

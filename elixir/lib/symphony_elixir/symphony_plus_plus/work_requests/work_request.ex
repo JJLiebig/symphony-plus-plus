@@ -71,6 +71,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
     field(:creator_kind, :string)
     field(:creator_name, :string)
     field(:created_via, :string)
+    field(:dispatched_by, :map)
     field(:status, :string)
     field(:completed_at, :utc_datetime_usec)
     field(:completion_source, :string)
@@ -113,7 +114,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
     attrs = normalize_keys(attrs)
 
     work_request
-    |> changeset(Map.drop(attrs, ["id", "status", "completed_at", "completion_source", "archived_at", "archive_reason", "inserted_at", "updated_at", "created_at"]))
+    |> changeset(Map.drop(attrs, ["id", "status", "dispatched_by", "completed_at", "completion_source", "archived_at", "archive_reason", "inserted_at", "updated_at", "created_at"]))
     |> reject_generic_status_update(attrs)
   end
 
@@ -139,6 +140,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
       :creator_kind,
       :creator_name,
       :created_via,
+      :dispatched_by,
       :status,
       :completed_at,
       :completion_source,

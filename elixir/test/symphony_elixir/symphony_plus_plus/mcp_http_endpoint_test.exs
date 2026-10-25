@@ -8,6 +8,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs.Registration
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.Service, as: ClaimLeaseService
 
@@ -142,8 +143,137 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     HTTPStateStore.reset!()
     Repo.delete_all(OperatorSettings)
     Repo.delete_all(Location)
+    Repo.delete_all(Registration)
     FailedCall.reset()
     :ok
+  end
+
+  test "chief registration supersedes by domain and attributes only the current session's work" do
+    first = [{"mcp-session-id", unbound_startup_handshake(1)}]
+    native = %{"core_id" => "core-chief", "terminal_id" => "t9", "pid" => 321, "process_id" => 654, "client_id" => "chief-client"}
+    claims_before = Repo.aggregate(ClaimLease, :count)
+
+    registered =
+      tool_call_request("chief", "register_chief", %{"domain" => " Kraken ", "repos" => ["nextide/example"], "future_field" => true})
+      |> with_location("chief-client", "build-desk", native)
+      |> post_json(first)
+      |> json_response(200)
+
+    chief_id = get_in(registered, ["result", "structuredContent", "chief", "id"])
+    assert is_binary(chief_id)
+    assert Repo.aggregate(ClaimLease, :count) == claims_before
+    assert SessionLocations.get(Repo, "chief", chief_id).role == "chief"
+
+    denied = chief_call(first, "dispatch_work_package", %{"work_request_id" => "not-owned", "work_package_id" => "not-owned"})
+    assert denied["error"]
+
+    request_args = %{
+      "repo" => "nextide/example",
+      "base_branch" => "main",
+      "title" => "Chief work",
+      "request_kind" => "docs",
+      "description" => "A bounded chief request",
+      "workflow_mode" => "single_package",
+      "status" => "ready_for_slicing",
+      "creator_name" => "original-agent"
+    }
+
+    created = chief_call(first, "create_work_request", request_args)
+    request_id = get_in(created, ["result", "structuredContent", "work_request", "id"])
+    assert is_binary(request_id)
+    attribution = %{"kind" => "chief", "domain" => "Kraken"}
+    request = Repo.get!(SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest, request_id)
+    assert request.dispatched_by == attribution
+    assert request.creator_name == "original-agent"
+
+    sliced =
+      chief_call(first, "slice_work_request", %{
+        "work_request_id" => request_id,
+        "work_packages" => [
+          WorkPackageFactory.attrs(goal: "Deliver chief work", allowed_file_globs: ["docs/**"], validation_steps: [], stop_conditions: []),
+          WorkPackageFactory.attrs(goal: "Deliver more chief work", allowed_file_globs: ["docs/**"], validation_steps: [], stop_conditions: [])
+        ]
+      })
+
+    assert sliced["result"], inspect(sliced)
+    assert [one, two] = get_in(sliced, ["result", "structuredContent", "work_package_ids"])
+    dispatched = chief_call(first, "dispatch_work_package", %{"work_request_id" => request_id, "work_package_id" => one})
+    assert dispatched["result"]
+    assert Repo.get!(WorkPackage, one).dispatched_by == attribution
+
+    board = get_local("/api/v1/sympp/herdr/dashboard") |> json_response(200)
+    assert [%{"domain" => "Kraken", "repos" => ["nextide/example"], "session_location" => location}] = board["chiefs"]
+    assert location["role"] == "chief"
+    assert location["source"] == "herdr_next"
+    assert location["herdr"] == native
+
+    second = [{"mcp-session-id", unbound_startup_handshake(2)}]
+    replacement = chief_call(second, "register_chief", %{"domain" => "KRAKEN", "session_description" => "Terminal: new chief"})
+    assert get_in(replacement, ["result", "structuredContent", "chief", "id"]) != chief_id
+    assert Repo.get!(Registration, chief_id).superseded_at
+    assert Repo.aggregate(Registration, :count) == 2
+
+    assert chief_call(first, "dispatch_work_package", %{"work_request_id" => request_id, "work_package_id" => two})["result"]
+    assert Repo.get!(WorkPackage, two).dispatched_by == nil
+    plain_headers = [{"mcp-session-id", unbound_startup_handshake(3)}]
+    plain = chief_call(plain_headers, "create_work_request", request_args)
+    plain_id = get_in(plain, ["result", "structuredContent", "work_request", "id"])
+    assert Repo.get!(SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest, plain_id).dispatched_by == nil
+
+    current = chief_call(second, "create_work_request", request_args)
+    current_id = get_in(current, ["result", "structuredContent", "work_request", "id"])
+    assert Repo.get!(SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest, current_id).dispatched_by == %{"kind" => "chief", "domain" => "KRAKEN"}
+
+    board = get_local("/api/v1/sympp/herdr/dashboard") |> json_response(200)
+    assert [%{"domain" => "KRAKEN", "repos" => [], "session_location" => current_location}] = board["chiefs"]
+    assert current_location["role"] == "chief"
+    assert current_location["description"] == "Terminal: new chief"
+    refute Map.has_key?(current_location, "live")
+    card = Enum.find(board["work_requests"]["work_requests"], &(&1["id"] == request_id))
+    assert card["dispatched_by"] == attribution
+
+    detail = get_local("/api/v1/sympp/herdr/work-requests/#{request_id}") |> json_response(200)
+    assert detail["work_request"]["dispatched_by"] == attribution
+    assert Enum.find(detail["work_packages"], &(&1["id"] == one))["dispatched_by"] == attribution
+    assert get_local("/api/v1/sympp/herdr/dashboard", [], remote_ip: {10, 0, 0, 2}) |> response(401)
+  end
+
+  test "chief registration rejects invalid inputs and untrusted transports", %{database_path: database} do
+    headers = [{"mcp-session-id", unbound_startup_handshake(1)}]
+
+    for arguments <- [%{"domain" => " "}, %{"domain" => "Kraken", "repos" => "not-an-array"}, %{"domain" => "Kraken", "repos" => [42]}] do
+      assert chief_call(headers, "register_chief", arguments)["error"]["code"] == -32_602
+    end
+
+    assert Repo.aggregate(Registration, :count) == 0
+
+    for config <- [Config.default(repo: Repo), Config.default(mode: :http, repo: Repo, database: database)] do
+      server = Server.new(config, initialized: true, state_key: Ecto.UUID.generate())
+      result = Server.handle(tool_call_request("untrusted-chief", "register_chief", %{"domain" => "Kraken"}), server)
+      assert result["error"]["code"] == -32_001
+    end
+
+    config = Config.default(mode: :http, repo: Repo, database: database, local_daemon_trusted: true)
+
+    for profile <- [:worker, :solo] do
+      server = Server.new(%{config | surface_profile: profile}, initialized: true, state_key: Ecto.UUID.generate())
+      result = Server.handle(tool_call_request("non-chief-role", "register_chief", %{"domain" => "Kraken"}), server)
+      assert result["error"]["code"] == -32_001
+    end
+
+    claims_before = Repo.aggregate(ClaimLease, :count)
+
+    for profile <- [:architect, :coordinator] do
+      server = Server.new(%{config | surface_profile: profile}, initialized: true, state_key: Ecto.UUID.generate())
+      result = Server.handle(tool_call_request("chief-role", "register_chief", %{"domain" => "Kraken"}), server)
+      assert get_in(result, ["result", "structuredContent", "chief", "domain"]) == "Kraken"
+    end
+
+    assert Repo.aggregate(ClaimLease, :count) == claims_before
+  end
+
+  defp chief_call(headers, name, arguments) do
+    tool_call_request(Ecto.UUID.generate(), name, arguments) |> post_json(headers) |> json_response(200)
   end
 
   test "POST /mcp starts the HTTP state store when endpoint runtime omitted it" do

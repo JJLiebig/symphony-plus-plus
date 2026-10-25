@@ -1,6 +1,7 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree.{DependencyEdge, Node}
@@ -142,6 +143,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       "inserted_at" => timestamp(work_request.inserted_at),
       "updated_at" => timestamp(work_request.updated_at)
     }
+    |> Chiefs.put_attribution("dispatched_by", work_request.dispatched_by)
   end
 
   @spec work_request_filter(nil | binary()) :: map()
@@ -211,6 +213,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       "inserted_at" => timestamp(work_request.inserted_at),
       "updated_at" => timestamp(work_request.updated_at)
     }
+    |> Chiefs.put_attribution("dispatched_by", work_request.dispatched_by)
   end
 
   @spec redacted_work_request_scope(WorkRequest.t()) :: map()
@@ -293,6 +296,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       "inserted_at" => timestamp(work_package.inserted_at),
       "updated_at" => timestamp(work_package.updated_at)
     }
+    |> Chiefs.put_attribution("dispatched_by", work_package.dispatched_by)
   end
 
   @spec group(Node.t()) :: map()
