@@ -60,9 +60,9 @@ node integrations/herdr-next/install.mjs --endpoint $origin --chrome
 - **S++** sits beside Files and Changes and toggles the S++ panel the same way.
 - An agent started for S++ shows the S++ mark in the Agents list, with its
   package's stage: build, checks, review with its round (amber from the third),
-  ready to merge or landed, and a red dot when it needs you. A stage older than
-  about two minutes shows dimmed as last known. Stages arrive from an open S++
-  view's board reads, the panel included, once it has been shown.
+  ready to merge or landed, and an orange dot on the mark when it needs you. A
+  stage older than about two minutes shows dimmed as last known. Stages arrive
+  from an open S++ view's board reads, the panel included, once it has been shown.
 
 The installer backs up the layout and both mods under `data/sympp-chrome`, adds
 a `sympp` panel to the layout's `panel-body` stack, and patches the two mods in
@@ -70,7 +70,9 @@ place; running it again changes nothing. It refuses, listing what is missing,
 when the layout has no `panel-body` stack, uses Herdr's own `tabs` or `agents`
 mod, or either desk mod differs from what the patch expects or was edited after
 installing. Other mods can add their panels the same way through
-`shared("workspace.panel_buttons")` entries `{ id, label, icon }`.
+`shared("workspace.panel_buttons")` entries `{ id, label, icon, iconDark? }`: an
+SVG icon is tinted like Files and Changes; a picture shows as it is, `iconDark`
+on a dark theme.
 
 ```powershell
 node integrations/herdr-next/install.mjs --remove-chrome
