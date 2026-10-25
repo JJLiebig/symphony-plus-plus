@@ -2268,14 +2268,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  assert signal["active_blocker_count"] == 1
                  assert board["runtime"] == %{"offline" => false}
 
-                  native_detail =
-                    build_conn()
-                    |> Map.put(:host, "localhost")
-                    |> Map.put(:remote_ip, {127, 0, 0, 1})
-                    |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
-                    |> json_response(200)
+                 native_detail =
+                   build_conn()
+                   |> Map.put(:host, "localhost")
+                   |> Map.put(:remote_ip, {127, 0, 0, 1})
+                   |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
+                   |> json_response(200)
 
-                  assert native_detail["decision_logs"] == payload["decision_logs"]
+                 assert native_detail["decision_logs"] == payload["decision_logs"]
                  assert repo.query!("SELECT total_changes()", []).rows == before_read
                  repo.rollback(:native_read_verified)
                end)
