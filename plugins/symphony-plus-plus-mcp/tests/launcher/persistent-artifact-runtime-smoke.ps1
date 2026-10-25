@@ -9,6 +9,8 @@ $launcher = Join-Path $pluginRoot "scripts/start-sympp-mcp.ps1"
 $fixtureParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $tempRoot = Join-Path $fixtureParent ("sympp-persistent-" + [guid]::NewGuid().ToString("N"))
 $runtimeFile = Join-Path $tempRoot "state/runtime.json"
+if ($SkillsInstall) { $runtimeFile = Join-Path $tempRoot '.sympp-beta/runtime/codex-plugin.json' }
+. (Join-Path $PSScriptRoot 'beta-install-qualification.ps1')
 $backendProcessId = $null
 $backendStartTicks = $null
 $frontendProcessId = $null
@@ -164,6 +166,11 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
     $script:backendProcessId = $activeBackend.Id
     $script:backendStartTicks = $activeBackendStartTicks
     if ($OnAttached) { & $OnAttached $activeState $MarkerSessionId }
+    $activeState = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
+    $activeBackend = Get-Process -Id ([int]$activeState.backend.pid) -ErrorAction Stop
+    $activeBackendStartTicks = $activeBackend.StartTime.ToUniversalTime().Ticks
+    $script:backendProcessId = $activeBackend.Id
+    $script:backendStartTicks = $activeBackendStartTicks
     $process.StandardInput.Close()
     if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw "Bridge did not exit after stdin closed: $FilePath" }
     $errorText = $stderr.GetAwaiter().GetResult()
@@ -265,9 +272,10 @@ try {
           dashboard = @{ asset_root = $manifest.dashboard.relative_path; fingerprint = $manifest.dashboard.fingerprint } })
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
     }
-    $database = Join-Path $tempRoot "database/explicit ledger.sqlite3"
+    $betaHome = if ($SkillsInstall) { Join-Path $tempRoot '.sympp-beta' } else { Join-Path $tempRoot 'runtime-home' }
+    $database = if ($SkillsInstall) { Join-Path $betaHome 'explicit ledger.sqlite3' } else { Join-Path $tempRoot 'database/explicit ledger.sqlite3' }
     $environment = @{
-      SYMPP_RUNTIME_CHANNEL = "beta"; CODEX_HOME = $codexHome; SYMPP_HOME = Join-Path $tempRoot "runtime-home"; SYMPP_RUNTIME_FILE = $runtimeFile
+      SYMPP_RUNTIME_CHANNEL = "beta"; CODEX_HOME = $codexHome; SYMPP_HOME = $betaHome; SYMPP_RUNTIME_FILE = $runtimeFile
       SYMPP_DATABASE = $database; SYMPP_LOG_DIR = Join-Path $tempRoot "logs"; SYMPP_LAUNCHER_TRACE_DIR = Join-Path $tempRoot "trace"
       SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = [string]$backendPort; SYMPP_OPEN_DASHBOARD = "0"
       SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"
@@ -381,7 +389,17 @@ try {
       $manifest = $candidateManifest
       $candidateManifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
     }
-    $secondWave = Invoke-McpBridge $cmd $commandArgs $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
+    $secondWave = Invoke-McpBridge $cmd $commandArgs $environment -MarkerSessionId $first.marker_session_id -RecoverBackend -OnAttached {
+      param($activeState, $sessionId)
+      & $assertLedger $activeState $sessionId
+      if ($SkillsInstall) {
+        Invoke-BetaInstallQualification $environment $process $candidateManifest
+        $persisted = Send-BridgeRequest $process @{ jsonrpc = '2.0'; id = 82; method = 'tools/call'; params = @{ name = 'solo_show'; arguments = @{ session_id = $sessionId } } }
+        if (@($persisted.result.structuredContent.entries | Where-Object title -eq 'packaged database persistence marker').Count -ne 1) {
+          throw 'Beta install or rollback lost or duplicated the existing ledger marker.'
+        }
+      }
+    }
     Wait-ManagedRuntimeStopped $secondWave.backend_pid $secondWave.backend_port
     $trace = Get-ChildItem -LiteralPath $environment.SYMPP_LAUNCHER_TRACE_DIR -File | Get-Content -Raw
     if ($SkillsInstall) {

@@ -80,6 +80,45 @@ URL. See [Operations](operations.md) for the Work board and starting a request.
 
 ## Attach, Close And Recover
 
+### Reload an existing Windows beta factory
+
+From an S++ checkout, use explicit absolute factory and Herdr-app homes:
+
+```powershell
+pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
+```
+
+This installs the latest **published beta runtime**, plus the native view from
+the checkout. Published binaries keep repeat installs fast and avoid requiring a
+local Elixir toolchain. Publication can lag a branch push; the command reports
+the exact running SHA, rather than claiming the checkout is running. To select
+an already downloaded beta channel manifest, pass `-ArtifactManifest <path>`.
+
+The factory must already use a project-local beta Skills installation, a managed
+artifact backend, a home whose final folder contains a separate `beta` word
+(such as `.sympp-beta`), its own port, and a database inside that home. Default
+production homes, stable Skills installations, global Skills, marketplace caches,
+linked paths and stable ports are refused. The command never updates a plugin
+cache or host registration. If the published MCP contract changed, update the
+beta Skills installation and run its setup first; the command refuses before
+interrupting the old runtime.
+
+The archive and native files are prepared before the backend is stopped. The
+installed launcher restarts the same endpoint and ledger, and readiness must
+match the selected revision, contract and database. An unchanged runtime is not
+restarted; identical native files are not rewritten. A failed restart or native
+installation restarts the retained previous artifact. Ledger contents are never
+restored or copied; startup performs only the backend's normal additive updates.
+The selected runtime stays pinned in this beta Skills installation until the
+next install command selects a newer publication.
+
+Connected STDIO bridges reconnect to the same endpoint on their next request.
+Requests overlapping the restart can fail; reload that client's MCP connection
+if it reports an error. Check the result of an interrupted write before retrying
+it. Contract changes also require fresh host sessions to reload their tool list.
+Do not run this against a shared live beta factory until its coordinating
+architect has agreed to the restart timing.
+
 For moving an existing factory ledger from main to beta, follow the
 [release and cutover runbook](runbooks/beta-release-cutover.md), including its
 branch selection, stopped-ledger backup, migration effects and rollback.
