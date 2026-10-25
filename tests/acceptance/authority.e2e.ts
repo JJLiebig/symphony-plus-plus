@@ -64,7 +64,7 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   expect(nativeProjection).toEqual(browserProjection);
   const detail = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === id);
   expect(detail.product_tree.root_work_package_ids).toContain(nativePackage);
-  expect(detail.work_packages.find((entry: any) => entry.id === nativePackage).board_state.stage).toBe('queued');
+  expect(detail.work_packages.find((entry: any) => entry.id === nativePackage).board_state.stage).toBe('build');
   for (const headers of [
     { host: 'example.invalid' }, { forwarded: 'for=127.0.0.1' },
     { 'x-forwarded-for': '127.0.0.1' }, { 'x-forwarded-host': 'localhost' },
