@@ -110,17 +110,20 @@ export function parseBoard(payload) {
   }
   const now = ms(payload.generated_at) ?? Date.now();
   const guidance = payload.guidance_requests?.guidance_requests ?? [];
-  const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now, guidance));
+  // The execution cards carry each package's active run; the request details do not.
+  const runs = new Map((Array.isArray(payload.work_packages) ? payload.work_packages : [])
+    .filter((card) => card?.id && card.active_agent_run).map((card) => [card.id, card.active_agent_run]));
+  const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now, guidance, runs));
   return { now, jobs, offline: typeof payload.runtime?.offline === "boolean" ? payload.runtime.offline : null };
 }
 
-function buildJob(detail, now, guidance) {
+function buildJob(detail, now, guidance, runs) {
   const request = detail.work_request;
   const repo = request.repo_display || request.repo || "";
   const repoShort = shortRepo(repo);
   const area = Array.isArray(request.area_path) && request.area_path.length ? request.area_path : ["Unfiled", repoShort || "Unknown"];
   const groups = new Map((detail.product_tree?.nodes ?? []).map((node) => [node.id, node.title || "Untitled"]));
-  const packages = (detail.work_packages ?? []).map((slice) => buildPackage(slice, groups, now)).sort((a, b) => a.seq - b.seq);
+  const packages = (detail.work_packages ?? []).map((slice) => buildPackage(slice, groups, now, runs)).sort((a, b) => a.seq - b.seq);
   const titles = new Map(packages.map((pkg) => [pkg.id, pkg.title]));
   for (const pkg of packages) pkg.after = pkg.unmet.map((id) => titles.get(id) ?? id);
   const questions = (detail.clarification_questions ?? []).filter((q) => q.id).map((q) => ({
@@ -160,6 +163,7 @@ function buildJob(detail, now, guidance) {
   const job = {
     id: request.id,
     title: request.title || request.id,
+    status: request.status ?? null,
     repo,
     repoShort,
     repos: [...new Set([repo, ...packages.map((pkg) => pkg.repo)].filter(Boolean))],
@@ -187,11 +191,12 @@ function buildJob(detail, now, guidance) {
   return job;
 }
 
-function buildPackage(slice, groups, now) {
+function buildPackage(slice, groups, now, runs) {
   const board = slice.board_state ?? null;
   const pr = slice.pr_signal ?? {};
   const review = slice.review_signal ?? {};
   const activity = slice.activity_signal ?? {};
+  const run = runs?.get(slice.work_package_id || slice.id) ?? null;
   const outcome = OUTCOMES[slice.delivery?.outcome ?? ""] ?? (slice.operational_state?.key === "skipped" ? "dropped" : null)
     ?? (board && (board.delivered || board.stage === "done") ? (board.track === "no_pr" ? "finished" : "merged") : null);
   const stage = outcome ? "done" : board?.stage ?? statusStage(slice);
@@ -207,11 +212,13 @@ function buildPackage(slice, groups, now) {
     outcome,
     since: observed ?? ms(slice.dispatched_at) ?? ms(slice.inserted_at),
     untimed: observed === null,
+    dispatchedAt: ms(slice.dispatched_at),
     failed: pr.checks?.status === "failing",
     track: board?.track ?? null,
     round: Number(review.round) || 1,
     pr: { status: pr.status ?? null, number: pr.number ?? null, url: pr.url ?? null, checks: pr.checks?.status ?? null, checksAt: ms(pr.checks?.changed_at) },
     review: {
+      type: review.type ?? null,
       status: review.status ?? null,
       mode: review.mode ?? slice.review?.args?.mode ?? null,
       step: review.step ?? null,
@@ -232,6 +239,7 @@ function buildPackage(slice, groups, now) {
     unmet: slice.dependency_signal?.unmet_work_package_ids ?? [],
     after: [],
     location: placeOf(slice.session_location),
+    run: run ? { attempt: Number.isSafeInteger(run.attempt) ? run.attempt : null, lastSeenAt: ms(run.last_seen_at), stale: run.stale === true } : null,
   };
 }
 
@@ -543,7 +551,7 @@ function sentence(code) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function shortRepo(repo) {
+export function shortRepo(repo) {
   return String(repo).replace(/[\\/]+$/, "").replace(/\.git$/i, "").split(/[\\/:]/).filter(Boolean).pop() ?? "";
 }
 
