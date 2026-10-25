@@ -3,38 +3,57 @@
 // Herdr's focus (a job's terminal or tab, else the space, else its topic) until it is pinned. A toast
 // says when something newly needs the person. Intake and answers persist through S++; terminal jumps
 // and "Live" both rest on a trusted execution helper's check, never on terminal labels or text. A
-// topic with a registered chief shows that chief's desk.
+// topic with a registered chief shows that chief's desk. A copy opened with props.studio is one UI
+// package's studio: its worker's terminal beside a preview, in a tab named after the package.
 //
 // Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel", job?: "<work request id>",
+//   studio?: { job: "<work request id>", pkg: "<work package id>" },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session? }, "machine": { node, helper, session? } } }
-// Hosts may also be configured explicitly in shared("sympp.hosts").
+// Hosts may also be configured explicitly in shared("sympp.hosts"). A copy without an endpoint uses the
+// connection the last connected copy shared ("sympp.connection"), so a scripted studio needs only its ids.
 //
 // Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel
 // following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
 // transport.js (native HTTP), ui.js (shared look), overview.js and jobview.js (what each level
 // draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
-// list shows on S++ agents).
+// list shows on S++ agents), studio.js and studioview.js (a UI package's studio).
 
 import { View } from "gpui-kit";
 import { v_flex, InputState, TextareaState } from "gpui-base";
-import { props, theme, shared, setShared, spaces, panes, terminals, focused, notify, run, window as appWindow, exec } from "herdr";
+import * as fs from "fs/promises";
+import { props, theme, shared, setShared, spaces, panes, terminals, focused, notify, run, window as appWindow, exec, appHome, watchFolder } from "herdr";
 import * as M from "./model.js";
 import * as L from "./levels.js";
 import * as J from "./job.js";
 import * as R from "./rails.js";
 import * as C from "./controls.js";
 import * as Chrome from "./chrome.js";
+import * as S from "./studio.js";
 import { request } from "./transport.js";
 import { button, message } from "./ui.js";
 import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
+import { studioView } from "./studioview.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
 const DAY = 24 * 3600e3;
 const KEYS = { j: "down", k: "up", down: "down", up: "up" };
 const TOP = { topic: null, space: null, job: null };
+const CONNECTION = "sympp.connection";
+const SWEEP = 60e3;
+// The studio's own pane shrinks to its header, under Herdr's pane header, while a native preview
+// shows below it.
+const STRIP = 88;
+
+// Removes a preview copy: a flat mods/sympp-dev-* folder, never another mod.
+async function removeCopy(name) {
+  if (!name.startsWith(S.DEV_PREFIX)) return;
+  const dir = `${appHome()}/mods/${name}`;
+  for (const file of await fs.readdir(dir)) await fs.unlink(`${dir}/${file}`);
+  await fs.rmdir(dir);
+}
 
 function storedPath() {
   try {
@@ -47,8 +66,19 @@ function storedPath() {
 
 export default class Lens extends View {
   init(p, cx) {
-    const given = p ?? props() ?? {};
+    const own = p ?? props() ?? {};
+    const stored = own.endpoint ? null : shared(CONNECTION);
+    const given = stored && typeof stored === "object" ? { ...stored, ...own } : own;
     this.given = given;
+    this.ownConnection = Boolean(own.endpoint);
+    const studio = own.studio;
+    this.studio = typeof studio?.job === "string" && typeof studio?.pkg === "string" ? { job: studio.job, pkg: studio.pkg } : null;
+    this.worker = { state: "checking", at: 0 };
+    this.native = { state: "idle", error: null, builtAt: null, dev: null, cwd: null };
+    // Whether this package's preview copy is known gone; one may be left from before Herdr
+    // restarted, so a studio ends it before building afresh.
+    this.ended = !this.studio;
+    this.sweptAt = 0;
     this.role = given.role === "panel" ? "panel" : "overview";
     this.pinned = typeof given.job === "string" && given.job ? given.job : null;
     this.endpoint = M.normalizeEndpoint(given.endpoint);
@@ -104,6 +134,8 @@ export default class Lens extends View {
     if (shown && !this.detailReading && J.detailDue(this.detailNet, shown.jobId, cadence, now)) { this.readDetail(shown.jobId, cx); busy = true; }
     const watch = this.agentWatch;
     if (watch && !this.checking && (this.checkedFor !== watch.key || now - this.checkedAt >= cadence)) this.checkAgents(watch, cx);
+    if (now - this.sweptAt >= SWEEP) this.sweep(cx);
+    if (this.studio) this.studioTick(cx, now);
     if (!busy && now - this.painted >= REPAINT) {
       this.painted = now;
       cx.notify();
@@ -137,6 +169,7 @@ export default class Lens extends View {
       const now = Date.now();
       this.net = outcome.board ? M.fetchSucceeded(this.net, outcome.board, now) : M.fetchFailed(this.net, outcome.error, now);
       if (outcome.board) {
+        if (this.ownConnection) this.shareConnection();
         this.announce(outcome.board);
         const agents = Chrome.nextDecorations(shared(Chrome.AGENTS), Chrome.decorations(outcome.board, terminals(), this.endpoint, now), this.endpoint, now);
         if (agents) setShared(Chrome.AGENTS, agents);
@@ -152,6 +185,31 @@ export default class Lens extends View {
         // The view closed or reloaded while reading; nothing is left to draw.
       }
     });
+  }
+
+  // Lets a copy opened without connection props (a scripted studio) reach the same S++.
+  shareConnection() {
+    const { role: _role, job: _job, studio: _studio, ...connection } = this.given;
+    if (JSON.stringify(shared(CONNECTION)) !== JSON.stringify(connection)) setShared(CONNECTION, connection);
+  }
+
+  // Removes preview copies no open studio uses, e.g. after a studio tab closed: only one unused on
+  // two sweeps in a row and still unused just before it goes, so a studio starting one keeps it.
+  sweep(cx) {
+    this.sweptAt = Date.now();
+    const before = this.strays ?? new Set();
+    cx.spawn(async () => {
+      try {
+        const unused = () => new Set(S.strayCopies(names, shared(S.STUDIOS), this.openTabs(), panes()));
+        const names = await fs.readdir(`${appHome()}/mods`);
+        this.strays = unused();
+        for (const name of this.strays) if (before.has(name) && unused().has(name)) await removeCopy(name);
+      } catch { /* the next sweep tries again */ }
+    });
+  }
+
+  openTabs() {
+    return this.spaceList().flatMap((s) => (s.tabs ?? []).map((tab) => tab.id));
   }
 
   // A toast only for a need that appeared between two successful reads of this copy. Copies share
@@ -226,6 +284,10 @@ export default class Lens extends View {
   }
 
   retry(cx) {
+    if (this.studio) {
+      this.worker = { ...this.worker, at: 0 };
+      this.buildPreview(cx);
+    }
     this.net = { ...this.net, attemptAt: null };
     this.detailNet = { ...this.detailNet, attemptAt: null };
     this.checkedFor = null;
@@ -369,6 +431,283 @@ export default class Lens extends View {
     run("tab.new", J.jobTabArgs(this.given, job, spaces()));
   }
 
+  // A UI package's studio: its open tab, else a new one in the job's local space.
+  openStudio(job, pkg, _cx) {
+    const tab = S.studioTabFor(shared(S.STUDIOS), this.openTabs(), pkg.id);
+    if (tab) run("tab.select", { id: tab });
+    else run("tab.new", S.studioTabArgs(this.given, job, pkg, this.spaceList()));
+  }
+
+  // ---------- Studio ----------
+
+  // The studio's tab and pane once it is the package's one studio in the job's space; until then
+  // null. A second studio for the package, or one opened elsewhere, hands over and closes, but only
+  // while its tab holds no terminal.
+  studioHere(job, pkg, cx) {
+    if (this.here) return this.here;
+    const f = focused();
+    const paneList = panes();
+    const own = f?.tab ? paneList.find((p) => p.tab === f.tab && p.mod === "sympp" && !p.terminal) : null;
+    if (!own || this.handingOver) return null;
+    const tab = f.tab;
+    const spaceList = this.spaceList();
+    const other = S.studioTabFor(shared(S.STUDIOS), this.openTabs(), pkg.id, tab);
+    const mine = spaceList.find((s) => (s.tabs ?? []).some((x) => x.id === tab));
+    const target = J.jobSpace(job, spaceList);
+    if (!paneList.some((p) => p.tab === tab && p.terminal) && (other || (target && mine && target.id !== mine.id))) {
+      this.handingOver = true;
+      cx.spawn(async () => {
+        if (other) run("tab.select", { id: other });
+        else run("tab.new", S.studioTabArgs(this.given, job, pkg, spaceList));
+        run("tab.close", { id: tab });
+      });
+      return null;
+    }
+    this.here = { tab, pane: own.pane };
+    this.registerStudio(cx);
+    if (mine?.tabs.find((x) => x.id === tab)?.named === false) cx.spawn(async () => run("tab.rename", { id: tab, name: S.tabName(pkg.title) }));
+    return this.here;
+  }
+
+  // Records this studio and its preview copy, and marks its tab for the desk tab bar.
+  registerStudio(cx) {
+    const tab = this.here.tab;
+    const open = this.openTabs();
+    const studios = { ...S.openStudios(shared(S.STUDIOS), open), [tab]: { ...this.studio, dev: this.native.dev } };
+    const before = shared(S.TAB_MARKS);
+    const marks = (Array.isArray(before) ? before : []).filter((m) => m?.tab !== tab && open.includes(m?.tab));
+    cx.spawn(async () => {
+      setShared(S.STUDIOS, studios);
+      setShared(S.TAB_MARKS, [...marks, { tab, ...S.MARK }]);
+    });
+  }
+
+  // Checks the worker when first seen, again within the live window, and sooner while it isn't live.
+  studioTick(cx, now) {
+    const watch = this.studioWatch;
+    if (!watch || this.workerChecking) return;
+    if (!watch.workers.length) {
+      if (this.worker.state !== "none") { this.worker = { state: "none", at: now }; cx.notify(); }
+      return;
+    }
+    // A verified worker whose exact binding is gone (a replacement launch) is checked again now.
+    const b = this.worker.binding;
+    if (this.worker.state === "live" && !watch.workers.some((w) => w.address === b.address && w.launchId === b.launchId && w.pid === b.pid)) {
+      this.worker = { state: "checking", at: 0 };
+    }
+    if (this.worker.at && now - this.worker.at < (this.worker.state === "live" ? J.LIVE_FOR : M.POLL.live)) return;
+    this.checkWorker(watch.workers, cx);
+  }
+
+  // The worker is the package's first binding the trusted helper verifies; its receipt names its worktree.
+  checkWorker(workers, cx) {
+    this.workerChecking = true;
+    cx.spawn(async (cx) => {
+      let found = null;
+      for (const b of workers) {
+        try {
+          const result = await exec(b.host.node, M.bindingCheckArgs(b), { on: b.machine });
+          if (M.checkedBinding(b, result, terminals())) { found = { binding: b, receipt: JSON.parse(result.stdout) }; break; }
+        } catch { /* try the next binding */ }
+      }
+      this.workerChecking = false;
+      if (!found || found.binding.address !== this.worker.binding?.address) this.swapped = false;
+      this.keeping = false;
+      this.worker = found ? { state: "live", ...found, at: Date.now() } : { state: "gone", at: Date.now() };
+      try { cx.notify(); } catch { /* closed while checking */ }
+    });
+  }
+
+  // Puts the verified worker beside the studio: a pane on the right, then swapped to the left once.
+  arrange(place, binding, cx) {
+    const pane = this.here.pane;
+    if (place.step === "keep" && !this.keeping) {
+      this.keeping = true;
+      cx.spawn(async () => {
+        run("pane.focus", { pane });
+        run("terminal.keep", { terminal: binding.address, place: "right" });
+      });
+    } else if (place.step === "swap") {
+      this.swapped = true;
+      // After the new pane has been drawn once, so Herdr knows where it is.
+      cx.timer.after(250, () => {
+        run("pane.focus", { pane });
+        run("pane.swap", { direction: "right" });
+        run("pane.focus", { pane: place.pane });
+      });
+    }
+  }
+
+  moveWorker(cx) {
+    const address = this.worker.binding?.address;
+    if (!address) return;
+    this.keeping = false;
+    cx.spawn(async () => run("terminal.park", { terminal: address }));
+  }
+
+  goToWorker(_cx) {
+    const pane = panes().find((p) => p.terminal === this.worker.binding?.address);
+    if (pane) run("pane.focus", { pane: pane.pane });
+  }
+
+  openPreview(url, cx) {
+    if (url) cx.open_url(url);
+  }
+
+  // The local worktree the verified worker previews from, or null: a remote worker, or no folder.
+  previewSource() {
+    const { binding, receipt } = this.worker;
+    return typeof receipt?.cwd === "string" && receipt.cwd && !binding.machine ? receipt.cwd : null;
+  }
+
+  // A local worker's S++ worktree: its Herdr view built on sample data as this package's preview
+  // copy, and rebuilt on every save that touches it.
+  startPreview(cwd, job, cx) {
+    const generation = (this.previewRun ?? 0) + 1;
+    this.previewRun = generation;
+    if (!cwd) {
+      this.native = { state: "none", error: null, builtAt: null, dev: null, cwd: null };
+      this.registerStudio(cx);
+      return;
+    }
+    this.ended = false;
+    this.native = { state: "building", error: null, builtAt: null, dev: S.devName(this.studio.pkg), cwd, node: this.worker.binding.host.node, base: `origin/${job.baseBranch || "main"}` };
+    this.registerStudio(cx);
+    this.buildPreview(cx);
+    this.watchPreview(generation, cx);
+  }
+
+  buildPreview(cx) {
+    const n = this.native;
+    const generation = this.previewRun;
+    if (!n.dev || n.state === "none" || this.landed || this.ending) return;
+    if (this.building) { this.rebuild = true; return; }
+    this.building = true;
+    cx.spawn(async (cx) => {
+      let outcome;
+      try {
+        outcome = S.buildOutcome(await exec(n.node, [S.builderPath(n.cwd), "--to", `${appHome()}/mods/${n.dev}`, "--base", n.base], { cwd: n.cwd }));
+      } catch {
+        outcome = { state: "error", error: "Node couldn't run the preview build." };
+      }
+      this.building = false;
+      // Ended meanwhile: the copy waits for this build before it goes.
+      if (generation !== this.previewRun) {
+        try { cx.notify(); } catch { /* closed while building */ }
+        return;
+      }
+      const built = outcome.state === "ready" ? Date.now() : this.native.builtAt;
+      const state = outcome.state === "unchanged" && built ? "ready" : outcome.state;
+      this.native = { ...this.native, state, error: outcome.error ?? null, builtAt: built };
+      if (this.rebuild) { this.rebuild = false; this.buildPreview(cx); }
+      try { cx.notify(); } catch { /* closed while building */ }
+    });
+  }
+
+  watchPreview(generation, cx) {
+    const folder = S.builderPath(this.native.cwd).replace(/\/preview\.mjs$/, "");
+    cx.spawn(async (cx) => {
+      for (;;) {
+        let changed;
+        try { changed = await watchFolder(folder); } catch { return; }
+        if (generation !== this.previewRun || this.native.state === "none" || this.landed) return;
+        if (changed.some(S.previewInput)) this.buildPreview(cx);
+      }
+    });
+  }
+
+  // The studio's own pane is a header-high strip while a preview pane shows below it. When that
+  // pane goes, Herdr gives the studio's pane the column's place and size back.
+  fitStrip(shown, cx) {
+    if (shown === Boolean(this.stripped)) return;
+    this.stripped = shown;
+    const pane = this.here.pane;
+    if (shown) cx.spawn(async () => run("layout.resize", { id: pane, px: STRIP }));
+  }
+
+  // The preview copy's pane below the studio's, opened once it first builds; Show preview reopens it.
+  previewPane(devPane, cx) {
+    const pane = this.here.pane;
+    if (devPane || this.devOpened || this.native.state !== "ready") return;
+    this.devOpened = true;
+    const { dev } = this.native;
+    const generation = this.previewRun;
+    // Herdr finds a new mod folder through its file watcher, a moment after the first build. By
+    // then the preview may have ended.
+    cx.timer.after(800, () => {
+      if (generation === this.previewRun && !this.ending && !this.landed && this.native.state === "ready") run("pane.split", { pane, direction: "down", mod: dev, props: {} });
+    });
+  }
+
+  showPreview(cx) {
+    this.devOpened = false;
+    if (this.native.state !== "ready") this.buildPreview(cx);
+    cx.notify();
+  }
+
+  // Ends this package's preview copy before another worktree's starts, once the package lands or
+  // when the worktree has none to build, also a copy left from before Herdr restarted: its pane
+  // closes, a running build finishes, then the copy goes. True once neither is left.
+  endPreview(devPane, cx) {
+    if (devPane) {
+      if (!this.closingDev) { this.closingDev = true; cx.spawn(async () => run("pane.close", { pane: devPane.pane })); }
+      return false;
+    }
+    if (this.ended) return true;
+    if (this.building || this.ending) return false;
+    this.ending = true;
+    this.rebuild = false;
+    this.previewRun = (this.previewRun ?? 0) + 1;
+    cx.spawn(async (cx) => {
+      try { await removeCopy(S.devName(this.studio.pkg)); } catch { /* none was made, or a sweep removes it */ }
+      this.ending = false;
+      this.ended = true;
+      this.closingDev = false;
+      this.devOpened = false;
+      this.native = { ...this.native, dev: null };
+      this.registerStudio(cx);
+      try { cx.notify(); } catch { /* closed meanwhile */ }
+    });
+    return false;
+  }
+
+  studioLevel(t, board, bindings, now, cx) {
+    const job = board.jobs.find((j) => j.id === this.studio.job);
+    const pkg = job?.packages.find((p) => p.id === this.studio.pkg);
+    if (!pkg) {
+      return this.root(t, [O.staleBar(this, t, now), message(t, "This package isn't here", "It isn't on this S++ board. It may have been archived, or this studio belongs to another factory.", [
+        button(t, "retry-missing", this.reading ? "Reading…" : "Refresh", (cx) => this.retry(cx), { strong: true }),
+      ])]);
+    }
+    if (!this.studioHere(job, pkg, cx)) return this.root(t, [message(t, "Opening the studio…", null)]);
+    this.studioWatch = { workers: S.workerBindings(M.bindingsFor(bindings, job.id, pkg.id)).filter((b) => b.available) };
+    this.studioTick(cx, now);
+    this.landed = pkg.stage === "done";
+    const w = this.worker;
+    const live = w.state === "live";
+    const paneList = panes();
+    const place = live ? S.placement(paneList, this.here.tab, this.here.pane, w.binding.address, this.swapped) : null;
+    const dev = S.devName(this.studio.pkg);
+    const devPane = paneList.find((p) => p.tab === this.here.tab && p.mod === dev) ?? null;
+    if (this.landed) this.endPreview(devPane, cx);
+    else if (live) {
+      this.arrange(place, w.binding, cx);
+      const cwd = this.previewSource();
+      const restart = this.native.state === "idle" || this.native.cwd !== cwd;
+      if ((restart || this.native.state === "none") && this.endPreview(devPane, cx) && restart) this.startPreview(cwd, job, cx);
+    }
+    const url = live ? S.previewUrlOf(terminals().find((k) => k.address === w.binding.address)) : null;
+    const kind = this.landed ? "none" : S.previewKind({ url, native: this.native.state });
+    this.studioUrl = kind === "web" ? url : null;
+    // Not while it closes: the resize would land on the studio pane once it has the column's place.
+    this.fitStrip(Boolean(devPane) && !this.closingDev, cx);
+    if (kind === "native") this.previewPane(devPane, cx);
+    return this.root(t, [O.staleBar(this, t, now), studioView(this, t, {
+      pkg, worker: { state: w.state, provider: w.binding?.provider ?? null }, place, kind, url,
+      native: this.native, landed: this.landed, strip: Boolean(devPane) && !this.closingDev,
+    })]);
+  }
+
   input(placeholder, multiline = false) {
     const state = multiline ? TextareaState.new({ placeholder, rows: 4 }) : InputState.new({ placeholder });
     state.on("change", (_e, cx) => cx.notify());
@@ -474,6 +813,14 @@ export default class Lens extends View {
   onKey(e, cx) {
     if (!this.keys.is_focused()) return;
     const key = e.key;
+    if (this.studio) {
+      if (key === "r") this.retry(cx);
+      else if ((key === "o" || key === "enter") && this.studioUrl) this.openPreview(this.studioUrl, cx);
+      else return;
+      cx.stop_propagation();
+      cx.notify();
+      return;
+    }
     const nav = KEYS[key];
     // On the Job level keys move packages and Esc clears the package first; above it they move
     // through the level's rows. Esc then goes up a level, except in a job's own tab.
@@ -496,6 +843,7 @@ export default class Lens extends View {
     else if (key === "escape" && inJob && this.pkgSel) this.pkgSel = null;
     else if (key === "escape" && !this.pinned && this.level !== "factory") this.goUp(cx);
     else if (key === "t" && this.currentJob && !this.pinned) this.openInTab(this.currentJob, cx);
+    else if (key === "u" && packages && this.studioPackage()) this.openStudio(this.currentJob, this.studioPackage(), cx);
     else if (key === "p" && this.role === "panel" && !this.pinned) this.togglePin(cx);
     else if (key === "r") this.retry(cx);
     else if (key === "o") this.openDashboard(cx);
@@ -504,8 +852,15 @@ export default class Lens extends View {
     cx.notify();
   }
 
+  // The selected package when the job view offers it a studio.
+  studioPackage() {
+    const job = this.currentJob;
+    const pkg = job?.packages.find((p) => p.id === this.pkgSel);
+    return pkg && this.shown && S.uiPackage(job, pkg, this.shown.bindings, terminals()) ? pkg : null;
+  }
+
   root(t, children) {
-    return v_flex().id(`lens-${this.pinned ? "job" : this.role}`).size_full().min_h(0).bg(this.role === "panel" ? t.chrome : t.canvas).text_color(t.foreground).text_size(13)
+    return v_flex().id(`lens-${this.studio ? "studio" : this.pinned ? "job" : this.role}`).size_full().min_h(0).bg(this.role === "panel" ? t.chrome : t.canvas).text_color(t.foreground).text_size(13)
       .track_focus(this.keys)
       .on_mouse_down("left", (_e, cx) => { this.keys.focus(); cx.notify(); })
       .on_key_down((e, cx) => this.onKey(e, cx))
@@ -551,6 +906,8 @@ export default class Lens extends View {
     }
     const bindings = M.discoverBindings(this.hosts ?? shared("sympp.hosts"), terminals()).map((binding) => board.offline === false
       ? binding : { ...binding, available: false, unavailable: board.offline ? "Offline copy" : "Update S++ for agent access" });
+
+    if (this.studio) return this.studioLevel(t, board, bindings, now, cx);
 
     if (this.pinned) {
       this.registerTab(cx);

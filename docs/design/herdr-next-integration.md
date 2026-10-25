@@ -143,6 +143,20 @@ appeared between two successful reads of one copy, never on the first read or
 for an offline copy; copies share `shared("sympp.toasted")` so each need is
 announced once. Clicking it selects the job's tab or opens one.
 
+A UI package also has a **UI studio**: a tab named after the package in the
+job's local space, holding its verified worker's terminal beside a preview. UI
+work is a package titled with UI as a word, or one whose worker published
+`sympp.preview_url`. Open UI studio on the package, or a scripted `tab.new` with
+`props.studio` (the architect's path; a copy without an endpoint uses the
+connection a connected copy shared), opens it; reopening selects it. The worker is
+placed through `terminal.keep` only after the helper check; a worker another tab
+shows moves only on the person's request. The preview is the published web page
+as a link card (mods cannot embed a browser), else, for a local S++ worktree that
+changes the Herdr view, that view built by the worktree's `preview.mjs` on sample
+data as a `sympp-dev-*` mod that follows its saves; the real `sympp` mod is never
+written. The copy is removed when the package lands or its studio closes. Studio
+tabs carry a UI glyph through the desk tab bar's `workspace.tab_marks` slot.
+
 A job can have multiple participating terminals; its identity remains the
 WorkRequest rather than a particular client tab.
 Preserve existing topics, compositions, terminal placement and normal Herdr
@@ -242,6 +256,7 @@ recovery restores shells rather than restarting the original agent.
 | Job level | Job tab, phase, needs-you strip, package rails, agents, decisions and keyboard, from canonical state; one mod split into flat modules. | Open in [#766](https://github.com/JJLiebig/symphony-plus-plus/pull/766). Node tests cover phase, rails placement/order/axis, liveness, decisions cadence and tab placement; `herdr-app check --print-spec` checks the drawn structure at wide and narrow widths with fixtures. Wide and narrow, dark and light captures in an isolated Windows home and scratch core used a fixture backend. Not yet qualified: real ledger data, a Live agent with a real launch receipt, pointer and keyboard input, and layout switches, which follow window width at the next redraw. |
 | Levels, panel and toasts | Factory, Topic and Space levels with a breadcrumb, a focus-following panel with a pin, and needs-you toasts, from canonical state and Herdr's own topics, spaces, focus and terminal reports. | Node tests cover placement, ranking, grouping, agents, following, toasts and navigation; `herdr-app check --print-spec` checks each level at wide and panel widths. An isolated Windows home and scratch core with a fixture backend showed the Factory (dark and light), a toast for a newly raised need, and a panel following a space, an S++-labelled terminal and a topic; a job tab registered itself and `tab.select` reached it across spaces. Not qualified: real ledger data, pointer and keyboard input, and wide Topic and Space layouts in a live window (checked structurally only). |
 | Chief desk | A topic's registered chief, its dispatched work, recaps and waiting decisions, and chief presence on Factory rows, from #773's chiefs and attribution. | Node tests cover topic matching (exact, leading or ending words, repositories, ambiguity), attribution, ordering, recaps, needs and chief liveness; `herdr-app check --print-spec` checks the desk, the no-chief line and Factory marks. An isolated Windows home and scratch core showed the desk, a no-chief topic, the Factory rows and the panel width with fixture data, dark and light. Not qualified: real registrations, a Live chief with a real session receipt, Open, and input. |
+| UI studio | A UI package's tab with its verified worker beside a preview: a published web preview as a link card, or the worktree's own Herdr view live on sample data; a tab glyph through desk-tabs chrome 2. | Node tests cover UI detection, preview addresses, tab placement and hand-over, worker placement, preview choice, sweeping and the builder (sample-only entry, changed-only writes, base gating); `herdr-app check --print-spec` checks the Open UI studio button and each studio state. An isolated Windows home and scratch core, with stand-in workers carrying real launch labels and receipts the helper verified, showed a scripted studio placing a paneless worker on the left, the native preview following a save, the link card, duplicate hand-over, landing cleanup and the chrome 1 to 2 upgrade, dark, light and narrow. Not qualified: a real provider worker, a remote worker, pointer and keyboard input, and Open in a browser. |
 | Native human actions | Intake and persisted question/guidance answers, with browser exclusion and canonical scope/status checks. | Landed in [#758](https://github.com/JJLiebig/symphony-plus-plus/pull/758); API/offline acceptance and all required hosted gates passed. |
 | Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | Landed in [#759](https://github.com/JJLiebig/symphony-plus-plus/pull/759); six controlled-core checks and all required hosted gates passed. Native receipt checks also reject mismatched canonical request/package IDs. |
 | Hand-started sessions | Architects, coordinators and workers started in a native terminal report their location; Open verifies the actual MCP bridge as well as the terminal. | [#761](https://github.com/JJLiebig/symphony-plus-plus/pull/761) adds Node bridge discovery and private session receipts without changing worker launch receipts or core/app APIs. Existing bridge processes need a supported reconnect to load it; the PowerShell fallback remains legacy-only. |

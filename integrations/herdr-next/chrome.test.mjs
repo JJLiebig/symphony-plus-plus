@@ -108,6 +108,7 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
 
   const tabs = await readFile(join(home, 'mods', 'desk-tabs', 'main.js'), 'utf8');
   assert.match(tabs, /shared\("workspace\.panel_buttons"\)/);
+  assert.match(tabs, /symppTabMark\(c\.id\)/, 'tabs carry the marks mods register');
   assert.doesNotMatch(tabs.replaceAll('\r\n', ''), /\n/, 'keeps the mod\'s CRLF line endings');
   assert.match(await readFile(join(home, 'mods', 'desk-agents', 'main.js'), 'utf8'), /symppStage\(k\.address, Date\.now\(\)\)/);
   for (const patch of [deskTabs, deskAgents]) {

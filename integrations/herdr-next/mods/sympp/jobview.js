@@ -11,6 +11,7 @@ import * as M from "./model.js";
 import * as J from "./job.js";
 import * as R from "./rails.js";
 import * as Rv from "./review.js";
+import * as S from "./studio.js";
 import { CLEAR, MONO, icon, tint, cap, button, field, mark, pip, presence, section, age } from "./ui.js";
 
 const LABEL_W = 236;
@@ -292,11 +293,11 @@ function railRow(v, t, job, row, axis, report, ctx) {
       .child(cell(t, total, row.timings.total ? t.foreground : t.dim))
       .child(cell(t, stage, row.timings.stage ? t.muted : t.dim))
       .child(cell(t, review, row.bumps.some((b) => b.kind === "long") ? t.working : row.timings.review ? t.muted : t.dim)));
-  return on ? [rowEl, rowDetail(t, pkg, c)] : [rowEl];
+  return on ? [rowEl, rowDetail(v, t, job, pkg, c, ctx)] : [rowEl];
 }
 
 // The opened row: everything the row line had no room for, in plain words.
-function rowDetail(t, pkg, c) {
+function rowDetail(v, t, job, pkg, c, ctx) {
   const line = (text, tone = t.muted, extra = (el) => el) => (text ? extra(div().w_full().text_size(11.5).text_color(tone).child(text)) : null);
   return v_flex().id(`detail-${pkg.id}`).pl(LABEL_W + 20).pr(TIME_W).pt(2).pb(10).gap(3).children([
     line(c.stage, c.failed ? t.blocked : t.muted, (el) => el.font_family(MONO).text_size(11)),
@@ -306,7 +307,15 @@ function rowDetail(t, pkg, c) {
     line(c.next ? `Next: ${c.next}` : null, c.needsYou ? t.blocked : t.muted),
     line(c.evidence.join(" · ")),
     c.after.length ? line(`After ${c.after.join(", ")}`) : null,
+    studioButton(v, t, job, pkg, ctx),
   ].filter(Boolean));
+}
+
+// A UI package's studio: its worker beside a preview, in their own tab.
+function studioButton(v, t, job, pkg, ctx) {
+  if (typeof v.openStudio !== "function" || !S.uiPackage(job, pkg, ctx.bindings, ctx.terminals)) return null;
+  return h_flex().pt(4).child(button(t, `studio-${pkg.id}`, "Open UI studio", (cx) => v.openStudio(job, pkg, cx),
+    { strong: true, glyph: "monitor", tip: "Open this package's worker and preview in their own tab (U)" }));
 }
 
 function reportTone(t, report) {
@@ -342,6 +351,7 @@ function compactRow(v, t, job, row, report, ctx) {
       c.waiting ? div().text_size(11.5).text_color(t.muted).child(c.waiting) : null,
       c.next ? div().text_size(11.5).text_color(c.needsYou ? t.blocked : t.muted).child(`Next: ${c.next}`) : null,
       c.evidence.length ? div().text_size(11.5).text_color(t.muted).child(c.evidence.join(" · ")) : null,
+      studioButton(v, t, job, pkg, ctx),
     ].filter(Boolean))))
     .when(ctx.review?.id === pkg.id, (el) => el.child(div().pl(14).pt(6).child(reviewPane(v, t, pkg, ctx, true))));
 }
