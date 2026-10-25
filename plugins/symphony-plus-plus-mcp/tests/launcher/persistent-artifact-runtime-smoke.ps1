@@ -9,6 +9,11 @@ $launcher = Join-Path $pluginRoot "scripts/start-sympp-mcp.ps1"
 $fixtureParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $tempRoot = Join-Path $fixtureParent ("sympp-persistent-" + [guid]::NewGuid().ToString("N"))
 $runtimeFile = Join-Path $tempRoot "state/runtime.json"
+if ($SkillsInstall) {
+  $skillsWorkspace = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent ([IO.Path]::GetFullPath($SkillsInstall))))
+  $runtimeFile = Join-Path $skillsWorkspace '.sympp-beta/runtime/codex-plugin.json'
+}
+. (Join-Path $PSScriptRoot 'beta-install-qualification.ps1')
 $backendProcessId = $null
 $backendStartTicks = $null
 $frontendProcessId = $null
@@ -67,10 +72,29 @@ function Invoke-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashta
 function Read-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment) {
   $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
-    $stdout = $process.StandardOutput.ReadToEndAsync()
-    $stderr = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(120000)) { $process.Kill($true); throw "Native command timed out: $FilePath" }
-    $result = @{ exit = $process.ExitCode; stdout = $stdout.GetAwaiter().GetResult(); stderr = $stderr.GetAwaiter().GetResult() }
+    $streams = @{
+      stdout = @{ reader = $process.StandardOutput; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
+      stderr = @{ reader = $process.StandardError; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
+    }
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
+    do {
+      $readAny = $false
+      foreach ($stream in $streams.Values) {
+        if ($stream.closed) { continue }
+        if (-not $stream.pending) { $stream.pending = $stream.reader.ReadLineAsync() }
+        if ($stream.pending.Wait(20)) {
+          if ($null -eq $stream.pending.Result) { $stream.closed = $true }
+          else { $stream.lines.Add($stream.pending.Result) }
+          $stream.pending = $null
+          $readAny = $true
+        }
+      }
+      # Hosted process fixtures can leave pipe handles in a detached backend.
+      if ($process.HasExited -and -not $readAny) { break }
+      if ([DateTime]::UtcNow -gt $deadline) { $process.Kill($true); throw "Native command timed out: $FilePath" }
+      if (-not $readAny) { Start-Sleep -Milliseconds 10 }
+    } while ($true)
+    $result = @{ exit = $process.ExitCode; stdout = [string]::Join("`n", $streams.stdout.lines); stderr = [string]::Join("`n", $streams.stderr.lines) }
     Write-Host ($result | ConvertTo-Json -Compress)
     return $result
   } finally { $process.Dispose() }
@@ -164,6 +188,11 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
     $script:backendProcessId = $activeBackend.Id
     $script:backendStartTicks = $activeBackendStartTicks
     if ($OnAttached) { & $OnAttached $activeState $MarkerSessionId }
+    $activeState = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
+    $activeBackend = Get-Process -Id ([int]$activeState.backend.pid) -ErrorAction Stop
+    $activeBackendStartTicks = $activeBackend.StartTime.ToUniversalTime().Ticks
+    $script:backendProcessId = $activeBackend.Id
+    $script:backendStartTicks = $activeBackendStartTicks
     $process.StandardInput.Close()
     if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw "Bridge did not exit after stdin closed: $FilePath" }
     $errorText = $stderr.GetAwaiter().GetResult()
@@ -183,6 +212,8 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
     $failure = $_.Exception.Message
     if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) }
     Write-Host "MCP fixture exit: $($process.ExitCode)"
+    Get-ChildItem -LiteralPath (Join-Path $Environment.SYMPP_HOME 'logs') -Filter 'beta-install-*' -File -ErrorAction SilentlyContinue |
+      ForEach-Object { Write-Host "Beta install startup log: $($_.Name)"; Get-Content -LiteralPath $_.FullName | Write-Host }
     if ($Environment.SYMPP_LAUNCHER_TRACE_DIR) {
       Get-ChildItem -LiteralPath $Environment.SYMPP_LAUNCHER_TRACE_DIR -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Tail 20 | Write-Host }
     }
@@ -238,9 +269,10 @@ try {
       $floatingManifest = Join-Path $tempRoot "floating-channel.json"
       $manifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
       @{ schema_version = 1; channels = @{ stable = @{ manifest = @{ path = $floatingManifest } }; beta = @{ manifest = @{ path = $floatingManifest } } } } |
-        ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
+        ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot '.sympp-runtime-artifacts.json')
       @{ version = 1; skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/symphony-plus-plus'; sourceType = 'github'; ref = 'beta' } } } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $tempRoot 'skills-lock.json')
+      Copy-Item -LiteralPath (Join-Path $tempRoot 'skills-lock.json') -Destination (Join-Path $skillsWorkspace 'skills-lock.json') -Force
       $codexHome = Join-Path $tempRoot "selected codex home"
       New-Item -ItemType Directory -Path (Join-Path $tempRoot "profile") -Force | Out-Null
     } else {
@@ -265,9 +297,10 @@ try {
           dashboard = @{ asset_root = $manifest.dashboard.relative_path; fingerprint = $manifest.dashboard.fingerprint } })
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
     }
-    $database = Join-Path $tempRoot "database/explicit ledger.sqlite3"
+    $betaHome = if ($SkillsInstall) { Join-Path $skillsWorkspace '.sympp-beta' } else { Join-Path $tempRoot 'runtime-home' }
+    $database = if ($SkillsInstall) { Join-Path $betaHome 'explicit ledger.sqlite3' } else { Join-Path $tempRoot 'database/explicit ledger.sqlite3' }
     $environment = @{
-      SYMPP_RUNTIME_CHANNEL = "beta"; CODEX_HOME = $codexHome; SYMPP_HOME = Join-Path $tempRoot "runtime-home"; SYMPP_RUNTIME_FILE = $runtimeFile
+      SYMPP_RUNTIME_CHANNEL = "beta"; CODEX_HOME = $codexHome; SYMPP_HOME = $betaHome; SYMPP_RUNTIME_FILE = $runtimeFile
       SYMPP_DATABASE = $database; SYMPP_LOG_DIR = Join-Path $tempRoot "logs"; SYMPP_LAUNCHER_TRACE_DIR = Join-Path $tempRoot "trace"
       SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = [string]$backendPort; SYMPP_OPEN_DASHBOARD = "0"
       SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"
@@ -381,7 +414,17 @@ try {
       $manifest = $candidateManifest
       $candidateManifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
     }
-    $secondWave = Invoke-McpBridge $cmd $commandArgs $environment -MarkerSessionId $first.marker_session_id -OnAttached $assertLedger -RecoverBackend
+    $secondWave = Invoke-McpBridge $cmd $commandArgs $environment -MarkerSessionId $first.marker_session_id -RecoverBackend -OnAttached {
+      param($activeState, $sessionId)
+      & $assertLedger $activeState $sessionId
+      if ($SkillsInstall) {
+        Invoke-BetaInstallQualification $environment $process $candidateManifest
+        $persisted = Send-BridgeRequest $process @{ jsonrpc = '2.0'; id = 82; method = 'tools/call'; params = @{ name = 'solo_show'; arguments = @{ session_id = $sessionId } } }
+        if (@($persisted.result.structuredContent.entries | Where-Object title -eq 'packaged database persistence marker').Count -ne 1) {
+          throw 'Beta install or rollback lost or duplicated the existing ledger marker.'
+        }
+      }
+    }
     Wait-ManagedRuntimeStopped $secondWave.backend_pid $secondWave.backend_port
     $trace = Get-ChildItem -LiteralPath $environment.SYMPP_LAUNCHER_TRACE_DIR -File | Get-Content -Raw
     if ($SkillsInstall) {
@@ -394,6 +437,7 @@ try {
     if (-not (Test-Path -LiteralPath $database -PathType Leaf)) { throw "Explicit packaged database was not created." }
     if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
     if ($SkillsInstall) {
+      Invoke-BetaBundleQualification $environment $published $candidateManifest $first.marker_session_id
       $offlineEnvironment = $environment.Clone()
       if ($HostedProcessCreation) {
         # The executable-shadow fixture belongs to the MCP startup checks above.

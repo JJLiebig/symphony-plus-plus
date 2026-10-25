@@ -15,6 +15,8 @@ branch artifact. Healthy clients share their existing runtime until they close;
 there is no hot replacement. Artifact checksums, MCP contract compatibility and
 actual source SHA remain verified. Publication can lag source head; read the
 running SHA and manifest before relying on a newly merged feature.
+For a coordinated restart of an existing Windows beta Skills factory, use the
+[beta reload command](#reload-an-existing-windows-beta-factory) below.
 
 Keep beta's home, runtime file, port and ledger separate from the original factory.
 Use an empty ledger for real dogfood work. A copied live ledger is inspection-only:
@@ -79,6 +81,52 @@ when needed. `SYMPP_BACKEND_PORT` requests a preferred port. Use the recorded
 URL. See [Operations](operations.md) for the Work board and starting a request.
 
 ## Attach, Close And Recover
+
+### Reload an existing Windows beta factory
+
+From an S++ checkout on your logged-in Windows desktop, use explicit absolute
+factory and Herdr-app homes:
+
+```powershell
+pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
+```
+
+This installs the latest **published beta runtime**, plus the checkout's generated
+Skills bundle and native view. Published binaries keep repeat installs fast without
+a local Elixir toolchain. Publication can lag a branch push; the command reports
+the exact running SHA, rather than claiming the checkout is running. To select
+an already downloaded beta channel manifest, pass `-ArtifactManifest <path>`.
+
+The factory must already use an official project-local beta Skills installation
+and a managed artifact backend. Its data home must be inside that workspace,
+outside the managed Skills directory, with a separate `beta` word in its final
+folder (such as `.sympp-beta`), its own port, and its database inside that home. Default
+production homes, stable Skills installations, global Skills, marketplace caches,
+linked paths and stable ports are refused. The command never updates a plugin
+cache or host registration. The checkout bundle and published artifact must share
+an MCP contract; when publication lags, the command refuses before interrupting
+the old runtime. The beta workspace's own Skills directory stays at its registered
+path. Actual file changes are detected even if its package marker was not updated.
+
+The archive and native files are prepared before the backend is stopped. The
+installed launcher restarts the same endpoint and ledger, and readiness must
+match the selected revision, contract and database. An unchanged runtime and bundle
+are not replaced; identical native files are not rewritten. The old Skills directory
+is backed up during cutover. A failed restart or native installation restores that
+directory and restarts the retained previous artifact with its original contract.
+Ledger contents are never restored or copied; startup performs only the backend's
+normal additive updates.
+The selected runtime stays pinned in this beta Skills installation until the
+next install command selects a newer publication.
+
+After a Skills bundle change, **open fresh sessions for every MCP client**, including
+the coordinating architect. An artifact-only restart leaves the bundle intact;
+connected STDIO bridges reconnect to the same endpoint on their next request.
+Requests overlapping the restart can fail; reload that client's MCP connection
+if it reports an error. Check the result of an interrupted write before retrying
+it. Fresh host sessions load the updated procedures and tool list.
+Do not run this against a shared live beta factory until its coordinating
+architect has agreed to the restart timing.
 
 For moving an existing factory ledger from main to beta, follow the
 [release and cutover runbook](runbooks/beta-release-cutover.md), including its

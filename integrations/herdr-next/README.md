@@ -49,7 +49,25 @@ explicitly to install this version over a differing copy. Close an S++ pane
 with Herdr's ordinary pane or tab controls.
 
 The native view requires a backend with the native board endpoint. Updating the
-view does not update or restart S++. Follow the normal
+view with this installer does not update or restart S++. For an existing Windows
+beta factory, update both with one command from an S++ checkout:
+
+```powershell
+pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
+```
+
+It installs the latest published beta backend, this checkout's project-local beta
+Skills bundle and native files,
+replacing the S++ mod while retaining personal layouts, topics and terminals.
+It opens no new tabs. Herdr-app watches mod files and reloads changed views;
+reopen the S++ tab or pane if a view stays stale. An unchanged backend stays running.
+Coordinate restart timing with agents using the beta factory, and open fresh MCP
+sessions when its Skills bundle changes. A failed cutover restores the prior
+bundle and runtime together. The
+[beta reload procedure](../../docs/runtime.md#reload-an-existing-windows-beta-factory)
+describes isolation checks, contract changes, reconnects and failure recovery.
+
+For normal installations, follow the
 [installed runtime procedure](../../docs/runtime.md); healthy clients retain
 their current runtime until a supported cutover.
 
