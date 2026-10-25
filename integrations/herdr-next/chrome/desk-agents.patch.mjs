@@ -9,8 +9,8 @@ export default {
 `,
       replace: `// S++ chrome 1: an S++ agent (its terminal carries S++ launch or session labels) shows the S++ mark.
 // The S++ view's reads (shared("sympp.agents"), by terminal address) add its package's stage, the
-// review round (from the third in the working color) and a dot when it needs you. A read older than
-// two minutes shows dimmed, as last known.
+// review round (from the third in the working color) and the mark's dot when it needs you. A read
+// older than two minutes shows dimmed, as last known.
 const SYMPP_STAGES = { build: "Build", checks: "Checks", review: "Review", merge: "Ready to merge", landed: "Landed" };
 function symppBadge(t, k, now) {
   const l = k?.labels ?? {};
@@ -18,17 +18,18 @@ function symppBadge(t, k, now) {
   const session = l["sympp.session_id"] && (l["sympp.session_work_package_id"] || l["sympp.session_work_request_id"]);
   if (!launched && !session) return [];
   const d = shared("sympp.agents")?.[k.address];
-  const old = !(now - d?.at <= 120000);
+  const old = Boolean(d) && !(now - d.at <= 120000);
   const stage = SYMPP_STAGES[d?.stage] ? d.stage : null;
   const round = stage === "review" && Number.isSafeInteger(d.round) ? d.round : null;
-  const tone = old ? t.dim : round >= 3 ? t.working : stage === "landed" ? t.done : t.muted;
+  const tone = round >= 3 ? t.working : stage === "landed" ? t.done : t.muted;
   const said = [stage && SYMPP_STAGES[stage] + (round ? \` · round \${round}\` : ""), d?.needs && "Needs you"].filter(Boolean).join(" · ");
-  return [h_flex().id(\`sympp-\${k.address}\`).flex_none().gap(3).items_center()
+  const rgb = parseInt(/^#([0-9a-f]{6})/i.exec(t.chrome ?? "")?.[1] ?? "ffffff", 16);
+  const dark = ((rgb >> 16) * 299 + ((rgb >> 8) & 255) * 587 + (rgb & 255) * 114) / 1000 < 128;
+  return [h_flex().id(\`sympp-\${k.address}\`).flex_none().gap(3).items_center().when(old, el => el.opacity(0.45))
     .tooltip(said ? \`S++ · \${old ? "last known: " : ""}\${said}\` : "S++")
-    .child(svg("mods/sympp/mark.svg").size(12).flex_none().text_color(old ? t.dim : t.muted))
+    .child(image(\`mods/sympp/mark\${d?.needs ? "-needs" : ""}\${dark ? "-dark" : ""}.png\`).w(14).h(14).flex_none())
     .when(Boolean(stage), el => el.child(svg(\`mods/sympp/stage-\${stage}.svg\`).size(12).flex_none().text_color(tone)))
-    .when(Boolean(round), el => el.child(div().text_size(10).text_color(tone).child(String(round))))
-    .when(Boolean(d?.needs), el => el.child(div().size(6).flex_none().rounded(3).bg(old ? t.dim : t.blocked)))];
+    .when(Boolean(round), el => el.child(div().text_size(10).text_color(tone).child(String(round))))];
 }
 
 export default class Agents extends View {

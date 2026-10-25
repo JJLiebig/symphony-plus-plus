@@ -30,7 +30,7 @@ function emit(fields) {
 }
 
 async function contents(path) {
-  try { return await readFile(path, 'utf8'); }
+  try { return await readFile(path); }
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
@@ -38,7 +38,7 @@ async function write(files) {
   for (const { to, body } of files) {
     await mkdir(dirname(to), { recursive: true });
     const temporary = `${to}.${process.pid}.tmp`;
-    await writeFile(temporary, body, 'utf8');
+    await writeFile(temporary, body);
     await rename(temporary, to);
   }
 }
@@ -98,16 +98,16 @@ async function main() {
   const helper = join(home, 'tools', 'sympp-herdr.js');
   const httpHelper = join(home, 'tools', 'sympp-http.cjs');
   const source = join(here, 'mods', mod);
-  const names = (await readdir(source)).filter(name => name.endsWith('.js') || name === 'mod.json' || name.endsWith('.svg'));
+  const names = (await readdir(source)).filter(name => name.endsWith('.js') || name === 'mod.json' || name.endsWith('.svg') || name.endsWith('.png'));
   const sources = names.map(name => ({ from: join(source, name), to: join(target, name) }));
   if (!values.lab) {
     sources.push({ from: resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts/sympp-herdr.js'), to: helper });
     sources.push({ from: join(here, 'http.cjs'), to: httpHelper });
   }
   const files = await Promise.all(sources.map(async ({ from, to }) => ({
-    to, body: await readFile(from, 'utf8'), existing: await contents(to),
+    to, body: await readFile(from), existing: await contents(to),
   })));
-  const changed = files.filter(file => file.existing !== null && file.existing !== file.body);
+  const changed = files.filter(file => file.existing !== null && !file.existing.equals(file.body));
   if (changed.length && !values.replace) {
     emit({ error: `The installed ${values.lab ? 'S++ lab' : 'S++ integration'} differs; no files were changed`,
       help: 'Keep your edits, or rerun with --replace to install this version.' });
@@ -124,7 +124,7 @@ async function main() {
     emit({ error: 'The S++ chrome needs your desk layout and mods; no files were changed', missing: chrome.missing });
     return 1;
   }
-  await write(files.filter(({ body, existing }) => existing !== body));
+  await write(files.filter(({ body, existing }) => !existing?.equals(body)));
   if (chrome) await write(chrome.writes);
   if (!values.lab) {
     const requests = join(home, 'data', 'sympp-requests');

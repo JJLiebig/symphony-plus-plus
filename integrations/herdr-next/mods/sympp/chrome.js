@@ -7,7 +7,7 @@ import { discoverBindings } from "./model.js";
 
 export const PANEL_BUTTONS = "workspace.panel_buttons";
 export const AGENTS = "sympp.agents";
-export const PANEL = { id: "sympp", label: "S++", icon: "mods/sympp/mark.svg" };
+export const PANEL = { id: "sympp", label: "S++", icon: "mods/sympp/mark.png", iconDark: "mods/sympp/mark-dark.png" };
 // An unchanged entry is restamped this often, so the Agents list can tell a current read from a
 // last known one (it dims entries older than two minutes).
 export const RESTAMP = 45e3;
@@ -16,7 +16,7 @@ export const RESTAMP = 45e3;
 export function withPanelButton(current) {
   const list = Array.isArray(current) ? current : [];
   const mine = list.find((b) => b?.id === PANEL.id);
-  if (mine && mine.label === PANEL.label && mine.icon === PANEL.icon) return null;
+  if (mine && Object.entries(PANEL).every(([key, value]) => mine[key] === value)) return null;
   return [...list.filter((b) => b?.id !== PANEL.id), PANEL];
 }
 

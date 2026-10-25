@@ -23,6 +23,7 @@ test('installs into a home with spaces without replacing personal layout or topi
   assert.equal(await readFile(join(home, 'layouts', 'personal.json'), 'utf8'), layout);
   assert.equal(await readFile(join(home, 'shared.json'), 'utf8'), shared);
   assert.match(result.stdout, /19999/);
+  assert.deepEqual(await readFile(join(home, 'mods', 'sympp', 'mark.png')), await readFile(join(here, 'mods', 'sympp', 'mark.png')));
   assert.equal(install(home, '--endpoint', 'http://127.0.0.1:19999').status, 0);
 
   const edited = '// personal edit\n';

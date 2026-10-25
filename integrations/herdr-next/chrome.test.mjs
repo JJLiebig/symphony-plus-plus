@@ -51,7 +51,7 @@ test('the shared map changes only when an entry does, is gone, or needs a fresh 
 
   assert.deepEqual(withPanelButton(undefined), [PANEL]);
   assert.equal(withPanelButton([{ id: 'notes', label: 'Notes', icon: 'n.svg' }, PANEL]), null);
-  assert.deepEqual(withPanelButton([{ id: 'sympp', label: 'Old', icon: 'x.svg' }]), [PANEL]);
+  assert.deepEqual(withPanelButton([{ id: 'sympp', label: 'S++', icon: 'mods/sympp/mark.svg' }]), [PANEL]);
 });
 
 // A personal desk: the anchors the patches expect, in files shaped like the desk mods.
