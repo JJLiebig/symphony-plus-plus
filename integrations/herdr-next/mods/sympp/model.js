@@ -444,7 +444,9 @@ export function discoverBindings(hosts, terminalList) {
     const labels = terminal.labels ?? {};
     const prefix = kind === "session" ? "sympp.session_" : "sympp.";
     const identityKey = kind === "session" ? "sympp.session_id" : "sympp.launch_id";
-    if (!labels[identityKey] || !labels[`${prefix}work_request_id`]) return [];
+    const jobId = labels[`${prefix}work_request_id`] || null;
+    const pkgId = labels[`${prefix}work_package_id`] || null;
+    if (!labels[identityKey] || (!jobId && (kind !== "session" || !pkgId))) return [];
     const address = terminal.address;
     if (typeof address !== "string" || !address) return [];
     const split = address.indexOf("/");
@@ -459,7 +461,7 @@ export function discoverBindings(hosts, terminalList) {
     const absoluteReceipt = typeof receipt === "string" && /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(receipt);
     const configured = typeof host?.node === "string" && Boolean(host.node) && typeof host?.helper === "string" && Boolean(host.helper);
     return [{
-      kind, processId, jobId: labels[`${prefix}work_request_id`], pkgId: labels[`${prefix}work_package_id`] || null,
+      kind, processId, jobId, pkgId,
       role: labels[`${prefix}role`] || "agent", address, terminalId, machine,
       provider: { codex: "Codex", claude: "Claude", opencode: "OpenCode" }[labels["sympp.provider"]] || "Agent",
       status: typeof terminal.status === "string" ? terminal.status : terminal.status?.state ?? null,
@@ -472,7 +474,8 @@ export function discoverBindings(hosts, terminalList) {
 }
 
 export function bindingsFor(bindings, jobId, pkgId) {
-  return bindings.filter((b) => b.jobId === jobId && b.pkgId === (pkgId ?? null))
+  return bindings.filter(b => b.pkgId === (pkgId ?? null) &&
+    (b.jobId === jobId || (b.kind === "session" && b.jobId === null && b.pkgId !== null)))
     .filter((b, index, matches) => matches.findIndex(other => other.address === b.address && other.role === b.role) === index);
 }
 

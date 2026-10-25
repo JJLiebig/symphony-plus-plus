@@ -207,6 +207,13 @@ test("hand-started MCP bridges report native identity and require an authenticat
     assert.equal((await run(["check", "--receipt", launched.body.receipt])).body.state, "live");
     assert.equal((await run(["list", "--cwd", root])).body.count, 1, "observing a bridge does not create another agent launch");
 
+    await reporter.report({ role:"worker", work_package_id:"wp-manual" }, probe);
+    const worker = await run(args);
+    assert.equal(worker.body.state, "live");
+    assert.equal(worker.body.work_request_id, null, "worker grants need not include a WorkRequest scope");
+    assert.equal(worker.body.work_package_id, "wp-manual");
+    await reporter.report({ role:"architect", work_request_id:"wr-manual" }, probe);
+
     for (const denied of ["wrong", "stalled"]) {
       mode = denied;
       await reporter.report({ role: "architect", work_request_id: "wr-manual" }, { pipe, token });

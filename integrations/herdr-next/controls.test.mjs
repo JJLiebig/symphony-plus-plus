@@ -114,6 +114,27 @@ test('hand-started architects use an independent session binding and reject a re
   assert.equal(M.discoverBindings({}, [term]).find(b => b.kind === 'session').available, false);
 });
 
+test('package-only manual worker sessions match their canonical package without inventing a goal', () => {
+  const term = terminal();
+  Object.assign(term.labels, {
+    'sympp.session_id':'worker-client', 'sympp.session_core_id':'core-1', 'sympp.session_pid':'123',
+    'sympp.session_process_id':'456', 'sympp.session_receipt':'C:\\private\\worker.json',
+    'sympp.session_work_package_id':'wp2', 'sympp.session_role':'worker',
+  });
+  const bindings = M.discoverBindings({ local:host }, [term]);
+  const [worker] = M.bindingsFor(bindings, 'canonical-goal', 'wp2');
+  assert.equal(worker.jobId, null);
+  assert.equal(worker.pkgId, 'wp2');
+  assert.equal(worker.role, 'worker');
+  assert.equal(M.bindingsFor(bindings, 'canonical-goal', null).length, 0);
+  assert.equal(M.bindingsFor(bindings, 'canonical-goal', 'other-package').length, 0);
+  assert.equal(M.bindingsFor([{ ...worker, jobId:'another-goal' }], 'canonical-goal', 'wp2').length, 0);
+  const result = { code:0, stdout:JSON.stringify({ kind:'session', state:'live', core_id:'core-1', terminal_id:'t8',
+    pid:123, process_id:456, launch_id:'worker-client', work_request_id:null, work_package_id:'wp2', role:'worker' }) };
+  assert.equal(M.checkedBinding(worker, result, [term]), true);
+  assert.equal(M.checkedBinding(worker, result, [{ ...term, labels:{ ...term.labels, 'sympp.session_work_package_id':'other-package' } }]), false);
+});
+
 test('failed saves retain the draft and concurrent activations cannot submit it twice', async () => {
   const draft = { text: 'Keep my entered answer', pending: false, error: null };
   let release;
