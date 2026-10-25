@@ -272,8 +272,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert get_in(different_pr, ["error", "data", "reason"]) == "pr_reference_mismatch"
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_merge"
 
-      merged_metadata =
-        GitHubPullRequestFixtures.metadata(412, String.duplicate("c", 40), base_branch: anchor.base_branch, merged?: true)
+      merged_head = String.duplicate("c", 40)
+      merged_metadata = GitHubPullRequestFixtures.metadata(412, merged_head, base_branch: anchor.base_branch, merged?: true)
 
       FakeGitHubClient.put_response("nextide/repo", 412, merged_metadata)
       landed = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id, "number" => 412, "repository" => "nextide/repo"})

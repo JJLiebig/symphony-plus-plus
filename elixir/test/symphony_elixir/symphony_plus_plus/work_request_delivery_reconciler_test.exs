@@ -8,13 +8,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.FakeGitHubClient
   alias SymphonyElixir.GitHubPullRequestFixtures
   alias SymphonyElixir.MCPHarness
-  alias SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
   alias SymphonyElixir.SymphonyPlusPlus.AgentRuns.AgentRun
   alias SymphonyElixir.SymphonyPlusPlus.AgentRuns.Repository, as: AgentRunRepository
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.Service, as: ClaimLeaseService
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Session
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Phase
@@ -197,7 +197,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
       )
 
     append_merged_pr_evidence!(repo, package, 921, nil, synced_head_sha: "provider-head")
-    FakeGitHubClient.put_response("nextide/repo", 921, GitHubPullRequestFixtures.metadata(921, "provider-head", merged?: true))
+    metadata = GitHubPullRequestFixtures.metadata(921, "provider-head", merged?: true)
+    FakeGitHubClient.put_response("nextide/repo", 921, metadata)
 
     assert {:ok, result} = MergeReconciler.reconcile(repo, client: ReplacingPRClient, replacement: {repo, package.id})
     assert result.merged_count == 0
