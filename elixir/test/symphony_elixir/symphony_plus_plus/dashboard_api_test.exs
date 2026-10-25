@@ -2414,13 +2414,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert human_activity["next_action"] == "answer_guidance"
 
         attrs = %{answer_choice: "keep", answer_note: "Retain keyboard access.", future_field: true}
-        assert json_response(native_answer.(reviewing.id, attrs), 404)["error"]["code"] == "not_found"
 
-        operator_mismatch =
-          local_operator_conn()
-          |> post("/api/v1/sympp/operator/work-packages/#{reviewing.id}/guidance/#{guidance.id}/answer", attrs)
+        assert {:ok, :ok} =
+                 repo.transaction(fn ->
+                   before_refusal = repo.query!("SELECT total_changes()", []).rows
+                   assert json_response(native_answer.(reviewing.id, attrs), 404)["error"]["code"] == "not_found"
 
-        assert json_response(operator_mismatch, 404)["error"]["code"] == "not_found"
+                   operator_mismatch =
+                     local_operator_conn()
+                     |> post("/api/v1/sympp/operator/work-packages/#{reviewing.id}/guidance/#{guidance.id}/answer", attrs)
+
+                   assert json_response(operator_mismatch, 404)["error"]["code"] == "not_found"
+                   assert repo.query!("SELECT total_changes()", []).rows == before_refusal
+                   :ok
+                 end)
+
         assert json_response(native_answer.(needs_human.id, %{answer_choice: "unknown"}), 422)["error"]["code"] == "invalid_answer_choice"
         assert repo.get!(GuidanceRequest, guidance.id).status == "human_info_needed"
         assert repo.get!(GuidanceRequest, guidance.id).answer == nil
