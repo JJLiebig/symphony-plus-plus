@@ -76,8 +76,14 @@ function Start-InstallBackend {
   $powershell = if ($env:SYMPP_POWERSHELL) { $env:SYMPP_POWERSHELL } else { 'pwsh' }
   New-Item -ItemType Directory -Force -Path $env:SYMPP_LOG_DIR | Out-Null
   $startupLog = Join-Path $env:SYMPP_LOG_DIR ('beta-install-' + [guid]::NewGuid().ToString('N') + '.log')
-  & $powershell -NoProfile -NonInteractive -File $launcher -PrepareRuntimeOnly *> $startupLog
-  if ($LASTEXITCODE -ne 0) { throw "Beta startup failed (exit $LASTEXITCODE). See $startupLog" }
+  $arguments = Join-ProcessArgumentList @('-NoProfile', '-NonInteractive', '-File', $launcher, '-PrepareRuntimeOnly')
+  $process = Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput $startupLog -RedirectStandardError "$startupLog.err"
+  try {
+    # Waiting for pipe EOF also waits for the detached Windows backend.
+    if (-not $process.WaitForExit(330000)) { $process.Kill($true); throw "Beta startup timed out. See $startupLog.err" }
+    if ($process.ExitCode -ne 0) { throw "Beta startup failed (exit $($process.ExitCode)). See $startupLog.err" }
+  } finally { $process.Dispose() }
 }
 
 $SymppHome = Assert-InstallPath $SymppHome

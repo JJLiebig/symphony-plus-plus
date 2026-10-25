@@ -190,6 +190,8 @@ function Invoke-McpBridge([string]$FilePath, [string[]]$Arguments, [hashtable]$E
     $failure = $_.Exception.Message
     if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) }
     Write-Host "MCP fixture exit: $($process.ExitCode)"
+    Get-ChildItem -LiteralPath (Join-Path $Environment.SYMPP_HOME 'logs') -Filter 'beta-install-*' -File -ErrorAction SilentlyContinue |
+      ForEach-Object { Write-Host "Beta install startup log: $($_.Name)"; Get-Content -LiteralPath $_.FullName | Write-Host }
     if ($Environment.SYMPP_LAUNCHER_TRACE_DIR) {
       Get-ChildItem -LiteralPath $Environment.SYMPP_LAUNCHER_TRACE_DIR -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Tail 20 | Write-Host }
     }
