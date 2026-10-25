@@ -91,34 +91,40 @@ factory and Herdr-app homes:
 pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
 ```
 
-This installs the latest **published beta runtime**, plus the native view from
-the checkout. Published binaries keep repeat installs fast and avoid requiring a
-local Elixir toolchain. Publication can lag a branch push; the command reports
+This installs the latest **published beta runtime**, plus the checkout's generated
+Skills bundle and native view. Published binaries keep repeat installs fast without
+a local Elixir toolchain. Publication can lag a branch push; the command reports
 the exact running SHA, rather than claiming the checkout is running. To select
 an already downloaded beta channel manifest, pass `-ArtifactManifest <path>`.
 
-The factory must already use a project-local beta Skills installation, a managed
-artifact backend, a home whose final folder contains a separate `beta` word
-(such as `.sympp-beta`), its own port, and a database inside that home. Default
+The factory must already use an official project-local beta Skills installation
+and a managed artifact backend. Its data home must be inside that workspace,
+outside the managed Skills directory, with a separate `beta` word in its final
+folder (such as `.sympp-beta`), its own port, and its database inside that home. Default
 production homes, stable Skills installations, global Skills, marketplace caches,
 linked paths and stable ports are refused. The command never updates a plugin
-cache or host registration. If the published MCP contract changed, update the
-beta Skills installation and run its setup first; the command refuses before
-interrupting the old runtime.
+cache or host registration. The checkout bundle and published artifact must share
+an MCP contract; when publication lags, the command refuses before interrupting
+the old runtime. The beta workspace's own Skills directory stays at its registered
+path. Actual file changes are detected even if its package marker was not updated.
 
 The archive and native files are prepared before the backend is stopped. The
 installed launcher restarts the same endpoint and ledger, and readiness must
-match the selected revision, contract and database. An unchanged runtime is not
-restarted; identical native files are not rewritten. A failed restart or native
-installation restarts the retained previous artifact. Ledger contents are never
-restored or copied; startup performs only the backend's normal additive updates.
+match the selected revision, contract and database. An unchanged runtime and bundle
+are not replaced; identical native files are not rewritten. The old Skills directory
+is backed up during cutover. A failed restart or native installation restores that
+directory and restarts the retained previous artifact with its original contract.
+Ledger contents are never restored or copied; startup performs only the backend's
+normal additive updates.
 The selected runtime stays pinned in this beta Skills installation until the
 next install command selects a newer publication.
 
-Connected STDIO bridges reconnect to the same endpoint on their next request.
+After a Skills bundle change, **open fresh sessions for every MCP client**, including
+the coordinating architect. An artifact-only restart leaves the bundle intact;
+connected STDIO bridges reconnect to the same endpoint on their next request.
 Requests overlapping the restart can fail; reload that client's MCP connection
 if it reports an error. Check the result of an interrupted write before retrying
-it. Contract changes also require fresh host sessions to reload their tool list.
+it. Fresh host sessions load the updated procedures and tool list.
 Do not run this against a shared live beta factory until its coordinating
 architect has agreed to the restart timing.
 

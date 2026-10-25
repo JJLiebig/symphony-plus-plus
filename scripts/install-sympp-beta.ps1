@@ -34,8 +34,16 @@ function Assert-InstallPath([string]$Path) {
 function Assert-InHome([string]$Path, [string]$Root) {
   $full = Assert-InstallPath $Path
   if (-not $full.StartsWith($Root + '\', [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'The beta database, runtime and artifact cache must stay inside the selected beta home.'
+    throw 'Keep beta data and Skills within the selected installation root.'
   }
+}
+
+function Get-BundleInventory([string]$Root) {
+  $pin = Join-Path $Root '.sympp-runtime-artifacts.json'
+  Get-ChildItem -LiteralPath $Root -File -Recurse -Force | Where-Object { $_.FullName -ine $pin } | ForEach-Object {
+    [void](Assert-InstallPath $_.FullName)
+    [IO.Path]::GetRelativePath($Root, $_.FullName) + ' ' + (Get-FileSha256 $_.FullName)
+  } | Sort-Object
 }
 
 function Write-InstallJson([string]$Path, $Value) {
@@ -108,10 +116,40 @@ if ($pluginRoot -match '(?i)[\\/]plugins[\\/]cache[\\/]' -or
     $pluginRoot.StartsWith((Join-Path $profileHome '.agents/skills').Replace('/', '\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
   throw 'Beta installation cannot change a marketplace cache or a global Skills installation.'
 }
-$install = Read-SymppPortableInstall $pluginRoot
-if (-not $install) { throw 'This command requires an existing beta portable Skills factory.' }
-$selectedChannel = & node -e 'process.stdout.write(require(process.argv[1]).runtimeChannel())' (Join-Path $pluginRoot 'scripts/setup-sympp.js')
-if ($LASTEXITCODE -ne 0 -or $selectedChannel -ne 'beta') { throw 'The selected factory must belong to a beta Skills installation.' }
+$originalInstall = Read-SymppPortableInstall $pluginRoot
+if (-not $originalInstall) { throw 'This command requires an existing beta portable Skills factory.' }
+$workspace = $null
+for ($directory = $pluginRoot; $directory; $directory = Split-Path -Parent $directory) {
+  $lockFile = Join-Path $directory 'skills-lock.json'
+  if (-not (Test-Path -LiteralPath $lockFile)) { continue }
+  $entry = (Get-Content -LiteralPath $lockFile -Raw | ConvertFrom-Json).skills.'symphony-plus-plus'
+  if (-not $entry) { continue }
+  if ($entry.source -ne 'JJLiebig/symphony-plus-plus' -or $entry.ref -ne 'beta') {
+    throw 'The selected factory must belong to a beta Skills installation.'
+  }
+  $workspace = Assert-InstallPath $directory
+  break
+}
+if (-not $workspace -or $workspace -ieq $profileHome -or
+    [IO.Path]::GetRelativePath($workspace, $pluginRoot).Replace('\', '/') -notin @(
+      '.agents/skills/symphony-plus-plus', '.claude/skills/symphony-plus-plus', '.codex/skills/symphony-plus-plus')) {
+  throw 'Select the beta workspace project-local Symphony++ Skills bundle.'
+}
+Assert-InHome $SymppHome $workspace
+foreach ($dataHome in @($SymppHome, $HerdrAppHome)) {
+  if ($dataHome -ieq $pluginRoot -or $dataHome.StartsWith($pluginRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Keep runtime and Herdr data homes separate from the managed Skills directory.'
+  }
+}
+$originalContract = [string]$original.backend.contract_fingerprint
+if ($originalContract -ne $originalInstall.contract_fingerprint) {
+  throw 'A previous Skills update is incomplete. Close all beta clients and reopen them before installing again.'
+}
+$bundleSource = Join-Path $repoRoot 'skills/symphony-plus-plus'
+$install = Read-SymppPortableInstall $bundleSource
+& node (Join-Path $repoRoot 'scripts/package-portable-skills.mjs') --check | Out-Null
+if ($LASTEXITCODE -ne 0 -or -not $install) { throw 'Regenerate the checkout portable Skills bundle before installing beta.' }
+$bundleChanged = @(Compare-Object @(Get-BundleInventory $bundleSource) @(Get-BundleInventory $pluginRoot)).Count -gt 0
 $database = [IO.Path]::GetFullPath([string]$original.publication.controls.database)
 Assert-InHome $database $SymppHome
 Assert-InHome ([string]$original.artifact.root) $SymppHome
@@ -127,17 +165,18 @@ $pinFile = Join-Path $pluginRoot '.sympp-runtime-artifacts.json'
 [void](Assert-InstallPath $pinFile)
 Assert-InHome $runtimeFile $SymppHome
 $stage = Join-Path $SymppHome ('runtime/beta-install-' + [guid]::NewGuid().ToString('N'))
+$candidateBundle = Join-Path $stage 'bundle'
+$bundleBackup = Join-Path $stage 'previous-skills'
 $savedEnvironment = @{}
 foreach ($item in Get-ChildItem Env:SYMPP_*) { $savedEnvironment[$item.Name] = $item.Value }
 $coldLock = $null
 $startupLock = $null
+$completed = $false
 try {
   foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $null) }
   # Retain the launcher's existing hosted process-creation seam for native CI.
-  if ($env:GITHUB_ACTIONS -eq 'true') {
-    foreach ($name in @('SYMPP_POWERSHELL', 'SYMPP_TEST_REAL_POWERSHELL', 'SYMPP_TEST_BACKEND_PRELOAD')) {
-      if ($savedEnvironment.ContainsKey($name)) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
-    }
+  foreach ($name in @('SYMPP_POWERSHELL', 'SYMPP_TEST_REAL_POWERSHELL', 'SYMPP_TEST_BACKEND_PRELOAD')) {
+    if ($savedEnvironment.ContainsKey($name)) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
   }
   $env:SYMPP_HOME = $SymppHome
   $env:SYMPP_RUNTIME_FILE = $runtimeFile
@@ -151,6 +190,7 @@ try {
   $coldLock = [IO.File]::Open("$runtimeFile.cold.lock", [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
   New-Item -ItemType Directory -Path $stage | Out-Null
   Copy-Item -LiteralPath (Join-Path $pluginRoot '.sympp-install.json') -Destination $stage
+  Copy-Item -LiteralPath $bundleSource -Destination $candidateBundle -Recurse
   $manifest = (Read-SymppManifestReferenceContent $ArtifactManifest '') | ConvertFrom-Json
   if ((Get-JsonFirstPathValue $manifest @(@('channel'), @('release', 'channel'))) -ne 'beta') {
     throw 'The runtime manifest must explicitly declare the beta channel.'
@@ -168,21 +208,21 @@ try {
       }
     }
   }
-  $stagePin = Join-Path $stage '.sympp-runtime-artifacts.json'
+  $stagePin = Join-Path $candidateBundle '.sympp-runtime-artifacts.json'
   Write-InstallJson $stagePin $manifest
-  $candidate = Resolve-SymppPreparedArtifactRuntime $stage $null $install.contract_fingerprint -ValidateOnly
+  $candidate = Resolve-SymppPreparedArtifactRuntime $candidateBundle $null $install.contract_fingerprint -ValidateOnly
   if ($candidate.status -ne 'artifact_selected') {
-    throw 'No beta artifact matches the installed MCP contract. Update the beta Skills installation and setup first.'
+    throw 'No beta artifact matches the checkout Skills contract. Wait for beta publication or select a matching checkout.'
   }
   Assert-InHome ([string]$candidate.runtime.root) $SymppHome
-  $candidate = Resolve-SymppPreparedArtifactRuntime $stage $null $install.contract_fingerprint -ValidateOnly -PrepareArtifact
+  $candidate = Resolve-SymppPreparedArtifactRuntime $candidateBundle $null $install.contract_fingerprint -ValidateOnly -PrepareArtifact
   $revision = [string]$candidate.runtime.source_revision
   if ($revision -notmatch '^[0-9a-f]{40}$') { throw 'The beta artifact has no valid source revision.' }
   $nativeInstaller = Join-Path $repoRoot 'integrations/herdr-next/install.mjs'
   # Finish native-file preflight before interrupting connected clients.
   & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home (Join-Path $stage 'herdr') | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'The native view could not be prepared.' }
-  $restart = $original.backend.source_revision -ne $revision -or $original.artifact.sha256 -ne $candidate.runtime.sha256
+  $restart = $bundleChanged -or $original.backend.source_revision -ne $revision -or $original.artifact.sha256 -ne $candidate.runtime.sha256
   if (-not $restart) {
     Assert-FactoryReady $original $revision $install.contract_fingerprint
     & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace | Out-Null
@@ -196,24 +236,31 @@ try {
   $marker = Get-Content -LiteralPath (Join-Path $original.artifact.root '.sympp-artifact.json') -Raw | ConvertFrom-Json
   $rollbackManifest = @{
     schema_version = 1; channel = 'beta'; source_revision = $original.backend.source_revision
-    plugin = @{ name = $install.name; version = $install.version }
+    plugin = @{ name = $originalInstall.name; version = $originalInstall.version }
     artifacts = @(@{
       platform = $marker.platform; source_revision = $original.backend.source_revision
-      mcp_contract_fingerprint = $install.contract_fingerprint
+      mcp_contract_fingerprint = $originalContract
       path = Join-Path (Split-Path -Parent $original.artifact.root) 'artifact.zip'; sha256 = $marker.sha256
       entrypoint = $previousRuntime.entrypoint_relative; runtime_args = $previousRuntime.runtime_args
       dashboard = @{ asset_root = $marker.dashboard_root; fingerprint = $marker.dashboard_fingerprint }
     })
   }
-  Write-InstallJson $stagePin $rollbackManifest
-  $rollback = Resolve-SymppPreparedArtifactRuntime $stage $null $install.contract_fingerprint -ValidateOnly -PrepareArtifact
+  Write-InstallJson (Join-Path $stage '.sympp-runtime-artifacts.json') $rollbackManifest
+  $rollback = Resolve-SymppPreparedArtifactRuntime $stage $null $originalContract -ValidateOnly -PrepareArtifact
   if ($rollback.runtime.source_revision -ne $original.backend.source_revision) { throw 'The previous beta artifact is unavailable for rollback.' }
   $startupLock = Enter-FileLock (Resolve-StartupLockFile $runtimeFile) 10
   if ((Get-Content -LiteralPath $runtimeFile -Raw) -cne $originalText) { throw 'The beta factory changed during preparation; retry installation.' }
-  Assert-FactoryReady $original $original.backend.source_revision $install.contract_fingerprint
-  Write-Host 'Restarting beta. MCP clients reconnect on their next request; reload the client if it reports a connection error. Check an interrupted write before retrying it.'
+  Assert-FactoryReady $original $original.backend.source_revision $originalContract
+  if ($bundleChanged) { Write-Host 'Restarting beta and updating its Skills bundle. Open fresh sessions for every MCP client afterward. Check an interrupted write before retrying it.' }
+  else { Write-Host 'Restarting beta. MCP clients reconnect on their next request; reload the client if it reports a connection error. Check an interrupted write before retrying it.' }
   try {
     Stop-InstallBackend $original
+    if ($bundleChanged) {
+      Assert-InHome $pluginRoot $workspace
+      Assert-InHome $bundleBackup $SymppHome
+      Move-Item -LiteralPath $pluginRoot -Destination $bundleBackup
+      Move-Item -LiteralPath $candidateBundle -Destination $pluginRoot
+    }
     Write-InstallJson $pinFile $manifest
     $startupLock.Dispose(); $startupLock = $null
     Start-InstallBackend
@@ -226,21 +273,33 @@ try {
     if ($startupLock) { $startupLock.Dispose(); $startupLock = $null }
     $startupLock = Enter-FileLock (Resolve-StartupLockFile $runtimeFile) 10
     Stop-InstallBackend (Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json)
+    if (Test-Path -LiteralPath $bundleBackup) {
+      Assert-InHome $pluginRoot $workspace
+      Assert-InHome $bundleBackup $SymppHome
+      if (Test-Path -LiteralPath $pluginRoot) { Remove-Item -LiteralPath $pluginRoot -Recurse -Force }
+      Move-Item -LiteralPath $bundleBackup -Destination $pluginRoot
+    }
     Write-InstallJson $pinFile $rollbackManifest
     Write-InstallJson $runtimeFile $original
     $startupLock.Dispose(); $startupLock = $null
     Start-InstallBackend
     $restored = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
-    Assert-FactoryReady $restored $original.backend.source_revision $install.contract_fingerprint
+    Assert-FactoryReady $restored $original.backend.source_revision $originalContract
     throw "Beta installation failed; the previous runtime is serving again. $($failure.Exception.Message)"
   }
+  $completed = $true
   Write-Host "Beta ready ($revision). Native view installed."
 } finally {
   if ($startupLock) { $startupLock.Dispose() }
   if ($coldLock) { $coldLock.Dispose(); Remove-Item -LiteralPath "$runtimeFile.cold.lock" -Force }
   if (Test-Path -LiteralPath $stage) {
     Assert-InHome $stage $SymppHome
-    Remove-Item -LiteralPath $stage -Recurse -Force
+    if (-not $completed -and (Test-Path -LiteralPath $bundleBackup)) {
+      Write-Warning "Beta rollback could not finish. Previous Skills are retained at $bundleBackup."
+    } else {
+      Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+      if (Test-Path -LiteralPath $stage) { Write-Warning "Beta temporary files are retained at $stage." }
+    }
   }
   foreach ($item in Get-ChildItem Env:SYMPP_*) { [Environment]::SetEnvironmentVariable($item.Name, $null) }
   foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }

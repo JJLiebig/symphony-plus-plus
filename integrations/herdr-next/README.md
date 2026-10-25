@@ -56,11 +56,14 @@ beta factory, update both with one command from an S++ checkout:
 pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
 ```
 
-It installs the latest published beta backend and this checkout's native files,
+It installs the latest published beta backend, this checkout's project-local beta
+Skills bundle and native files,
 replacing the S++ mod while retaining personal layouts, topics and terminals.
 It opens no new tabs. Herdr-app watches mod files and reloads changed views;
 reopen the S++ tab or pane if a view stays stale. An unchanged backend stays running.
-Coordinate restart timing with agents using the beta factory. The
+Coordinate restart timing with agents using the beta factory, and open fresh MCP
+sessions when its Skills bundle changes. A failed cutover restores the prior
+bundle and runtime together. The
 [beta reload procedure](../../docs/runtime.md#reload-an-existing-windows-beta-factory)
 describes isolation checks, contract changes, reconnects and failure recovery.
 

@@ -9,7 +9,10 @@ $launcher = Join-Path $pluginRoot "scripts/start-sympp-mcp.ps1"
 $fixtureParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $tempRoot = Join-Path $fixtureParent ("sympp-persistent-" + [guid]::NewGuid().ToString("N"))
 $runtimeFile = Join-Path $tempRoot "state/runtime.json"
-if ($SkillsInstall) { $runtimeFile = Join-Path $tempRoot '.sympp-beta/runtime/codex-plugin.json' }
+if ($SkillsInstall) {
+  $skillsWorkspace = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent ([IO.Path]::GetFullPath($SkillsInstall))))
+  $runtimeFile = Join-Path $skillsWorkspace '.sympp-beta/runtime/codex-plugin.json'
+}
 . (Join-Path $PSScriptRoot 'beta-install-qualification.ps1')
 $backendProcessId = $null
 $backendStartTicks = $null
@@ -266,9 +269,10 @@ try {
       $floatingManifest = Join-Path $tempRoot "floating-channel.json"
       $manifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
       @{ schema_version = 1; channels = @{ stable = @{ manifest = @{ path = $floatingManifest } }; beta = @{ manifest = @{ path = $floatingManifest } } } } |
-        ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
+        ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot '.sympp-runtime-artifacts.json')
       @{ version = 1; skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/symphony-plus-plus'; sourceType = 'github'; ref = 'beta' } } } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $tempRoot 'skills-lock.json')
+      Copy-Item -LiteralPath (Join-Path $tempRoot 'skills-lock.json') -Destination (Join-Path $skillsWorkspace 'skills-lock.json') -Force
       $codexHome = Join-Path $tempRoot "selected codex home"
       New-Item -ItemType Directory -Path (Join-Path $tempRoot "profile") -Force | Out-Null
     } else {
@@ -293,7 +297,7 @@ try {
           dashboard = @{ asset_root = $manifest.dashboard.relative_path; fingerprint = $manifest.dashboard.fingerprint } })
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
     }
-    $betaHome = if ($SkillsInstall) { Join-Path $tempRoot '.sympp-beta' } else { Join-Path $tempRoot 'runtime-home' }
+    $betaHome = if ($SkillsInstall) { Join-Path $skillsWorkspace '.sympp-beta' } else { Join-Path $tempRoot 'runtime-home' }
     $database = if ($SkillsInstall) { Join-Path $betaHome 'explicit ledger.sqlite3' } else { Join-Path $tempRoot 'database/explicit ledger.sqlite3' }
     $environment = @{
       SYMPP_RUNTIME_CHANNEL = "beta"; CODEX_HOME = $codexHome; SYMPP_HOME = $betaHome; SYMPP_RUNTIME_FILE = $runtimeFile
@@ -433,6 +437,7 @@ try {
     if (-not (Test-Path -LiteralPath $database -PathType Leaf)) { throw "Explicit packaged database was not created." }
     if (Test-Path -LiteralPath (Join-Path $environment.USERPROFILE ".agents/splusplus/symphony_plus_plus.sqlite3")) { throw "Packaged runtime used the default database." }
     if ($SkillsInstall) {
+      Invoke-BetaBundleQualification $environment $published $candidateManifest $first.marker_session_id
       $offlineEnvironment = $environment.Clone()
       if ($HostedProcessCreation) {
         # The executable-shadow fixture belongs to the MCP startup checks above.
