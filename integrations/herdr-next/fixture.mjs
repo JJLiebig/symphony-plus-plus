@@ -1,5 +1,6 @@
 // A small hydrated board: one PR job across every stage, one job without PRs, one still being
-// shaped and one across two repositories that needs the person. Shapes follow
+// shaped and one across two repositories that needs the person, with a Herdr chief that created the
+// first and dispatched packages in both, and a Live chief with no location. Shapes follow
 // GET /api/v1/sympp/herdr/dashboard; deskFixture() is the matching Herdr topics and spaces.
 export const NOW = Date.parse('2026-10-25T13:00:00Z');
 const at = (minutesAgo) => new Date(NOW - minutesAgo * 60e3).toISOString();
@@ -12,6 +13,16 @@ export function boardPayload() {
   return {
     generated_at: new Date(NOW).toISOString(),
     runtime: { offline: false },
+    chiefs: [
+      {
+        domain: 'Herdr', repos: ['owner/web'], registered_at: at(4000),
+        session_location: {
+          label: 'build-desk', role: 'chief', source: 'herdr_next', description: 'Terminal: Herdr chief', last_seen_at: at(15),
+          herdr: { core_id: 'core-1', terminal_id: 't7', pid: 70, process_id: 71, client_id: 'chief-herdr' },
+        },
+      },
+      { domain: 'Live', repos: [], registered_at: at(100), session_location: null },
+    ],
     work_packages: [{ id: 'wp-build', active_agent_run: { attempt: 2, last_seen_at: at(3), stale: false } }],
     guidance_requests: { guidance_requests: [
       { id: 'g-web', work_package_id: 'x-web', status: 'human_info_needed', question: 'Which theme tokens?', updated_at: at(900) },
@@ -21,6 +32,7 @@ export function boardPayload() {
         work_request: {
           id: 'wr-pr', title: 'Native job tab', repo: 'owner/web', status: 'sliced', base_branch: 'main',
           inserted_at: at(3000), architect_session_location: { label: 'Herdr', role: 'architect', last_seen_at: at(20) },
+          dispatched_by: { kind: 'chief', domain: 'herdr' },
         },
         product_tree: { execution_graph: { effective_edges: [
           { prerequisite_work_package_id: 'wp-done', dependent_work_package_id: 'wp-build' },
@@ -31,7 +43,7 @@ export function boardPayload() {
         work_packages: [
           pkg('wp-queued', 'Factory level', 4, { stage: 'queued', track: 'pr' }, { dependency_signal: { unmet_work_package_ids: ['wp-build'] } }),
           pkg('wp-build', 'Stage board', 2, { stage: 'build', track: 'pr', entered_at: at(90) }, {
-            dispatched_at: at(90),
+            dispatched_at: at(90), dispatched_by: { kind: 'chief', domain: 'Herdr' },
             activity_signal: { current_actor: { role: 'worker', name: 'codex-board' }, observation_state: 'current', next_actor: 'worker', next_action: 'open_pr' },
           }),
           pkg('wp-review', 'Review lens', 3, { stage: 'review', track: 'pr', entered_at: at(40) }, {
@@ -66,11 +78,14 @@ export function boardPayload() {
       {
         work_request: {
           id: 'wr-cross', title: 'Shared tokens', repo: 'owner/api', status: 'sliced', inserted_at: at(1000),
-          operator_report: { human_escalation: { question: 'Ship tokens before the API?', raised_at: at(240) } },
+          operator_report: {
+            human_escalation: { question: 'Ship tokens before the API?', raised_at: at(240) },
+            brief: { text: 'Token API is building; the UI waits on it and on your call.', written_at: at(60) },
+          },
         },
         product_tree: { execution_graph: { effective_edges: [{ prerequisite_work_package_id: 'x-api', dependent_work_package_id: 'x-web' }] } },
         work_packages: [
-          pkg('x-api', 'Token API', 1, { stage: 'build', track: 'pr', entered_at: at(120) }, { repo: 'owner/api', dispatched_at: at(120) }),
+          pkg('x-api', 'Token API', 1, { stage: 'build', track: 'pr', entered_at: at(120) }, { repo: 'owner/api', dispatched_at: at(120), dispatched_by: { kind: 'chief', domain: 'Herdr' } }),
           pkg('x-web', 'Token UI', 2, { stage: 'queued', track: 'pr' }, { dependency_signal: { unmet_work_package_ids: ['x-api'] } }),
         ],
       },

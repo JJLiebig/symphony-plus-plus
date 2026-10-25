@@ -114,7 +114,28 @@ export function parseBoard(payload) {
   const runs = new Map((Array.isArray(payload.work_packages) ? payload.work_packages : [])
     .filter((card) => card?.id && card.active_agent_run).map((card) => [card.id, card.active_agent_run]));
   const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now, guidance, runs));
-  return { now, jobs, offline: typeof payload.runtime?.offline === "boolean" ? payload.runtime.offline : null };
+  return { now, jobs, chiefs: chiefsOf(payload.chiefs), offline: typeof payload.runtime?.offline === "boolean" ? payload.runtime.offline : null };
+}
+
+// Current domain chiefs. A registration records a domain and where the session was, never authority
+// or liveness; the recorded session identity only picks which bound terminal to check.
+function chiefsOf(list) {
+  return (Array.isArray(list) ? list : []).filter((c) => typeof c?.domain === "string" && c.domain.trim()).map((c) => {
+    const herdr = c.session_location?.herdr ?? null;
+    return {
+      domain: c.domain.trim(),
+      key: c.domain.trim().toLowerCase(),
+      repos: (Array.isArray(c.repos) ? c.repos : []).filter((repo) => typeof repo === "string" && repo),
+      registeredAt: ms(c.registered_at),
+      location: placeOf(c.session_location),
+      session: typeof herdr?.client_id === "string" && herdr.client_id ? { clientId: herdr.client_id, coreId: herdr.core_id ?? null } : null,
+    };
+  });
+}
+
+// The chief domain a request or package was created or dispatched under, if any.
+function chiefOf(by) {
+  return by?.kind === "chief" && typeof by.domain === "string" && by.domain.trim() ? by.domain.trim() : null;
 }
 
 function buildJob(detail, now, guidance, runs) {
@@ -178,6 +199,7 @@ function buildJob(detail, now, guidance, runs) {
     guidance: guidanceQuestions,
     needs,
     architect: placeOf(request.architect_session_location),
+    dispatchedBy: chiefOf(request.dispatched_by),
     packages,
     // Prerequisite → dependent package pairs from the effective execution graph.
     edges: (detail.product_tree?.execution_graph?.effective_edges ?? [])
@@ -220,6 +242,7 @@ function buildPackage(slice, groups, now, runs) {
     // Recorded moments only, for the package rails: creation, dispatch and recorded delivery.
     createdAt: ms(slice.inserted_at),
     dispatchedAt: ms(slice.dispatched_at),
+    dispatchedBy: chiefOf(slice.dispatched_by),
     doneAt: stage === "done" ? observed : null,
     failed: pr.checks?.status === "failing",
     track: board?.track ?? null,
@@ -455,6 +478,15 @@ export function bindingsFor(bindings, jobId, pkgId) {
   return bindings.filter(b => b.pkgId === (pkgId ?? null) &&
     (b.jobId === jobId || (b.kind === "session" && b.jobId === null && b.pkgId !== null)))
     .filter((b, index, matches) => matches.findIndex(other => other.address === b.address && other.role === b.role) === index);
+}
+
+// A chief has no job of its own: its bindings are the bound sessions with the identity S++ recorded
+// when it registered. They still need the helper check before anything says Live.
+export function chiefBindings(bindings, chief) {
+  const session = chief?.session;
+  if (!session) return [];
+  return bindings.filter((b) => b.kind === "session" && b.launchId === session.clientId && (!session.coreId || b.coreId === session.coreId))
+    .filter((b, index, matches) => matches.findIndex((other) => other.address === b.address) === index);
 }
 
 export function bindingCheckArgs(binding) {

@@ -18,8 +18,11 @@ node integrations/herdr-next/install.mjs --endpoint $origin --open overview
 ```
 
 The view opens at the Factory: what needs you, ranked by how many packages
-wait on each answer, then one row per Herdr topic. A topic shows its work by
-repository and its agents; a space shows the work on its repository. Click a
+wait on each answer, then one row per Herdr topic. A topic with a chief shows
+the chief's desk first: what it dispatched and where each item is now, recaps,
+and what waits on you; to make one, tell an agent it is that topic's chief. A
+topic shows its work by repository and its agents; a space shows the work on
+its repository. Click a
 row or the breadcrumb, or use ↑/↓ (j/k), Enter and Esc. Each copy remembers
 where it was. A toast appears when something newly needs you; click it to open
 the job's tab.
