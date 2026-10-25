@@ -22,7 +22,7 @@ function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $Cand
     plugin = @{ name = 'symphony-plus-plus-mcp'; version = '0.2.0' }
     artifacts = @(@{
       platform = 'windows-x86_64'; source_revision = $state.backend.source_revision
-      mcp_contract_fingerprint = $contract; path = $archive; sha256 = $state.artifact.sha256
+      mcp_contract_fingerprint = $contract; path = 'install-beta.zip'; sha256 = $state.artifact.sha256
       entrypoint = 'start-runtime.ps1'
       dashboard = @{ asset_root = 'dashboard-static'; fingerprint = $CandidateManifest.dashboard.fingerprint }
     })

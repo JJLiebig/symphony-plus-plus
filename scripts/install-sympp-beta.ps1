@@ -155,6 +155,19 @@ try {
   if ((Get-JsonFirstPathValue $manifest @(@('channel'), @('release', 'channel'))) -ne 'beta') {
     throw 'The runtime manifest must explicitly declare the beta channel.'
   }
+  $manifestLocation = Resolve-SymppManifestReferenceUri $manifest.manifest $ArtifactManifest
+  if ($manifestLocation) { $manifest = Resolve-SymppPublishedArtifactManifest $manifest $ArtifactManifest }
+  else { $manifestLocation = $ArtifactManifest }
+  foreach ($artifact in @(Get-SymppArtifactCandidates $manifest)) {
+    foreach ($container in @($artifact, $artifact.archive, $artifact.artifact)) {
+      if ($null -eq $container) { continue }
+      foreach ($name in @('url', 'download_url', 'uri', 'path', 'relative_path', 'file')) {
+        if ($container.PSObject.Properties[$name] -and $container.$name) {
+          $container.$name = Resolve-SymppManifestReferenceUri ([pscustomobject]@{ path = $container.$name }) $manifestLocation
+        }
+      }
+    }
+  }
   $stagePin = Join-Path $stage '.sympp-runtime-artifacts.json'
   Write-InstallJson $stagePin $manifest
   $candidate = Resolve-SymppPreparedArtifactRuntime $stage $null $install.contract_fingerprint -ValidateOnly
