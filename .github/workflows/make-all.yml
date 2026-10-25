@@ -232,6 +232,7 @@ jobs:
         run: |
           node scripts/package-portable-skills.mjs --check
           node plugins/symphony-plus-plus-mcp/tests/launcher/portable-install-tests.js
+          node --test plugins/symphony-plus-plus-mcp/tests/launcher/herdr-execution.test.js
       - name: Install native configuration hosts
         id: native-hosts
         shell: pwsh
