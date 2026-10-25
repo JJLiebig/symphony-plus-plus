@@ -166,10 +166,14 @@ escalations or blockers. No report cadence or extra checklist is required.
 
 After the worker returns, verify acceptance and the required native checks/review
 for the exact PR head once. Then call architect `sync_pr` with `work_package_id`,
-`url`, and `head_sha` from the normal handoff. It fetches GitHub evidence and
+`url` (or `number` and `repository`) from the normal handoff. Optional `head_sha`
+must match when supplied. It fetches GitHub evidence and
 applies existing readiness and dependency gates without worker claims or receipts.
 Readiness does not independently prove native checks/review passed; unknown provider
 fields stay unknown. Missing optional observations do not prevent this workflow.
+Once GitHub reports the attached PR merged, sync, reconciliation and periodic PR
+observation record `pr_merged` from its merge timestamp and commit without a head
+handoff or readiness transition. Pre-merge readiness and dependency gates still apply.
 For selected candidate inputs, reconcile qualification from the native handoff
 using existing scoped `append_progress` dependency provenance for the dependent head.
 

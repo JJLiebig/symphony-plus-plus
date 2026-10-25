@@ -5,6 +5,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
 
   import Ecto.Query, only: [from: 2]
 
+  alias SymphonyElixir.FakeGitHubClient
+  alias SymphonyElixir.GitHubPullRequestFixtures
   alias SymphonyElixir.MCPHarness
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
@@ -12,6 +14,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.AgentRuns.Repository, as: AgentRunRepository
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.Service, as: ClaimLeaseService
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Session
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Phase
@@ -31,6 +34,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
   alias SymphonyElixir.TestSupport
   alias SymphonyElixir.WorkPackageFactory
+
+  defmodule ReplacingPRClient do
+    @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
+    @impl true
+    def fetch_pull_request(ref, opts) do
+      {repo, package_id} = Keyword.fetch!(opts, :replacement)
+
+      {:ok, _event} =
+        PlanningRepository.append_progress_event(repo, %{
+          work_package_id: package_id,
+          summary: "Replace the PR while the provider request is in flight",
+          status: "pr_attached",
+          payload: %{type: "pr", source_tool: "attach_pr", url: "https://github.com/nextide/repo/pull/922"}
+        })
+
+      FakeGitHubClient.fetch_pull_request(ref, opts)
+    end
+  end
 
   setup_all do
     database_path = WorkPackageFactory.database_path()
@@ -77,7 +99,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
                last_seen_at: DateTime.add(DateTime.utc_now(:microsecond), -301, :second)
              })
 
-    append_merged_pr_evidence!(repo, linked_package, 914, "head-914")
+    append_merged_pr_evidence!(repo, linked_package, 914, nil, synced_head_sha: "head-914")
 
     assert {:ok, applied} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply, recorded_by: "reconciler-test")
 
@@ -116,7 +138,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
                stale_after_ms: 60_000
              )
 
-    append_merged_pr_evidence!(repo, linked_package, 913, "head-913")
+    append_merged_pr_evidence!(repo, linked_package, 913, "old-head-913", synced_head_sha: "head-913")
 
     assert {:ok, applied} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply, recorded_by: "reconciler-test")
 
@@ -131,6 +153,60 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
     assert repo.get!(WorkPackage, linked_package.id).status == "merged"
     assert %AccessGrant{revoked_at: %DateTime{}} = repo.get!(AccessGrant, minted.grant.id)
     assert %ClaimLease{status: "released", release_reason: "pr_merged_delivery_closeout"} = repo.get!(ClaimLease, claim_lease.id)
+  end
+
+  test "periodic PR observation closes dispatched work without recorded head or readiness", %{repo: repo} do
+    {work_request, _slice, package} =
+      linked_slice!(repo,
+        work_request_id: "WR-OBSERVE-MERGED-NO-HEAD",
+        work_package_id: "WP-OBSERVE-MERGED-NO-HEAD",
+        status: "ready_for_worker"
+      )
+
+    assert {:ok, _attached} =
+             PlanningRepository.append_progress_event(repo, %{
+               work_package_id: package.id,
+               summary: "PR attached by URL",
+               status: "pr_attached",
+               payload: %{type: "pr", source_tool: "attach_pr", url: "https://github.com/nextide/repo/pull/920"}
+             })
+
+    FakeGitHubClient.put_response("nextide/repo", 920, GitHubPullRequestFixtures.metadata(920, "provider-head"))
+    assert {:ok, open} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
+    assert open.merged_count == 0
+    assert repo.get!(WorkPackage, package.id).status == "ready_for_worker"
+    refute repo.get_by(WorkPackageDelivery, work_package_id: package.id)
+
+    FakeGitHubClient.put_response("nextide/repo", 920, GitHubPullRequestFixtures.metadata(920, "provider-head", merged?: true))
+    assert {:ok, merged} = MergeReconciler.reconcile(repo, client: FakeGitHubClient)
+    assert merged.merged_count == 1
+    assert repo.get!(WorkPackage, package.id).status == "merged"
+    assert repo.get_by!(WorkPackageDelivery, work_package_id: package.id).outcome == "pr_merged"
+
+    assert {:ok, replay} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply)
+    assert replay.applied_count == 0
+    assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
+  end
+
+  test "PR replacement during a provider read cannot report or record an older merge", %{repo: repo} do
+    {_request, _slice, package} =
+      linked_slice!(repo,
+        work_request_id: "WR-OBSERVE-REPLACED-PR",
+        work_package_id: "WP-OBSERVE-REPLACED-PR",
+        status: "ready_for_worker"
+      )
+
+    append_merged_pr_evidence!(repo, package, 921, nil, synced_head_sha: "provider-head")
+    metadata = GitHubPullRequestFixtures.metadata(921, "provider-head", merged?: true)
+    FakeGitHubClient.put_response("nextide/repo", 921, metadata)
+
+    assert {:ok, result} = MergeReconciler.reconcile(repo, client: ReplacingPRClient, replacement: {repo, package.id})
+    assert result.merged_count == 0
+    assert [%{status: "skipped", reason: "stale_status"}] = result.results
+    assert repo.get!(WorkPackage, package.id).status == "ready_for_worker"
+    refute repo.get_by(WorkPackageDelivery, work_package_id: package.id)
+    assert {:ok, events} = PlanningRepository.list_progress_events(repo, package.id)
+    refute Enum.any?(events, &(&1.status == "github_pr_merged"))
   end
 
   test "MCP reconcile_work_request dry-run reports proposed closeout without write capability", %{repo: repo} do

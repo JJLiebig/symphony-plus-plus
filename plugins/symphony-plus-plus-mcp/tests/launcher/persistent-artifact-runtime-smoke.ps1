@@ -229,9 +229,14 @@ try {
       $candidateManifest.artifact.file = Join-Path (Split-Path -Parent $ArtifactManifest) $candidateManifest.artifact.file
       $candidateManifest.artifact.relative_path = $candidateManifest.artifact.file
       $published = Invoke-RestMethod 'https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json'
-      $manifest = $published
+      $publishedCompatible = $published.launcher_contract.mcp_contract_fingerprint -eq $install.contract_fingerprint
+      $manifest = if ($publishedCompatible) { $published } else { $candidateManifest }
+      if (-not $publishedCompatible) {
+        Write-Host "Published runtime has an older MCP contract; qualifying candidate cold start, reuse, recovery and offline operation."
+        Write-Host "Same-contract cross-revision refresh is unavailable without a compatible published baseline."
+      }
       $floatingManifest = Join-Path $tempRoot "floating-channel.json"
-      $published | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
+      $manifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
       @{ schema_version = 1; channels = @{ stable = @{ manifest = @{ path = $floatingManifest } }; beta = @{ manifest = @{ path = $floatingManifest } } } } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot "assets/sympp-runtime-artifacts.json")
       @{ version = 1; skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/symphony-plus-plus'; sourceType = 'github'; ref = 'beta' } } } |
@@ -372,7 +377,7 @@ try {
     if ($SkillsInstall) {
       # The owning install and MCP contract stay unchanged while its branch publishes new runtime bytes.
       $beforeIdentity = Get-ChildItem -LiteralPath (Join-Path $environment.SYMPP_HOME 'runtime/launcher-validation') -Filter *.json | Get-Content -Raw | ConvertFrom-Json
-      if ($beforeIdentity.revision -ne $manifest.source_revision) { throw "Cold identity did not record the old actual runtime." }
+      if ($beforeIdentity.revision -ne $manifest.source_revision) { throw "Cold identity did not record the initial actual runtime." }
       $manifest = $candidateManifest
       $candidateManifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
     }
