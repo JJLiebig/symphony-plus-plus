@@ -12,6 +12,7 @@ const VERSION = "1.0.0";
 const PROVIDERS = ["codex", "claude", "opencode"];
 const PROFILE_ENV = { codex: "CODEX_HOME", claude: "CLAUDE_CONFIG_DIR", opencode: "OPENCODE_CONFIG_DIR" };
 const FORWARD_ENV = ["PATH", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "SYMPP_HOME", "SYMPP_DATABASE", "SYMPP_PORT", "SYMPP_RUNTIME_CHANNEL"];
+const TRANSPORT_ENV = [...FORWARD_ENV, "PATHEXT", "SystemRoot", "WINDIR", "COMSPEC", "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "LANG", "LC_ALL", "LC_CTYPE", "SHELL", "USER", "LOGNAME", "HC_SESSION", "HC_SOCKET", "HC_TERMINAL_SOCKET"];
 const FLAGS = {
   list: ["cwd", "fields", "json", "help"],
   launch: ["provider", "assignment", "ledger", "task", "cwd", "model", "provider-home", "space", "tab", "parent", "attempt", "session", "json", "help"],
@@ -79,8 +80,22 @@ function assignment(file) {
   return { work_package_id: wp.work_package_id, work_request_id: wr.work_request_id, role: "worker", digest: hash(JSON.stringify(bootstrap)) };
 }
 
-function providerArgv(provider, model, prompt) {
-  const argv = [provider];
+function executable(provider) {
+  const extensions = process.platform === "win32" ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";") : [""];
+  for (const folder of (process.env.PATH || "").split(path.delimiter).filter(Boolean)) {
+    for (const extension of extensions) {
+      const file = path.resolve(folder, provider + extension);
+      try {
+        fs.accessSync(file, fs.constants.X_OK);
+        if (fs.statSync(file).isFile()) return file.replace(/\\/g, "/");
+      } catch (_) { }
+    }
+  }
+  fail("provider_not_installed", `Install ${provider} on the execution machine and make it available on PATH.`, 2);
+}
+
+function providerArgv(provider, program, model, prompt) {
+  const argv = [program];
   if (provider === "codex") argv.push("--no-daemon");
   if (model) argv.push("--model", model);
   if (provider === "opencode") argv.push("--prompt", prompt);
@@ -110,7 +125,8 @@ function loadReceipt(file) {
 
 // hc connect supplies the same JSON-RPC transport on Windows, macOS and Linux.
 function connectCore(session, command = "hc", prefix = []) {
-  const env = { ...process.env };
+  // connect may start a core: never seed its inherited environment with parent credentials.
+  const env = Object.fromEntries(TRANSPORT_ENV.filter((key) => process.env[key]).map((key) => [key, process.env[key]]));
   if (session) { delete env.HC_SOCKET; delete env.HC_TERMINAL_SOCKET; }
   if (!session && !env.HC_SOCKET && env.HC_TERMINAL_SOCKET) env.HC_SOCKET = env.HC_TERMINAL_SOCKET;
   const child = spawn(command, [...prefix, "connect", ...(session ? ["--session", session] : [])], { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -161,6 +177,14 @@ async function inspect(core, info, receipt) {
   return { ...receipt, state: terminal.state, status: terminal.status?.state || "unknown", reason: terminal.reason || null };
 }
 
+async function publishPid(core, receipt) {
+  const terminal = await core.call("terminal.label", { terminal: receipt.terminal_id, labels: { "sympp.pid": String(receipt.pid) } });
+  if (terminal.pid !== receipt.pid || terminal.labels?.["sympp.launch_id"] !== receipt.launch_id || terminal.labels?.["sympp.pid"] !== String(receipt.pid)) {
+    fail("process_changed", "Check the receipt; its original agent changed before discovery completed.");
+  }
+  return { ...receipt, state: terminal.state, status: terminal.status?.state || "unknown", reason: terminal.reason || null };
+}
+
 async function launch(core, info, options) {
   const cwd = path.resolve(options.cwd);
   const input = path.resolve(options.assignment || options.task);
@@ -168,7 +192,7 @@ async function launch(core, info, options) {
   const ledger = options.assignment ? hash(options.ledger) : null;
   const launchId = hash(JSON.stringify([info.id, ledger, source.work_package_id || input, options.attempt || "first"]));
   const file = receiptPath(launchId);
-  const requestHash = hash(JSON.stringify([source.digest, cwd, options.provider, options.model || null, options["provider-home"] || null, options.parent || null, options.space || null, options.tab || null]));
+  const requestHash = hash(JSON.stringify([source.digest, cwd, options.provider, options.executable, options.model || null, options["provider-home"] || null, options.parent || null, options.space || null, options.tab || null]));
   fs.mkdirSync(storeRoot(), { recursive: true });
   const lock = `${file}.lock`;
   let handle;
@@ -180,7 +204,7 @@ async function launch(core, info, options) {
       if (previous.request_hash !== requestHash) fail("launch_conflict", "The existing attempt has different input. Inspect it, then choose a new --attempt only when another process is intended.");
       const current = await inspect(core, info, previous);
       if (current.state === "stale") fail(current.reason, `Inspect receipt ${JSON.stringify(file)}. Use a new --attempt only after resolving the previous launch.`);
-      return { ...current, reused: true };
+      return { ...(current.state === "live" ? await publishPid(core, current) : current), reused: true };
     }
     const receipt = {
       schema_version: 1, launch_id: launchId, core_id: info.id, terminal_id: null, pid: null,
@@ -202,7 +226,7 @@ async function launch(core, info, options) {
     if (options["provider-home"]) env[PROFILE_ENV[options.provider]] = path.resolve(options["provider-home"]);
     save(file, receipt); // A lost spawn reply must not silently launch a second worker.
     const result = await core.call("terminal.run", {
-      argv: providerArgv(options.provider, options.model, prompt + returnTo), cwd, env, labels,
+      argv: providerArgv(options.provider, options.executable, options.model, prompt + returnTo), cwd, env, labels,
       name: `sympp-${launchId.slice(0, 24)}`, parent: parent || undefined,
       no_parent: !parent, no_notify: false, wait: false, keep: Boolean(options.space),
     });
@@ -210,8 +234,7 @@ async function launch(core, info, options) {
     if (!text(terminal?.address) || !Number.isSafeInteger(terminal.pid) || terminal.pid <= 0) fail("launch_unconfirmed", `Check receipt ${JSON.stringify(file)} and the selected core; no second process was requested.`);
     Object.assign(receipt, { terminal_id: terminal.address, pid: terminal.pid, state: terminal.state, status: terminal.status?.state || "unknown", reason: terminal.reason || null });
     save(file, receipt);
-    await core.call("terminal.label", { terminal: terminal.address, labels: { "sympp.pid": String(terminal.pid) } });
-    return { ...receipt, reused: false };
+    return { ...await publishPid(core, receipt), reused: false };
   } finally { fs.closeSync(handle); fs.unlinkSync(lock); }
 }
 
@@ -254,6 +277,7 @@ async function main(argv = process.argv.slice(2), connect = connectCore) {
         options.assignment ? assignment(options.assignment) : read(options.task);
         try { if (!fs.statSync(path.resolve(options.cwd)).isDirectory()) throw new Error(); }
         catch (_) { fail("folder_unavailable", "--cwd must be an existing directory on the execution machine.", 2); }
+        options.executable = executable(options.provider);
       }
       core = connect(options.session);
       const hello = await core.call("hello", { generation: 1 });

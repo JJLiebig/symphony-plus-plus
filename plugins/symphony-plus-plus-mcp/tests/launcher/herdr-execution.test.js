@@ -14,6 +14,10 @@ async function scenario(fn) {
   const prior = { ...process.env };
   process.env.SYMPP_HOME = path.join(root, "ledger home");
   process.env.OPENAI_API_KEY = "controlled-secret-never-copy";
+  const bin = path.join(root, "bin");
+  fs.mkdirSync(bin);
+  for (const provider of ["codex", "claude", "opencode"]) fs.writeFileSync(path.join(bin, provider + (process.platform === "win32" ? ".cmd" : "")), "controlled executable\n", { mode: 0o755 });
+  process.env.PATH = bin + path.delimiter + (process.env.PATH || "");
   delete process.env.HC_TERMINAL_ID;
   delete process.env.HC_TERMINAL_SOCKET;
   const stateFile = path.join(root, "core.json");
@@ -55,7 +59,9 @@ test("ordinary tasks launch every provider without S++ authority, shell interpol
     assert.equal(request.env.OPENAI_API_KEY, undefined);
     assert.equal(request.line, undefined);
     assert.equal(request.cwd, root);
-    assert.deepEqual(request.argv.slice(0, provider === "codex" ? 4 : 3), provider === "codex" ? ["codex", "--no-daemon", "--model", "chosen/model"] : [provider, "--model", "chosen/model"]);
+    const program = path.join(root, "bin", provider + (process.platform === "win32" ? ".cmd" : "")).replace(/\\/g, "/");
+    assert.equal(process.platform === "win32" ? request.argv[0].toLowerCase() : request.argv[0], process.platform === "win32" ? program.toLowerCase() : program);
+    assert.deepEqual(request.argv.slice(1, provider === "codex" ? 4 : 3), provider === "codex" ? ["--no-daemon", "--model", "chosen/model"] : ["--model", "chosen/model"]);
     assert.equal(request.argv.at(-2), provider === "opencode" ? "--prompt" : "--");
     assert.ok(request.argv.at(-1).includes(JSON.stringify(task)));
     assert.ok(!request.argv.at(-1).includes("Repair the specified fixture"));
@@ -63,6 +69,20 @@ test("ordinary tasks launch every provider without S++ authority, shell interpol
     assert.equal(result.body.core_id, "core-one");
   }
   assert.equal(state().runs, 3);
+  assert.equal(state().transport_secret_present, false);
+}));
+
+test("an interrupted PID label publication repairs discovery on replay without another worker", async () => scenario(async ({ root, task, run, state, save }) => {
+  save({ ...state(), lose_label_reply: true });
+  const args = ["launch", "--provider", "claude", "--task", task, "--cwd", root];
+  assert.equal((await run(args)).body.error, "core_unreachable");
+  assert.equal(state().terminal.labels["sympp.pid"], undefined);
+  save({ ...state(), lose_label_reply: false });
+  const retried = await run(args);
+  assert.equal(retried.code, 0);
+  assert.equal(retried.body.reused, true);
+  assert.equal(state().runs, 1);
+  assert.equal(state().terminal.labels["sympp.pid"], "900");
 }));
 
 test("dispatched bootstrap binds exact work once, preserves placement and explicit profile", async () => scenario(async ({ root, run, state }) => {
