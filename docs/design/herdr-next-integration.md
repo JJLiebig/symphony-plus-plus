@@ -84,6 +84,17 @@ The Job level shows, from canonical state only:
   Review rounds are R1, R2, R3 chips, amber from round three. Work without a PR
   is work, then done. Each row gives wall time, time in its stage and time in
   its review. Narrow and panel widths stack a compact line per package.
+- **Review drill-down:** a round chip, a road bump's Review button or Enter on
+  a reviewed row opens the package's review beside the rails (under its row
+  when narrow); Esc closes it and the rails keep their place. It shows the
+  provider's stage in plain words, its step ladder, the time in this round and
+  overall, and each reported round newest first with lane, step, outcome,
+  start, finish and duration. Rounds older than the reported history are
+  counted; finding counts appear only when recorded. Stale or missing reports
+  say so. Without a ladder or history it shows step x/y and the round count.
+  Round three or more than three hours in review is a road bump in the rails,
+  the drill-down and the attention strip; a long review suggests reslicing,
+  without acting on it.
 - **Agents:** the architect, a worker per package with its active run attempt,
   and the review provider by type and mode. An agent is Live only after the
   trusted helper has just verified its exact launch and process; otherwise it

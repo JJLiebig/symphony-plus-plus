@@ -2,15 +2,16 @@
 // rails on one real-time axis, the agents taking part and its recorded decisions. Wide views draw the
 // rails with agents and decisions beside them; narrow ones stack a compact line per package.
 //
-// Review drill-down hook: once the view defines openReview(jobId, pkgId, round, cx), round chips
-// become buttons that call it. Until then they are plain marks.
+// Round chips are buttons that open a package's review drill-down: beside the rails on wide views,
+// under its row on narrow ones. The rails stay where they were, so closing it returns to the same spot.
 
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
 import * as M from "./model.js";
 import * as J from "./job.js";
 import * as R from "./rails.js";
-import { CLEAR, MONO, tint, cap, button, field, mark, pip, presence, section, age } from "./ui.js";
+import * as Rv from "./review.js";
+import { CLEAR, MONO, icon, tint, cap, button, field, mark, pip, presence, section, age } from "./ui.js";
 
 const LABEL_W = 236;
 const TIME_CELL = 54;
@@ -18,7 +19,7 @@ const TIME_GAP = 6;
 const TIME_W = 3 * TIME_CELL + 2 * TIME_GAP;
 const pct = (x) => `${(Math.max(0, Math.min(1, x)) * 100).toFixed(3)}%`;
 
-// ctx: { now, bindings, terminals, layout: "wide" | "compact", place: "full" | "side" | "tab", offline }
+// ctx: { now, bindings, terminals, layout: "wide" | "compact", place: "full" | "side" | "tab", offline, review: package or null }
 export function jobView(v, t, job, ctx) {
   const people = J.participants(job, ctx.bindings, v.agentChecks, ctx.now);
   const head = [jobHeader(v, t, job, ctx), phaseStrip(t, J.phaseOf(job), ctx)];
@@ -29,7 +30,9 @@ export function jobView(v, t, job, ctx) {
       .child(v_flex().flex_none().px(20).pt(14).pb(12).gap(12).border_b(1).border_color(t.border).children(head))
       .child(h_flex().flex_1().min_h(0).items_start()
         .child(v_flex().id("job-work").flex_1().min_w(0).h_full().px(16).pb(24).overflow_y_scrollbar().mode("hover").children(work))
-        .child(v_flex().id("job-aside").w(272).flex_none().h_full().px(16).pb(24).border_l(1).border_color(t.border).overflow_y_scrollbar().mode("hover").children(aside)));
+        .child(ctx.review
+          ? v_flex().id(`job-review-${ctx.review.id}`).w(440).flex_none().h_full().px(18).pb(24).border_l(1).border_color(t.border).overflow_y_scrollbar().mode("hover").child(reviewPane(v, t, ctx.review, ctx, false))
+          : v_flex().id("job-aside").w(272).flex_none().h_full().px(16).pb(24).border_l(1).border_color(t.border).overflow_y_scrollbar().mode("hover").children(aside)));
   }
   return v_flex().id(`job-view-${ctx.place}`).flex_1().min_h(0).min_w(0).overflow_y_scrollbar().mode("hover")
     .child(v_flex().flex_none().px(ctx.place === "side" ? 16 : 14).pt(14).pb(24).gap(12)
@@ -86,11 +89,12 @@ function phaseStrip(t, phase, ctx) {
 
 // One compact line per thing only the person can move, above the rails. Answers open in place.
 function attention(v, t, job, ctx) {
-  if (!job.needs.length) return [];
+  const alerts = Rv.reviewAlerts(job, ctx.now);
+  if (!job.needs.length && !alerts.length) return [];
   const titles = new Map(job.packages.map((pkg) => [pkg.id, pkg.title]));
   return [
-    section(t, "Needs you", job.needs.length, t.blocked),
-    v_flex().id("attention-strip").gap(6).children(job.needs.map((need) => {
+    job.needs.length ? section(t, "Needs you", job.needs.length, t.blocked) : section(t, "Road bumps", alerts.length, t.working),
+    v_flex().id("attention-strip").gap(6).children([...job.needs.map((need) => {
       const question = need.id ? job.guidance.find((q) => q.key === need.key) : null;
       const open = question && v.answers[question.key]?.open;
       const action = question ? button(t, `need-answer-${need.key}`, "Answer", (cx) => v.openAnswer(question, cx), { strong: true })
@@ -105,7 +109,12 @@ function attention(v, t, job, ctx) {
           .when(need.since !== null, (el) => el.child(age(t, M.ago(need.since, ctx.now))))
           .when(Boolean(action) && !open, (el) => el.child(action)))
         .when(Boolean(open), (el) => el.child(questionRow(v, t, question, true)));
-    })),
+    }), ...alerts.map(({ pkg, bumps }) => h_flex().id(`bump-${pkg.id}`).px(12).py(8).gap(10).items_center().min_w(0).rounded(6).bg(tint(t.working, "14"))
+      .child(mark(t, "bump"))
+      .child(div().flex_none().text_size(11.5).font_semibold().text_color(t.working).child("Road bump"))
+      .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.foreground).child(bumps.map((b) => b.text).join(" · ")))
+      .child(div().flex_none().max_w(180).truncate().text_size(11.5).text_color(t.muted).child(pkg.title))
+      .child(button(t, `bump-review-${pkg.id}`, "Review", (cx) => v.openReview(job.id, pkg.id, pkg.round, cx), { strong: true, tip: "Open this package's review" })))]),
   ];
 }
 
@@ -283,7 +292,7 @@ function railRow(v, t, job, row, axis, report, ctx) {
     .child(h_flex().w(TIME_W).flex_none().gap(TIME_GAP).text_size(11).font_family(MONO)
       .child(cell(t, total, row.timings.total ? t.foreground : t.dim))
       .child(cell(t, stage, row.timings.stage ? t.muted : t.dim))
-      .child(cell(t, review, row.timings.review ? t.muted : t.dim)));
+      .child(cell(t, review, row.bumps.some((b) => b.kind === "long") ? t.working : row.timings.review ? t.muted : t.dim)));
   return on ? [rowEl, rowDetail(t, pkg, c)] : [rowEl];
 }
 
@@ -334,7 +343,104 @@ function compactRow(v, t, job, row, report, ctx) {
       c.waiting ? div().text_size(11.5).text_color(t.muted).child(c.waiting) : null,
       c.next ? div().text_size(11.5).text_color(c.needsYou ? t.blocked : t.muted).child(`Next: ${c.next}`) : null,
       c.evidence.length ? div().text_size(11.5).text_color(t.muted).child(c.evidence.join(" · ")) : null,
-    ].filter(Boolean))));
+    ].filter(Boolean))))
+    .when(ctx.review?.id === pkg.id, (el) => el.child(div().pl(14).pt(6).child(reviewPane(v, t, pkg, ctx, true))));
+}
+
+// ---------- Review drill-down ----------
+
+function stageTone(t, tone) {
+  return { active: t.accent, waiting: t.foreground, good: t.ansi2, bad: t.blocked }[tone] ?? t.muted;
+}
+
+// Review Suite's stage in plain words, its step ladder, then each round newest first.
+function reviewPane(v, t, pkg, ctx, narrow) {
+  const d = Rv.reviewDetail(pkg, ctx.now);
+  const late = d.total >= 3 && pkg.stage === "review";
+  const stat = (label, value, hot) => v_flex().gap(2).min_w(0)
+    .child(div().text_size(11).text_color(t.muted).child(label))
+    .child(div().text_size(narrow ? 15 : 18).font_family(MONO).font_medium().text_color(value === null ? t.dim : hot ? t.working : t.foreground).child(value ?? "—"));
+  const observed = d.observation === "stale" ? "Stale: this may no longer match the code"
+    : d.observation === "unknown" ? "No report from the review provider yet" : null;
+  return v_flex().id(`review-${pkg.id}`).gap(14).pt(narrow ? 0 : 14).min_w(0)
+    .child(v_flex().gap(4)
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(["Review", d.provider].filter(Boolean).join(" · ")))
+        .child(button(t, "review-close", narrow ? null : "Close", (cx) => v.closeReview(cx), { glyph: "x", tip: "Back to the rails (Esc)" })))
+      .when(!narrow, (el) => el.child(div().w_full().text_size(15).font_semibold().text_color(t.foreground).child(pkg.title)))
+      .child(h_flex().gap(7).items_center().pt(2)
+        .child(stageMark(t, d.stage))
+        .child(div().flex_1().min_w(0).text_size(13).font_medium().text_color(d.stage ? stageTone(t, d.stage.tone) : t.muted)
+          .child(d.stage ? d.stage.text : d.reviewed ? "Stage not reported" : "No review recorded for this package")))
+      .when(Boolean(observed), (el) => el.child(div().pl(15).text_size(11.5).text_color(d.observation === "stale" ? t.working : t.muted).child(observed)))
+      .when(d.observedAt !== null, (el) => el.child(div().pl(15).text_size(11).text_color(t.dim).child(`Reported ${M.ago(d.observedAt, ctx.now)}`))))
+    .when(d.reviewed, (el) => el
+      .child(h_flex().gap(narrow ? 18 : 28).items_start()
+        .child(stat("This round", d.round, false))
+        .child(stat("Overall", d.overall, d.reslice))
+        .child(stat("Rounds", String(d.total), late)))
+      .when(d.bumps.length > 0, (box) => box.child(h_flex().id(`review-bump-${pkg.id}`).gap(10).px(12).py(9).rounded(6).items_start().bg(tint(t.working, "14"))
+        .child(div().pt(4).flex_none().child(mark(t, "bump")))
+        .child(v_flex().flex_1().min_w(0).gap(3)
+          .child(div().text_size(12.5).font_medium().text_color(t.foreground).child(d.bumps.map((b) => b.text).join(" · ")))
+          .when(d.reslice, (note) => note.child(div().text_size(12).text_color(t.muted).child("Reviews this long often mean the package is too big. Consider reslicing it."))))))
+      .child(ladder(t, d))
+      .child(rounds(v, t, pkg, d, ctx)));
+}
+
+function stageMark(t, stage) {
+  if (!stage) return div().w(8).h(1.5).flex_none().bg(t.dim);
+  const color = stageTone(t, stage.tone);
+  if (stage.tone === "good") return svg(icon("check")).size(11).flex_none().text_color(color);
+  if (stage.tone === "bad") return div().size(8).flex_none().rounded(1.5).bg(color);
+  if (stage.tone === "waiting") return div().size(8).flex_none().rounded(4).border(1.5).border_color(color);
+  return div().size(8).flex_none().rounded(4).bg(color);
+}
+
+function ladder(t, d) {
+  const body = d.ladder
+    ? h_flex().gap_x(14).gap_y(6).flex_wrap().children(d.ladder.map((step, i) => h_flex().id(`review-step-${i}`).gap(6).items_center()
+      .accessibility_label(`${step.name}, ${step.state ?? "state not reported"}`)
+      .child(step.state === "done" ? svg(icon("check")).size(11).flex_none().text_color(t.ansi2)
+        : step.state === "current" ? div().size(8).flex_none().rounded(4).bg(t.accent)
+          : div().size(8).flex_none().rounded(4).border(1.5).border_color(t.dim))
+      .child(div().text_size(12).text_color(step.state === "current" ? t.foreground : step.state === "done" ? t.muted : t.dim)
+        .when(step.state === "current", (el) => el.font_semibold()).child(step.name))))
+    : div().text_size(12).text_color(d.progress ? t.foreground : t.muted).child(d.progress ?? "No steps reported");
+  return v_flex().id("review-ladder").gap(7).child(div().text_size(11.5).font_medium().text_color(t.dim).child("Steps")).child(body);
+}
+
+function rounds(v, t, pkg, d, ctx) {
+  const focus = v.review?.pkgId === pkg.id ? v.review.round : null;
+  const when = (r) => {
+    const from = Rv.clock(r.startedAt, ctx.now);
+    const to = r.current ? "now" : Rv.clock(r.finishedAt, ctx.now);
+    return from || to ? `${from ?? "start not recorded"} → ${to ?? "end not recorded"}` : "Times not recorded";
+  };
+  return v_flex().id("review-rounds").gap(2)
+    .child(div().pb(5).text_size(11.5).font_medium().text_color(t.dim).child("Rounds"))
+    .when(!d.rows.length, (el) => el.child(div().text_size(12).text_color(t.muted).child(d.total ? `${d.total} round${d.total === 1 ? "" : "s"} · no round history reported` : "No rounds yet")))
+    .children(d.rows.map((r) => h_flex().id(`review-round-${r.n}`).gap(10).px(8).py(6).rounded(5).items_center()
+      .bg(r.n === focus ? t.selected : r.current ? tint(t.accent, "10") : CLEAR)
+      .accessibility_label(`Round ${r.n}, ${[r.lane, r.step].filter(Boolean).join(", ") || "lane not reported"}, ${r.outcome}, ${when(r)}${r.took ? `, ${r.took}` : ""}`)
+      .child(div().w(30).flex_none().text_size(11.5).font_family(MONO).text_color(r.n >= 3 ? t.working : t.muted).child(`R${r.n}`))
+      .child(v_flex().flex_1().min_w(0).gap(2)
+        .child(div().truncate().text_size(12).text_color(r.lane || r.step ? t.foreground : t.muted).child([r.lane, r.step].filter(Boolean).join(" · ") || "Lane not reported"))
+        .child(div().truncate().text_size(11).font_family(MONO).text_color(t.dim).child(when(r))))
+      .child(h_flex().flex_none().gap(5).items_center()
+        .child(outcomeMark(t, r.kind))
+        .child(div().text_size(11.5).text_color(r.kind ? t.foreground : t.muted).child(r.findings !== null ? `${r.outcome} (${r.findings})` : r.outcome)))
+      .child(div().w(54).flex_none().flex().justify_end().text_size(11.5).font_family(MONO).text_color(r.current ? t.foreground : r.took ? t.muted : t.dim).child(r.took ?? "—"))))
+    .when(d.omitted > 0, (el) => el.child(div().px(8).pt(4).text_size(11.5).text_color(t.muted)
+      .child(`${d.omitted} earlier round${d.omitted === 1 ? "" : "s"} not in the reported history`)));
+}
+
+function outcomeMark(t, kind) {
+  if (kind === "clean") return svg(icon("check")).size(11).flex_none().text_color(t.ansi2);
+  if (kind === "findings") return div().size(7).flex_none().rounded(1.5).bg(t.working);
+  if (kind === "blocked") return div().size(7).flex_none().rounded(1.5).bg(t.blocked);
+  if (kind === "running") return div().size(7).flex_none().rounded(4).bg(t.accent);
+  return div().w(7).h(1.5).flex_none().bg(t.dim);
 }
 
 // ---------- Agents and decisions ----------

@@ -27,6 +27,7 @@ export default class SpecLens extends Lens {
     if (CASE.error) this.net = M.fetchFailed(this.net, CASE.error, now);
     if (CASE.select) this.selected = CASE.select;
     if (CASE.detail) this.detail = true;
+    if (CASE.review) this.review = CASE.review;
     this.detailNet = { ...M.fetchSucceeded(M.initialFetch(), J.decisionsOf(detailPayload()), now), jobId: CASE.decisionsFor ?? null };
   }
   tick() {}
@@ -67,6 +68,27 @@ test('a job tab draws package rails on one axis, with agents and decisions besid
   assert.equal(view.has('open-tab') || view.has('back'), false, 'a job tab has no tab or back control of its own');
   assert.equal(view.has('stage-board') || view.out.includes('column-'), false, 'no stage columns');
   assert.doesNotMatch(view.out, /text "[^"]*%/, 'no progress percentages');
+});
+
+test('a round chip opens the review drill-down beside the rails, which stay drawn', skip, async (t) => {
+  const view = await render(t, { props: { job: 'wr-pr' }, width: 1400, review: { jobId: 'wr-pr', pkgId: 'wp-review', round: 2 } });
+  for (const id of ['rails', 'rail-wp-review', 'job-review-wp-review', 'review-wp-review', 'review-close', 'review-ladder', 'review-step-1', 'review-rounds', 'review-round-3', 'review-round-1', 'review-bump-wp-review', 'bump-wp-review'])
+    assert.ok(view.has(id), id);
+  assert.ok(view.out.includes('Button "round-wp-review-3"'), 'round chips are buttons');
+  assert.equal(view.has('job-aside'), false, 'the drill-down takes the side column');
+  assert.ok(view.text('Review · Review Suite · fast') && view.text('Waiting for the worker to decide on findings'));
+  assert.ok(view.text('Tier 1 review · Signoff') && view.text('Findings (4)') && view.text('In progress') && view.text('Signoff'));
+  assert.ok(view.text('Review is on round 3 · In review for 3h 20m') && view.text('Reviews this long often mean the package is too big. Consider reslicing it.'));
+  const order = ['review-round-3', 'review-round-2', 'review-round-1'].map((id) => view.out.indexOf(`:id[Str("${id}")]`));
+  assert.ok(order[0] < order[1] && order[1] < order[2], 'newest round first');
+});
+
+test('narrow views open the drill-down under its row', skip, async (t) => {
+  const view = await render(t, { props: { job: 'wr-pr' }, width: 700, review: { jobId: 'wr-pr', pkgId: 'wp-review', round: null } });
+  assert.ok(view.has('rails-compact') && view.has('review-wp-review') && view.has('review-rounds'));
+  assert.equal(view.has('job-review-wp-review'), false);
+  const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
+  assert.ok(at('rail-wp-review') < at('review-wp-review') && at('review-wp-review') < at('rail-wp-build'), 'inline, under its own row');
 });
 
 test('narrow job tabs stack one compact line per package with the same timings', skip, async (t) => {

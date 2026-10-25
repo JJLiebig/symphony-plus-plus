@@ -2,7 +2,7 @@
 // recorded moments (creation, dispatch, review start, current stage entry, recorded delivery) and
 // say who was acting. Nothing is interpolated: an unrecorded stage start is said, not drawn.
 
-import { span } from "./model.js";
+import { span, reviewBumps } from "./model.js";
 
 const HOUR = 3600e3;
 // Idle stretches longer than this, with nobody acting on any row, fold into a labelled break.
@@ -117,7 +117,7 @@ export function rowsOf(job, now) {
   for (const need of job.needs) {
     if (need.pkgId && need.since !== null) since.set(need.pkgId, Math.min(since.get(need.pkgId) ?? Infinity, need.since));
   }
-  return railOrder(job).map((pkg) => ({ pkg, segments: segmentsOf(pkg, now, since.get(pkg.id) ?? null), rounds: roundsOf(pkg), timings: timingsOf(pkg, now) }));
+  return railOrder(job).map((pkg) => ({ pkg, segments: segmentsOf(pkg, now, since.get(pkg.id) ?? null), rounds: roundsOf(pkg), timings: timingsOf(pkg, now), bumps: reviewBumps(pkg, now) }));
 }
 
 // Axis labels that never collide: now first, then breaks, then the start of each drawn stretch.

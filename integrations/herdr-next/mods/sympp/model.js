@@ -227,14 +227,18 @@ function buildPackage(slice, groups, now, runs) {
       type: review.type ?? null,
       status: review.status ?? null,
       mode: review.mode ?? slice.review?.args?.mode ?? null,
+      providerStatus: review.provider_status ?? null,
       step: review.step ?? null,
       current: review.current ?? null,
       total: review.total ?? null,
+      steps: Array.isArray(review.steps) ? review.steps.filter((s) => s?.name).map((s) => ({ name: s.name, state: s.state ?? null })) : null,
       observation: review.observation_state ?? null,
+      observedAt: ms(review.observed_at),
       startedAt: ms(review.started_at),
       roundStartedAt: ms(review.round_started_at),
       history: (Array.isArray(review.round_history) ? review.round_history : []).map((h) => ({
-        n: Number(h?.number), startedAt: ms(h?.started_at), finishedAt: ms(h?.finished_at),
+        n: Number(h?.number), lane: h?.lane ?? null, step: h?.step ?? null, status: h?.status ?? null,
+        startedAt: ms(h?.started_at), finishedAt: ms(h?.finished_at),
         outcome: h?.outcome ?? null, findings: Number.isSafeInteger(h?.findings) ? h.findings : null,
       })).filter((h) => Number.isSafeInteger(h.n) && h.n > 0),
     },
@@ -310,10 +314,20 @@ function bumpsOf(job, now) {
   for (const pkg of job.packages) {
     if (pkg.stage === "queued" || pkg.stage === "done") continue;
     if (pkg.failed) bumps.push(`Checks failing${pkg.untimed ? "" : ` for ${span(now - pkg.since)}`}: ${pkg.title}`);
-    if (pkg.stage === "review" && pkg.round >= 3) bumps.push(`Review is on round ${pkg.round}: ${pkg.title}`);
-    if (pkg.stage === "review" && !pkg.untimed && now - pkg.since > LONG_REVIEW) bumps.push(`In review for ${span(now - pkg.since)}: ${pkg.title}`);
+    for (const bump of reviewBumps(pkg, now)) bumps.push(`${bump.text}: ${pkg.title}`);
   }
   return bumps;
+}
+
+// A review in its third round or past three hours is a road bump. Its time runs from the recorded
+// review start, else from the recorded stage entry; an unrecorded start raises no time bump.
+export function reviewBumps(pkg, now) {
+  if (pkg.stage !== "review") return [];
+  const from = pkg.review.startedAt ?? pkg.review.roundStartedAt ?? (pkg.untimed ? null : pkg.since);
+  return [
+    pkg.round >= 3 ? { kind: "rounds", text: `Review is on round ${pkg.round}` } : null,
+    from !== null && now - from > LONG_REVIEW ? { kind: "long", text: `In review for ${span(now - from)}` } : null,
+  ].filter(Boolean);
 }
 
 function verdictOf(job, now) {
