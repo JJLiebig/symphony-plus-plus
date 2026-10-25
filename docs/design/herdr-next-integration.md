@@ -1,7 +1,7 @@
 # S++ × Herdr-next
 
 Status: target contract and active delivery plan. The native integration is not
-yet delivered. Current source baseline: S++ beta `7b86b4b0`.
+yet delivered. Current source baseline: S++ beta `dc754ba5`.
 
 ## Product contract
 
@@ -63,7 +63,10 @@ job and reaching its active agent should take very little navigation.
 - **Focused job:** current outcome, next action, waiting reason, dependencies,
   packages, evidence and explicit ways to reach participating agents.
 
-The exact tab/job default and visual composition are being designed with Opus.
+Opus's selected design is a Lens: native attention and job details beside the
+terminals, plus a larger overview. One unified mod supports the overview and a
+narrow pane. A job can have multiple participating terminals; its identity
+remains the WorkRequest rather than a particular client tab.
 Preserve existing topics, compositions, terminal placement and normal Herdr
 navigation. Xeneon hardware is a later surface, outside this delivery.
 
@@ -88,24 +91,43 @@ include legacy Herdr assumptions. They are not the Herdr-next adapter.
 
 ## Data and identity boundary
 
-The first backend addition is a read-only native hydrated-board endpoint at
+The read-only native hydrated-board endpoint is
 `GET /api/v1/sympp/herdr/dashboard`, reusing the existing projection and native
-consumer authorization. It must not migrate a ledger, register a dashboard
+consumer authorization. It does not migrate a ledger, register a dashboard
 opener, change claims or weaken operator mutation authorization.
 
 Do not spoof browser headers to call browser-authorized operator routes.
-Native human actions need a deliberate supported authority path before their
-controls become active.
+Native intake and question/guidance answers have a separate deliberate local
+authority boundary: direct loopback and a local Host, no forwarding or browser
+metadata, JSON only, and no native CORS/preflight grant. This authorizes a trusted
+local process; it does not authenticate an application brand. Existing browser
+authorization remains separate. The answer controls follow persisted prompt
+options and canonical S++ validation.
 
-GPUI fetch currently provides JSON/text, not a streaming response body. Begin
-with a modest refresh schedule. A transport limitation alone does not justify
-growing Herdr's universal API.
+Herdr currently exposes `fetch` but grants mods no network access. The explicit
+desktop transport is an installed Node HTTP adapter invoked through existing
+`exec`; private request files avoid body arguments and Windows command limits.
+It sends no browser/forwarding metadata, follows no redirects, retains actual
+HTTP status and never retries uncertain writes. Refresh stays modest (15 seconds
+for active work; 60 seconds when quiet or in the background). Node and one process
+per refresh are the desktop costs; future mobile clients need a native transport.
+
+[App issue #14](https://github.com/herdrdev/herdr-app/issues/14) proposes scoped
+per-mod HTTP declarations for Can's agreement. That is a documented host
+capability gap, independent of S++ business state. No app policy change is
+included in this integration.
 
 Reuse S++'s durable session-location observations where their identity is
 applicable. Herdr-next bindings must retain the core/machine identity and full
 terminal address, request/package/attempt identity and role. A last-known
 location is not proof that an agent is alive. Do not infer generic provider
 identity from legacy Codex-only bindings or from terminal text.
+
+The shared projection exposes `runtime.offline`. Agent navigation requires an
+explicit `false`, checks that capability again at activation, then verifies the
+core, terminal, PID and launch labels through the trusted installed helper. A
+Copy-and-View ledger can contain the same job IDs as the online source; copied
+identities cannot authorize focus.
 
 S++ loopback access is not a remote-access strategy. A remote backend requires
 an explicitly supported authenticated connection, such as a managed tunnel;
@@ -132,20 +154,27 @@ recovery restores shells rather than restarting the original agent.
 
 | Slice | Acceptance | State |
 |---|---|---|
-| Native read boundary | Same canonical board projection, local native policy, no reads causing writes; standalone routes unchanged. | In progress |
-| Native working view | Real S++ state, topic/repo/job scope, attention and agent navigation using existing mod APIs. | Opus design in progress |
-| Native bindings/tooling | Explicit core/terminal bindings; optional direct work remains simple; correct focus and stale-state handling. | Planned |
-| Cross-provider execution | Scoped launches and handoffs through herdr-core, provider qualification and recovery evidence. | Planned |
+| Native read boundary | Same canonical board projection, local native policy, no reads causing writes; standalone routes unchanged. | Landed in [#757](https://github.com/JJLiebig/symphony-plus-plus/pull/757); 78 API acceptance cases and all required hosted gates passed. |
+| Native working view | Real S++ state, topic/repo/job scope, attention and agent navigation using existing mod APIs. | Opus implementation passes native mod loading; interactions and native visual qualification in progress. |
+| Native human actions | Intake and persisted question/guidance answers, with browser exclusion and canonical scope/status checks. | Landed in [#758](https://github.com/JJLiebig/symphony-plus-plus/pull/758); API/offline acceptance and all required hosted gates passed. |
+| Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | [#759](https://github.com/JJLiebig/symphony-plus-plus/pull/759) in final qualification. |
+| Cross-provider execution | Scoped launches and handoffs through herdr-core, provider qualification and recovery evidence. | Six controlled-core checks; real Windows Codex, Claude Opus and OpenCode launches and both fresh Codex/Opus handoffs passed in an isolated core. In-place sends to done/unknown agents remain unsupported by core 0.1.10. |
 | Delivery qualification | Native view checked in an isolated home, owning source/hosted checks, review, packaged installation and real boundary evidence. | Planned |
 
 This table records actual evidence as work lands. A design, source commit,
 simulated fixture or healthy web interface alone does not qualify the native
 integration or an installed execution provider.
 
-No Herdr core/app model, command or shared API growth is currently justified.
-Any genuinely necessary expansion follows that repository's Can agreement
+The integration uses existing Herdr core/app model and commands. Scoped native
+network access is proposed separately and follows that repository's Can agreement
 process. Preserve live sessions, installed runtime identity and existing
 standalone behavior throughout delivery.
+
+The [native package guide](../../integrations/herdr-next/README.md) owns install
+and opening commands. Installation preserves personal layouts and uses normal
+Herdr mod tabs or split panes. The helper is installed as a script; this does
+not turn a source checkout into the running S++ MCP backend. Existing factory
+cutovers continue to follow the stopped-ledger procedure.
 
 See [factory workflow](factory-workflow.md), [operator API](../operator-board-api.md),
 [runtime](../runtime.md) and [testing](../testing.md) for their owning contracts.

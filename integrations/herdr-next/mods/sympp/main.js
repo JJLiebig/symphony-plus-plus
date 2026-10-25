@@ -3,6 +3,7 @@
 // Intake and answers persist through S++; terminal jumps check a trusted execution helper first.
 //
 // Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel",
+//   bridge: { node, helper },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session? }, "machine": { node, helper, session? } } }
 // Hosts may also be configured explicitly in shared("sympp.hosts").
@@ -12,6 +13,7 @@ import { v_flex, h_flex, Button, Input, InputState, Textarea, TextareaState } fr
 import { props, theme, shared, spaces, terminals, run, window as appWindow, exec } from "herdr";
 import * as M from "./model.js";
 import * as C from "./controls.js";
+import { createTransport } from "./transport.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
@@ -29,6 +31,7 @@ export default class Lens extends View {
     this.dashboard = M.dashboardUrl(this.endpoint, given.dashboardUrl);
     this.repoTopics = given.repoTopics && typeof given.repoTopics === "object" ? given.repoTopics : null;
     this.hosts = given.hosts ?? null;
+    this.request = createTransport(given.bridge);
     this.net = M.initialFetch();
     this.reading = false;
     this.turn = 0;
@@ -68,7 +71,7 @@ export default class Lens extends View {
     cx.spawn(async (cx) => {
       let outcome;
       try {
-        const response = await fetch(M.boardUrl(this.endpoint), { headers: { accept: "application/json" } });
+        const response = await this.request(M.boardUrl(this.endpoint));
         if (!response.ok) outcome = { error: M.httpError(response.status) };
         else {
           const payload = await response.json().catch(() => null);
@@ -79,7 +82,7 @@ export default class Lens extends View {
           }
         }
       } catch (caught) {
-        outcome = { error: M.networkError(this.endpoint, caught) };
+        outcome = { error: caught.userMessage || M.networkError(this.endpoint, caught) };
       }
       this.reading = false;
       if (turn !== this.turn) return;
@@ -145,7 +148,7 @@ export default class Lens extends View {
     cx.spawn(async (cx) => {
       const submission = C.submitAction(this.creation, async () => {
         const fields = Object.fromEntries(Object.entries(this.draft).map(([key, input]) => [key, input.value()]));
-        const payload = await C.postAction(this.endpoint, "/api/v1/sympp/herdr/work-requests", C.requestBody(fields));
+        const payload = await C.postAction(this.endpoint, "/api/v1/sympp/herdr/work-requests", C.requestBody(fields), this.request);
         const id = payload.work_request?.work_request?.id;
         if (!id) throw new Error("The job was submitted but its ID is missing. Refresh before submitting again.");
         return id;
@@ -175,7 +178,7 @@ export default class Lens extends View {
     const draft = this.answers[question.key];
     cx.spawn(async (cx) => {
       const submission = C.submitAction(draft,
-        async () => C.postAction(this.endpoint, C.answerPath(question), C.answerBody(question, draft.choice, draft.input.value())),
+        async () => C.postAction(this.endpoint, C.answerPath(question), C.answerBody(question, draft.choice, draft.input.value()), this.request),
         () => { draft.open = false; draft.saved = true; draft.input.set_value(""); this.retry(cx); });
       cx.notify();
       await submission;
@@ -188,6 +191,7 @@ export default class Lens extends View {
     const action = this.jumps[binding.address] = { pending: false, error: null };
     cx.spawn(async (cx) => {
       const submission = C.submitAction(action, async () => {
+        await C.requireAgentAccess(this.endpoint, this.request);
         let result;
         try { result = await exec(binding.host.node, M.bindingCheckArgs(binding), { on: binding.machine }); }
         catch { throw new Error("Agent helper unavailable. Check the execution host."); }
@@ -334,7 +338,7 @@ export default class Lens extends View {
     const compact = this.compact;
     const counts = M.verdictCounts(all);
     const stale = M.isStale(this.net, now);
-    const needed = counts.needs > 0
+    const needed = this.net.data?.offline === true ? div().flex_none().text_size(12).text_color(t.muted).child("Offline copy") : counts.needs > 0
       ? h_flex().gap(7).items_center().flex_none().child(div().size(7).rounded(4).bg(t.blocked)).child(div().text_size(12.5).font_semibold().text_color(t.blocked).child(`You're needed in ${counts.needs}`))
       : div().flex_none().text_size(12.5).text_color(t.dim).child("Nothing needs you");
     const fresh = div().flex_none().text_size(11).font_family(MONO).text_color(stale ? t.blocked : t.dim)
@@ -594,7 +598,8 @@ export default class Lens extends View {
     this.selected = this.following ?? M.pickSelection(jobs, this.selected);
     const needs = M.needsOf(jobs);
     const job = jobs.find((j) => j.id === this.selected) ?? null;
-    const bindings = M.discoverBindings(this.hosts ?? shared("sympp.hosts"), terminals());
+    const bindings = M.discoverBindings(this.hosts ?? shared("sympp.hosts"), terminals()).map((binding) => board.offline === false
+      ? binding : { ...binding, available: false, unavailable: board.offline ? "Offline copy" : "Update S++ for agent access" });
     const top = [this.header(t, scopes, scope, jobs, now), this.staleBar(t, now)];
     if (this.intake) return this.root(t, [...top, this.intakeForm(t)]);
 

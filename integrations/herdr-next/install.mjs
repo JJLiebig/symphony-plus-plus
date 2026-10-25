@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, readdir, chmod } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [o
   --home <folder>        Herdr-app home (default: HERDR_APP_HOME or ~/.config/herdr-app)
   --open <overview|panel> Open a native tab or a pane beside the focused terminal
   --app <executable>     Herdr-app executable (default: herdr-app)
+  --session <name>       Explicit local core session for agent navigation
   --replace              Replace a previously installed mod with this version
   --help                 Show this help
 The S++ backend and your existing layouts, topics and terminals are unchanged.`;
@@ -31,7 +32,7 @@ async function main() {
   try {
     ({ values } = parseArgs({ options: {
       endpoint: { type: 'string' }, home: { type: 'string' },
-      open: { type: 'string' }, app: { type: 'string' },
+      open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' },
       replace: { type: 'boolean' }, help: { type: 'boolean' },
     } }));
   } catch (error) {
@@ -55,27 +56,40 @@ async function main() {
   }
   const home = resolve(values.home || process.env.HERDR_APP_HOME || join(homedir(), '.config', 'herdr-app'));
   const target = join(home, 'mods', 'sympp');
-  const source = join(dirname(fileURLToPath(import.meta.url)), 'mods', 'sympp');
-  const files = await Promise.all(['main.js', 'model.js', 'mod.json'].map(async name => ({
-    name, body: await readFile(join(source, name), 'utf8'), existing: await contents(join(target, name)),
+  const here = dirname(fileURLToPath(import.meta.url));
+  const helper = join(home, 'tools', 'sympp-herdr.js');
+  const httpHelper = join(home, 'tools', 'sympp-http.cjs');
+  const source = join(here, 'mods', 'sympp');
+  const names = (await readdir(source)).filter(name => name.endsWith('.js') || name === 'mod.json');
+  const sources = names.map(name => ({ from: join(source, name), to: join(target, name) }));
+  sources.push({ from: resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts/sympp-herdr.js'), to: helper });
+  sources.push({ from: join(here, 'http.cjs'), to: httpHelper });
+  const files = await Promise.all(sources.map(async ({ from, to }) => ({
+    to, body: await readFile(from, 'utf8'), existing: await contents(to),
   })));
   const changed = files.filter(file => file.existing !== null && file.existing !== file.body);
   if (changed.length && !values.replace) {
-    emit({ error: 'The installed S++ mod differs; no files were changed',
+    emit({ error: 'The installed S++ integration differs; no files were changed',
       help: 'Keep your edits, or rerun with --replace to install this version.' });
     return 1;
   }
-  await mkdir(target, { recursive: true });
-  for (const { name, body, existing } of files) {
+  for (const { to, body, existing } of files) {
     if (existing === body) continue;
-    const temporary = join(target, `.${name}.${process.pid}.tmp`);
+    await mkdir(dirname(to), { recursive: true });
+    const temporary = `${to}.${process.pid}.tmp`;
     await writeFile(temporary, body, 'utf8');
-    await rename(temporary, join(target, name));
+    await rename(temporary, to);
   }
+  const session = values.session || process.env.HC_SESSION;
+  const requests = join(home, 'data', 'sympp-requests');
+  await mkdir(requests, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') await chmod(requests, 0o700);
+  const hosts = { local: { node: process.execPath, helper, ...(session ? { session } : {}) } };
+  const props = { endpoint, hosts, bridge: { node: process.execPath, helper: httpHelper } };
   const command = values.open === 'panel' ? 'pane.split' : 'tab.new';
   const args = values.open === 'panel'
-    ? { direction: 'right', mod: 'sympp', props: { endpoint, role: 'panel' } }
-    : { name: 'S++', mod: 'sympp', props: { endpoint } };
+    ? { direction: 'right', mod: 'sympp', props: { ...props, role: 'panel' } }
+    : { name: 'S++', mod: 'sympp', props };
   if (values.open) {
     const child = spawnSync(values.app || 'herdr-app', ['do', command, JSON.stringify(args)], {
       env: { ...process.env, HERDR_APP_HOME: home }, encoding: 'utf8', windowsHide: true,

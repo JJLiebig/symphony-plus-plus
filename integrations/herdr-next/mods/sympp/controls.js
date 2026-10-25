@@ -35,6 +35,15 @@ export async function postAction(endpoint, path, body, fetcher = fetch) {
   return payload;
 }
 
+// A copied ledger can retain live WR IDs; agent access belongs to the currently connected factory.
+export async function requireAgentAccess(endpoint, fetcher = fetch) {
+  const response = await fetcher(`${endpoint}/api/v1/sympp/herdr/dashboard`, { headers: { accept: "application/json" } });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.runtime?.offline !== false) {
+    throw new Error(payload?.runtime?.offline === true ? "Agent access is disabled in an offline copy." : "Couldn't verify agent access. Refresh S++ and try again.");
+  }
+}
+
 // The same latch protects button and keyboard activation; drafts clear only after success.
 export async function submitAction(action, send, accepted) {
   if (action.pending) return;

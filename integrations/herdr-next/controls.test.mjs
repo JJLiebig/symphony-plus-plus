@@ -146,3 +146,21 @@ test('native actions send JSON-only requests and surface persisted success or ac
     assert.equal(req.headers.forwarded, undefined);
   }
 });
+
+test('an offline copy with identical job IDs cannot authorize an agent jump', async (t) => {
+  let mode = false;
+  const server = createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ work_request_details: [detail('same-copied-id', 'owner/repo')],
+      ...(mode === null ? {} : { runtime: { offline: mode } }) }));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const endpoint = `http://127.0.0.1:${server.address().port}`;
+  await C.requireAgentAccess(endpoint);
+  mode = true;
+  await assert.rejects(C.requireAgentAccess(endpoint), /offline copy/);
+  mode = null;
+  await assert.rejects(C.requireAgentAccess(endpoint), /verify agent access/);
+});

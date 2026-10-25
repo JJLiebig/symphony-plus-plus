@@ -111,7 +111,7 @@ export function parseBoard(payload) {
   const now = ms(payload.generated_at) ?? Date.now();
   const guidance = payload.guidance_requests?.guidance_requests ?? [];
   const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now, guidance));
-  return { now, jobs };
+  return { now, jobs, offline: typeof payload.runtime?.offline === "boolean" ? payload.runtime.offline : null };
 }
 
 function buildJob(detail, now, guidance) {

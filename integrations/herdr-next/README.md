@@ -20,6 +20,8 @@ node integrations/herdr-next/install.mjs --endpoint $origin --open overview
 Herdr-app must already be open. If its executable is not on `PATH`, pass
 `--app <executable>`. `--home <folder>` selects an isolated Herdr-app home;
 otherwise the installer follows `HERDR_APP_HOME` or `~/.config/herdr-app`.
+For a nondefault local core, pass `--session <name>`; the installer otherwise
+retains its `HC_SESSION` when set.
 Without `--open`, it installs the files and prints the Herdr command to open
 them later.
 
@@ -29,8 +31,9 @@ For a native panel beside the focused terminal:
 node integrations/herdr-next/install.mjs --endpoint $origin --open panel
 ```
 
-The installer adds only `mods/sympp`. It leaves layouts, topics, compositions,
-settings and terminals intact. Existing mod edits are protected; use `--replace`
+The installer adds `mods/sympp`, two scripts under `tools/`, and a private
+request directory under `data/`. It leaves layouts, topics, compositions,
+settings and terminals intact. Existing edits are protected; use `--replace`
 explicitly to install this version over a differing copy. Close an S++ pane
 with Herdr's ordinary pane or tab controls.
 
@@ -50,6 +53,23 @@ expose its loopback API publicly or assume every machine shares a filesystem.
 Terminal bindings identify the core and the launched process. Recovered shells
 are not resumed agents. A last-known S++ session location is displayed as an
 observation, without claiming that its agent is still alive.
+
+Native agent jumps require an online factory and a fresh process identity check.
+An offline copy can retain identical job IDs; it cannot authorize agent access.
+
+The desktop view needs local Node.js. Herdr currently exposes `fetch` but gives
+mods no network grants ([upstream proposal](https://github.com/herdrdev/herdr-app/issues/14)).
+This package therefore uses an explicit installed HTTP adapter through existing
+`exec`, with one process per refresh. Requests use private files rather than
+command arguments, are removed after completion, and are never automatically
+replayed. A crash can leave a request file in that private directory. Responses
+keep their real HTTP status; redirects are not followed.
+
+Agent execution uses the separate
+[optional Herdr-next execution procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-worker/references/herdr-execution.md).
+Fresh cross-provider handoffs carry a bounded task and evidence. Continuing an
+existing agent depends on its reported status and the core's supported send
+conditions; it is not a shared provider transcript.
 
 ## Qualification
 
