@@ -470,7 +470,9 @@ jobs:
 
       - name: Check native Herdr integration
         working-directory: .
-        run: node --test integrations/herdr-next/*.test.mjs
+        run: |
+          node --test integrations/herdr-next/*.test.mjs
+          node --test plugins/symphony-plus-plus-mcp/tests/launcher/herdr-execution.test.js
 
       - name: Check frontend quality
         run: npm run quality

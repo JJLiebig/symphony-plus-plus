@@ -117,16 +117,19 @@ function save(file, value) {
 function loadReceipt(file) {
   const receipt = read(file, true);
   if (receipt?.schema_version !== 1 || !text(receipt.launch_id) || !text(receipt.core_id) || !text(receipt.cwd) ||
-      !PROVIDERS.includes(receipt.provider) || (receipt.pid !== null && !Number.isSafeInteger(receipt.pid))) {
+      !(PROVIDERS.includes(receipt.provider) || (receipt.kind === "session" && receipt.provider === "agent")) ||
+      (receipt.pid !== null && !Number.isSafeInteger(receipt.pid)) ||
+      (receipt.kind === "session" && (!Number.isSafeInteger(receipt.process_id) || receipt.process_id <= 0 ||
+        !text(receipt.process_liveness_pipe) || !/^[a-f0-9]{64}$/.test(receipt.process_liveness_token)))) {
     fail("invalid_receipt", "Use the receipt returned by launch.", 2);
   }
   return { ...receipt, receipt: path.resolve(file) };
 }
 
 // hc connect supplies the same JSON-RPC transport on Windows, macOS and Linux.
-function connectCore(session, command = "hc", prefix = []) {
+function connectCore(session, command = "hc", prefix = [], environment = process.env) {
   // connect may start a core: never seed its inherited environment with parent credentials.
-  const env = Object.fromEntries(TRANSPORT_ENV.filter((key) => process.env[key]).map((key) => [key, process.env[key]]));
+  const env = Object.fromEntries(TRANSPORT_ENV.filter((key) => environment[key]).map((key) => [key, environment[key]]));
   if (session) { delete env.HC_SOCKET; delete env.HC_TERMINAL_SOCKET; }
   if (!session && !env.HC_SOCKET && env.HC_TERMINAL_SOCKET) env.HC_SOCKET = env.HC_TERMINAL_SOCKET;
   const child = spawn(command, [...prefix, "connect", ...(session ? ["--session", session] : [])], { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -173,8 +176,33 @@ async function inspect(core, info, receipt) {
   let terminal;
   try { terminal = await core.call("terminal.get", { terminal: receipt.terminal_id }); }
   catch (error) { if (error.code !== "not_found") throw error; return { ...receipt, state: "stale", status: "unknown", reason: "terminal_gone" }; }
-  if (terminal.pid !== receipt.pid || terminal.labels?.["sympp.launch_id"] !== receipt.launch_id) return { ...receipt, state: "stale", status: "unknown", reason: "process_changed" };
+  const prefix = receipt.kind === "session" ? "sympp.session_" : "sympp.";
+  const identity = receipt.kind === "session" ? "sympp.session_id" : "sympp.launch_id";
+  if (terminal.pid !== receipt.pid || terminal.labels?.[identity] !== receipt.launch_id) return { ...receipt, state: "stale", status: "unknown", reason: "process_changed" };
+  if (receipt.kind === "session" && (terminal.labels?.[`${prefix}core_id`] !== receipt.core_id ||
+      terminal.labels?.[`${prefix}process_id`] !== String(receipt.process_id) || terminal.labels?.[`${prefix}role`] !== receipt.role ||
+      (terminal.labels?.[`${prefix}work_request_id`] || null) !== receipt.work_request_id ||
+      (terminal.labels?.[`${prefix}work_package_id`] || null) !== receipt.work_package_id || !await sessionAlive(receipt))) {
+    return { ...receipt, state: "stale", status: "unknown", reason: "session_gone" };
+  }
   return { ...receipt, state: terminal.state, status: terminal.status?.state || "unknown", reason: terminal.reason || null };
+}
+
+function sessionAlive(receipt) {
+  try { process.kill(receipt.process_id, 0); } catch (_) { return Promise.resolve(false); }
+  return new Promise(resolve => {
+    const socket = require("node:net").createConnection(receipt.process_liveness_pipe);
+    let response = "";
+    const finish = alive => { socket.destroy(); resolve(alive); };
+    socket.setEncoding("utf8");
+    socket.setTimeout(1000, () => finish(false));
+    socket.on("data", chunk => {
+      response += chunk;
+      if (response.length > receipt.process_liveness_token.length) finish(false);
+    });
+    socket.once("end", () => finish(response === receipt.process_liveness_token));
+    socket.once("error", () => finish(false));
+  });
 }
 
 async function publishPid(core, receipt) {
@@ -293,7 +321,7 @@ async function main(argv = process.argv.slice(2), connect = connectCore) {
         }
       }
     }
-    const { request_hash, ...publicResult } = result;
+    const { request_hash, process_liveness_pipe, process_liveness_token, ...publicResult } = result;
     process.stdout.write((json ? JSON.stringify(publicResult) : toon(publicResult)) + "\n");
   } catch (error) {
     const output = error instanceof Failure ? { error: error.code, help: error.help } : { error: "operation_failed", help: "Check the input files and selected execution machine. No dependency output is exposed." };

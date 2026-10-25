@@ -440,35 +440,43 @@ function spaceNames(ids, spaceList) {
 
 // Labels identify candidates, never proof. Only trusted host configuration chooses executable paths.
 export function discoverBindings(hosts, terminalList) {
-  return (terminalList ?? []).flatMap((terminal) => {
+  return (terminalList ?? []).flatMap((terminal) => ["launch", "session"].flatMap(kind => {
     const labels = terminal.labels ?? {};
-    if (!labels["sympp.launch_id"] || !labels["sympp.work_request_id"]) return [];
+    const prefix = kind === "session" ? "sympp.session_" : "sympp.";
+    const identityKey = kind === "session" ? "sympp.session_id" : "sympp.launch_id";
+    const jobId = labels[`${prefix}work_request_id`] || null;
+    const pkgId = labels[`${prefix}work_package_id`] || null;
+    if (!labels[identityKey] || (!jobId && (kind !== "session" || !pkgId))) return [];
     const address = terminal.address;
     if (typeof address !== "string" || !address) return [];
     const split = address.indexOf("/");
     const machine = split < 0 ? null : address.slice(0, split);
     const terminalId = split < 0 ? address : address.slice(split + 1);
     const host = hosts?.[machine ?? "local"];
-    const pid = Number(labels["sympp.pid"]);
-    const receipt = labels["sympp.receipt"];
-    const identity = typeof labels["sympp.core_id"] === "string" && Number.isSafeInteger(pid) && pid > 0 && pid === terminal.pid;
+    const pid = Number(labels[`${prefix}pid`]);
+    const processId = kind === "session" ? Number(labels[`${prefix}process_id`]) : null;
+    const receipt = labels[`${prefix}receipt`];
+    const identity = typeof labels[`${prefix}core_id`] === "string" && Number.isSafeInteger(pid) && pid > 0 && pid === terminal.pid
+      && (kind !== "session" || (Number.isSafeInteger(processId) && processId > 0));
     const absoluteReceipt = typeof receipt === "string" && /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(receipt);
     const configured = typeof host?.node === "string" && Boolean(host.node) && typeof host?.helper === "string" && Boolean(host.helper);
     return [{
-      jobId: labels["sympp.work_request_id"], pkgId: labels["sympp.work_package_id"] || null,
-      role: labels["sympp.role"] || "agent", address, terminalId, machine,
+      kind, processId, jobId, pkgId,
+      role: labels[`${prefix}role`] || "agent", address, terminalId, machine,
       provider: { codex: "Codex", claude: "Claude", opencode: "OpenCode" }[labels["sympp.provider"]] || "Agent",
       status: typeof terminal.status === "string" ? terminal.status : terminal.status?.state ?? null,
-      launchId: labels["sympp.launch_id"], coreId: labels["sympp.core_id"], pid, receipt,
+      launchId: labels[identityKey], coreId: labels[`${prefix}core_id`], pid, receipt,
       host: configured ? host : null,
       available: configured && identity && absoluteReceipt && terminal.state === "live",
       unavailable: !configured ? "Agent helper unavailable" : "Agent is no longer running",
     }];
-  });
+  }));
 }
 
 export function bindingsFor(bindings, jobId, pkgId) {
-  return bindings.filter((b) => b.jobId === jobId && b.pkgId === (pkgId ?? null));
+  return bindings.filter(b => b.pkgId === (pkgId ?? null) &&
+    (b.jobId === jobId || (b.kind === "session" && b.jobId === null && b.pkgId !== null)))
+    .filter((b, index, matches) => matches.findIndex(other => other.address === b.address && other.role === b.role) === index);
 }
 
 export function bindingCheckArgs(binding) {
@@ -490,12 +498,15 @@ export function checkedBinding(binding, result, terminalList) {
   if (!binding.available || result?.code !== 0) return false;
   let receipt;
   try { receipt = JSON.parse(result.stdout); } catch { return false; }
+  if (binding.kind === "session" && (receipt.kind !== "session" || receipt.process_id !== binding.processId || receipt.role !== binding.role)) return false;
   if (receipt.state !== "live" || receipt.core_id !== binding.coreId || receipt.terminal_id !== binding.terminalId ||
       receipt.pid !== binding.pid || receipt.launch_id !== binding.launchId ||
       receipt.work_request_id !== binding.jobId || (receipt.work_package_id ?? null) !== binding.pkgId) return false;
-  const current = discoverBindings({ [binding.machine ?? "local"]: binding.host }, terminalList).find((b) => b.address === binding.address);
+  const current = discoverBindings({ [binding.machine ?? "local"]: binding.host }, terminalList)
+    .find(b => b.address === binding.address && b.kind === binding.kind);
   return Boolean(current?.available && current.coreId === binding.coreId && current.launchId === binding.launchId &&
-    current.pid === binding.pid && current.receipt === binding.receipt && current.jobId === binding.jobId && current.pkgId === binding.pkgId);
+    current.pid === binding.pid && current.processId === binding.processId && current.role === binding.role &&
+    current.receipt === binding.receipt && current.jobId === binding.jobId && current.pkgId === binding.pkgId);
 }
 
 // ---------- Text ----------

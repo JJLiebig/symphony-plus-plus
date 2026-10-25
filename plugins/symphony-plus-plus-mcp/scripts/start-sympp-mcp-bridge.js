@@ -61,7 +61,7 @@ function diagnostic(message) {
 }
 
 function herdrAvailable() {
-  return process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID);
+  return !sessionLocation.native && process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID);
 }
 
 function decodeHerdrBinding(value) {
@@ -184,6 +184,13 @@ function herdrMetadataArgs(binding, backend) {
 }
 
 function reportHerdrBinding(force = false) {
+  if (sessionLocation.native) {
+    if (herdrBinding && (force || Date.now() - herdrReportedAt >= HERDR_METADATA_REFRESH_MS)) {
+      sessionLocation.report(herdrBinding, { pipe: livenessPipe, token: livenessToken });
+      herdrReportedAt = Date.now();
+    }
+    return;
+  }
   if (!herdrBinding || !herdrBackend || !herdrAvailable()) return;
   if (!force && Date.now() - herdrReportedAt < HERDR_METADATA_REFRESH_MS) return;
   herdrMetadataOwned = true;
@@ -192,6 +199,7 @@ function reportHerdrBinding(force = false) {
 }
 
 function clearHerdrBinding() {
+  sessionLocation.clear();
   const owned = herdrMetadataOwned;
   herdrBinding = null;
   herdrBackend = null;
@@ -326,7 +334,9 @@ function processAlive(pid) {
 
 function ensureLivenessProbe() {
   if (livenessServer) return Promise.resolve();
-  livenessPipe = `\\\\.\\pipe\\sympp-mcp-${process.pid}-${crypto.randomUUID().replace(/-/g, "")}`;
+  livenessPipe = process.platform === "win32"
+    ? `\\\\.\\pipe\\sympp-mcp-${process.pid}-${crypto.randomUUID().replace(/-/g, "")}`
+    : path.join(os.tmpdir(), `spp-${process.pid}-${crypto.randomBytes(8).toString("hex")}.sock`);
   livenessToken = crypto.randomBytes(32).toString("hex");
   return new Promise((resolve, reject) => {
     const server = net.createServer((socket) => {
@@ -336,6 +346,7 @@ function ensureLivenessProbe() {
     const failed = (error) => { try { server.close(); } catch (_) { } reject(error); };
     server.once("error", failed);
     server.listen(livenessPipe, () => {
+      if (process.platform !== "win32") fs.chmodSync(livenessPipe, 0o600);
       server.removeListener("error", failed);
       livenessServer = server;
       resolve();
@@ -1265,6 +1276,7 @@ async function bridge(identity, state, runtimeFile) {
     diagnostic(`Symphony++ MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
 
     input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity, terminal: false });
+    input.once("close", () => sessionLocation.close());
     for await (const line of input) {
       if (!line.trim()) continue;
       let parsed = null;
@@ -1339,6 +1351,7 @@ async function bridge(identity, state, runtimeFile) {
     return true;
   } finally {
     closing = true;
+    if (input) sessionLocation.close();
     if (heartbeat) clearInterval(heartbeat);
     agent.destroy();
     cancelPreparation();

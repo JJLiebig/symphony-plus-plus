@@ -75,6 +75,35 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert SessionLocations.observe(payload, response, server) == server
   end
 
+  test "successful native tool observations retain separate terminal and MCP process identities" do
+    id = "native-location-#{System.unique_integer([:positive])}"
+    server = %Server{config: Config.default(repo: Repo)}
+
+    native = %{
+      "core_id" => "core-one",
+      "terminal_id" => "t8",
+      "pid" => 123,
+      "process_id" => 456,
+      "client_id" => "client-native",
+      "process_liveness_token" => "private-token",
+      "socket_path" => "private-selector"
+    }
+
+    payload = tool_call_request("native-location", "create_work_request", %{}) |> with_location("client-native", "build-desk", native)
+    response = %{"result" => %{"structuredContent" => %{"work_request" => %{"id" => id}}}}
+
+    assert SessionLocations.observe(payload, response, server).client_location["herdr"] == native
+    location = SessionLocations.get(Repo, "work_request", id)
+    assert location.source == "herdr_next"
+    assert location.herdr["pid"] == 123
+    assert location.herdr["process_id"] == 456
+    public = SessionLocations.public(location, %{})
+    assert public["herdr"]["core_id"] == "core-one"
+    assert public["herdr"]["terminal_id"] == "t8"
+    refute inspect(public) =~ "private-"
+    refute Map.has_key?(location.herdr, "process_liveness_token")
+  end
+
   setup_all do
     database_path = WorkPackageFactory.database_path()
     endpoint_config = Application.get_env(:symphony_elixir, Endpoint, [])
