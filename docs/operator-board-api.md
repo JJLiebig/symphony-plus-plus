@@ -23,6 +23,17 @@ ledger without running migrations, registering a dashboard opener, updating
 session locations, or writing claims, audit or business state. Subscribe to
 `/api/v1/sympp/herdr/events` and refetch after invalidation.
 
+`GET /api/v1/sympp/herdr/work-requests/:work_request_id` uses the same native
+read authority and never runs ledger migrations. It returns the request's
+clarification questions, comments, packages, product tree, execution graph,
+attention keys and current worker sessions. `decision_logs` contains every
+decision for that request, newest first, with the existing decision entry shape;
+`summary.decision_count` remains the total. Browser detail enrichment still
+returns only the newest three decisions. An uninitialized ledger returns HTTP
+503 with `{error:{code:"storage_failed",message}}`; a busy ledger returns HTTP
+503 with `{error:{code:"database_busy",message}}`. These reads do not initialize
+or repair the ledger.
+
 ## Native human actions
 
 These optional native POST routes use the same canonical input validation,

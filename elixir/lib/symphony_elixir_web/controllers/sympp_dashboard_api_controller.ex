@@ -235,7 +235,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   @spec herdr_work_request_detail(Conn.t(), map()) :: Conn.t()
   def herdr_work_request_detail(conn, %{"work_request_id" => work_request_id}) do
     if herdr_consumer?(conn) do
-      Runtime.with_dashboard_repo(&herdr_work_request_detail_response(&1, conn, work_request_id))
+      Runtime.with_dashboard_repo(&herdr_work_request_detail_response(&1, conn, work_request_id), migrate?: false)
       |> case do
         {:error, reason} -> error_response(conn, reason)
         %Conn{} = conn -> conn
