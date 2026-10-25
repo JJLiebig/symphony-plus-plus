@@ -61,11 +61,12 @@ node integrations/herdr-next/install.mjs --endpoint $origin --chrome
 ```
 
 - **S++** sits beside Files and Changes and toggles the S++ panel the same way.
-- An agent started for S++ shows the S++ mark in the Agents list, with its
-  package's stage: build, checks, review with its round (amber from the third),
-  ready to merge or landed, and an orange dot on the mark when it needs you. A
-  stage older than about two minutes shows dimmed as last known. Stages arrive
-  from an open S++ view's board reads, the panel included, once it has been shown.
+- An agent started for S++ shows a small S++ glyph tucked behind its icon in the
+  Agents list, and after its name its package's stage: build, checks, review with
+  its round (amber from the third), ready to merge or landed, and an orange dot
+  when it needs you. A stage older than about two minutes shows dimmed as last
+  known. Stages arrive from an open S++ view's board reads, the panel included,
+  once it has been shown.
 
 The installer backs up the layout and both mods under `data/sympp-chrome`, adds
 a `sympp` panel to the layout's `panel-body` stack, and patches the two mods in
@@ -86,7 +87,8 @@ node integrations/herdr-next/install.mjs --remove-chrome
 ```
 
 restores both mods from their backups and removes the S++ panel from the layout,
-keeping any other layout change made since.
+keeping any other layout change made since. A desk with another version of the
+chrome is refused; remove it with the installer that added it, then install again.
 
 The native view requires a backend with the native board endpoint. Updating the
 view with this installer does not update or restart S++. For an existing Windows
