@@ -8,7 +8,7 @@ The installed plugin or portable Skills bundle includes
 `scripts/sympp-herdr.js`. Run it with Node on the machine where the worker will
 execute. It uses the existing `hc connect` API and the selected provider's own
 configuration and login. It never configures a provider, copies credentials,
-dispatches a package, claims a grant, or changes a running agent.
+dispatches a package, claims a grant, or reconfigures a running agent.
 
 ## Start and hand off
 
@@ -29,8 +29,9 @@ other ledgers. A launch receipt is an observation, never authorization. The
 helper cannot verify ledger authority and does not contact the ledger.
 
 All providers receive a short prompt pointing at the input file. This keeps
-large assignments out of OS command-line limits and process listings. Their
-normal permission prompts remain enabled. Codex uses `--no-daemon` so its work
+large assignments out of OS command-line limits and process listings. The helper
+adds no permission-bypass flags; provider configuration determines prompts.
+Codex uses `--no-daemon` so its work
 stays in the core terminal. Claude accepts `--model opus`; OpenCode models use
 `provider/model`. Omit `--model` to use the provider's configuration.
 
