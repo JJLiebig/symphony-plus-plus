@@ -230,7 +230,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   defp maybe_transition_merged(repo, %WorkPackage{} = work_package, payload, metadata) do
     case merged_payload_validation(work_package, payload) do
       :ok ->
-        {:ok, result} = reconcile_transition_delivery(repo, work_package, transition_merged(repo, work_package, payload, metadata))
+        transition = transition_merged(repo, work_package, payload, metadata)
+        {:ok, result} = reconcile_transition_delivery(repo, work_package, transition)
         result
 
       {:error, "pr_not_merged", _extras} ->
@@ -307,15 +308,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   defp normalize_transaction_result({:ok, value}), do: {:ok, value}
   defp normalize_transaction_result({:error, reason}), do: {:error, reason}
 
+  defp persist_merged_transition(repo, %WorkPackage{work_request_id: request_id} = work_package, payload, metadata)
+       when is_binary(request_id) do
+    with {:ok, _event} <- append_merge_evidence(repo, work_package, %{work_package | status: "merged"}, payload, metadata),
+         {:ok, _delivery} <- DeliveryReconciler.reconcile_work_package(repo, work_package.id) do
+      WorkPackageRepository.get(repo, work_package.id)
+    end
+  end
+
   defp persist_merged_transition(repo, %WorkPackage{} = work_package, payload, metadata) do
-    with {:ok, _event} <- append_merge_evidence(repo, work_package, %{work_package | status: "merged"}, payload, metadata) do
-      if is_binary(work_package.work_request_id) do
-        with {:ok, _delivery} <- DeliveryReconciler.reconcile_work_package(repo, work_package.id) do
-          WorkPackageRepository.get(repo, work_package.id)
-        end
-      else
-        WorkPackageRepository.update_status(repo, work_package.id, work_package.status, "merged")
-      end
+    with {:ok, updated} <- WorkPackageRepository.update_status(repo, work_package.id, work_package.status, "merged"),
+         {:ok, _event} <- append_merge_evidence(repo, work_package, updated, payload, metadata) do
+      {:ok, updated}
     end
   end
 

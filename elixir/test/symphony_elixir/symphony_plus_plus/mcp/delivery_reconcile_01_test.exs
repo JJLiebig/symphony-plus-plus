@@ -5,6 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
   alias SymphonyElixir.FakeGitHubClient
   alias SymphonyElixir.GitHubPullRequestFixtures
+  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
 
   test "unbound reads redact historical credential-bearing request and delivery scope", %{repo: repo} do
     work_request =
@@ -261,12 +262,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert get_in(accepted, ["result", "structuredContent", "work_package", "status"]) == "ready_for_merge"
       assert repo.get!(ClaimLease, other_owner.id).status == "released"
 
-      FakeGitHubClient.put_response("nextide/repo", 413, GitHubPullRequestFixtures.metadata(413, head, base_branch: anchor.base_branch, merged?: true))
+      FakeGitHubClient.put_response(
+        "nextide/repo",
+        413,
+        GitHubPullRequestFixtures.metadata(413, head, base_branch: anchor.base_branch, merged?: true)
+      )
       different_pr = mcp_tool(repo, session, "sync_pr", Map.put(url_only, "url", "https://github.com/nextide/repo/pull/413"))
       assert get_in(different_pr, ["error", "data", "reason"]) == "pr_reference_mismatch"
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_merge"
 
-      FakeGitHubClient.put_response("nextide/repo", 412, GitHubPullRequestFixtures.metadata(412, String.duplicate("c", 40), base_branch: anchor.base_branch, merged?: true))
+      merged_metadata =
+        GitHubPullRequestFixtures.metadata(412, String.duplicate("c", 40), base_branch: anchor.base_branch, merged?: true)
+
+      FakeGitHubClient.put_response("nextide/repo", 412, merged_metadata)
       landed = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id, "number" => 412, "repository" => "nextide/repo"})
       assert get_in(landed, ["result", "structuredContent", "work_package", "status"]) == "merged"
       assert repo.get_by!(WorkPackageDelivery, work_package_id: approved_slice.id).outcome == "pr_merged"

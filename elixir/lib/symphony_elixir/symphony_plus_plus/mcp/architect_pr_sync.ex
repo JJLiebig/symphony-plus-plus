@@ -11,6 +11,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{
     Client,
     DefaultClient,
+    DryClient,
     MergeReconciler,
     PullRequest,
     PullRequestArtifact,
@@ -24,7 +25,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository, as: WorkPackageRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.{WorkPackage, WorkPackageActivity}
-  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryReconciler
 
   @handoff_statuses ["ready_for_worker", "active", "reviewing", "ci_waiting", "ready_for_merge"]
   @architect_actor %{grant_role: "architect", capabilities: ["architect:lifecycle.transition"]}
@@ -43,10 +43,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
          :ok <- require_merge_evidence(payload),
          {:ok, result} <- persist(repo, session, work_package, payload) do
       if PullRequestProgress.merged?(payload) do
-        with {:ok, delivery} <- DeliveryReconciler.reconcile_work_package(repo, work_package.id),
-             {:ok, updated} <- WorkPackageRepository.get(repo, work_package.id) do
-          {:ok, Map.merge(result, %{status: updated.status, delivery_reconciliation: delivery})}
-        end
+        MergeReconciler.reconcile_work_package(repo, work_package.id, pr_payload: payload, client: DryClient, metadata: payload)
       else
         {:ok, result}
       end
@@ -108,21 +105,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectPRSync do
 
   defp require_handoff(repo, package, payload) do
     if PullRequestProgress.merged?(payload) do
-      with true <- package.status not in ["planned", "skipped", "closed", "abandoned"],
-           {:ok, state} <- PlanningRepository.get_state(repo, package.id) do
-        case PullRequestProgress.current_pr_state(state.progress_events) do
-          {:ok, current} -> if PullRequestProgress.same_pr?(payload, current.ref), do: :ok, else: {:error, :pr_reference_mismatch}
-          {:error, :missing_attached_pr} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
-      else
-        false -> {:error, :invalid_work_package_status}
-        error -> error
-      end
+      require_merged_handoff(repo, package, payload)
     else
       with :ok <- require_unowned(repo, package.id), do: require_mutable_handoff(repo, package, payload)
     end
   end
+
+  defp require_merged_handoff(repo, %WorkPackage{status: status} = package, payload)
+       when status not in ["planned", "skipped", "closed", "abandoned"] do
+    with {:ok, state} <- PlanningRepository.get_state(repo, package.id),
+         {:ok, current} <- PullRequestProgress.current_pr_state(state.progress_events) do
+      if PullRequestProgress.same_pr?(payload, current.ref), do: :ok, else: {:error, :pr_reference_mismatch}
+    else
+      {:error, :missing_attached_pr} -> :ok
+      error -> error
+    end
+  end
+
+  defp require_merged_handoff(_repo, _package, _payload), do: {:error, :invalid_work_package_status}
 
   defp reconcile_readiness(_repo, %WorkPackage{status: "ready_for_merge"} = package, _reasons), do: {:ok, package}
   defp reconcile_readiness(_repo, package, [_reason | _rest]), do: {:ok, package}

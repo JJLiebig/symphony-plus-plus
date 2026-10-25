@@ -5,9 +5,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
 
   import Ecto.Query, only: [from: 2]
 
-  alias SymphonyElixir.MCPHarness
   alias SymphonyElixir.FakeGitHubClient
   alias SymphonyElixir.GitHubPullRequestFixtures
+  alias SymphonyElixir.MCPHarness
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
