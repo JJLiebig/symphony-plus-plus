@@ -108,10 +108,99 @@ function storeRoot() {
 }
 
 function receiptPath(id) { return path.resolve(storeRoot(), `${id}.json`); }
-function save(file, value) {
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
-  fs.renameSync(temporary, file);
+function save(file, value, mode = 0o600) {
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + "\n", { mode, flag: "wx" });
+    fs.renameSync(temporary, file);
+  } finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+}
+
+async function claudeTrust(cwd, env) {
+  const selected = path.join(env.CLAUDE_CONFIG_DIR || os.homedir(), ".claude.json");
+  fs.mkdirSync(path.dirname(selected), { recursive: true });
+  const lock = `${selected}.lock`;
+  // Match Claude's directory lock; never steal a live or abandoned lock.
+  for (const delay of [200, 400, 800, 1600, 3200, 4000, null]) {
+    try { fs.mkdirSync(lock); break; }
+    catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (delay === null) fail("workspace_trust_locked", "Claude's config is locked. Let its writer finish, then retry this launch.");
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  try {
+    const file = fs.existsSync(selected) ? fs.realpathSync(selected) : selected;
+    const key = process.platform === "win32" ? cwd.replace(/\\/g, "/") : cwd;
+    let changed = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+      if (!config || typeof config !== "object" || Array.isArray(config) ||
+          (config.projects != null && (typeof config.projects !== "object" || Array.isArray(config.projects)))) {
+        fail("workspace_trust_unreadable", "Repair the selected Claude profile's config before launching.");
+      }
+      if (config.projects?.[key]?.hasTrustDialogAccepted === true) return { trusted: true, changed, reason: changed ? "launch_authorized" : "already_trusted" };
+      const existing = config.projects?.[key];
+      if (existing != null && (typeof existing !== "object" || Array.isArray(existing))) fail("workspace_trust_unreadable", "Repair the selected Claude profile's project entry before launching.");
+      config.projects = { ...config.projects, [key]: { ...existing, hasTrustDialogAccepted: true } };
+      // shortcut: Claude's exit writers ignore this lock; remove when upstream shares it.
+      save(file, config, fs.existsSync(file) ? fs.statSync(file).mode : 0o600);
+      changed = true;
+      if (JSON.parse(fs.readFileSync(file, "utf8")).projects?.[key]?.hasTrustDialogAccepted === true) return { trusted: true, changed, reason: "launch_authorized" };
+    }
+    fail("workspace_trust_unverified", "Claude's config changed during trust preparation. Inspect the selected profile, then retry.");
+  } finally { fs.rmdirSync(lock); }
+}
+
+async function codexTrust(cwd, program, environment) {
+  const env = Object.fromEntries(TRANSPORT_ENV.filter(key => environment[key]).map(key => [key, environment[key]]));
+  const options = { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true, cwd: os.homedir() };
+  const child = process.platform === "win32" && /\.(cmd|bat)$/i.test(program)
+    ? spawn(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", `""${program}" app-server"`], { ...options, windowsVerbatimArguments: true })
+    : spawn(program, ["app-server"], options);
+  let pending;
+  let next = 0;
+  let dead = false;
+  const unavailable = () => {
+    dead = true;
+    pending?.reject(new Failure("workspace_trust_failed", "Codex could not prepare workspace trust. Inspect its selected profile before retrying."));
+  };
+  child.on("error", unavailable);
+  child.on("exit", unavailable);
+  child.stdin.on("error", unavailable);
+  child.stderr.resume();
+  const lines = createInterface({ input: child.stdout });
+  lines.on("line", line => {
+    let response;
+    try { response = JSON.parse(line); } catch (_) { unavailable(); return; }
+    if (response.id !== pending?.id) return;
+    if (response.error) pending.reject(new Failure("workspace_trust_failed", "Codex refused the trust edit. Inspect its selected profile and managed settings before retrying."));
+    else pending.resolve(response.result);
+  });
+  const call = (method, params) => new Promise((resolve, reject) => {
+    if (dead) { reject(new Failure("workspace_trust_failed", "Codex's config writer is unavailable. Check the selected Codex installation.")); return; }
+    const timer = setTimeout(() => reject(new Failure("workspace_trust_failed", "Codex's config writer timed out. Inspect its selected profile before retrying.")), 15000);
+    pending = { id: ++next, resolve: value => { clearTimeout(timer); resolve(value); }, reject: error => { clearTimeout(timer); reject(error); } };
+    child.stdin.write(JSON.stringify({ id: next, method, params }) + "\n");
+  });
+  try {
+    await call("initialize", { clientInfo: { name: "sympp-herdr", version: VERSION } });
+    child.stdin.write(JSON.stringify({ method: "initialized", params: {} }) + "\n");
+    const canonical = fs.realpathSync.native(cwd);
+    const key = process.platform === "win32" ? canonical.toLowerCase() : canonical;
+    let changed = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const before = await call("config/read", { includeLayers: true });
+      const user = before.layers?.find(layer => layer.name?.type === "user" && !layer.name.profile);
+      if (user?.config?.projects?.[key]?.trust_level === "trusted") return { trusted: true, changed, reason: changed ? "launch_authorized" : "already_trusted" };
+      // Codex owns TOML parsing, comment preservation, version checks and atomic editing.
+      await call("config/value/write", { keyPath: `projects.${JSON.stringify(key)}.trust_level`, value: "trusted", mergeStrategy: "replace", expectedVersion: user?.version });
+      changed = true;
+      const after = await call("config/read", { includeLayers: true });
+      if (after.layers?.some(layer => layer.name?.type === "user" && !layer.name.profile && layer.config?.projects?.[key]?.trust_level === "trusted")) return { trusted: true, changed, reason: "launch_authorized" };
+    }
+    fail("workspace_trust_unverified", "Codex's trust edit did not persist. Inspect its selected profile before retrying.");
+  } finally { lines.close(); child.stdin.end(); child.kill(); }
 }
 
 function loadReceipt(file) {
@@ -252,6 +341,9 @@ async function launch(core, info, options) {
     const returnTo = parent ? ` Report results or questions to your parent with hc send ${JSON.stringify(parent)}; include the evidence and paths they need.` : "";
     const env = Object.fromEntries(FORWARD_ENV.filter((key) => process.env[key]).map((key) => [key, process.env[key]]));
     if (options["provider-home"]) env[PROFILE_ENV[options.provider]] = path.resolve(options["provider-home"]);
+    receipt.workspace_trust = options.provider === "claude" ? await claudeTrust(cwd, env)
+      : options.provider === "codex" ? await codexTrust(cwd, options.executable, { ...process.env, ...env })
+      : { trusted: false, changed: false, reason: "no_workspace_trust_prompt" };
     save(file, receipt); // A lost spawn reply must not silently launch a second worker.
     const result = await core.call("terminal.run", {
       argv: providerArgv(options.provider, options.executable, options.model, prompt + returnTo), cwd, env, labels,
