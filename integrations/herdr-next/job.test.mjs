@@ -21,32 +21,7 @@ test('the phase comes only from request status, dispatch and delivery', () => {
   assert.equal(J.phaseOf({ ...job, status: 'something_new' }), null, 'an unknown status is not guessed');
 });
 
-test('stage columns follow the job tracks; no-PR work has only Work and Done', () => {
-  const pr = J.stageBoard(jobOf('wr-pr'));
-  assert.deepEqual(pr.columns.map((c) => c.key), ['queued', 'build', 'checks', 'review', 'merge', 'done']);
-  assert.deepEqual(pr.columns.find((c) => c.key === 'checks').packages, [], 'an empty stage keeps its place');
-  const noPr = J.stageBoard(jobOf('wr-nopr'));
-  assert.deepEqual(noPr.columns.map((c) => [c.key, c.label]), [['queued', 'Queued'], ['build', 'Work'], ['done', 'Done']]);
-  const review = { ...jobOf('wr-nopr').packages[1], stage: 'review' };
-  assert.equal(J.columnOf(review), 'build', 'a no-PR package under review is still work');
-  assert.deepEqual(J.stageBoard(jobOf('wr-shaping')), { columns: [], order: [] });
-  // Positions are by planned sequence, not by what changed last.
-  const reordered = jobOf('wr-pr');
-  reordered.packages = [...reordered.packages].reverse();
-  assert.deepEqual(J.stageBoard(reordered).order, pr.order);
-  assert.deepEqual(pr.order, ['wp-queued', 'wp-build', 'wp-review', 'wp-done']);
-});
-
-test('keyboard moves through packages in reading order and across non-empty columns', () => {
-  const board = J.stageBoard(jobOf('wr-pr'));
-  assert.equal(J.movePackage(board, null, 'down'), board.order[0]);
-  assert.equal(J.movePackage(board, board.order.at(-1), 'down'), board.order.at(-1));
-  assert.equal(J.movePackage(board, 'wp-build', 'right'), 'wp-review', 'empty Checks is skipped');
-  assert.equal(J.movePackage(board, 'wp-done', 'right'), 'wp-done');
-  assert.equal(J.movePackage({ columns: [], order: [] }, null, 'down'), null);
-});
-
-test('cards say who holds the work, what waits, what is next and the evidence, in plain words', () => {
+test('an opened package says who holds the work, what waits, what is next and the evidence, in plain words', () => {
   const job = jobOf('wr-pr');
   const card = (id) => J.packageCard(job.packages.find((pkg) => pkg.id === id), null, NOW);
   const review = card('wp-review');
@@ -55,7 +30,7 @@ test('cards say who holds the work, what waits, what is next and the evidence, i
   assert.equal(review.next, 'You · answer guidance');
   assert.equal(review.needsYou, true);
   assert.deepEqual(review.evidence, ['PR #812 open', 'checks passing', 'fast review in progress']);
-  assert.match(review.stage, /^Review · round 2/);
+  assert.match(review.stage, /^Review · round 3/);
   const queued = card('wp-queued');
   assert.equal(queued.stage, null);
   assert.deepEqual(queued.after, ['Stage board']);

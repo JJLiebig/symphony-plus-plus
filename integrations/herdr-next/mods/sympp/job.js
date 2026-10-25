@@ -1,13 +1,10 @@
-// Pure Job level: one job's phase, stage board, participating agents and decisions, from canonical
+// Pure Job level: one job's phase, package detail, participating agents and decisions, from canonical
 // S++ state and Herdr's own terminal reports. No GPUI or Herdr imports, so it is tested on its own.
 
 import { POLL, ago, shortRepo, stageText, evidenceOf, bindingsFor } from "./model.js";
 
 export const PHASES = [["shaping", "Shaping"], ["planning", "Planning"], ["executing", "Executing"], ["closing", "Closing"], ["done", "Done"]];
 const SHAPING = new Set(["draft", "ready_for_clarification", "clarifying", "human_info_needed"]);
-const PR_COLUMNS = ["queued", "build", "checks", "review", "merge", "done"];
-const NO_PR_COLUMNS = ["queued", "build", "done"];
-const COLUMN_LABEL = { queued: "Queued", build: "Build", checks: "Checks", review: "Review", merge: "Merge", done: "Done" };
 const OBSERVATION = { stale: "stale", paused: "paused", unknown: "unknown" };
 // A passed helper check counts as live for two quiet read intervals, then needs checking again.
 export const LIVE_FOR = 2 * POLL.quiet;
@@ -25,43 +22,9 @@ export function phaseOf(job) {
   return job.packages.some((pkg) => pkg.dispatchedAt !== null || pkg.stage !== "queued") ? "executing" : "planning";
 }
 
-// ---------- Stage board ----------
+// ---------- Package detail ----------
 
-// Columns come from the job's tracks, not from where packages happen to be, so they stay put.
-// A package without a PR has only Work and Done; it shares the Build column with PR work.
-export function stageBoard(job) {
-  if (job.packages.length === 0) return { columns: [], order: [] };
-  const tracks = new Set(job.packages.map((pkg) => (pkg.track === "no_pr" ? "no_pr" : "pr")));
-  const keys = tracks.has("pr") ? PR_COLUMNS : NO_PR_COLUMNS;
-  const columns = keys.map((key) => ({
-    key, label: key === "build" && !tracks.has("pr") ? "Work" : COLUMN_LABEL[key],
-    packages: job.packages.filter((pkg) => columnOf(pkg) === key).sort((a, b) => a.seq - b.seq),
-  }));
-  return { columns, order: columns.flatMap((column) => column.packages.map((pkg) => pkg.id)) };
-}
-
-export function columnOf(pkg) {
-  if (pkg.track === "no_pr" && pkg.stage !== "queued" && pkg.stage !== "done") return "build";
-  return pkg.stage;
-}
-
-// Next or previous package in reading order; left and right keep the row inside the next column.
-export function movePackage(board, current, key) {
-  if (board.order.length === 0) return null;
-  const at = board.order.indexOf(current);
-  if (at < 0) return board.order[0];
-  if (key === "down" || key === "up") return board.order[Math.max(0, Math.min(board.order.length - 1, at + (key === "down" ? 1 : -1)))];
-  const col = board.columns.findIndex((c) => c.packages.some((pkg) => pkg.id === current));
-  const row = board.columns[col].packages.findIndex((pkg) => pkg.id === current);
-  const step = key === "right" ? 1 : -1;
-  for (let i = col + step; i >= 0 && i < board.columns.length; i += step) {
-    const list = board.columns[i].packages;
-    if (list.length) return list[Math.min(row, list.length - 1)].id;
-  }
-  return current;
-}
-
-// What a card says, in reading order. Each line is plain words from canonical signals.
+// What a package row says when opened, in reading order: plain words from canonical signals.
 export function packageCard(pkg, report, now) {
   const a = pkg.activity;
   const observation = OBSERVATION[a.observation] ?? null;
@@ -69,7 +32,6 @@ export function packageCard(pkg, report, now) {
   return {
     id: pkg.id,
     title: pkg.title,
-    // The column already says Queued; a queued card says what it waits for instead.
     stage: pkg.stage === "queued" ? null : stageText(pkg, now),
     dropped: pkg.outcome === "dropped",
     failed: pkg.failed,

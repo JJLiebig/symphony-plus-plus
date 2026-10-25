@@ -1,21 +1,30 @@
-// The Job level: one job as a whole view. Its phase, what needs the person, a stage board of its
-// packages, the agents taking part and its recorded decisions. Wide views draw the board in stage
-// columns with agents and decisions beside it; narrow ones read top to bottom, grouped by stage.
+// The Job level: one job as a whole view. Its phase, a strip of only what needs the person, package
+// rails on one real-time axis, the agents taking part and its recorded decisions. Wide views draw the
+// rails with agents and decisions beside them; narrow ones stack a compact line per package.
+//
+// Review drill-down hook: once the view defines openReview(jobId, pkgId, round, cx), round chips
+// become buttons that call it. Until then they are plain marks.
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
 import * as M from "./model.js";
 import * as J from "./job.js";
+import * as R from "./rails.js";
 import { CLEAR, MONO, tint, cap, button, field, mark, pip, presence, section, age } from "./ui.js";
 
-// ctx: { now, bindings, terminals, layout: "board" | "list", place: "full" | "side" | "tab", offline }
+const LABEL_W = 236;
+const TIME_CELL = 54;
+const TIME_GAP = 6;
+const TIME_W = 3 * TIME_CELL + 2 * TIME_GAP;
+const pct = (x) => `${(Math.max(0, Math.min(1, x)) * 100).toFixed(3)}%`;
+
+// ctx: { now, bindings, terminals, layout: "wide" | "compact", place: "full" | "side" | "tab", offline }
 export function jobView(v, t, job, ctx) {
-  const board = J.stageBoard(job);
   const people = J.participants(job, ctx.bindings, v.agentChecks, ctx.now);
   const head = [jobHeader(v, t, job, ctx), phaseStrip(t, J.phaseOf(job), ctx)];
-  const work = [...attention(v, t, job, ctx), ...questions(v, t, job), stages(v, t, job, board, ctx)];
+  const work = [...attention(v, t, job, ctx), ...questions(v, t, job), packages(v, t, job, ctx)];
   const aside = [agents(v, t, job, people, ctx), decisions(v, t, job, ctx)];
-  if (ctx.layout === "board") {
+  if (ctx.layout === "wide") {
     return v_flex().id("job-view").flex_1().min_h(0).min_w(0)
       .child(v_flex().flex_none().px(20).pt(14).pb(12).gap(12).border_b(1).border_color(t.border).children(head))
       .child(h_flex().flex_1().min_h(0).items_start()
@@ -61,7 +70,7 @@ function jobHeader(v, t, job, ctx) {
 // Five fixed segments; the current one is the only accent. Past phases stay legible, future ones dim.
 function phaseStrip(t, phase, ctx) {
   const at = J.PHASES.findIndex(([key]) => key === phase);
-  return h_flex().id("phase-strip").gap(4).w_full().when(ctx.layout === "board", (el) => el.max_w(720))
+  return h_flex().id("phase-strip").gap(4).w_full().when(ctx.layout === "wide", (el) => el.max_w(720))
     .accessibility_label(at < 0 ? "Phase unknown" : `Phase: ${J.PHASES[at][1]}`)
     .children(J.PHASES.map(([key, label], i) => {
       const current = i === at;
@@ -75,19 +84,27 @@ function phaseStrip(t, phase, ctx) {
 
 // ---------- What needs the person ----------
 
+// One compact line per thing only the person can move, above the rails. Answers open in place.
 function attention(v, t, job, ctx) {
-  const asks = job.needs.filter((need) => !need.id);
-  const open = job.guidance;
-  if (!asks.length && !open.length) return [];
+  if (!job.needs.length) return [];
+  const titles = new Map(job.packages.map((pkg) => [pkg.id, pkg.title]));
   return [
-    section(t, "Needs you", asks.length + open.length, t.blocked),
-    v_flex().gap(8)
-      .children(asks.map((need) => v_flex().id(`ask-${need.key}`).px(12).py(10).gap(5).rounded(8).bg(tint(t.blocked, "10")).border_l(1).border_color(t.blocked)
-        .child(h_flex().gap(8).child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label)).child(div().flex_1())
-          .when(need.since !== null, (row) => row.child(age(t, M.ago(need.since, ctx.now)))))
-        .child(div().w_full().text_size(13.5).text_color(t.foreground).child(need.text))
-        .when(Boolean(v.dashboard), (row) => row.child(h_flex().child(button(t, `ask-answer-${need.key}`, "Answer in dashboard", (cx) => v.openDashboard(cx), { strong: true }))))))
-      .children(open.map((question) => v_flex().px(12).rounded(8).bg(tint(t.blocked, "10")).border_l(1).border_color(t.blocked).child(questionRow(v, t, question, true)))),
+    section(t, "Needs you", job.needs.length, t.blocked),
+    v_flex().id("attention-strip").gap(6).children(job.needs.map((need) => {
+      const question = need.id ? job.guidance.find((q) => q.key === need.key) : null;
+      const open = question && v.answers[question.key]?.open;
+      const action = question ? button(t, `need-answer-${need.key}`, "Answer", (cx) => v.openAnswer(question, cx), { strong: true })
+        : need.pkgId ? button(t, `need-show-${need.key}`, "Show", (cx) => v.selectPackage(need.pkgId, cx), { strong: true })
+        : v.dashboard ? button(t, `need-dashboard-${need.key}`, "Answer in dashboard", (cx) => v.openDashboard(cx), { strong: true }) : null;
+      return v_flex().id(`need-${need.key}`).px(12).py(8).gap(6).rounded(6).bg(tint(t.blocked, "10")).border_l(2).border_color(t.blocked)
+        .child(h_flex().gap(10).items_center().min_w(0)
+          .child(div().flex_none().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label))
+          .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.foreground).child(need.text))
+          .when(Boolean(need.pkgId && titles.get(need.pkgId)), (el) => el.child(div().flex_none().max_w(180).truncate().text_size(11.5).text_color(t.muted).child(titles.get(need.pkgId))))
+          .when(need.since !== null, (el) => el.child(age(t, M.ago(need.since, ctx.now))))
+          .when(Boolean(action) && !open, (el) => el.child(action)))
+        .when(Boolean(open), (el) => el.child(questionRow(v, t, question, true)));
+    })),
   ];
 }
 
@@ -134,58 +151,181 @@ export function questionRow(v, t, question, first = false) {
         .child(button(t, `cancel-${question.key}`, "Back", (cx) => { draft.open = false; v.keys.focus(); cx.notify(); }, { disabled: draft.pending })))));
 }
 
-// ---------- Stage board ----------
+// ---------- Package rails ----------
 
-function stages(v, t, job, board, ctx) {
-  if (!board.columns.length) {
+// Who is acting is the color; waiting is the same color, dimmed. Shapes repeat it for color-blind reading.
+function actorColor(t, actor) {
+  return { provider: t.accent, ci: t.ansi6, human: t.blocked, waiting: t.dim, dependency: t.dim }[actor] ?? t.dim;
+}
+
+function packages(v, t, job, ctx) {
+  if (!job.packages.length) {
     return v_flex().child(section(t, "Packages")).child(div().px(4).text_size(12.5).text_color(t.muted)
       .child(job.closedAt !== null ? "Closed without packages." : "Not sliced into packages yet."));
   }
-  const mixed = new Set(job.packages.map((pkg) => pkg.track === "no_pr")).size > 1;
-  const cardOf = (pkg) => card(v, t, pkg, J.packageCard(pkg, J.reportFor(M.bindingsFor(ctx.bindings, job.id, pkg.id), ctx.terminals, ctx.now), ctx.now), mixed);
-  if (ctx.layout === "board") {
-    return v_flex().child(section(t, "Packages", job.packages.length))
-      // Columns share the pane's width rather than the window's, so nothing is clipped in a split.
-      .child(h_flex().id("stage-board").w_full().gap(8).items_start()
-        .children(board.columns.map((column) => {
-          const empty = column.packages.length === 0;
-          return v_flex().id(`column-${column.key}`).gap(6).when(empty, (el) => el.w(72).flex_none()).when(!empty, (el) => el.flex_1().min_w(0))
-            .child(h_flex().h(22).px(2).gap(6).items_center().border_b(1).border_color(t.border)
-              .child(div().truncate().text_size(11.5).font_medium().text_color(empty ? t.dim : t.muted).child(column.label))
-              .child(div().text_size(11.5).font_family(MONO).text_color(t.dim).child(String(column.packages.length))))
-            .children(column.packages.map(cardOf));
-        })));
+  const rows = R.rowsOf(job, ctx.now);
+  const reportOf = (pkg) => J.reportFor(M.bindingsFor(ctx.bindings, job.id, pkg.id), ctx.terminals, ctx.now);
+  if (ctx.layout === "wide") {
+    const axis = R.railAxis(rows, ctx.now);
+    return v_flex().id("rails")
+      .child(h_flex().gap(12).items_center().child(section(t, "Packages", job.packages.length)).child(div().flex_1()).child(legend(t)))
+      .child(axisHeader(t, axis, ctx))
+      .children(rows.flatMap((row) => railRow(v, t, job, row, axis, reportOf(row.pkg), ctx)));
   }
-  return v_flex().id("stage-list").children(board.columns.filter((column) => column.packages.length).flatMap((column) => [
-    section(t, column.label, column.packages.length),
-    v_flex().gap(6).children(column.packages.map(cardOf)),
-  ]));
+  return v_flex().id("rails-compact")
+    .child(section(t, "Packages", job.packages.length))
+    .children(rows.map((row) => compactRow(v, t, job, row, reportOf(row.pkg), ctx)));
 }
 
-function card(v, t, pkg, c, mixed) {
+function legend(t) {
+  const swatch = (label, color, dim = false) => h_flex().gap(5).items_center()
+    .child(div().w(12).h(6).rounded(2).bg(dim ? tint(color, "45") : color))
+    .child(div().text_size(11).text_color(t.muted).child(label));
+  return h_flex().id("rail-legend").pt(12).gap(12).items_center().flex_wrap()
+    .child(swatch("Agent", t.accent)).child(swatch("CI", t.ansi6)).child(swatch("You", t.blocked)).child(swatch("Waiting", t.dim, true))
+    .child(h_flex().gap(5).items_center().child(div().w(12).h(0).border_t(1.5).border_dashed().border_color(t.muted)).child(div().text_size(11).text_color(t.muted).child("After another package")));
+}
+
+function axisHeader(t, axis, ctx) {
+  const marks = R.axisLabels(axis, ctx.now).map((label) => label.kind === "now"
+    ? div().absolute().left(pct(label.x)).top(0).h(18).pl(4).border_l(1).border_color(t.accent).text_size(10.5).font_family(MONO).text_color(t.accent).child(label.text)
+    : label.kind === "break"
+      ? div().id(`axis-break-${label.from}`).absolute().left(pct(label.x)).top(0).text_size(10.5).font_family(MONO).text_color(t.muted).tooltip(label.tip).child(label.text)
+      : div().absolute().left(pct(label.x)).top(0).text_size(10.5).font_family(MONO).text_color(t.dim).child(label.text));
+  return h_flex().id("rail-axis").gap(12).px(8).pb(4).items_end()
+    .child(div().w(LABEL_W).flex_none())
+    .child(div().relative().flex_1().min_w(0).h(18).children(marks))
+    .child(h_flex().w(TIME_W).flex_none().gap(TIME_GAP).text_size(10.5)
+      .child(cell(t, "total", t.dim)).child(cell(t, "stage", t.dim)).child(cell(t, "review", t.dim)));
+}
+
+// One right-aligned timing column, so numbers line up down the rails.
+function cell(t, text, tone) {
+  return div().w(TIME_CELL).flex_none().flex().justify_end().text_color(tone).child(text);
+}
+
+function chips(v, t, job, pkg, rounds) {
+  if (!rounds.length) return null;
+  const hook = typeof v.openReview === "function";
+  return h_flex().gap(3).flex_none().children(rounds.map((r) => {
+    const tone = r.late ? t.working : t.muted;
+    const chip = (hook ? Button.new(`round-${pkg.id}-${r.n}`).cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); v.openReview(job.id, pkg.id, r.n, cx); })
+      : div().id(`round-${pkg.id}-${r.n}`))
+      .h(16).px(4).rounded(3).border(1).border_color(r.current ? tone : tint(tone, "60")).bg(r.current ? tint(tone, "22") : CLEAR)
+      .text_size(10).font_family(MONO).text_color(r.late ? t.working : r.current ? t.foreground : t.muted)
+      .accessibility_label(`Review round ${r.n}${r.current ? ", in progress" : ""}`)
+      .child(r.label);
+    return chip;
+  }));
+}
+
+function timings(row) {
+  const { total, stage, review } = row.timings;
+  return [total ?? "—", stage ?? "—", review ?? "—"];
+}
+
+function railRow(v, t, job, row, axis, report, ctx) {
+  const { pkg } = row;
   const on = v.pkgSel === pkg.id;
   const focused = on && v.keys.is_focused();
-  const quiet = pkg.stage === "done" || pkg.stage === "queued";
-  const reportTone = !c.report ? t.muted : c.report.status === "blocked" || c.report.status === "error" ? t.blocked : c.report.status === "working" ? t.foreground : t.muted;
-  const line = (text, tone = t.muted, extra = (el) => el) => (text ? extra(div().w_full().text_size(11.5).text_color(tone).child(text)) : null);
-  return v_flex().id(`card-${pkg.id}`).w_full().px(10).py(8).gap(4).rounded(8).cursor_pointer()
-    .bg(c.needsYou ? tint(t.blocked, "10") : on ? t.selected : t.surface)
-    .border(1).border_color(focused ? t.ring : on ? t.accent : c.needsYou ? tint(t.blocked, "60") : t.border)
-    .hover((s) => s.bg(c.needsYou ? tint(t.blocked, "18") : on ? t.selected : t.hover))
-    .accessibility_label(`${pkg.title}, ${c.stage ?? "queued"}`)
+  const c = J.packageCard(pkg, report, ctx.now);
+  const stageName = R.STAGE_NAME[R.stageOf(pkg)] ?? cap(pkg.stage);
+  const sub = [pkg.stage === "done" ? M.stageText(pkg, ctx.now) : stageName, c.holder?.text,
+    c.after.length ? `after ${c.after.join(", ")}` : null,
+    pkg.stage !== "done" && pkg.stage !== "queued" && pkg.untimed ? "start not recorded" : null].filter(Boolean).join(" · ");
+  const before = R.beforeAxis(row, axis);
+  const marks = before ? [] : [div().absolute().left(0).top(11).w_full().h(1).bg(tint(t.border, "80"))];
+  if (before) {
+    marks.push(div().absolute().left(0).top(4).text_size(11).text_color(t.dim).child(pkg.doneAt !== null ? `Landed ${M.ago(pkg.doneAt, ctx.now)}` : "Before this view"));
+  } else if (axis) {
+    for (const gap of axis.breaks) marks.push(div().absolute().left(pct(gap.x0)).w(pct(gap.x1 - gap.x0)).top(2).h(20).border_l(1).border_r(1).border_dashed().border_color(t.border));
+    for (const s of row.segments) {
+      if (s.to <= axis.start) continue;
+      const x0 = axis.x(Math.max(s.from, axis.start));
+      const w = Math.max(axis.x(s.to) - x0, 0.004);
+      const color = actorColor(t, s.actor);
+      const tip = `${R.STAGE_NAME[s.stage]}${s.label ? ` · ${s.label}` : ""} · ${M.span(s.to - s.from)}${s.waiting && s.actor !== "waiting" ? " · waiting" : ""}`;
+      marks.push(s.actor === "dependency"
+        ? div().id(`seg-${pkg.id}-${s.from}`).absolute().left(pct(x0)).w(pct(w)).top(6).h(12).tooltip(tip)
+          .child(div().absolute().left(0).top(5).w_full().h(0).border_t(1.5).border_dashed().border_color(t.muted))
+        : div().id(`seg-${pkg.id}-${s.from}`).absolute().left(pct(x0)).w(pct(w)).top(8).h(8).rounded(2)
+          .bg(s.waiting ? tint(color, "45") : color).border_r(1).border_color(t.canvas).tooltip(tip));
+      // Needs the person, but since when was not recorded: a "You" cap at now, not a guessed span.
+      if (s.needsYou) marks.push(div().absolute().left(pct(axis.nowX)).top(6).w(4).h(12).rounded(1).bg(t.blocked));
+    }
+    if (pkg.doneAt !== null && pkg.doneAt >= axis.start) marks.push(div().absolute().left(pct(axis.x(pkg.doneAt))).top(7).size(10).rounded(5).bg(pkg.outcome === "dropped" ? t.dim : t.ansi2));
+    marks.push(div().absolute().left(pct(axis.nowX)).top(0).h(24).w(1).bg(tint(t.accent, "90")));
+  }
+  const [total, stage, review] = timings(row);
+  const rowEl = h_flex().id(`rail-${pkg.id}`).h(46).px(8).gap(12).items_center().rounded(6).cursor_pointer()
+    .bg(c.needsYou ? tint(t.blocked, "0c") : on ? t.selected : CLEAR)
+    .border(1).border_color(focused ? t.ring : on ? t.accent : CLEAR)
+    .hover((s) => s.bg(on ? t.selected : t.hover))
+    .accessibility_label(`${pkg.title}, ${sub}. Total ${total}, in stage ${stage}, in review ${review}`)
     .on_click((_e, cx) => v.selectPackage(pkg.id, cx))
-    .child(h_flex().gap(8).items_center()
+    .child(v_flex().w(LABEL_W).flex_none().min_w(0).gap(3)
+      .child(h_flex().gap(7).items_center().min_w(0)
+        .child(pip(t, pkg))
+        .child(div().id(`title-${pkg.id}`).flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(pkg.stage === "done" || pkg.stage === "queued" ? t.muted : t.foreground).tooltip(pkg.title).child(pkg.title))
+        .children([chips(v, t, job, pkg, row.rounds)].filter(Boolean)))
+      .child(div().pl(14).truncate().text_size(11).text_color(c.needsYou ? t.blocked : c.report ? reportTone(t, c.report) : t.muted)
+        .child(c.needsYou && c.next ? `Next: ${c.next}` : c.report ? `${stageName} · ${J.reportText(c.report)}` : sub)))
+    .child(div().id(`track-${pkg.id}`).relative().flex_1().min_w(0).h(24).children(marks))
+    .child(h_flex().w(TIME_W).flex_none().gap(TIME_GAP).text_size(11).font_family(MONO)
+      .child(cell(t, total, row.timings.total ? t.foreground : t.dim))
+      .child(cell(t, stage, row.timings.stage ? t.muted : t.dim))
+      .child(cell(t, review, row.timings.review ? t.muted : t.dim)));
+  return on ? [rowEl, rowDetail(t, pkg, c)] : [rowEl];
+}
+
+// The opened row: everything the row line had no room for, in plain words.
+function rowDetail(t, pkg, c) {
+  const line = (text, tone = t.muted, extra = (el) => el) => (text ? extra(div().w_full().text_size(11.5).text_color(tone).child(text)) : null);
+  return v_flex().id(`detail-${pkg.id}`).pl(LABEL_W + 20).pr(TIME_W).pt(2).pb(10).gap(3).children([
+    line(c.stage, c.failed ? t.blocked : t.muted, (el) => el.font_family(MONO).text_size(11)),
+    c.holder ? line(`${c.holder.text}${c.holder.observation ? ` · ${c.holder.observation}` : ""}`, c.holder.observation ? t.muted : t.foreground) : null,
+    line(J.reportText(c.report), reportTone(t, c.report), (el) => el.id(`report-${pkg.id}`).tooltip("The agent's own status report")),
+    line(c.waiting),
+    line(c.next ? `Next: ${c.next}` : null, c.needsYou ? t.blocked : t.muted),
+    line(c.evidence.join(" · ")),
+    c.after.length ? line(`After ${c.after.join(", ")}`) : null,
+  ].filter(Boolean));
+}
+
+function reportTone(t, report) {
+  if (!report) return t.muted;
+  if (report.status === "blocked" || report.status === "error") return t.blocked;
+  return report.status === "working" ? t.foreground : t.muted;
+}
+
+// Narrow and panel widths: one compact line per package with the same timings, no axis.
+function compactRow(v, t, job, row, report, ctx) {
+  const { pkg } = row;
+  const on = v.pkgSel === pkg.id;
+  const focused = on && v.keys.is_focused();
+  const c = J.packageCard(pkg, report, ctx.now);
+  const stageName = pkg.stage === "done" ? M.stageText(pkg, ctx.now) : R.STAGE_NAME[R.stageOf(pkg)] ?? cap(pkg.stage);
+  const { total, stage, review } = row.timings;
+  const times = [stageName, stage ? `${stage} in stage` : pkg.stage !== "done" && pkg.stage !== "queued" ? "start not recorded" : null,
+    review ? `${review} in review` : null, total ? `${total} total` : null].filter(Boolean).join(" · ");
+  const status = report ? J.reportText(report) : c.needsYou && c.next ? `Next: ${c.next}` : c.after.length ? `After ${c.after.join(", ")}` : c.waiting ?? c.holder?.text ?? null;
+  return v_flex().id(`rail-${pkg.id}`).px(10).py(8).gap(4).rounded(6).cursor_pointer()
+    .bg(c.needsYou ? tint(t.blocked, "0c") : on ? t.selected : CLEAR)
+    .border(1).border_color(focused ? t.ring : on ? t.accent : CLEAR)
+    .hover((s) => s.bg(on ? t.selected : t.hover))
+    .on_click((_e, cx) => v.selectPackage(pkg.id, cx))
+    .child(h_flex().gap(7).items_center().min_w(0)
       .child(pip(t, pkg))
-      .child(div().id(`title-${pkg.id}`).flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(quiet ? t.muted : t.foreground).tooltip(pkg.title).child(pkg.title)))
-    .children([
-      line([mixed && c.noPr ? "No PR" : null, c.stage].filter(Boolean).join(" · "), c.failed ? t.blocked : t.muted, (el) => el.id(`stage-${pkg.id}`).font_family(MONO).text_size(11).truncate().tooltip(c.stage ?? "")),
-      c.after.length ? line(`After ${c.after.join(", ")}`) : null,
-      c.holder ? line(`${c.holder.text}${c.holder.observation ? ` · ${c.holder.observation}` : ""}`, c.holder.observation ? t.muted : t.foreground) : null,
-      line(J.reportText(c.report), reportTone, (el) => el.id(`report-${pkg.id}`).tooltip("The agent's own status report")),
-      line(c.waiting),
-      line(c.next ? `Next: ${c.next}` : null, c.needsYou ? t.blocked : t.muted, (el) => el.when(c.needsYou, (x) => x.font_medium())),
-      line(c.evidence.join(" · ")),
-    ].filter(Boolean));
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(pkg.stage === "done" || pkg.stage === "queued" ? t.muted : t.foreground).child(pkg.title))
+      .children([chips(v, t, job, pkg, row.rounds)].filter(Boolean)))
+    .child(div().pl(14).text_size(11).font_family(MONO).text_color(t.muted).child(times))
+    .when(Boolean(status), (el) => el.child(div().pl(14).truncate().text_size(11.5).text_color(report ? reportTone(t, report) : c.needsYou ? t.blocked : t.muted).child(status)))
+    .when(on, (el) => el.child(v_flex().pl(14).gap(3).children([
+      c.holder ? div().text_size(11.5).text_color(t.muted).child(`${c.holder.text}${c.holder.observation ? ` · ${c.holder.observation}` : ""}`) : null,
+      c.waiting ? div().text_size(11.5).text_color(t.muted).child(c.waiting) : null,
+      c.next ? div().text_size(11.5).text_color(c.needsYou ? t.blocked : t.muted).child(`Next: ${c.next}`) : null,
+      c.evidence.length ? div().text_size(11.5).text_color(t.muted).child(c.evidence.join(" · ")) : null,
+    ].filter(Boolean))));
 }
 
 // ---------- Agents and decisions ----------

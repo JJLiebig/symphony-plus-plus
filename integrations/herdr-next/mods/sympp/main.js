@@ -11,13 +11,14 @@
 //
 // Modules: model.js (board in, view data out), job.js (the Job level's pure logic), controls.js
 // (persisted actions), transport.js (HTTP through exec), ui.js (shared look), overview.js and
-// jobview.js (what each level draws).
+// jobview.js (what each level draws), rails.js (package rails on a shared time axis).
 
 import { View } from "gpui-kit";
 import { v_flex, h_flex, InputState, TextareaState } from "gpui-base";
 import { props, theme, shared, spaces, panes, terminals, run, window as appWindow, exec } from "herdr";
 import * as M from "./model.js";
 import * as J from "./job.js";
+import * as R from "./rails.js";
 import * as C from "./controls.js";
 import { createTransport } from "./transport.js";
 import { button, message } from "./ui.js";
@@ -26,7 +27,7 @@ import { jobView } from "./jobview.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
-const KEYS = { j: "down", k: "up", down: "down", up: "up", left: "left", right: "right" };
+const KEYS = { j: "down", k: "up", down: "down", up: "up" };
 
 export default class Lens extends View {
   init(p, cx) {
@@ -325,7 +326,7 @@ export default class Lens extends View {
       if (this.creation.pending) return;
       this.intake = false;
     } else if (this.intake) return;
-    else if (inJob && nav) this.pkgSel = J.movePackage(this.board, this.pkgSel, nav) ?? this.pkgSel;
+    else if (inJob && nav) this.pkgSel = R.moveRow(this.rowOrder, this.pkgSel, nav === "down" ? 1 : -1) ?? this.pkgSel;
     else if (nav === "down" || nav === "up") this.selected = M.moveSelection(this.scoped, this.selected, nav === "down" ? 1 : -1) ?? this.selected;
     else if (key === "enter" && inJob) { if (!this.openPackageAgent(cx)) return; }
     else if (key === "enter" && this.selected) { this.detail = true; this.pkgSel = null; }
@@ -353,11 +354,11 @@ export default class Lens extends View {
 
   // The Job level for one job; it also records what the timer reads and the keys move through.
   jobLevel(t, board, job, bindings, place, now) {
-    this.board = J.stageBoard(job);
-    if (this.pkgSel && !this.board.order.includes(this.pkgSel)) this.pkgSel = null;
+    this.rowOrder = R.railOrder(job).map((pkg) => pkg.id);
+    if (this.pkgSel && !this.rowOrder.includes(this.pkgSel)) this.pkgSel = null;
     this.shown = { jobId: job.id, bindings: J.jobBindings(job, bindings) };
     this.currentJob = job;
-    const layout = place !== "side" && !this.compact ? "board" : "list";
+    const layout = place !== "side" && !this.compact ? "wide" : "compact";
     return jobView(this, t, job, { now, bindings, terminals: terminals(), layout, place, offline: board.offline === true });
   }
 

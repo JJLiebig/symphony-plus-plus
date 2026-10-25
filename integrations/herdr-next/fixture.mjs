@@ -28,18 +28,20 @@ export function boardPayload() {
           }),
           pkg('wp-review', 'Review lens', 3, { stage: 'review', track: 'pr', entered_at: at(40) }, {
             dispatched_at: at(300), pr_signal: { status: 'open', number: 812, checks: { status: 'passing' } },
-            review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: '2' },
-            activity_signal: { current_actor: { role: 'worker', name: 'opus-lens' }, observation_state: 'stale', waiting_reason: 'review_in_progress', next_actor: 'human', next_action: 'answer_guidance' },
+            review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: '3', started_at: at(200), round_started_at: at(40) },
+            activity_signal: { current_actor: { role: 'worker', name: 'opus-lens' }, observation_state: 'stale', waiting_reason: 'review_in_progress', next_actor: 'human', next_action: 'answer_guidance', last_update_at: at(25) },
           }),
-          pkg('wp-done', 'Module split', 1, { stage: 'done', track: 'pr', delivered: true, entered_at: at(600) }, {
-            dispatched_at: at(900), pr_signal: { status: 'merged', number: 801 },
+          // Landed a day before the rest started: a long stretch nobody acted in.
+          pkg('wp-done', 'Module split', 1, { stage: 'done', track: 'pr', delivered: true, entered_at: at(1800) }, {
+            inserted_at: at(3000), dispatched_at: at(2900), pr_signal: { status: 'merged', number: 801 },
+            review_signal: { type: 'review_suite', mode: 'fast', status: 'passed', round: '1', started_at: at(2000) },
           }),
         ],
       },
       {
         work_request: { id: 'wr-nopr', title: 'Research spike', repo: 'owner/notes', status: 'sliced', inserted_at: at(400) },
         work_packages: [
-          pkg('np-1', 'Survey', 1, { stage: 'done', track: 'no_pr', delivered: true }, { dispatched_at: at(300) }),
+          pkg('np-1', 'Survey', 1, { stage: 'done', track: 'no_pr', delivered: true, entered_at: at(200) }, { dispatched_at: at(300) }),
           pkg('np-2', 'Write-up', 2, { stage: 'build', track: 'no_pr' }, { dispatched_at: at(100) }),
         ],
       },

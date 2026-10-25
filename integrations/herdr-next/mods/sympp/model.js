@@ -212,7 +212,10 @@ function buildPackage(slice, groups, now, runs) {
     outcome,
     since: observed ?? ms(slice.dispatched_at) ?? ms(slice.inserted_at),
     untimed: observed === null,
+    // Recorded moments only, for the package rails: creation, dispatch and recorded delivery.
+    createdAt: ms(slice.inserted_at),
     dispatchedAt: ms(slice.dispatched_at),
+    doneAt: stage === "done" ? observed : null,
     failed: pr.checks?.status === "failing",
     track: board?.track ?? null,
     round: Number(review.round) || 1,
@@ -225,6 +228,8 @@ function buildPackage(slice, groups, now, runs) {
       current: review.current ?? null,
       total: review.total ?? null,
       observation: review.observation_state ?? null,
+      startedAt: ms(review.started_at),
+      roundStartedAt: ms(review.round_started_at),
     },
     activity: {
       actor: actor ? { name: actor.name || actor.id || null, role: actor.role ?? null } : null,
@@ -232,6 +237,7 @@ function buildPackage(slice, groups, now, runs) {
       nextActor: activity.next_actor ?? null,
       next: describeNext(activity.next_actor, activity.next_action),
       waiting: describeReason(activity.waiting_reason),
+      waitingCode: activity.waiting_reason ?? null,
       lastUpdate: activity.last_update ?? null,
       lastUpdateAt: ms(activity.last_update_at),
       observation: activity.observation_state ?? null,
