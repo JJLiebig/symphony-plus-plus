@@ -35,6 +35,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
   alias SymphonyElixir.TestSupport
   alias SymphonyElixir.WorkPackageFactory
 
+  defmodule ReplacingPRClient do
+    @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
+    @impl true
+    def fetch_pull_request(ref, opts) do
+      {repo, package_id} = Keyword.fetch!(opts, :replacement)
+
+      {:ok, _event} =
+        PlanningRepository.append_progress_event(repo, %{
+          work_package_id: package_id,
+          summary: "Replace the PR while the provider request is in flight",
+          status: "pr_attached",
+          payload: %{type: "pr", source_tool: "attach_pr", url: "https://github.com/nextide/repo/pull/922"}
+        })
+
+      FakeGitHubClient.fetch_pull_request(ref, opts)
+    end
+  end
+
   setup_all do
     database_path = WorkPackageFactory.database_path()
 
@@ -167,6 +186,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
     assert {:ok, replay} = DeliveryReconciler.reconcile(repo, work_request.id, mode: :apply)
     assert replay.applied_count == 0
     assert repo.aggregate(WorkPackageDelivery, :count, :id) == 1
+  end
+
+  test "PR replacement during a provider read cannot report or record an older merge", %{repo: repo} do
+    {_request, _slice, package} =
+      linked_slice!(repo,
+        work_request_id: "WR-OBSERVE-REPLACED-PR",
+        work_package_id: "WP-OBSERVE-REPLACED-PR",
+        status: "ready_for_worker"
+      )
+
+    append_merged_pr_evidence!(repo, package, 921, nil, synced_head_sha: "provider-head")
+    FakeGitHubClient.put_response("nextide/repo", 921, GitHubPullRequestFixtures.metadata(921, "provider-head", merged?: true))
+
+    assert {:ok, result} = MergeReconciler.reconcile(repo, client: ReplacingPRClient, replacement: {repo, package.id})
+    assert result.merged_count == 0
+    assert [%{status: "skipped", reason: "stale_status"}] = result.results
+    assert repo.get!(WorkPackage, package.id).status == "ready_for_worker"
+    refute repo.get_by(WorkPackageDelivery, work_package_id: package.id)
+    assert {:ok, events} = PlanningRepository.list_progress_events(repo, package.id)
+    refute Enum.any?(events, &(&1.status == "github_pr_merged"))
   end
 
   test "MCP reconcile_work_request dry-run reports proposed closeout without write capability", %{repo: repo} do

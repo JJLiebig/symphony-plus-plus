@@ -311,8 +311,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   defp persist_merged_transition(repo, %WorkPackage{work_request_id: request_id} = work_package, payload, metadata)
        when is_binary(request_id) do
     with {:ok, _event} <- append_merge_evidence(repo, work_package, %{work_package | status: "merged"}, payload, metadata),
-         {:ok, _delivery} <- DeliveryReconciler.reconcile_work_package(repo, work_package.id) do
-      WorkPackageRepository.get(repo, work_package.id)
+         {:ok, _delivery} <- DeliveryReconciler.reconcile_work_package(repo, work_package.id),
+         {:ok, %WorkPackage{status: "merged"} = updated} <- WorkPackageRepository.get(repo, work_package.id) do
+      {:ok, updated}
+    else
+      {:ok, %WorkPackage{}} -> {:error, :stale_status}
+      error -> error
     end
   end
 
