@@ -205,6 +205,7 @@ test("hand-started MCP bridges report native identity and require an authenticat
     assert.doesNotMatch(JSON.stringify(alive.body), /process_liveness|private-core-selector/);
     assert.ok(!JSON.stringify(alive.body).includes(token));
     assert.equal((await run(["check", "--receipt", launched.body.receipt])).body.state, "live");
+    assert.equal((await run(["list", "--cwd", root])).body.count, 1, "observing a bridge does not create another agent launch");
 
     for (const denied of ["wrong", "stalled"]) {
       mode = denied;

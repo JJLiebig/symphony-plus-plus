@@ -53,7 +53,7 @@ function createReporter(env = process.env, connect = selected => connectCore(und
   const clientId = randomUUID();
   let location = locationFromEnvironment(env, os.hostname(), clientId);
   const native = Boolean(env.HC_TERMINAL_ID && env.HC_TERMINAL_SOCKET);
-  const file = path.resolve(env.SYMPP_HOME || path.join(os.homedir(), ".agents", "splusplus"), "herdr-launches", `session-${clientId}.json`);
+  const file = path.resolve(env.SYMPP_HOME || path.join(os.homedir(), ".agents", "splusplus"), "herdr-sessions", `${clientId}.json`);
   let refreshAt = 0;
   let pending = null;
   let reports = Promise.resolve();
