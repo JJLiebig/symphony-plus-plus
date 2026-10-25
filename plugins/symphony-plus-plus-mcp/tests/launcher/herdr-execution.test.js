@@ -6,6 +6,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawn, spawnSync } = require("node:child_process");
+const net = require("node:net");
+const { once } = require("node:events");
+const { createReporter } = require("../../scripts/sympp-session-location.js");
 const cli = path.resolve(__dirname, "../../scripts/sympp-herdr.js");
 const peer = path.join(__dirname, "herdr-execution-peer.js");
 
@@ -30,7 +33,7 @@ async function scenario(fn) {
     // Only replace the transport executable; the public parser and process IO run unchanged.
     const entry = 'const {main,connectCore}=require(process.argv[1]); main(process.argv.slice(4), session=>connectCore(session,process.execPath,[process.argv[2],process.argv[3]]));';
     return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, ["-e", entry, cli, peer, stateFile, ...args, "--json"], { env: process.env, windowsHide: true });
+      const child = spawn(process.execPath, ["-e", entry, cli, peer, stateFile, ...args, "--json"], { env: process.env, cwd: root, windowsHide: true });
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (data) => { stdout += data; });
@@ -42,7 +45,8 @@ async function scenario(fn) {
       });
     });
   }
-  try { await fn({ root, task, state, save, run }); }
+  const connect = () => require(cli).connectCore(undefined, process.execPath, [peer, stateFile]);
+  try { await fn({ root, task, state, save, run, connect }); }
   finally {
     for (const key of Object.keys(process.env)) if (!(key in prior)) delete process.env[key];
     Object.assign(process.env, prior);
@@ -153,4 +157,90 @@ test("unknown flags and missing inputs fail before opening a runtime; version is
   const version = spawnSync(process.execPath, [cli, "--version"], { encoding: "utf8", env: { ...process.env, PATH: "" }, windowsHide: true });
   assert.equal(version.status, 0);
   assert.equal(version.stdout, "1.0.0\n");
+});
+
+test("hand-started MCP bridges report native identity and require an authenticated live process", async () => scenario(async ({ root, task, state, save, run, connect }) => {
+  const launched = await run(["launch", "--provider", "claude", "--task", task, "--cwd", root]);
+  const original = { ...state().terminal.labels };
+  const otherCore = path.join(root, "other-core.json");
+  fs.writeFileSync(otherCore, JSON.stringify({ ...state(), core_id:"wrong-core" }));
+  const reporter = createReporter({ ...process.env, HC_TERMINAL_ID: "t9", HC_TERMINAL_SOCKET: "private-core-selector",
+    HC_SOCKET:"other-selector", HERDR_ENV: "1", HERDR_PANE_ID: "old-pane" }, selected =>
+    selected.HC_SOCKET === "private-core-selector" ? connect() : require(cli).connectCore(undefined, process.execPath, [peer, otherCore]));
+  const pipe = process.platform === "win32" ? `\\\\.\\pipe\\sympp-observed-${process.pid}` : path.join(root, "probe.sock");
+  const bridge = require("../../scripts/start-sympp-mcp-bridge.js");
+  await bridge.ensureLivenessProbe();
+  const leaseFile = bridge.createLocalLease(path.join(root, "runtime.json"), { backend: { managed:true } }, { runtimeKey:"fixture" }, "fixture");
+  const lease = JSON.parse(fs.readFileSync(leaseFile, "utf8"));
+  const probe = { pipe:lease.process_liveness_pipe, token:lease.process_liveness_token };
+  const token = probe.token;
+  let mode = "valid";
+  const sockets = new Set();
+  const server = net.createServer(socket => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    if (mode !== "stalled") socket.end(mode === "valid" ? token : (token[0] === "a" ? "b" : "a") + token.slice(1));
+  });
+  server.listen(pipe);
+  await once(server, "listening");
+  try {
+    const forwarded = JSON.parse(await reporter.attach(JSON.stringify({ method: "initialize", params: {} })));
+    const observed = forwarded.params._meta.sympp_session_location;
+    assert.equal(observed.herdr.core_id, "core-one");
+    assert.equal(observed.herdr.terminal_id, "t9");
+    assert.equal(observed.herdr.pid, 900, "terminal root PID is separate from the MCP process");
+    assert.equal(observed.herdr.process_id, process.pid);
+    assert.equal(observed.herdr.pane_id, undefined, "new core context wins over inherited legacy context");
+    assert.doesNotMatch(JSON.stringify(observed), /private-core-selector|process_liveness/);
+
+    await reporter.report({ role: "architect", work_request_id: "wr-manual" }, probe);
+    const labels = state().terminal.labels;
+    for (const [key, value] of Object.entries(original)) assert.equal(labels[key], value);
+    const args = ["check", "--receipt", labels["sympp.session_receipt"]];
+    const alive = await run(args);
+    assert.equal(alive.code, 0);
+    assert.equal(alive.body.state, "live");
+    assert.equal(alive.body.work_request_id, "wr-manual");
+    assert.equal(alive.body.role, "architect");
+    assert.doesNotMatch(JSON.stringify(alive.body), /process_liveness|private-core-selector/);
+    assert.ok(!JSON.stringify(alive.body).includes(token));
+    assert.equal((await run(["check", "--receipt", launched.body.receipt])).body.state, "live");
+
+    for (const denied of ["wrong", "stalled"]) {
+      mode = denied;
+      await reporter.report({ role: "architect", work_request_id: "wr-manual" }, { pipe, token });
+      assert.equal((await run(args)).body.state, "stale", "a timeout is not authenticated liveness");
+      for (const socket of sockets) socket.destroy();
+    }
+    mode = "valid";
+    await reporter.report({ role: "architect", work_request_id: "wr-manual" }, probe);
+    save({ ...state(), terminal: { ...state().terminal, pid: 901 } });
+    assert.equal((await run(args)).body.reason, "process_changed");
+    await reporter.report({ role: "architect", work_request_id: "replacement" }, { pipe, token });
+    assert.equal(state().terminal.labels["sympp.session_work_request_id"], "wr-manual", "an old bridge cannot bind a recovered terminal");
+    save({ ...state(), terminal: { ...state().terminal, pid: 900 } });
+    reporter.close();
+    assert.equal(fs.existsSync(labels["sympp.session_receipt"]), false, "revoke before asynchronous runtime cleanup");
+    await reporter.report({ role: "architect", work_request_id: "resurrected" }, { pipe, token });
+    assert.equal(fs.existsSync(labels["sympp.session_receipt"]), false);
+    assert.equal((await run(args)).body.error, "input_unreadable");
+  } finally {
+    reporter.close();
+    bridge.closeLivenessProbe();
+    for (const socket of sockets) socket.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+}));
+
+test("standalone and unavailable-core reporters preserve MCP calls without inventing bindings", async () => {
+  const request = JSON.stringify({ method: "tools/call", params: { name: "get_current_assignment", arguments: {}, _meta: { extra: true } } });
+  const standalone = createReporter({}, () => { throw new Error("must not contact a core"); });
+  assert.equal(JSON.parse(await standalone.attach(request)).params._meta.sympp_session_location.herdr, undefined);
+  const unavailable = createReporter({ HC_TERMINAL_ID: "t2", HC_TERMINAL_SOCKET: "private" }, () => ({
+    call: async () => { throw new Error("core unavailable"); }, close() {},
+  }));
+  const forwarded = JSON.parse(await unavailable.attach(request));
+  assert.equal(forwarded.params._meta.extra, true);
+  assert.deepEqual(forwarded.params.arguments, {});
+  assert.equal(forwarded.params._meta.sympp_session_location.herdr, undefined);
 });

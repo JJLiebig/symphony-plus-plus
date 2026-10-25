@@ -247,10 +247,18 @@ configured worker-session label. Existing configured labels remain supported.
 | `label` | `machines[machine_id].label`, otherwise the client hostname. |
 | `kind` | Configured `desktop`, `laptop`, or `server`; `null` when unknown. |
 | `role` | `architect`, `coordinator`, or `worker`. |
-| `source` | `herdr`, `agent` (human description), or `machine` (hostname only). |
+| `source` | `herdr` (legacy), `herdr_next`, `agent` (human description), or `machine` (hostname only). |
 | `description` | Optional human-readable location supplied by the agent. |
 | `last_seen_at` | UTC time of the latest successful scoped MCP tool call reporting this session. |
-| `herdr` | Workspace, tab and pane ids, with workspace/tab labels when obtainable; empty outside Herdr. |
+| `herdr` | Legacy workspace/tab/pane ids and labels, or native `core_id`, `terminal_id`, root-terminal `pid`, MCP bridge `process_id` and `client_id`; empty outside Herdr. |
+
+The Node MCP bridge discovers native context from `HC_TERMINAL_ID` and
+`HC_TERMINAL_SOCKET`, then asks that core for its actual identity. Socket paths,
+private selectors and liveness credentials are never projected. Native Open
+uses a trusted helper on the terminal's machine: an online factory, unchanged
+core/terminal/root PID and an authenticated live bridge are all required.
+A shell surviving its agent is insufficient. These observations grant no ledger
+authority. The nonportable PowerShell fallback still reports legacy locations.
 
 A claimed architect's observation takes precedence over a coordinator fallback.
 The fallback is established only by the client that creates the WorkRequest;

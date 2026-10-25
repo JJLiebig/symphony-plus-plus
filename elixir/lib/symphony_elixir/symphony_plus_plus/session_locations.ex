@@ -9,8 +9,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
   alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
   alias SymphonyElixir.SymphonyPlusPlus.SessionLocations.Location
 
-  @herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id session socket_path native_session_id native_session_agent)
-  @public_herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id)
+  @herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id session socket_path native_session_id native_session_agent core_id terminal_id client_id)
+  @herdr_pid_fields ~w(pid process_id)
+  @public_herdr_fields ~w(workspace_id workspace_label tab_id tab_label pane_id core_id terminal_id client_id pid process_id)
   @assignment_tools ToolCatalog.worker_tools() ++ ToolCatalog.architect_tools() ++ ToolCatalog.session_claim_tools()
   @local_operator_tools ToolCatalog.local_operator_tools()
 
@@ -142,10 +143,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.SessionLocations do
     |> Map.take(@herdr_fields)
     |> Map.new(fn {key, value} -> {key, text(value)} end)
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.merge(metadata |> Map.take(@herdr_pid_fields) |> Map.filter(fn {_key, value} -> is_integer(value) and value > 0 end))
   end
 
   defp herdr_location(_metadata), do: %{}
 
+  defp source(%{"core_id" => _, "terminal_id" => _, "pid" => _, "process_id" => _}, _description), do: "herdr_next"
   defp source(%{"pane_id" => _pane_id}, _description), do: "herdr"
   defp source(_herdr, description) when is_binary(description), do: "agent"
   defp source(_herdr, _description), do: "machine"
