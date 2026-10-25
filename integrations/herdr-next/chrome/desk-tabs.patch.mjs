@@ -1,9 +1,31 @@
 // S++ chrome 1 for the personal desk-tabs mod (cloned from Herdr's tabs 0.1.4): buttons for panels
-// other mods register in shared("workspace.panel_buttons"), beside Files and Changes, with the
-// same toggle. Each edit's `find` must occur exactly once in the mod; `replace` takes its place.
+// mods register in shared("workspace.panel_buttons"), S++'s own included, beside Files and Changes,
+// with the same toggle. Each edit's `find` must occur exactly once in the mod; `replace` takes its place.
 export default {
   mod: 'desk-tabs',
   edits: [
+    {
+      find: `import { spaces, panes, run, openOverlay, theme, window, shared, layout } from "herdr";
+`,
+      replace: `import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout } from "herdr";
+`,
+    },
+    {
+      find: `  init() { this.pressed = null; }
+`,
+      replace: `  init(_props, cx) {
+    this.pressed = null;
+    // S++ chrome 1: the S++ panel's button, registered here because this bar is always shown and
+    // Herdr starts the S++ panel only once it is.
+    cx.spawn(async () => {
+      const list = shared("workspace.panel_buttons");
+      const others = Array.isArray(list) ? list.filter(b => b?.id !== "sympp") : [];
+      const sympp = { id: "sympp", label: "S++", icon: "mods/sympp/mark.png", iconDark: "mods/sympp/mark-dark.png" };
+      if (JSON.stringify(Array.isArray(list) ? list.find(b => b?.id === "sympp") : null) !== JSON.stringify(sympp)) setShared("workspace.panel_buttons", [...others, sympp]);
+    });
+  }
+`,
+    },
     {
       find: `    const enabled = shared("workspace.panels") ?? ["files", "changes"];
 `,

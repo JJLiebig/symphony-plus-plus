@@ -13,8 +13,8 @@
 // Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel
 // following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
 // transport.js (HTTP through exec), ui.js (shared look), overview.js and jobview.js (what each level
-// draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk tabs and
-// agents show: the S++ panel button and agent badges).
+// draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
+// list shows on S++ agents).
 
 import { View } from "gpui-kit";
 import { v_flex, InputState, TextareaState } from "gpui-base";
@@ -88,10 +88,6 @@ export default class Lens extends View {
     this.jumps = {};
     cx.timer.every(TICK, (cx) => this.tick(cx));
     this.tick(cx);
-    cx.spawn(async () => {
-      const buttons = Chrome.withPanelButton(shared(Chrome.PANEL_BUTTONS));
-      if (buttons) setShared(Chrome.PANEL_BUTTONS, buttons);
-    });
   }
 
   // Data timer: the board when due; while a job view shows, its details at the same cadence, and
@@ -142,7 +138,7 @@ export default class Lens extends View {
       this.net = outcome.board ? M.fetchSucceeded(this.net, outcome.board, now) : M.fetchFailed(this.net, outcome.error, now);
       if (outcome.board) {
         this.announce(outcome.board);
-        const agents = Chrome.nextDecorations(shared(Chrome.AGENTS), Chrome.decorations(outcome.board, terminals(), now), now);
+        const agents = Chrome.nextDecorations(shared(Chrome.AGENTS), Chrome.decorations(outcome.board, terminals(), this.endpoint, now), this.endpoint, now);
         if (agents) setShared(Chrome.AGENTS, agents);
       }
       this.painted = now;

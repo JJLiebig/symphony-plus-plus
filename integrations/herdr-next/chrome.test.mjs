@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parseBoard } from './mods/sympp/model.js';
-import { decorations, nextDecorations, withPanelButton, PANEL, RESTAMP } from './mods/sympp/chrome.js';
+import { decorations, nextDecorations, RESTAMP } from './mods/sympp/chrome.js';
 import { boardPayload, NOW } from './fixture.mjs';
 import deskTabs from './chrome/desk-tabs.patch.mjs';
 import deskAgents from './chrome/desk-agents.patch.mjs';
@@ -29,29 +29,34 @@ test('each S++ terminal on the board gets its stage, review round and need; othe
     terminal('t5', { 'sympp.launch_id': 'e' }),
     terminal('t6', { 'sympp.launch_id': 'f', 'sympp.work_request_id': 'wr-gone', 'sympp.work_package_id': 'wp-gone' }),
     terminal('t7', {}),
-  ], NOW);
+  ], 'http://a', NOW);
+  const endpoint = 'http://a';
   assert.deepEqual(map, {
-    t1: { stage: 'build', round: null, needs: false, at: NOW },
-    t2: { stage: 'review', round: 3, needs: true, at: NOW },
-    t3: { stage: null, round: null, needs: true, at: NOW },
-    'vps/t4': { stage: 'landed', round: null, needs: false, at: NOW },
+    t1: { stage: 'build', round: null, needs: false, endpoint, at: NOW },
+    t2: { stage: 'review', round: 3, needs: true, endpoint, at: NOW },
+    t3: { stage: null, round: null, needs: true, endpoint, at: NOW },
+    'vps/t4': { stage: 'landed', round: null, needs: false, endpoint, at: NOW },
   });
 });
 
 test('the shared map changes only when an entry does, is gone, or needs a fresh stamp', () => {
-  const entry = (stage, at) => ({ stage, round: null, needs: false, at });
+  const A = 'http://a';
+  const entry = (stage, at, endpoint = A) => ({ stage, round: null, needs: false, endpoint, at });
   const before = { t1: entry('build', NOW), t2: entry('checks', NOW) };
-  assert.equal(nextDecorations(before, { t1: entry('build', NOW + 5e3), t2: entry('checks', NOW + 5e3) }, NOW + 5e3), null);
-  assert.deepEqual(nextDecorations(before, { t1: entry('build', NOW + 5e3), t2: entry('review', NOW + 5e3) }, NOW + 5e3),
-    { t1: entry('build', NOW), t2: entry('review', NOW + 5e3) });
-  assert.deepEqual(nextDecorations(before, { t1: entry('build', NOW + 5e3) }, NOW + 5e3), { t1: entry('build', NOW) });
+  const soon = NOW + 5e3;
+  assert.equal(nextDecorations(before, { t1: entry('build', soon), t2: entry('checks', soon) }, A, soon), null);
+  assert.deepEqual(nextDecorations(before, { t1: entry('build', soon), t2: entry('review', soon) }, A, soon),
+    { t1: entry('build', NOW), t2: entry('review', soon) });
+  assert.deepEqual(nextDecorations(before, { t1: entry('build', soon) }, A, soon), { t1: entry('build', NOW) });
   const later = NOW + RESTAMP;
-  assert.deepEqual(nextDecorations(before, { t1: entry('build', later), t2: entry('checks', later) }, later),
+  assert.deepEqual(nextDecorations(before, { t1: entry('build', later), t2: entry('checks', later) }, A, later),
     { t1: entry('build', later), t2: entry('checks', later) });
 
-  assert.deepEqual(withPanelButton(undefined), [PANEL]);
-  assert.equal(withPanelButton([{ id: 'notes', label: 'Notes', icon: 'n.svg' }, PANEL]), null);
-  assert.deepEqual(withPanelButton([{ id: 'sympp', label: 'S++', icon: 'mods/sympp/mark.svg' }]), [PANEL]);
+  // Another factory's view keeps its own agents' entries and leaves these alone.
+  const B = 'http://b';
+  const theirs = { t9: entry('merge', soon, B) };
+  assert.deepEqual(nextDecorations(before, theirs, B, soon), { ...before, ...theirs });
+  assert.equal(nextDecorations({ ...before, ...theirs }, { t1: entry('build', soon), t2: entry('checks', soon) }, A, soon), null);
 });
 
 // A personal desk: the anchors the patches expect, in files shaped like the desk mods.
