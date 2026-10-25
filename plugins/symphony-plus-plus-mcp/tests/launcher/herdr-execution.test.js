@@ -168,11 +168,13 @@ test("Codex uses its versioned native writer for only project trust and refuses 
   const home = process.env.CODEX_HOME;
   fs.mkdirSync(home);
   const file = path.join(home, "peer.json");
-  const canonical = fs.realpathSync.native(root);
-  const key = process.platform === "win32" ? canonical.toLowerCase() : canonical;
+  const cwd = path.join(root, "Äpp");
+  fs.mkdirSync(cwd);
+  const canonical = fs.realpathSync.native(cwd);
+  const key = process.platform === "win32" ? canonical.replace(/[A-Z]/g, letter => letter.toLowerCase()) : canonical;
   const before = { config: { model: "keep", projects: { [key]: { trust_level: "untrusted", keep: true }, sibling: { trust_level: "untrusted" } } }, version: "first" };
   fs.writeFileSync(file, JSON.stringify(before));
-  const args = ["launch", "--provider", "codex", "--task", task, "--cwd", root];
+  const args = ["launch", "--provider", "codex", "--task", task, "--cwd", cwd];
   const result = await run(args);
   assert.equal(result.code, 0);
   assert.equal(result.body.workspace_trust.trusted, true);

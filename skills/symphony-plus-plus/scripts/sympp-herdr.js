@@ -187,7 +187,7 @@ async function codexTrust(cwd, program, environment) {
     await call("initialize", { clientInfo: { name: "sympp-herdr", version: VERSION } });
     child.stdin.write(JSON.stringify({ method: "initialized", params: {} }) + "\n");
     const canonical = fs.realpathSync.native(cwd);
-    const key = process.platform === "win32" ? canonical.toLowerCase() : canonical;
+    const key = process.platform === "win32" ? canonical.replace(/[A-Z]/g, letter => letter.toLowerCase()) : canonical;
     let changed = false;
     for (let attempt = 0; attempt < 2; attempt++) {
       const before = await call("config/read", { includeLayers: true });
