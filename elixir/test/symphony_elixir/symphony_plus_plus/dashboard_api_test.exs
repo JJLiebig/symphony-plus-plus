@@ -2415,8 +2415,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         attrs = %{answer_choice: "keep", answer_note: "Retain keyboard access.", future_field: true}
 
-        assert {:ok, :ok} =
-                 repo.transaction(fn ->
+        assert :ok =
+                 repo.checkout(fn ->
                    before_refusal = repo.query!("SELECT total_changes()", []).rows
                    assert json_response(native_answer.(reviewing.id, attrs), 404)["error"]["code"] == "not_found"
 
