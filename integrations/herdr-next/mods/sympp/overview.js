@@ -1,5 +1,5 @@
-// The levels above a job: Factory (what needs you, then one row per Herdr topic), Topic (its work by
-// repository, and its agents) and Space (the work on one repository, and the agents there), under a
+// The levels above a job: Factory (what needs you, then one row per Herdr topic), Topic (its chief's
+// desk, its work by repository, and its agents) and Space (the work on one repository, and the agents there), under a
 // breadcrumb bar. Rows register with the view so keys reach everything a pointer can.
 
 import { div, svg } from "gpui-kit";
@@ -80,12 +80,13 @@ function reachable(v, t, el, key, open, label) {
     .on_click((_e, cx) => open(cx));
 }
 
-function needRow(v, t, need, names, now) {
+// A desk scopes its rows' keys, since the same need can sit on two chiefs' desks.
+function needRow(v, t, need, names, now, scope = "") {
   const job = need.job;
   const also = v.place.alsoIn(job).map((id) => names.get(id)).filter(Boolean);
   const where = [job.title, names.get(v.place.home(job)), also.length ? `also in ${also.join(", ")}` : null].filter(Boolean).join(" · ");
   const open = (cx) => v.openJob(job, { pkg: need.pkgId }, cx);
-  return reachable(v, t, v_flex().id(`need-${need.key}`).flex_none().px(14).py(11).gap(6), `need:${need.key}`, open, `${need.label}: ${need.text}. ${job.title}`)
+  return reachable(v, t, v_flex().id(`need-${scope}${need.key}`).flex_none().px(14).py(11).gap(6), `need:${scope}${need.key}`, open, `${need.label}: ${need.text}. ${job.title}`)
     .bg(tint(t.blocked, "12"))
     .hover((s) => s.bg(tint(t.blocked, "1c")))
     .child(h_flex().gap(8).items_center()
@@ -99,7 +100,7 @@ function needRow(v, t, need, names, now) {
     .child(div().w_full().truncate().text_size(11.5).text_color(t.muted).child(where));
 }
 
-function topicRow(v, t, row) {
+function topicRow(v, t, row, now) {
   const verdict = row.needs > 0 ? "needs_you" : row.moving > 0 ? "on_track" : "idle";
   const quiet = verdict === "idle" && !row.jobs.length;
   const sub = [row.repos.join(", "), ...row.shared.map((s) => `shares ${s.count} ${s.count === 1 ? "job" : "jobs"} with ${s.name}`)].filter(Boolean).join(" · ");
@@ -109,6 +110,7 @@ function topicRow(v, t, row) {
     .child(v_flex().flex_1().min_w(0).gap(3)
       .child(h_flex().gap(8).items_center()
         .child(div().min_w(0).flex_shrink(1).truncate().text_size(13.5).font_semibold().text_color(quiet ? t.muted : t.foreground).child(row.name))
+        .when(row.chiefs.length > 0, (el) => el.child(chiefMark(t, row, now)))
         .child(div().flex_1())
         .when(row.needs > 0, (el) => el.child(div().flex_none().text_size(11.5).font_semibold().text_color(t.blocked).child(`${row.needs} ${row.needs === 1 ? "needs" : "need"} you`)))
         .when(row.moving > 0, (el) => el.child(div().flex_none().text_size(11.5).text_color(t.foreground).child(`${row.moving} moving`)))
@@ -179,11 +181,22 @@ function spaceChip(v, t, space, topicId) {
     .child(label);
 }
 
+// Live, or the last sighting with where and when, or Unknown.
+function stateText(a, now) {
+  return a.state === "live" ? "Live" : a.state === "seen" ? ["Last seen", a.where, a.at ? M.ago(a.at, now) : null].filter(Boolean).join(" ") : "Unknown";
+}
+
+function reportLine(report) {
+  return report ? `Reports ${report.status}${report.msg ? `: ${report.msg}` : ""}${report.age ? ` · ${report.age}` : ""}` : null;
+}
+
+const reportTone = (t, report) => (report.status === "blocked" ? t.blocked : report.status === "working" ? t.foreground : t.muted);
+
 function agentRow(v, t, a, now) {
   const action = a.binding ? v.jumps[a.binding.address] : null;
-  const state = a.state === "live" ? "Live" : a.state === "seen" ? ["Last seen", a.where, a.at ? M.ago(a.at, now) : null].filter(Boolean).join(" ") : "Unknown";
+  const state = stateText(a, now);
   const who = [a.provider, a.name && a.name !== a.provider ? a.name : null].filter(Boolean).join(" · ");
-  const report = a.report ? `${a.report.status}${a.report.msg ? `: ${a.report.msg}` : ""}${a.report.age ? ` · ${a.report.age}` : ""}` : null;
+  const report = reportLine(a.report);
   return reachable(v, t, h_flex().id(`agent-${a.key}`).flex_none().px(8).py(7).gap(10).items_start(), `agent:${a.key}`,
     (cx) => v.openJob(a.job, { pkg: a.pkgId ?? null }, cx), `${a.role}${a.subject ? ` for ${a.subject}` : ""}, ${state}`)
     .child(div().pt(5).flex_none().child(presence(t, a.state)))
@@ -194,8 +207,7 @@ function agentRow(v, t, a, now) {
       .when(Boolean(a.subject), (el) => el.child(div().truncate().text_size(11.5).text_color(t.muted).child(a.job.title)))
       .child(div().truncate().text_size(11.5).text_color(a.state === "live" ? t.foreground : t.muted).child([state, who].filter(Boolean).join(" · ")))
       .when(Boolean(report), (el) => el.child(div().id(`agent-report-${a.key}`).truncate().text_size(11.5)
-        .text_color(a.report.status === "blocked" ? t.blocked : a.report.status === "working" ? t.foreground : t.muted)
-        .tooltip("The agent's own status report").child(`Reports ${report}`)))
+        .text_color(reportTone(t, a.report)).tooltip("The agent's own status report").child(report)))
       .when(Boolean(action?.error), (el) => el.child(div().role("alert").text_size(11.5).text_color(t.blocked).child(action.error))))
     .when(a.state === "live" && v.net.data?.offline === false, (el) => el.child(button(t, `open-${a.key}`, action?.pending ? "Checking…" : "Open", (cx) => v.focusAgent(a.binding, cx),
       { strong: true, glyph: "terminal", tip: `Open the ${a.role.toLowerCase()} terminal`, disabled: Boolean(action?.pending) })));
@@ -206,6 +218,103 @@ function agentList(v, t, agents, now) {
     .child(section(t, "Agents", agents.length || null))
     .when(!agents.length, (el) => el.child(div().px(4).text_size(12).text_color(t.muted).child("No S++ agents seen here.")))
     .children(agents.map((a) => agentRow(v, t, a, now)));
+}
+
+// ---------- Chief ----------
+
+const chiefId = (chief) => chief.key.replace(/[^\p{L}\p{N}]+/gu, "-");
+
+// A topic row's chief: its presence mark, or a count when several match.
+function chiefMark(t, row, now) {
+  const [first] = row.chiefs;
+  const tip = row.chiefs.length > 1 ? `${row.chiefs.map((c) => c.chief.domain).join(", ")} all match this topic` : `${first.chief.domain} chief · ${stateText(first.agent, now)}`;
+  return h_flex().id(`topic-chief-${row.id}`).flex_none().gap(5).items_center().tooltip(tip)
+    .child(presence(t, first.agent.state))
+    .child(div().text_size(11.5).text_color(first.agent.state === "live" ? t.foreground : t.muted).child(row.chiefs.length > 1 ? `${row.chiefs.length} chiefs` : "Chief"));
+}
+
+function chiefCard(v, t, chief, a, now) {
+  const id = chiefId(chief);
+  const action = a.binding ? v.jumps[a.binding.address] : null;
+  const report = reportLine(a.report);
+  const facts = [chief.registeredAt !== null ? `Registered ${M.ago(chief.registeredAt, now)}` : null, chief.repos.map(M.shortRepo).join(", ")].filter(Boolean).join(" · ");
+  return h_flex().id(`chief-${id}`).flex_none().mt(14).px(14).py(12).gap(12).items_start().rounded(8).bg(tint(t.accent, "12"))
+    .child(div().pt(6).flex_none().child(presence(t, a.state)))
+    .child(v_flex().flex_1().min_w(0).gap(3)
+      .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(`${chief.domain} chief`))
+      .child(div().truncate().text_size(12).text_color(a.state === "live" ? t.foreground : t.muted).child([stateText(a, now), a.provider, a.role].filter(Boolean).join(" · ")))
+      .when(Boolean(report), (el) => el.child(div().id(`chief-report-${id}`).truncate().text_size(12).text_color(reportTone(t, a.report))
+        .tooltip("The chief's own status report").child(report)))
+      .when(Boolean(facts), (el) => el.child(div().truncate().text_size(11.5).text_color(t.muted).child(facts)))
+      .when(Boolean(action?.error), (el) => el.child(div().role("alert").text_size(11.5).text_color(t.blocked).child(action.error))))
+    .when(a.state === "live" && v.net.data?.offline === false, (el) => el.child(button(t, `open-chief-${id}`, action?.pending ? "Checking…" : "Open", (cx) => v.focusAgent(a.binding, cx),
+      { strong: true, glyph: "terminal", tip: `Open the ${chief.domain} chief's terminal`, disabled: Boolean(action?.pending) })));
+}
+
+// A request or package dispatched under the chief, and where it is now. A request's own dispatched
+// packages sit under it.
+function sentRow(v, t, scope, { item, nested }, now) {
+  const { job, pkg } = item;
+  const title = pkg ? pkg.title : job.title;
+  const parent = pkg && !nested ? job.title : null;
+  return reachable(v, t, h_flex().id(`sent-${scope}-${item.key}`).flex_none().pr(12).pl(nested ? 32 : 12).py(6).gap(10).items_center(), `sent:${scope}:${item.key}`,
+    (cx) => v.openJob(job, { pkg: pkg?.id ?? null }, cx), `${title}, ${item.now}`)
+    .child(pkg ? pip(t, pkg) : mark(t, job.verdict))
+    .child(div().min_w(0).flex_shrink(1).truncate().text_size(12.5).text_color(t.foreground).child(title))
+    .when(Boolean(parent), (el) => el.child(div().min_w(0).flex_shrink(1).truncate().text_size(11.5).text_color(t.muted).child(parent)))
+    .child(div().flex_1())
+    .child(div().flex_none().text_size(11.5).text_color(t.muted).child(item.now))
+    .when(item.at !== null, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(M.ago(item.at, now))));
+}
+
+function recapRow(v, t, scope, recap, now) {
+  return reachable(v, t, v_flex().id(`recap-${scope}-${recap.key}`).flex_none().px(12).py(8).gap(3), `recap:${scope}:${recap.key}`,
+    (cx) => v.openJob(recap.job, {}, cx), `Recap on ${recap.job.title}: ${recap.text}`)
+    .child(div().w_full().text_size(12.5).text_color(t.foreground).child(recap.text))
+    .child(div().truncate().text_size(11.5).text_color(t.muted).child(`${recap.job.title} · ${M.ago(recap.at, now)}`));
+}
+
+// The newest few, the rest one click away. Only the rows shown are drawn, so the keys reach exactly those.
+function capped(v, t, key, items, limit, draw) {
+  if (items.length <= limit) return items.map(draw);
+  const open = v.expanded.has(key);
+  const rows = (open ? items : items.slice(0, limit)).map(draw);
+  const toggle = reachable(v, t, h_flex().id(`more-${key}`).flex_none().px(12).py(6).gap(8).items_center(), `more:${key}`,
+    (cx) => v.toggleExpanded(key, cx), open ? "Show fewer" : `${items.length - limit} more`)
+    .child(svg(icon(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.dim))
+    .child(div().text_size(12).text_color(t.muted).child(open ? "Fewer" : `${items.length - limit} more`));
+  return [...rows, toggle];
+}
+
+// Drawn top to bottom, so rows register for the keys in the order they show.
+function oneDesk(v, t, { chief, agent, desk }, names, now) {
+  const id = chiefId(chief);
+  const out = [chiefCard(v, t, chief, agent, now)];
+  if (desk.needs.length) {
+    out.push(section(t, "Waiting on you", desk.needs.length, t.blocked),
+      v_flex().id(`chief-needs-${id}`).gap(8).children(desk.needs.map((need) => needRow(v, t, need, names, now, `${id}:`))));
+  }
+  out.push(section(t, "Dispatched", desk.work.length || null));
+  const sent = desk.work.flatMap((item) => [{ item, nested: false }, ...item.packages.map((pkg) => ({ item: pkg, nested: true }))]);
+  out.push(sent.length ? v_flex().id(`chief-sent-${id}`).gap(1).children(capped(v, t, `sent:${id}`, sent, 8, (row) => sentRow(v, t, id, row, now)))
+    : div().px(4).text_size(12).text_color(t.muted).child("Nothing dispatched yet."));
+  if (desk.recaps.length) {
+    out.push(section(t, "Recaps", desk.recaps.length),
+      v_flex().id(`chief-recaps-${id}`).gap(1).children(capped(v, t, `recaps:${id}`, desk.recaps, 3, (recap) => recapRow(v, t, id, recap, now))));
+  }
+  return out;
+}
+
+// A topic's chief desk; a topic without a chief gets one quiet line saying how to make one. When
+// several chiefs match, each is shown and none is picked.
+function chiefDesks(v, t, topic, desks, names, now) {
+  if (topic.kind !== "topic") return [];
+  if (!desks.length) return [div().id("chief-none").pt(14).px(4).text_size(12).text_color(t.muted).child(`No chief yet. Tell an agent it's the ${topic.name} chief.`)];
+  const several = desks.length > 1
+    ? div().id("chief-several").pt(14).px(4).text_size(12).text_color(t.foreground)
+      .child(`${desks.length} chiefs match this topic: ${desks.map((d) => d.chief.domain).join(", ")}`)
+    : null;
+  return [several, ...desks.flatMap((d) => oneDesk(v, t, d, names, now))];
 }
 
 // Settled and dormant jobs stay in the dashboard; the level only counts them.
@@ -232,12 +341,12 @@ export function factoryLevel(v, t, jobs, rows, now) {
   const main = [section(t, "Needs you", needs.length || null, needs.length ? t.blocked : t.dim),
     needs.length ? v_flex().id("needs-queue").gap(8).children(needs.map((need) => needRow(v, t, need, names, now)))
       : div().px(4).text_size(12.5).text_color(t.muted).child("Nothing needs you.")];
-  const aside = [section(t, "Topics", null), v_flex().id("topic-rows").gap(2).children(rows.map((row) => topicRow(v, t, row)))];
+  const aside = [section(t, "Topics", null), v_flex().id("topic-rows").gap(2).children(rows.map((row) => topicRow(v, t, row, now)))];
   return columns(v, "factory", main, aside, 400);
 }
 
-export function topicLevel(v, t, topic, groups, agents, names, now) {
-  const main = [];
+export function topicLevel(v, t, topic, groups, agents, desks, names, now) {
+  const main = chiefDesks(v, t, topic, desks, names, now);
   for (const g of groups) {
     main.push(h_flex().id(`repo-${g.key || "other"}`).pt(18).pb(6).px(4).gap(8).items_center().flex_wrap()
       .child(div().text_size(12.5).font_semibold().text_color(t.foreground).child(g.label))

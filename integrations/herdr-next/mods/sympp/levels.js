@@ -3,7 +3,7 @@
 // imports, so every rule here is asserted on its own. Jobs stay canonical S++ jobs: a level only
 // places, ranks and references them; it never copies the backlog.
 
-import { shortRepo, lanesOf, bindingsFor } from "./model.js";
+import { shortRepo, lanesOf, bindingsFor, chiefBindings, stageText } from "./model.js";
 import * as J from "./job.js";
 
 export const UNSORTED = "unsorted";
@@ -210,6 +210,77 @@ export function agentRows(jobs, allJobs, bindings, terminalList, spaceIds, check
   }
   const order = { live: 0, seen: 1, unknown: 2 };
   return [...rows.values()].sort((a, b) => order[a.state] - order[b.state] || (b.at ?? 0) - (a.at ?? 0));
+}
+
+// ---------- Chiefs ----------
+
+const words = (name) => String(name ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+// One name's words lead or end the other's: Kraken and Nextide-Kraken, Personal and Personal Tools.
+function wordMatch(a, b) {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (!short.length) return false;
+  const from = (offset) => short.every((word, i) => long[offset + i] === word);
+  return from(0) || from(long.length - short.length);
+}
+
+// A Herdr topic's chiefs: the chief named exactly like it; else chiefs whose name leads or ends the
+// topic's; else chiefs whose declared repositories place there, as jobs place. A chief named exactly
+// like another topic belongs to that one. Several at the first rule that matches are all returned,
+// never one picked.
+export function chiefsFor(topic, chiefs, desk, repoTopics) {
+  if (topic?.kind !== "topic" || !chiefs?.length) return [];
+  const name = (value) => words(value).join(" ");
+  const exact = name(topic.name) ? chiefs.filter((c) => name(c.domain) === name(topic.name)) : [];
+  if (exact.length) return exact;
+  const claimed = new Set(desk.filter((t) => t.kind === "topic").map((t) => name(t.name)));
+  const free = chiefs.filter((c) => !name(c.domain) || !claimed.has(name(c.domain)));
+  const named = free.filter((c) => wordMatch(words(c.domain), words(topic.name)));
+  if (named.length) return named;
+  return free.filter((c) => c.repos.some((repo) => topicsOfRepo(repo, desk, repoTopics).some((t) => t.id === topic.id)));
+}
+
+// The chief as an agent, by the Job level's rule: Live only after a helper check of its bound session,
+// else its last S++ sighting, else unknown. Provider and role come from that binding, the report from
+// the agent's own OSC status.
+export function chiefAgent(chief, bindings, terminalList, checks, now) {
+  const own = chiefBindings(bindings, chief);
+  const seen = J.liveness(own, checks, chief.location, null, now);
+  const binding = seen.binding ?? own[0] ?? null;
+  return {
+    ...seen, bindings: own,
+    provider: binding && binding.provider !== "Agent" ? binding.provider : null,
+    role: binding?.role ?? null,
+    report: J.reportFor(own, terminalList, now),
+  };
+}
+
+const newest = (a, b) => (b.at ?? 0) - (a.at ?? 0);
+
+// Where a dispatched request is now: its phase, and how much of it has landed.
+function jobNow(job) {
+  const phase = J.PHASES.find(([key]) => key === J.phaseOf(job))?.[1] ?? null;
+  const landed = job.counts.total && phase !== "Done" ? `${job.counts.done}/${job.counts.total} landed` : null;
+  return [phase, landed].filter(Boolean).join(" · ") || "Unknown";
+}
+
+// A chief's desk: the requests and packages created or dispatched under its domain, newest first and
+// each where it is now (a request lists its own dispatched packages under it); the architects' recaps
+// on that work; and what waits on the person there.
+export function chiefDesk(chief, jobs, now) {
+  const mine = (by) => typeof by === "string" && by.toLowerCase() === chief.key;
+  const work = [];
+  for (const job of jobs) {
+    const packages = job.packages.filter((pkg) => mine(pkg.dispatchedBy))
+      .map((pkg) => ({ key: `${job.id}:${pkg.id}`, job, pkg, at: pkg.dispatchedAt ?? pkg.createdAt, now: stageText(pkg, now), packages: [] }))
+      .sort(newest);
+    if (mine(job.dispatchedBy)) work.push({ key: job.id, job, pkg: null, at: job.createdAt, now: jobNow(job), packages });
+    else work.push(...packages);
+  }
+  work.sort(newest);
+  const theirs = [...new Set(work.map((item) => item.job))];
+  const recaps = theirs.filter((job) => job.report.brief).map((job) => ({ key: job.id, job, text: job.report.brief.text, at: job.report.brief.at })).sort(newest);
+  return { work, recaps, needs: needsQueue(theirs) };
 }
 
 // ---------- Navigation ----------

@@ -176,3 +176,64 @@ test('the breadcrumb runs Factory > Topic > Space > Job, Esc goes up one level a
   assert.deepEqual(L.resolvePath({ topic: 't-tools', space: 's-web', job: 'wr-archived' }, desk, jobs), { topic: 't-herdr', space: 's-web', job: null }, 'a space sits under its own topic');
   assert.equal(L.resolvePath({ job: 'wr-new' }, desk, jobs, 'wr-new').job, 'wr-new', 'a just-created job waits for the board');
 });
+
+test('a topic\'s chief is the one named like it, else one whose name leads or ends it, else by its repositories; several are all shown', () => {
+  const { desk } = setup();
+  const { chiefs } = board();
+  const topic = (name, spaces = []) => ({ id: name, name, kind: 'topic', spaces });
+  const chief = (domain, repos = []) => ({ domain, key: domain.toLowerCase(), repos, location: null, session: null });
+  const of = (t, list, d = desk) => L.chiefsFor(t, list, d).map((c) => c.domain);
+  assert.deepEqual(of(byId(desk, 't-herdr'), chiefs), ['Herdr'], 'names match ignoring case');
+  assert.deepEqual(of(byId(desk, 't-live'), chiefs), ['Live'], 'Live ends Nextide-Live');
+  assert.deepEqual(of(byId(desk, 't-tools'), chiefs), [], 'a topic nothing matches has no chief');
+  assert.deepEqual(of(byId(desk, L.UNSORTED), chiefs), [], 'unsorted spaces are not a topic');
+  assert.deepEqual(of(topic('Nextide-Kraken'), [chief('kraken'), chief('Personal')]), ['kraken']);
+  assert.deepEqual(of(topic('Kraken'), [chief('Nextide-Kraken')]), ['Nextide-Kraken'], 'either name may be the longer');
+  assert.deepEqual(of(topic('Personal Tools'), [chief('personal-tools'), chief('Tools')]), ['personal-tools'], 'the exact name wins over a word');
+  assert.deepEqual(of(topic('Nextide-Kraken'), [chief('Nextide'), chief('Kraken')]), ['Nextide', 'Kraken'], 'two at the same rule are both shown');
+  assert.deepEqual(of(topic('Krakenite'), [chief('Kraken')]), [], 'a word is whole, never part of one');
+  assert.deepEqual(of(topic('Nextide-工作'), [chief('私人'), chief('工作')]), ['工作'], 'letters in any script are words');
+  assert.deepEqual(of(topic('—'), [chief('·')]), [], 'names without letters never match');
+  const two = [topic('Nextide'), topic('Nextide-Live')];
+  assert.deepEqual(of(two[1], [chief('Nextide')], two), [], 'a chief named exactly like another topic belongs there');
+  const tools = byId(desk, 't-tools');
+  assert.deepEqual(of(tools, [chief('Platform', ['owner/api'])]), ['Platform'], 'its repositories place it where jobs on them place');
+  assert.deepEqual(of(tools, [chief('Platform', ['owner/api']), chief('Tools')]), ['Tools'], 'a name match comes before repositories');
+  assert.deepEqual(L.chiefsFor(tools, [chief('Platform', ['owner/api'])], desk, { 'owner/api': 't-herdr' }), [], 'explicit repository mappings apply');
+});
+
+test('a chief\'s desk lists what it dispatched where it is now, newest first, with recaps and what waits on the person', () => {
+  const { jobs } = setup();
+  const [herdr, live] = board().chiefs;
+  const desk = L.chiefDesk(herdr, jobs, NOW);
+  assert.deepEqual(desk.work.map((w) => [w.key, w.now, w.packages.map((p) => p.key)]), [
+    ['wr-cross:x-api', 'Building · 2h 00m', []],
+    ['wr-pr', 'Executing · 1/4 landed', ['wr-pr:wp-build']],
+  ], 'a package dispatched in someone else\'s request stands alone; a request lists its own dispatched packages');
+  assert.equal(desk.work[1].packages[0].now, 'Building · 1h 30m');
+  assert.deepEqual(desk.recaps.map((r) => [r.job.id, r.text]), [['wr-cross', 'Token API is building; the UI waits on it and on your call.']]);
+  assert.deepEqual(desk.needs.map((n) => n.key), L.needsQueue([byId(jobs, 'wr-cross'), byId(jobs, 'wr-pr')]).map((n) => n.key), 'what waits on the person there, ranked like the factory queue');
+  assert.equal(desk.needs.length, 3);
+  assert.deepEqual(L.chiefDesk(live, jobs, NOW), { work: [], recaps: [], needs: [] }, 'attribution is by domain, never by topic or repository');
+});
+
+test('a chief is Live only after a helper check of its own registered session, else last seen, else unknown', () => {
+  const [herdr, live] = board().chiefs;
+  const labels = {
+    'sympp.session_id': 'chief-herdr', 'sympp.session_core_id': 'core-1', 'sympp.session_pid': '70', 'sympp.session_process_id': '71',
+    'sympp.session_receipt': String.raw`C:\private\chief.json`, 'sympp.session_role': 'coordinator', 'sympp.session_work_request_id': 'wr-pr',
+  };
+  const terminal = { address: 't7', pid: 70, state: 'live', status: 'working', status_ms: NOW - 60e3, report: { msg: 'Slicing the board' }, labels };
+  const other = { ...terminal, address: 't8', labels: { ...labels, 'sympp.session_core_id': 'core-2' } };
+  const bindings = M.discoverBindings({ local: { node: 'node', helper: 'h' } }, [terminal, other]);
+  assert.deepEqual(M.chiefBindings(bindings, herdr).map((b) => b.address), ['t7'], 'the same session id on another core is not the chief');
+  const seen = L.chiefAgent(herdr, bindings, [terminal], {}, NOW);
+  assert.deepEqual([seen.state, seen.where, seen.at], ['seen', 'build-desk › Terminal: Herdr chief', NOW - 15 * 60e3], 'its labels alone never make it live');
+  assert.deepEqual([seen.role, seen.provider, seen.report.status, seen.report.msg], ['coordinator', null, 'working', 'Slicing the board']);
+  const checks = { t7: { ok: true, at: NOW - 1000, launchId: 'chief-herdr', pid: 70 } };
+  const checked = L.chiefAgent(herdr, bindings, [terminal], checks, NOW);
+  assert.equal(checked.state, 'live');
+  assert.equal(checked.binding.address, 't7', 'Open goes through the checked binding');
+  assert.equal(L.chiefAgent(herdr, bindings, [terminal], { t7: { ...checks.t7, at: NOW - 10 * 60e3 } }, NOW).state, 'seen', 'an old check has expired');
+  assert.equal(L.chiefAgent(live, bindings, [terminal], checks, NOW).state, 'unknown', 'no location and no session is unknown');
+});

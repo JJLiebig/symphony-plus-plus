@@ -2,7 +2,8 @@
 // breadcrumb; Esc goes up one. A copy opened with props.job is that job's own tab. A panel copy follows
 // Herdr's focus (a job's terminal or tab, else the space, else its topic) until it is pinned. A toast
 // says when something newly needs the person. Intake and answers persist through S++; terminal jumps
-// and "Live" both rest on a trusted execution helper's check, never on terminal labels or text.
+// and "Live" both rest on a trusted execution helper's check, never on terminal labels or text. A
+// topic with a registered chief shows that chief's desk.
 //
 // Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel", job?: "<work request id>",
 //   bridge: { node, helper },
@@ -324,12 +325,22 @@ export default class Lens extends View {
     return spaces();
   }
 
-  // The agents a Topic or Space level lists, and the bindings the timer then checks.
-  agentsFor(jobs, all, bindings, spaceIds, now) {
+  // The agents a Topic or Space level lists, and the bindings the timer then checks, with any chiefs'.
+  agentsFor(jobs, all, bindings, spaceIds, now, chiefs = []) {
     const rows = L.agentRows(jobs, all, bindings, terminals(), spaceIds, this.agentChecks, now);
-    const watched = rows.flatMap((r) => M.bindingsFor(bindings, r.job.id, r.pkgId ?? null));
-    this.agentWatch = { key: `${this.level}:${spaceIds.join(",")}:${jobs.map((j) => j.id).join(",")}`, bindings: watched.filter((b, i) => watched.findIndex((o) => o.address === b.address) === i) };
+    this.watch(`${this.level}:${spaceIds.join(",")}:${jobs.map((j) => j.id).join(",")}`,
+      [...rows.flatMap((r) => M.bindingsFor(bindings, r.job.id, r.pkgId ?? null)), ...chiefs.flatMap((c) => c.agent.bindings)]);
     return rows;
+  }
+
+  watch(key, list) {
+    this.agentWatch = { key, bindings: list.filter((b, i) => list.findIndex((o) => o.address === b.address) === i) };
+  }
+
+  // The chiefs matching a topic, each as an agent.
+  chiefsOf(topic, board, desk, bindings, now) {
+    return L.chiefsFor(topic, board.chiefs, desk, this.repoTopics)
+      .map((chief) => ({ chief, agent: L.chiefAgent(chief, bindings, terminals(), this.agentChecks, now) }));
   }
 
   // An open review drill-down follows the selected package.
@@ -571,12 +582,17 @@ export default class Lens extends View {
     }
     const top = [O.levelBar(this, t, trail, { now, needs }), O.staleBar(this, t, now)];
     if (this.intake) return this.root(t, [...top, O.intakeForm(this, t)]);
-    if (this.level === "factory") return this.root(t, [...top, O.factoryLevel(this, t, board.jobs, L.factoryRows(board.jobs, desk, this.place), now)]);
+    if (this.level === "factory") {
+      const rows = L.factoryRows(board.jobs, desk, this.place).map((row) => ({ ...row, chiefs: this.chiefsOf(row, board, desk, bindings, now) }));
+      this.watch("factory", rows.flatMap((row) => row.chiefs.flatMap((c) => c.agent.bindings)));
+      return this.root(t, [...top, O.factoryLevel(this, t, board.jobs, rows, now)]);
+    }
     if (this.level === "topic") {
       const topic = desk.find((x) => x.id === path.topic);
       const groups = L.topicWork(topic, board.jobs, this.place);
-      const agents = this.agentsFor(groups.flatMap((g) => g.jobs), board.jobs, bindings, topic.spaces.map((s) => s.id), now);
-      return this.root(t, [...top, O.topicLevel(this, t, topic, groups, agents, names, now)]);
+      const desks = this.chiefsOf(topic, board, desk, bindings, now).map((c) => ({ ...c, desk: L.chiefDesk(c.chief, board.jobs, now) }));
+      const agents = this.agentsFor(groups.flatMap((g) => g.jobs), board.jobs, bindings, topic.spaces.map((s) => s.id), now, desks);
+      return this.root(t, [...top, O.topicLevel(this, t, topic, groups, agents, desks, names, now)]);
     }
     const found = L.spaceById(desk, path.space);
     const work = L.spaceWork(found.space, board.jobs);
