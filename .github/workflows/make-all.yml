@@ -111,6 +111,8 @@ jobs:
         working-directory: elixir
         shell: pwsh
         run: (mise where node) >> $env:GITHUB_PATH
+      - name: Check native Herdr integration
+        run: node --test integrations/herdr-next/*.test.mjs
       - name: Build candidate browser and inspector
         working-directory: elixir/assets
         run: |
@@ -465,6 +467,10 @@ jobs:
 
       - name: Test frontend
         run: npm test
+
+      - name: Check native Herdr integration
+        working-directory: .
+        run: node --test integrations/herdr-next/*.test.mjs
 
       - name: Check frontend quality
         run: npm run quality

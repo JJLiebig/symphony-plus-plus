@@ -38,6 +38,8 @@ documents do not remain in the active documentation tree.
 
 ## Beta Contract
 
+- [S++ × Herdr-next](design/herdr-next-integration.md): optional native client,
+  execution-host integration and delivery status; standalone S++ stays complete.
 - [Factory workflow](design/factory-workflow.md): roles, small-work and
   architect/UI loops, delivery semantics and visibility.
 - [Editable diagram](design/factory-workflow.excalidraw) and
