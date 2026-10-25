@@ -2228,8 +2228,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       opener = :sys.get_state(OperatorDashboardOpener)
       assert :ok = DashboardPubSub.subscribe()
 
-      assert {:ok, :ok} =
+      assert {:error, :native_read_verified} =
                repo.transaction(fn ->
+                 # A pending migration must not turn this read into a schema write.
+                 repo.query!("DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)", [])
                  before_read = repo.query!("SELECT total_changes()", []).rows
 
                  board =
@@ -2244,7 +2246,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
                  assert signal["active_blocker_count"] == 1
                  assert repo.query!("SELECT total_changes()", []).rows == before_read
-                 :ok
+                 repo.rollback(:native_read_verified)
                end)
 
       assert :sys.get_state(OperatorDashboardOpener) == opener
