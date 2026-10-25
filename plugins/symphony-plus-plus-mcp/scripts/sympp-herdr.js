@@ -273,6 +273,7 @@ function connectCore(session, command = "hc", prefix = [], environment = process
 }
 
 async function inspect(core, info, receipt) {
+  // Worker-owned sympp.preview_url is display-only, never identity or authority.
   if (info.id !== receipt.core_id) return { ...receipt, state: "stale", status: "unknown", reason: "different_core" };
   if (!receipt.terminal_id || !receipt.pid) return { ...receipt, state: "stale", status: "unknown", reason: "launch_uncertain" };
   let terminal;
@@ -308,6 +309,7 @@ function sessionAlive(receipt) {
 }
 
 async function publishPid(core, receipt) {
+  // Patch only the PID; preserve worker-owned display labels such as sympp.preview_url.
   const terminal = await core.call("terminal.label", { terminal: receipt.terminal_id, labels: { "sympp.pid": String(receipt.pid) } });
   if (terminal.pid !== receipt.pid || terminal.labels?.["sympp.launch_id"] !== receipt.launch_id || terminal.labels?.["sympp.pid"] !== String(receipt.pid)) {
     fail("process_changed", "Check the receipt; its original agent changed before discovery completed.");

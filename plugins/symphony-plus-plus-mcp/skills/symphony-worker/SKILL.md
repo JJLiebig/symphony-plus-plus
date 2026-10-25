@@ -24,6 +24,22 @@ question record, or duplicate review receipt are required.
 - Honor assigned budgets; otherwise keep one cohesive outcome. Escalate material
   scope growth before implementing it. Do not invent product behavior for a review.
 
+## UI Collaboration
+
+For UI work, collaborate directly with the human in the worker's terminal:
+
+- In Herdr, publish the running dev-server URL on your own terminal with
+  `hc label $HC_TERMINAL_ID sympp.preview_url=<url>`; clear it with
+  `hc label $HC_TERMINAL_ID sympp.preview_url=` when the server stops.
+  In PowerShell, use `$env:HC_TERMINAL_ID` for the terminal argument.
+- Post screenshots at visual milestones and pause for the human's feedback in
+  that terminal before continuing visual iteration.
+- Treat direct human input as product direction and record the decisions in
+  the handoff. Return scope or authority conflicts to the parent.
+
+Keep ownership of checks, required review and the PR. Non-UI work continues
+autonomously without these collaboration pauses.
+
 ## Checks and Review
 
 - Use the repository's native required tests, static checks, CI, and declared
