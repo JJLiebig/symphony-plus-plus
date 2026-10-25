@@ -1,8 +1,9 @@
 # S++ × Herdr-next
 
-Status: native delivery in [#760](https://github.com/JJLiebig/symphony-plus-plus/pull/760).
-The backend and execution tooling have landed on S++ beta; the native package
-is completing review and hosted qualification.
+Status: optional native desktop integration. The backend and execution tooling
+landed on S++ beta in #757–759; the native package is tracked in
+[#760](https://github.com/JJLiebig/symphony-plus-plus/pull/760).
+Qualification and current limits are recorded below.
 
 ## Product contract
 
@@ -161,7 +162,7 @@ recovery restores shells rather than restarting the original agent.
 | Native human actions | Intake and persisted question/guidance answers, with browser exclusion and canonical scope/status checks. | Landed in [#758](https://github.com/JJLiebig/symphony-plus-plus/pull/758); API/offline acceptance and all required hosted gates passed. |
 | Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | Landed in [#759](https://github.com/JJLiebig/symphony-plus-plus/pull/759); six controlled-core checks and all required hosted gates passed. Native receipt checks also reject mismatched canonical request/package IDs. |
 | Cross-provider execution | Scoped launches and handoffs through herdr-core, provider qualification and recovery evidence. | Six controlled-core checks; real Windows Codex, Claude Opus and OpenCode launches and both fresh Codex/Opus handoffs passed in an isolated core. In-place sends to done/unknown agents remain unsupported by core 0.1.10. |
-| Delivery qualification | Native view checked in an isolated home, owning source/hosted checks, review, packaged installation and real boundary evidence. | Twelve focused native tests and installed `herdr-app check` passed. FAST review and exact-head hosted checks are in progress. Existing installed factories remain untouched. |
+| Delivery qualification | Native view checked in an isolated home, owning source/hosted checks, review, packaged installation and real boundary evidence. | Twelve focused native tests, installed `herdr-app check` and FAST review passed. Installation into isolated and personal Herdr homes preserved layouts, topics and terminals. Exact-head hosted results are recorded in #760. Existing installed factories remain untouched; a new factory needs a fresh host session before use. |
 
 This table records actual evidence as work lands. A design, source commit,
 simulated fixture or healthy web interface alone does not qualify the native
