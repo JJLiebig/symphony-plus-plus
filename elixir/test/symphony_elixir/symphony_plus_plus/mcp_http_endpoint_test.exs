@@ -78,8 +78,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   test "successful native tool observations retain separate terminal and MCP process identities" do
     id = "native-location-#{System.unique_integer([:positive])}"
     server = %Server{config: Config.default(repo: Repo)}
-    native = %{"core_id" => "core-one", "terminal_id" => "t8", "pid" => 123, "process_id" => 456, "client_id" => "client-native",
-      "process_liveness_token" => "private-token", "socket_path" => "private-selector"}
+
+    native = %{
+      "core_id" => "core-one",
+      "terminal_id" => "t8",
+      "pid" => 123,
+      "process_id" => 456,
+      "client_id" => "client-native",
+      "process_liveness_token" => "private-token",
+      "socket_path" => "private-selector"
+    }
+
     payload = tool_call_request("native-location", "create_work_request", %{}) |> with_location("client-native", "build-desk", native)
     response = %{"result" => %{"structuredContent" => %{"work_request" => %{"id" => id}}}}
 

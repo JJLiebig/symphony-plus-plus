@@ -237,8 +237,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
       assert repo.all(Location) |> Enum.all?(&(&1.last_seen_at == observed_at))
 
       for location <- repo.all(Location) do
-        native = %{"core_id" => "core-one", "terminal_id" => "t8", "pid" => 123, "process_id" => 456,
-          "client_id" => "client-native", "socket_path" => "private-native-selector", "process_liveness_token" => "private-token"}
+        native = %{
+          "core_id" => "core-one",
+          "terminal_id" => "t8",
+          "pid" => 123,
+          "process_id" => 456,
+          "client_id" => "client-native",
+          "socket_path" => "private-native-selector",
+          "process_liveness_token" => "private-token"
+        }
+
         location |> Ecto.Changeset.change(source: "herdr_next", herdr: native) |> repo.update!()
       end
 
@@ -252,10 +260,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
       native_detail = work_request_detail(native_payload, request.id)
       native_architect = native_detail["work_request"]["architect_session_location"]
       native_worker = Enum.find(native_detail["work_packages"], &(&1["id"] == package.id))["session_location"]
+
       for observed <- [native_architect, native_worker] do
         assert observed["source"] == "herdr_next"
         assert observed["herdr"] == %{"core_id" => "core-one", "terminal_id" => "t8", "pid" => 123, "process_id" => 456, "client_id" => "client-native"}
       end
+
       refute inspect(native_payload) =~ "private-"
       assert {:ok, _deleted} = WorkRequestService.delete(repo, request.id)
       assert repo.all(Location) == []
