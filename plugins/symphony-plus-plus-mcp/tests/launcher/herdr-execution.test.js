@@ -8,6 +8,7 @@ const os = require("node:os");
 const { spawn, spawnSync } = require("node:child_process");
 const net = require("node:net");
 const { once } = require("node:events");
+const { createHash } = require("node:crypto");
 const { createReporter } = require("../../scripts/sympp-session-location.js");
 const cli = path.resolve(__dirname, "../../scripts/sympp-herdr.js");
 const peer = path.join(__dirname, "herdr-execution-peer.js");
@@ -67,6 +68,7 @@ test("ordinary tasks launch every provider without S++ authority, shell interpol
     assert.equal(result.code, 0);
     assert.equal(result.body.work_package_id, null);
     const request = state().calls.filter((call) => call.method === "terminal.run").at(-1).params;
+    assert.equal(request.name, `repair-the-specified-${provider}`, "shorten at a word boundary and preserve the provider");
     assert.equal(request.env.OPENAI_API_KEY, undefined);
     assert.equal(request.line, undefined);
     assert.equal(request.cwd, root);
@@ -233,6 +235,90 @@ test("dispatched bootstrap binds exact work once, preserves placement and explic
   assert.equal(state().terminal.labels["sympp.core_id"], first.body.core_id);
   assert.ok(state().calls.every((call) => call.method.startsWith("terminal.") || call.method === "hello"));
   assert.equal((await run(args.map((arg) => arg === "opus" ? "sonnet" : arg))).body.error, "launch_conflict");
+}));
+
+test("assignment titles and leading ownership prompts name the worker without changing its binding", async () => scenario(async ({ root, run, state }) => {
+  const input = path.join(root, "worker.json");
+  const bootstrap = {
+    type: "assignment", launch_prompt: "You own WorkPackage wp-one: Prompt title (parent WorkRequest wr-one).\nDo the work.",
+    coordinates: { primary_execution: { kind: "work_package", work_package_id: "wp-one" }, product_parent: { kind: "work_request", work_request_id: "wr-one" } },
+  };
+  const cases = [
+    [{ dispatch: { worker_bootstrap: { ...bootstrap, assignment: { title: "  Review drill-down  " } } } }, "review-drill-down-claude"],
+    [{ worker_bootstrap: { ...bootstrap, assignment: { work_package: { title: "Native dispatch title" } } } }, "native-dispatch-title-claude"],
+    [{ worker_bootstrap: { ...bootstrap, work_package: { title: "Package title" } } }, "package-title-claude"],
+    [{ work_package: { title: "Outer package" }, dispatch: { worker_bootstrap: bootstrap } }, "outer-package-claude"],
+    [bootstrap, "prompt-title-claude"],
+  ];
+  for (const [index, [body, expected]] of cases.entries()) {
+    fs.writeFileSync(input, JSON.stringify(body));
+    const result = await run(["launch", "--provider", "claude", "--assignment", input, "--ledger", "isolated", "--cwd", root, "--attempt", String(index)]);
+    assert.equal(result.code, 0);
+    assert.equal(state().terminal.name, expected);
+    assert.equal(state().terminal.labels["sympp.work_package_id"], "wp-one");
+  }
+}));
+
+test("name override is cosmetic and keeps legacy launch and request hashes and the same receipt", async () => scenario(async ({ root, task, run, state }) => {
+  const args = ["launch", "--provider", "opencode", "--task", task, "--cwd", root];
+  const first = await run([...args, "--name", "  Réview drill-down!  "]);
+  assert.equal(first.code, 0);
+  assert.equal(state().terminal.name, "review-drill-down-opencode");
+  const hash = value => createHash("sha256").update(value).digest("hex");
+  assert.equal(first.body.launch_id, hash(JSON.stringify(["core-one", null, task, "first"])));
+  const program = state().calls.find(call => call.method === "terminal.run").params.argv[0];
+  const before = fs.readFileSync(first.body.receipt, "utf8");
+  assert.equal(JSON.parse(before).request_hash, hash(JSON.stringify([hash(fs.readFileSync(task, "utf8")), root, "opencode", program, null, null, null, null, null])));
+  const second = await run([...args, "--name", "Different display"]);
+  assert.equal(second.body.reused, true);
+  assert.equal(second.body.launch_id, first.body.launch_id);
+  assert.equal(second.body.receipt, first.body.receipt);
+  assert.equal(fs.readFileSync(first.body.receipt, "utf8"), before);
+  assert.equal(state().runs, 1);
+}));
+
+test("task first line and safe fallback names omit paths, credentials and unusable text", async () => scenario(async ({ root, task, run, state, save }) => {
+  const cases = [
+    ["First line\r\nDo not copy the rest", "first-line-opencode"],
+    ["\nOnly the first line counts", "task-opencode"],
+    ["Read C:\\private\\task.txt", "task-opencode"],
+    ["Read /private/task.txt", "task-opencode"],
+    ["token=controlled-private-value", "task-opencode"],
+    ["Bearer controlled-private-value", "task-opencode"],
+    ["sk-controlled-private-value", "task-opencode"],
+    ["!!!", "task-opencode"],
+    ["Averylongunbrokenwordthatneedstruncation", "averylongunbrokenwordth-opencode"],
+  ];
+  for (const [index, [body, expected]] of cases.entries()) {
+    fs.writeFileSync(task, body);
+    save({ ...state(), terminals: [] });
+    const result = await run(["launch", "--provider", "opencode", "--task", task, "--cwd", root, "--attempt", String(index)]);
+    assert.equal(result.code, 0);
+    assert.equal(state().terminal.name, expected);
+  }
+  const unsafeOverride = await run(["launch", "--provider", "opencode", "--task", task, "--cwd", root, "--attempt", "override", "--name", "Read /private/input"]);
+  assert.equal(unsafeOverride.code, 0);
+  assert.equal(state().terminal.name, "task-opencode");
+}));
+
+test("core name collisions disambiguate only rejected launches and reuse names of finished terminals", async () => scenario(async ({ root, task, run, state, save }) => {
+  fs.writeFileSync(task, "Review drill-down");
+  const args = ["launch", "--provider", "opencode", "--task", task, "--cwd", root];
+  const first = await run(args);
+  assert.equal(first.code, 0);
+  assert.equal(state().terminal.name, "review-drill-down-opencode");
+  const hash = value => createHash("sha256").update(value).digest("hex");
+  const nextId = hash(JSON.stringify(["core-one", null, task, "second"]));
+  const occupied = `review-drill-${nextId.slice(0, 6)}-opencode`;
+  save({ ...state(), terminals: [...state().terminals, { name: occupied, state: "live" }] });
+  const second = await run([...args, "--attempt", "second"]);
+  assert.equal(second.code, 0);
+  assert.equal(state().terminal.name, `review-drill-${nextId.slice(0, 6)}-2-opencode`);
+  assert.equal(state().runs, 2, "name rejection starts no program");
+  assert.equal(state().calls.filter(call => call.method === "terminal.run").length, 4);
+  save({ ...state(), terminals: state().terminals.map(terminal => ({ ...terminal, state: "finished" })) });
+  assert.equal((await run([...args, "--attempt", "third"])).code, 0);
+  assert.equal(state().terminal.name, "review-drill-down-opencode");
 }));
 
 test("lost launch replies and stale processes never trigger duplicate execution", async () => scenario(async ({ root, task, state, save, run }) => {
