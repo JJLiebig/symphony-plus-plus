@@ -33,6 +33,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Server
   alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.RetentionThrottle
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
@@ -2222,6 +2223,42 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert packages[terminal.id]["activity_signal"]["observation_state"] == "unknown"
 
       assert payload["attention_keys"] == ["group:#{group.id}", "work_package:#{active.id}"]
+
+      assert :ok = OperatorDashboardOpener.ensure_started()
+      opener = :sys.get_state(OperatorDashboardOpener)
+      assert :ok = DashboardPubSub.subscribe()
+
+      assert {:ok, :ok} =
+               repo.transaction(fn ->
+                 before_read = repo.query!("SELECT total_changes()", []).rows
+
+                 board =
+                   build_conn()
+                   |> Map.put(:host, "localhost")
+                   |> Map.put(:remote_ip, {127, 0, 0, 1})
+                   |> get("/api/v1/sympp/herdr/dashboard")
+                   |> json_response(200)
+
+                 detail = Enum.find(board["work_request_details"], &(&1["work_request"]["id"] == work_request.id))
+                 assert Enum.any?(detail["product_tree"]["nodes"], &(&1["id"] == group.id))
+                 signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
+                 assert signal["active_blocker_count"] == 1
+                 assert repo.query!("SELECT total_changes()", []).rows == before_read
+                 :ok
+               end)
+
+      assert :sys.get_state(OperatorDashboardOpener) == opener
+      refute_received :operator_dashboard_changed
+
+      for {host, remote_ip} <- [{"localhost", {203, 0, 113, 1}}, {"example.invalid", {127, 0, 0, 1}}] do
+        denied =
+          build_conn()
+          |> Map.put(:host, host)
+          |> Map.put(:remote_ip, remote_ip)
+          |> get("/api/v1/sympp/herdr/dashboard")
+
+        assert json_response(denied, 401)["error"]["code"] == "unauthorized"
+      end
 
       forwarded =
         build_conn()

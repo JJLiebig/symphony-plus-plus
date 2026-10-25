@@ -205,7 +205,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
         File.rm(config_path)
       end)
 
-      payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+      browser_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+
+      payload =
+        build_conn()
+        |> Map.put(:host, "localhost")
+        |> Map.put(:remote_ip, {127, 0, 0, 1})
+        |> get("/api/v1/sympp/herdr/dashboard")
+        |> json_response(200)
+
+      assert Map.delete(payload, "generated_at") == Map.delete(browser_payload, "generated_at")
       detail = work_request_detail(payload, request.id)
       architect = detail["work_request"]["architect_session_location"]
       worker = Enum.find(detail["work_packages"], &(&1["id"] == package.id))["session_location"]

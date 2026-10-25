@@ -1,5 +1,21 @@
 # Operator board API
 
+`GET /api/v1/sympp/herdr/dashboard` is the optional native-client read of the
+same hydrated board projection as the browser endpoint below. It includes the
+canonical product tree, attention, package/delivery signals and sanitized session
+locations; locations remain last observed addresses, not proof of live agents.
+The normal standalone web board and its authorization are unchanged.
+
+Like the existing Herdr detail/event routes, this read requires a loopback peer,
+a local Host, and no `Forwarded`, `X-Forwarded-*` or `X-Real-IP` headers. Native
+clients need no Origin or browser fetch metadata. This existing native policy
+does not validate Origin; it is not the browser operator policy. The route
+returns HTTP 401 for nonlocal or forwarded requests and HTTP 405 for other
+methods. It grants no operator mutation authority. It reads an initialized
+ledger without running migrations, registering a dashboard opener, updating
+session locations, or writing claims, audit or business state. Subscribe to
+`/api/v1/sympp/herdr/events` and refetch after invalidation.
+
 `GET /api/v1/sympp/operator/dashboard/hydrated` returns the current board in one
 response. Existing fields retain their meaning. Read each entry of
 `work_request_details[].work_packages[]` for these additive fields:
