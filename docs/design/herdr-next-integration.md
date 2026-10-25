@@ -55,20 +55,46 @@ flowchart LR
 The primary question is **what needs me, and what happens next?** Following a
 job and reaching its active agent should take very little navigation.
 
+One `sympp` mod draws four levels: **Factory > Topic > Space > Job**.
+
+- **Factory:** everything the connected S++ ledger holds, needs-you first.
 - **Topic:** a company or domain and its optional chief. It summarizes relevant
   work and human decisions across repositories. Reuse personal topic grouping.
 - **Space:** the work relevant to a repository on a machine. A cross-repository
   request can appear here as a reference to its one canonical goal.
-- **Tab:** a job's working context, with its S++ view and participating
-  terminals. Do not require a tab for every package or equate a package with an
-  agent; architects, workers, reviewers and retries have different identities.
-- **Focused job:** current outcome, next action, waiting reason, dependencies,
-  packages, evidence and explicit ways to reach participating agents.
+- **Job:** one WorkRequest as a whole view. It opens beside the overview, or in
+  its own tab (`props.job`) in the job's local space when a space folder matches
+  one of its repositories, else in the shown space. Do not require a tab for
+  every package or equate a package with an agent; architects, workers,
+  reviewers and retries have different identities.
 
-Opus's selected design is a Lens: native attention and job details beside the
-terminals, plus a larger overview. One unified mod supports the overview and a
-narrow pane. A job can have multiple participating terminals; its identity
-remains the WorkRequest rather than a particular client tab.
+The Job level shows, from canonical state only:
+
+- **Phase:** Shaping, Planning, Executing, Closing or Done, from the request
+  status, dispatch and required-package delivery. No percentages.
+- **Needs you:** only what the person can move: escalations and guidance,
+  answerable in place.
+- **Package rails:** one row per package on a shared real-time axis with a now
+  line. Rows that need the person come first, then packages others wait on.
+  Segments start only at recorded moments (creation, dispatch, review start,
+  current stage entry, delivery) and are coloured by who is acting: the agent,
+  CI or the person. Waiting is dimmed; a dependency wait is dotted and names its
+  prerequisite. Stretches where nobody acted fold into a labelled break, and
+  work that landed before the open work began is summarized rather than drawn.
+  Review rounds are R1, R2, R3 chips, amber from round three. Work without a PR
+  is work, then done. Each row gives wall time, time in its stage and time in
+  its review. Narrow and panel widths stack a compact line per package.
+- **Agents:** the architect, a worker per package with its active run attempt,
+  and the review provider by type and mode. An agent is Live only after the
+  trusted helper has just verified its exact launch and process; otherwise it
+  shows its last S++ sighting or Unknown. A bound agent's own status report is
+  shown as such, never inferred from terminal text.
+- **Decisions and questions:** the job's recorded decisions, read only while a
+  job view shows, and its clarification questions, answerable in place.
+
+The Lens remains the overview beside the terminals until the Factory, Topic and
+Space levels replace it. A job can have multiple participating terminals; its
+identity remains the WorkRequest rather than a particular client tab.
 Preserve existing topics, compositions, terminal placement and normal Herdr
 navigation. Xeneon hardware is a later surface, outside this delivery.
 
@@ -159,6 +185,7 @@ recovery restores shells rather than restarting the original agent.
 |---|---|---|
 | Native read boundary | Same canonical board projection, local native policy, no reads causing writes; standalone routes unchanged. | Landed in [#757](https://github.com/JJLiebig/symphony-plus-plus/pull/757); 78 API acceptance cases and all required hosted gates passed. |
 | Native working view | Real S++ state, topic/repo/job scope, attention and agent navigation using existing mod APIs. | Native rendering, intake typing and keyboard traversal passed in an isolated Windows home. A real intake and structured answer persisted in the canonical ledger. Agent placement passed through the public app API with an unchanged process; a physical click after that fix, compact layout and light theme remain unqualified. |
+| Job level | Job tab, phase, needs-you strip, package rails, agents, decisions and keyboard, from canonical state; one mod split into flat modules. | Open in [#766](https://github.com/JJLiebig/symphony-plus-plus/pull/766). Node tests cover phase, rails placement/order/axis, liveness, decisions cadence and tab placement; `herdr-app check --print-spec` checks the drawn structure at wide and narrow widths with fixtures. Wide and narrow, dark and light captures in an isolated Windows home and scratch core used a fixture backend. Not yet qualified: real ledger data, a Live agent with a real launch receipt, pointer and keyboard input, and layout switches, which follow window width at the next redraw. |
 | Native human actions | Intake and persisted question/guidance answers, with browser exclusion and canonical scope/status checks. | Landed in [#758](https://github.com/JJLiebig/symphony-plus-plus/pull/758); API/offline acceptance and all required hosted gates passed. |
 | Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | Landed in [#759](https://github.com/JJLiebig/symphony-plus-plus/pull/759); six controlled-core checks and all required hosted gates passed. Native receipt checks also reject mismatched canonical request/package IDs. |
 | Hand-started sessions | Architects, coordinators and workers started in a native terminal report their location; Open verifies the actual MCP bridge as well as the terminal. | [#761](https://github.com/JJLiebig/symphony-plus-plus/pull/761) adds Node bridge discovery and private session receipts without changing worker launch receipts or core/app APIs. Existing bridge processes need a supported reconnect to load it; the PowerShell fallback remains legacy-only. |
