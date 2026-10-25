@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile, rename, readdir, chmod } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, readdir, chmod, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,7 @@ import { planInstall, planRemoval } from './chrome.mjs';
 const help = `Install the optional native S++ view into Herdr-app.
 Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [options]
        node integrations/herdr-next/install.mjs --lab [options]
-       node integrations/herdr-next/install.mjs --remove-chrome [--home <folder>]
+       node integrations/herdr-next/install.mjs --remove-chrome [--home <folder>] [--app <executable>]
   --lab                  Install the factory-floor lab (sample data, no S++ needed) beside the view
   --home <folder>        Herdr-app home (default: HERDR_APP_HOME or ~/.config/herdr-app)
   --open <overview|panel> Open a native tab or a pane beside the focused terminal
@@ -43,6 +43,36 @@ async function write(files) {
   }
 }
 
+async function checkedWrite(home, values, files, mods) {
+  const app = values.app || 'herdr-app';
+  const options = { env: { ...process.env, HERDR_APP_HOME: home }, encoding: 'utf8', windowsHide: true };
+  const probe = spawnSync(app, ['--version'], options);
+  if (probe.error || probe.status !== 0) {
+    emit({ error: 'Herdr-app is required to check the mods; no files were changed',
+      help: 'Put herdr-app on PATH or pass --app <executable>.',
+      reason: probe.error?.message || probe.stderr || probe.stdout });
+    return false;
+  }
+  const before = await Promise.all(files.map(async ({ to }) => ({ to, body: await contents(to) })));
+  try {
+    await write(files);
+    for (const mod of mods) {
+      const child = spawnSync(app, ['check', join(home, 'mods', mod)], options);
+      if (child.error || child.status !== 0) {
+        throw new Error(`${mod}: ${child.error?.message || child.stderr?.trim() || child.stdout?.trim() || `check exited ${child.status}`}`);
+      }
+    }
+    return true;
+  } catch (error) {
+    for (const file of before) {
+      if (file.body === null) await rm(file.to, { force: true });
+      else await write([file]);
+    }
+    emit({ error: 'The mod update failed; all changed files were restored', reason: error.message });
+    return false;
+  }
+}
+
 async function removeChrome(values) {
   const home = resolve(values.home || process.env.HERDR_APP_HOME || join(homedir(), '.config', 'herdr-app'));
   const plan = await planRemoval(home);
@@ -50,7 +80,7 @@ async function removeChrome(values) {
     emit({ error: 'The S++ chrome was not removed; no files were changed', missing: plan.missing });
     return 1;
   }
-  await write(plan.writes);
+  if (plan.writes.length && !await checkedWrite(home, values, plan.writes, ['desk-tabs', 'desk-agents', 'sympp'])) return 1;
   emit({ chrome: plan.writes.length ? 'removed' : 'not installed', layout: plan.layout });
   return 0;
 }
@@ -124,8 +154,10 @@ async function main() {
     emit({ error: 'The S++ chrome needs your desk layout and mods; no files were changed', missing: chrome.missing });
     return 1;
   }
-  await write(files.filter(({ body, existing }) => !existing?.equals(body)));
-  if (chrome) await write(chrome.writes);
+  const writes = files.filter(({ body, existing }) => !existing?.equals(body));
+  if (chrome) {
+    if (!await checkedWrite(home, values, [...writes, ...chrome.writes], ['desk-tabs', 'desk-agents', 'sympp'])) return 1;
+  } else await write(writes);
   if (!values.lab) {
     const requests = join(home, 'data', 'sympp-requests');
     await mkdir(requests, { recursive: true, mode: 0o700 });

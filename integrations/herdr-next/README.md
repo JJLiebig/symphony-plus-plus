@@ -74,6 +74,10 @@ installing. Other mods can add their panels the same way through
 SVG icon is tinted like Files and Changes; a picture shows as it is, `iconDark`
 on a dark theme.
 
+Chrome installation and removal require `herdr-app` on `PATH` or `--app <executable>`.
+The installer checks both desk mods and S++ after writing them. If a check fails,
+it reports the mod and error and restores every changed file to its previous contents.
+
 ```powershell
 node integrations/herdr-next/install.mjs --remove-chrome
 ```

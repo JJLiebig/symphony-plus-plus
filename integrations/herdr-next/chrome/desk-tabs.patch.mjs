@@ -34,8 +34,9 @@ export default {
     // iconDark? }; each shows beside Files and Changes while panel-body holds a child with that id. An SVG
     // icon is tinted like Files and Changes; a picture shows as it is, iconDark on a dark theme.
     const registered = shared("workspace.panel_buttons");
+    const panelChildren = find(layout(), "panel-body")?.children ?? [];
     const extra = (Array.isArray(registered) ? registered : []).filter(b => typeof b?.id === "string" && typeof b.label === "string" && typeof b.icon === "string"
-      && b.id !== "files" && b.id !== "changes" && body?.children?.some(c => c.id === b.id));
+      && b.id !== "files" && b.id !== "changes" && panelChildren.some(c => c.id === b.id));
     const rgb = parseInt(/^#([0-9a-f]{6})/i.exec(t.chrome ?? "")?.[1] ?? "ffffff", 16);
     const dark = ((rgb >> 16) * 299 + ((rgb >> 8) & 255) * 587 + (rgb & 255) * 114) / 1000 < 128;
 `,
