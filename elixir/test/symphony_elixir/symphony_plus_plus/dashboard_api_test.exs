@@ -2245,6 +2245,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  assert Enum.any?(detail["product_tree"]["nodes"], &(&1["id"] == group.id))
                  signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
                  assert signal["active_blocker_count"] == 1
+                 assert board["runtime"] == %{"offline" => false}
                  assert repo.query!("SELECT total_changes()", []).rows == before_read
                  repo.rollback(:native_read_verified)
                end)

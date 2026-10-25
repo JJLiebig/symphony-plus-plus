@@ -6,6 +6,13 @@ canonical product tree, attention, package/delivery signals and sanitized sessio
 locations; locations remain last observed addresses, not proof of live agents.
 The normal standalone web board and its authorization are unchanged.
 
+Both hydrated routes include `runtime: {offline: boolean}` from the running
+backend's sandbox mode. A Copy-and-View snapshot reports `true` even though its
+request/package ids match the live ledger. Native clients must disable agent
+navigation when `runtime.offline` is true or unavailable; copied identities must
+not focus live sessions. An online backend reports `false`. This field reports
+context; it grants no mutation or session authority.
+
 Like the existing Herdr detail/event routes, this read requires a loopback peer,
 a local Host, and no `Forwarded`, `X-Forwarded-*` or `X-Real-IP` headers. Native
 clients need no Origin or browser fetch metadata. This existing native policy
