@@ -375,7 +375,7 @@ test('blocked handoff accepts new PR and head observations without reviving an o
   await architect.call('append_progress', { work_package_id: wp, summary: 'Resolve scope before accepting handoff.', idempotency_key: 'block-scope', payload: { type: 'blocker', active: true, blocker_id: 'scope' } });
   let priorHeadChanged: string | undefined;
   for (const [number, sha] of [[103, head('a')], [103, head('b')], [104, head('c')], [104, head('a')]] as const) {
-    provider.set(number, pr(number, sha, sha === head('b') ? { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('e') } } : {}));
+    provider.set(number, pr(number, sha));
     const waiting = await sync(architect, wp, number, sha);
     expect(waiting.pr_sync.readiness_reasons).toContain('no_active_blockers');
     const detail = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
@@ -389,6 +389,7 @@ test('blocked handoff accepts new PR and head observations without reviving an o
   expect((await sync(architect, wp, 104, head('a'))).pr_sync.readiness_reasons).toEqual([]);
   expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(true);
   provider.set(103, pr(103, head('b'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('e') } }));
+  await architect.reject('sync_pr', { work_package_id: wp, url: prUrl(103) }, 'pr_reference_mismatch');
   await architect.reject('sync_pr', { work_package_id: wp }, 'pr_not_merged');
   expect(provider.calls.at(-1)?.argv[2]).toBe('104');
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();

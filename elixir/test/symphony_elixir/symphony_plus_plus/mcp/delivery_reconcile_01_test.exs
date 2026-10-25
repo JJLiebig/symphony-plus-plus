@@ -267,6 +267,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         413,
         GitHubPullRequestFixtures.metadata(413, head, base_branch: anchor.base_branch, merged?: true)
       )
+
       different_pr = mcp_tool(repo, session, "sync_pr", Map.put(url_only, "url", "https://github.com/nextide/repo/pull/413"))
       assert get_in(different_pr, ["error", "data", "reason"]) == "pr_reference_mismatch"
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_merge"
