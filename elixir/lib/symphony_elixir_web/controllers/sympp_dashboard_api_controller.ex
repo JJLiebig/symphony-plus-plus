@@ -570,7 +570,13 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   @spec herdr_answer_question(Conn.t(), map()) :: Conn.t()
   def herdr_answer_question(conn, %{"work_request_id" => work_request_id} = params) do
-    send_native_operator_response(conn, :question_answer, work_request_target(work_request_id), :operator_answer_question, &answer_question_response(&1, conn, params))
+    send_native_operator_response(
+      conn,
+      :question_answer,
+      work_request_target(work_request_id),
+      :operator_answer_question,
+      &answer_question_response(&1, conn, params)
+    )
   end
 
   defp answer_question_response(repo, conn, %{"work_request_id" => work_request_id, "question_id" => question_id} = params) do
@@ -604,12 +610,12 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
     )
   end
 
-  defp answer_guidance_response(repo, conn, %{"work_package_id" => work_package_id, "guidance_request_id" => guidance_request_id} = params) do
-    attrs = Map.put(params, "work_package_id", work_package_id)
+  defp answer_guidance_response(repo, conn, %{"work_package_id" => package_id, "guidance_request_id" => id} = params) do
+    attrs = Map.put(params, "work_package_id", package_id)
 
     with {:ok, result} <-
-           GuidanceRequestService.answer_human_info_needed_for_local_operator(repo, :local_operator, guidance_request_id, attrs) do
-      json(conn, mutation_success_payload(%{guidance_request_id: result.guidance_request.id}, %{work_package_id: work_package_id}))
+           GuidanceRequestService.answer_human_info_needed_for_local_operator(repo, :local_operator, id, attrs) do
+      json(conn, mutation_success_payload(%{guidance_request_id: result.guidance_request.id}, %{work_package_id: package_id}))
     end
   end
 
