@@ -1,5 +1,6 @@
-// A small hydrated board for the Job level: one PR job across every stage, one job without PRs,
-// and one still being shaped. Shapes follow GET /api/v1/sympp/herdr/dashboard.
+// A small hydrated board: one PR job across every stage, one job without PRs, one still being
+// shaped and one across two repositories that needs the person. Shapes follow
+// GET /api/v1/sympp/herdr/dashboard; deskFixture() is the matching Herdr topics and spaces.
 export const NOW = Date.parse('2026-10-25T13:00:00Z');
 const at = (minutesAgo) => new Date(NOW - minutesAgo * 60e3).toISOString();
 
@@ -12,13 +13,20 @@ export function boardPayload() {
     generated_at: new Date(NOW).toISOString(),
     runtime: { offline: false },
     work_packages: [{ id: 'wp-build', active_agent_run: { attempt: 2, last_seen_at: at(3), stale: false } }],
-    guidance_requests: { guidance_requests: [] },
+    guidance_requests: { guidance_requests: [
+      { id: 'g-web', work_package_id: 'x-web', status: 'human_info_needed', question: 'Which theme tokens?', updated_at: at(900) },
+    ] },
     work_request_details: [
       {
         work_request: {
           id: 'wr-pr', title: 'Native job tab', repo: 'owner/web', status: 'sliced', base_branch: 'main',
           inserted_at: at(3000), architect_session_location: { label: 'Herdr', role: 'architect', last_seen_at: at(20) },
         },
+        product_tree: { execution_graph: { effective_edges: [
+          { prerequisite_work_package_id: 'wp-done', dependent_work_package_id: 'wp-build' },
+          { prerequisite_work_package_id: 'wp-build', dependent_work_package_id: 'wp-queued' },
+          { prerequisite_work_package_id: 'wp-review', dependent_work_package_id: 'wp-queued' },
+        ] } },
         clarification_questions: [{ id: 'q1', question: 'Which order should the levels land in?', status: 'open' }],
         work_packages: [
           pkg('wp-queued', 'Factory level', 4, { stage: 'queued', track: 'pr' }, { dependency_signal: { unmet_work_package_ids: ['wp-build'] } }),
@@ -50,11 +58,22 @@ export function boardPayload() {
       {
         work_request: { id: 'wr-nopr', title: 'Research spike', repo: 'owner/notes', status: 'sliced', inserted_at: at(400) },
         work_packages: [
-          pkg('np-1', 'Survey', 1, { stage: 'done', track: 'no_pr', delivered: true, entered_at: at(200) }, { dispatched_at: at(300) }),
-          pkg('np-2', 'Write-up', 2, { stage: 'build', track: 'no_pr' }, { dispatched_at: at(100) }),
+          pkg('np-1', 'Survey', 1, { stage: 'done', track: 'no_pr', delivered: true, entered_at: at(200) }, { repo: 'owner/notes', dispatched_at: at(300) }),
+          pkg('np-2', 'Write-up', 2, { stage: 'build', track: 'no_pr' }, { repo: 'owner/notes', dispatched_at: at(100) }),
         ],
       },
       { work_request: { id: 'wr-shaping', title: 'New idea', repo: 'owner/web', status: 'clarifying', inserted_at: at(30) } },
+      {
+        work_request: {
+          id: 'wr-cross', title: 'Shared tokens', repo: 'owner/api', status: 'sliced', inserted_at: at(1000),
+          operator_report: { human_escalation: { question: 'Ship tokens before the API?', raised_at: at(240) } },
+        },
+        product_tree: { execution_graph: { effective_edges: [{ prerequisite_work_package_id: 'x-api', dependent_work_package_id: 'x-web' }] } },
+        work_packages: [
+          pkg('x-api', 'Token API', 1, { stage: 'build', track: 'pr', entered_at: at(120) }, { repo: 'owner/api', dispatched_at: at(120) }),
+          pkg('x-web', 'Token UI', 2, { stage: 'queued', track: 'pr' }, { dependency_signal: { unmet_work_package_ids: ['x-api'] } }),
+        ],
+      },
     ],
   };
 }
@@ -65,6 +84,28 @@ export function detailPayload() {
     decision_logs: [
       { id: 'd1', sequence: 1, decision: 'One sympp mod for every level', rationale: 'Shared look and state', created_by: 'architect', created_at: at(2000) },
       { id: 'd2', sequence: 2, decision: 'Job level first', created_by: 'architect', created_at: at(1000) },
+    ],
+  };
+}
+
+// Herdr's own grouping for the board above: the web space under Herdr, a remote api space under
+// Personal Tools, an empty topic, and unsorted spaces with and without S++ work.
+export function deskFixture() {
+  const space = (id, name, folder, machine = null, extra = {}) => ({ id, index: 1, name, named: false, folder, machine, branch: null, active: false, status: null, tabs: [], ...extra });
+  return {
+    topics: {
+      groups: [
+        { id: 't-herdr', name: 'Herdr', spaces: ['s-web', 's-gone'], folded: false },
+        { id: 't-tools', name: 'Personal Tools', spaces: ['vps/s-api'], folded: false },
+        { id: 't-live', name: 'Nextide-Live', spaces: [], folded: false },
+      ],
+      unsorted: ['s-notes'],
+    },
+    spaces: [
+      space('s-web', 'web', String.raw`C:\code\owner\web`, null, { active: true, branch: 'main', tabs: [{ id: 'tab-web' }, { id: 'tab-job' }] }),
+      space('s-notes', 'notes', String.raw`C:\code\notes`),
+      space('s-home', '~', String.raw`C:\Users\me`),
+      space('vps/s-api', 'api', '/home/me/api', 'vps'),
     ],
   };
 }

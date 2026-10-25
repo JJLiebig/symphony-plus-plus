@@ -103,9 +103,38 @@ The Job level shows, from canonical state only:
 - **Decisions and questions:** the job's recorded decisions, read only while a
   job view shows, and its clarification questions, answerable in place.
 
-The Lens remains the overview beside the terminals until the Factory, Topic and
-Space levels replace it. A job can have multiple participating terminals; its
-identity remains the WorkRequest rather than a particular client tab.
+The levels above a job:
+
+- **Factory:** needs-you ranked by the unfinished packages that wait on each
+  answer in the effective execution graph (a job-level ask holds all of its
+  unfinished packages), then by age. Then one row per Herdr topic
+  (`desk.topics`) with its needs, moving packages and repositories, plus
+  unsorted spaces and work without a space when either has any. Each job has
+  one home topic, its own repository's first, so it is counted once; other
+  topics it touches name it as shared.
+- **Topic:** work grouped by repository across the topic's spaces, with each
+  space reachable; jobs homed elsewhere appear as references, planned-only
+  jobs fold into a count, and settled work stays in the dashboard. Its agents
+  are the jobs' architects and workers with something known about them and any
+  bound agent in its spaces, with Live, Last seen or Unknown and the agent's own
+  OSC report.
+- **Space:** the jobs touching its repository (the folder's leaf) on its
+  machine, each naming its other repositories, and the agents there. A space
+  without S++ work says that ordinary Herdr work stays ordinary.
+
+A breadcrumb (Factory > Topic > Space > Job) and Esc move up a level; rows
+take ↑/↓ and Enter. Each copy keeps its place in its own `localStorage`.
+A panel copy follows Herdr's focus without taking it: an S++-labelled terminal
+or a job tab shows that job, else the space while S++ work touches it, else the
+space's topic; focusing a mod pane keeps what it shows, and a pin stops it.
+Job tabs record their Herdr tab in `shared("sympp.jobTabs")` while drawn, since
+Herdr does not expose a mod pane's props. A toast posts only for a need that
+appeared between two successful reads of one copy, never on the first read or
+for an offline copy; copies share `shared("sympp.toasted")` so each need is
+announced once. Clicking it selects the job's tab or opens one.
+
+A job can have multiple participating terminals; its identity remains the
+WorkRequest rather than a particular client tab.
 Preserve existing topics, compositions, terminal placement and normal Herdr
 navigation. Xeneon hardware is a later surface, outside this delivery.
 
@@ -197,6 +226,7 @@ recovery restores shells rather than restarting the original agent.
 | Native read boundary | Same canonical board projection, local native policy, no reads causing writes; standalone routes unchanged. | Landed in [#757](https://github.com/JJLiebig/symphony-plus-plus/pull/757); 78 API acceptance cases and all required hosted gates passed. |
 | Native working view | Real S++ state, topic/repo/job scope, attention and agent navigation using existing mod APIs. | Native rendering, intake typing and keyboard traversal passed in an isolated Windows home. A real intake and structured answer persisted in the canonical ledger. Agent placement passed through the public app API with an unchanged process; a physical click after that fix, compact layout and light theme remain unqualified. |
 | Job level | Job tab, phase, needs-you strip, package rails, agents, decisions and keyboard, from canonical state; one mod split into flat modules. | Open in [#766](https://github.com/JJLiebig/symphony-plus-plus/pull/766). Node tests cover phase, rails placement/order/axis, liveness, decisions cadence and tab placement; `herdr-app check --print-spec` checks the drawn structure at wide and narrow widths with fixtures. Wide and narrow, dark and light captures in an isolated Windows home and scratch core used a fixture backend. Not yet qualified: real ledger data, a Live agent with a real launch receipt, pointer and keyboard input, and layout switches, which follow window width at the next redraw. |
+| Levels, panel and toasts | Factory, Topic and Space levels with a breadcrumb, a focus-following panel with a pin, and needs-you toasts, from canonical state and Herdr's own topics, spaces, focus and terminal reports. | Node tests cover placement, ranking, grouping, agents, following, toasts and navigation; `herdr-app check --print-spec` checks each level at wide and panel widths. An isolated Windows home and scratch core with a fixture backend showed the Factory (dark and light), a toast for a newly raised need, and a panel following a space, an S++-labelled terminal and a topic; a job tab registered itself and `tab.select` reached it across spaces. Not qualified: real ledger data, pointer and keyboard input, and wide Topic and Space layouts in a live window (checked structurally only). |
 | Native human actions | Intake and persisted question/guidance answers, with browser exclusion and canonical scope/status checks. | Landed in [#758](https://github.com/JJLiebig/symphony-plus-plus/pull/758); API/offline acceptance and all required hosted gates passed. |
 | Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | Landed in [#759](https://github.com/JJLiebig/symphony-plus-plus/pull/759); six controlled-core checks and all required hosted gates passed. Native receipt checks also reject mismatched canonical request/package IDs. |
 | Hand-started sessions | Architects, coordinators and workers started in a native terminal report their location; Open verifies the actual MCP bridge as well as the terminal. | [#761](https://github.com/JJLiebig/symphony-plus-plus/pull/761) adds Node bridge discovery and private session receipts without changing worker launch receipts or core/app APIs. Existing bridge processes need a supported reconnect to load it; the PowerShell fallback remains legacy-only. |

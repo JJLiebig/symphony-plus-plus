@@ -45,7 +45,7 @@ function jobHeader(v, t, job, ctx) {
   const brief = job.report.brief;
   const pinned = ctx.place === "tab";
   const where = `${job.area.join(" › ")} · ${job.repoShort}`;
-  const actions = h_flex().gap(4).items_center().flex_none()
+  const actions = h_flex().gap(4).items_center().flex_wrap()
     .when(!pinned, (el) => el.child(button(t, "open-tab", "Open in tab", (cx) => v.openInTab(job, cx), { strong: true, tip: "Open this job in its own tab (T)" })))
     .when(ctx.place !== "side", (el) => el
       .child(button(t, "job-refresh", "Refresh", (cx) => v.retry(cx), { tip: "Read S++ now (R)" }))
@@ -53,7 +53,6 @@ function jobHeader(v, t, job, ctx) {
   const stale = M.isStale(v.net, now);
   return v_flex().gap(6)
     .child(h_flex().gap(10).items_center().flex_wrap()
-      .when(ctx.place === "full", (el) => el.child(button(t, "back", "All jobs", (cx) => v.leaveJob(cx), { glyph: "chevron-left", tip: "Back to all jobs (Esc)" })))
       .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(where))
       .when(ctx.offline, (el) => el.child(div().flex_none().text_size(11.5).text_color(t.muted).child("Offline copy")))
       .when(ctx.place !== "side", (el) => el.child(age(t, `${stale ? "Last read" : "Read"} ${M.ago(v.net.receivedAt, now)}`, stale ? t.blocked : t.dim)))
