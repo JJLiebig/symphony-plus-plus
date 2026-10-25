@@ -16,6 +16,62 @@ ledger without running migrations, registering a dashboard opener, updating
 session locations, or writing claims, audit or business state. Subscribe to
 `/api/v1/sympp/herdr/events` and refetch after invalidation.
 
+## Native human actions
+
+These optional native POST routes use the same canonical input validation,
+services, response shapes and dashboard invalidation as their operator siblings:
+
+| Route suffix under `/api/v1/sympp/herdr` | Input and result |
+| --- | --- |
+| `/work-requests` | Intake fields below; HTTP 201 with `{ok:true, work_request:<request detail>, refresh:{dashboard:true, work_request_id}}`. The new id is `work_request.work_request.id`. |
+| `/work-requests/:id/questions/:question_id/answer` | Answer fields below; HTTP 200 with `{ok:true, work_request_id, question_id, refresh:{dashboard:true, work_request_id}}`. |
+| `/work-packages/:id/guidance/:guidance_request_id/answer` | Answer fields below; HTTP 200 with `{ok:true, guidance_request_id, refresh:{dashboard:true, work_package_id}}`. |
+
+Native human authority means a trusted direct local process, not an authenticated
+Herdr application identity. Requests require a loopback peer and local Host,
+`Content-Type: application/json` (a charset parameter is accepted), and no
+`Origin`, `Sec-Fetch-*`, `Forwarded`, `X-Forwarded-*` or `X-Real-IP` headers.
+Invalid native authority returns HTTP 401. These POST routes grant no CORS access
+or OPTIONS preflight: other methods return HTTP 405. Browser forms cannot send
+JSON, script JSON requests require preflight, and browser fetch metadata is
+refused. The native read policy above and browser operator policy stay unchanged.
+This does not protect against an untrusted process already running locally.
+
+Minimal intake JSON is
+`{"title":"Widget","repo":"example/service","base_branch":"beta","human_description":"Build the agreed widget."}`.
+Optional fields use existing operator defaults: `work_type: "feature"`,
+`desired_dispatch_shape: "architect_led_feature_branch"`, `constraints: {}`,
+and `status: "ready_for_clarification"`. Intake creates the request; it neither
+claims work nor starts an agent. Unknown request fields are ignored.
+
+Read persisted questions from
+`work_request_details[].clarification_questions[]`: `id`, `work_request_id`,
+`question`, `why_needed`, `decision_prompt`, `status`, `answer`, `answered_by`
+and `answered_at`. Only `status: "open"` is answerable. Package guidance is in
+`guidance_requests.guidance_requests[]`, with `id`, `work_package_id`, `summary`,
+`question`, `context`, `decision_prompt` and `status`, plus recorded answer
+metadata. Only guidance escalated to `human_info_needed` is human-answerable;
+ordinary open guidance remains the architect's responsibility.
+
+A structured `decision_prompt` has `tl_dr`, `details`, 1–4 `options` with `id`,
+`label` and `answer` (optional `description`, `pros` and `cons`), and an optional
+`custom_redirect_label`. Render the persisted options. Submit
+`{"answer_choice":"<option id>","answer_note":"optional note"}`; a structured
+prompt does not accept `answer` alone. The custom choice `__custom_redirect__`
+requires a nonblank `answer_note`. Without a structured prompt, submit
+`{"answer":"the human's answer"}`. The backend records `local-operator` as the
+answer author; a successful answer does not automatically resume or unblock work.
+
+Refetch the native board after success or its event-stream invalidation. Errors
+use `{error:{code,message}}`: malformed input/choice or wrong guidance status
+returns HTTP 422, absent/wrong-scope targets return HTTP 404, and an already
+answered/closed clarification question returns HTTP 409. Wrong-package guidance
+answers now return HTTP 404 on both native and browser routes; previously the
+browser refusal incorrectly returned HTTP 500. No draft-edit, deletion, dispatch
+or claim mutation is exposed by these native routes.
+
+## Hydrated board
+
 `GET /api/v1/sympp/operator/dashboard/hydrated` returns the current board in one
 response. Existing fields retain their meaning. Read each entry of
 `work_request_details[].work_packages[]` for these additive fields:

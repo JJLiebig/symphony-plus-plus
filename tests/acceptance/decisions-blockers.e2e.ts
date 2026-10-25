@@ -139,6 +139,7 @@ test('human choice submission rejects unknown or empty redirects and preserves t
   ]) {
     const rejected = await architect.operator(path, invalid);
     expect(rejected.status).toBe(422);
+    expect((await architect.raw(invalid, {}, 'POST', path.replace('/operator/', '/herdr/'))).status).toBe(422);
     const current = await architect.call('read_work_request', { work_request_id: id });
     expect(current.clarification_questions[0].status).toBe('open');
     expect(current.decision_log_entries).toEqual([]);
@@ -158,15 +159,19 @@ test('human choice submission rejects unknown or empty redirects and preserves t
   ];
   for (const choice of cases) {
     const q = await ask(choice.prompt);
-    const endpoint = `/api/v1/sympp/operator/work-requests/${id}/questions/${q}/answer`;
-    if (!choice.prompt) expect((await architect.operator(endpoint, { answer_choice: 'redirect' })).status).toBe(422);
-    expect((await architect.operator(endpoint, choice.input)).status).toBe(200);
+    const endpoint = `/api/v1/sympp/herdr/work-requests/${id}/questions/${q}/answer`;
+    if (!choice.prompt) expect((await architect.raw({ answer_choice: 'redirect' }, {}, 'POST', endpoint)).status).toBe(422);
+    const foreign = endpoint.replace(id, 'missing-request');
+    expect((await architect.raw(choice.input, {}, 'POST', foreign)).status).toBe(404);
+    expect((await architect.raw(choice.input, {}, 'POST', endpoint)).status).toBe(200);
+    expect((await architect.raw(choice.input, {}, 'POST', endpoint)).status).toBe(409);
     const result = await architect.call('read_work_request', { work_request_id: id });
     expect(result.clarification_questions.find((entry: any) => entry.id === q).answer).toBe(choice.answer);
     expect(result.work_request.status).toBe('human_info_needed');
   }
   const closed = await ask();
   await architect.call('close_question', { work_request_id: id, question_id: closed });
+  expect((await architect.raw({ answer: 'Too late.' }, {}, 'POST', `/api/v1/sympp/herdr/work-requests/${id}/questions/${closed}/answer`)).status).toBe(409);
   await architect.reject('answer_question', { work_request_id: id, question_id: closed, answer: 'Too late.' }, 'already_closed');
   const final = await architect.call('read_work_request', { work_request_id: id });
   expect(final.clarification_questions.find((entry: any) => entry.id === closed).answer).toBe(null);
