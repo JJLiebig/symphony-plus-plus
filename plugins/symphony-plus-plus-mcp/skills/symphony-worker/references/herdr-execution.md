@@ -151,6 +151,13 @@ for tracked work, `sympp.role`, `sympp.work_request_id`,
 `sympp.work_package_id`, `sympp.ledger_id`. Compare the live PID with
 `sympp.pid`; labels survive recovery to a shell. Labels never confer authority.
 
+UI workers follow the [UI collaboration procedure](../SKILL.md#ui-collaboration)
+and publish `sympp.preview_url` on their own terminal. This worker-owned label
+is display-only: it is not a receipt field, process identity, ledger binding or
+permission to send input. The helper preserves it during launch reuse and PID
+publication; native clients must still verify the live receipt before using a
+worker's preview. An absent label means no published preview.
+
 A mod discovers receipts from terminal labels. Resolve its helper executable
 from trusted per-machine installation/configuration, never from terminal labels.
 It can call `exec("node", [helper, ...args, "--json"], {on: machine})` and

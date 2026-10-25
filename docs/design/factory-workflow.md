@@ -100,6 +100,8 @@ another gate between merge and WR completion.
 
 1. The architect dispatches a UI collaborator in a Herdr pane. Human and
    collaborator iterate rapidly on realistic demo data to discover the UI/UX.
+   Follow the [worker UI collaboration procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-worker/SKILL.md#ui-collaboration)
+   for preview publication, screenshot milestones and direct human feedback.
 2. The human approves and freezes UX intent. Record interaction behavior,
    states, acceptance, and required data/API shape. Prototype completion alone
    is not a production wiring or merge claim.

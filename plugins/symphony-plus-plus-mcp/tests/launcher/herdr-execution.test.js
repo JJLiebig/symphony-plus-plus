@@ -209,7 +209,7 @@ test("an interrupted PID label publication repairs discovery on replay without a
   assert.equal(state().terminal.labels["sympp.pid"], "900");
 }));
 
-test("dispatched bootstrap binds exact work once, preserves placement and explicit profile", async () => scenario(async ({ root, run, state }) => {
+test("dispatched bootstrap binds exact work once, preserves placement, profile and worker preview", async () => scenario(async ({ root, run, state, save }) => {
   const input = path.join(root, "worker.json");
   fs.writeFileSync(input, JSON.stringify({ worker_bootstrap: {
     type: "assignment", launch_prompt: "Implement the scoped assignment.", future_field: true,
@@ -217,6 +217,8 @@ test("dispatched bootstrap binds exact work once, preserves placement and explic
   } }));
   const args = ["launch", "--provider", "claude", "--model", "opus", "--assignment", input, "--ledger", "isolated-ledger", "--cwd", root, "--space", "s1", "--tab", "job", "--parent", "t2", "--provider-home", root];
   const first = await run(args);
+  const preview = "http://127.0.0.1:5173/";
+  save({ ...state(), terminal: { ...state().terminal, labels: { ...state().terminal.labels, "sympp.preview_url": preview } } });
   const second = await run(args);
   assert.equal(first.code, 0);
   assert.equal(second.code, 0);
@@ -233,6 +235,8 @@ test("dispatched bootstrap binds exact work once, preserves placement and explic
   assert.equal(state().terminal.labels["sympp.pid"], "900");
   assert.equal(state().terminal.labels["sympp.receipt"], first.body.receipt);
   assert.equal(state().terminal.labels["sympp.core_id"], first.body.core_id);
+  assert.equal(state().terminal.labels["sympp.preview_url"], preview, "launch reuse preserves the worker's published preview");
+  assert.equal((await run(["check", "--receipt", first.body.receipt])).body.state, "live");
   assert.ok(state().calls.every((call) => call.method.startsWith("terminal.") || call.method === "hello"));
   assert.equal((await run(args.map((arg) => arg === "opus" ? "sonnet" : arg))).body.error, "launch_conflict");
 }));
@@ -330,10 +334,12 @@ test("lost launch replies and stale processes never trigger duplicate execution"
   assert.equal(state().runs, 1);
   const other = await run([...args, "--attempt", "explicit-retry"]);
   assert.equal(other.code, 0);
-  save({ ...state(), terminal: { ...state().terminal, pid: 901, status: null } });
+  save({ ...state(), terminal: { ...state().terminal, pid: 901, status: { state: "idle" }, labels: { ...state().terminal.labels, "sympp.preview_url": "http://127.0.0.1:5173/" } } });
   const checked = await run(["check", "--receipt", other.body.receipt]);
   assert.equal(checked.body.state, "stale");
   assert.equal(checked.body.reason, "process_changed");
+  assert.equal((await run(["send", "--receipt", other.body.receipt, "--message", task])).body.error, "agent_not_ready");
+  assert.equal(state().sent, undefined, "a preview label cannot authorize input to a replaced process");
   assert.equal((await run([...args, "--attempt", "explicit-retry"])).body.error, "process_changed");
   assert.equal(state().runs, 2);
 }));
