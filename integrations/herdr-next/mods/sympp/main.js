@@ -49,6 +49,7 @@ export default class Lens extends View {
     this.detail = false;
     this.companion = false;
     this.pkgSel = null;
+    this.review = null;
     this.shown = null;
     this.rowOrder = [];
     this.agentChecks = {};
@@ -183,7 +184,10 @@ export default class Lens extends View {
 
   select(id, cx) {
     this.following = null;
-    if (id !== this.selected) this.pkgSel = null;
+    if (id !== this.selected) {
+      this.pkgSel = null;
+      this.review = null;
+    }
     this.selected = id;
     if (this.compact) this.detail = true;
     this.keys.focus();
@@ -200,13 +204,30 @@ export default class Lens extends View {
     this.detail = false;
     this.following = null;
     this.pkgSel = null;
+    this.review = null;
     if (this.currentScope?.kind === "job") this.setScope("all", cx);
     this.keys.focus();
     cx.notify();
   }
 
+  // An open review drill-down follows the selected package.
   selectPackage(id, cx) {
     this.pkgSel = id;
+    if (this.review) this.review = { jobId: this.review.jobId, pkgId: id, round: null };
+    this.keys.focus();
+    cx.notify();
+  }
+
+  // A package's review drill-down, opened at a round. The rails stay drawn and scrolled as they were.
+  openReview(jobId, pkgId, round, cx) {
+    this.review = { jobId, pkgId, round };
+    this.pkgSel = pkgId;
+    this.keys.focus();
+    cx.notify();
+  }
+
+  closeReview(cx) {
+    this.review = null;
     this.keys.focus();
     cx.notify();
   }
@@ -308,7 +329,17 @@ export default class Lens extends View {
     });
   }
 
-  // Enter on a package opens its worker, only once a check says it is live.
+  // Enter on a package opens its review when it has review rounds, else its worker once a check
+  // says it is live.
+  openPackage(cx) {
+    const pkg = this.currentJob?.packages.find((p) => p.id === this.pkgSel);
+    if (pkg && R.roundsOf(pkg).length) {
+      this.openReview(this.currentJob.id, pkg.id, null, cx);
+      return true;
+    }
+    return this.openPackageAgent(cx);
+  }
+
   openPackageAgent(cx) {
     const job = this.currentJob;
     if (!job || !this.pkgSel || !this.shown) return false;
@@ -330,11 +361,12 @@ export default class Lens extends View {
       if (this.creation.pending) return;
       this.intake = false;
     } else if (this.intake) return;
-    else if (packages && nav) this.pkgSel = R.moveRow(this.rowOrder, this.pkgSel, nav === "down" ? 1 : -1) ?? this.pkgSel;
+    else if (packages && nav) this.selectPackage(R.moveRow(this.rowOrder, this.pkgSel, nav === "down" ? 1 : -1) ?? this.pkgSel, cx);
     else if (inJob && nav) return;
     else if (nav === "down" || nav === "up") this.selected = M.moveSelection(this.scoped, this.selected, nav === "down" ? 1 : -1) ?? this.selected;
-    else if (key === "enter" && inJob) { if (!packages || !this.openPackageAgent(cx)) return; }
+    else if (key === "enter" && inJob) { if (!packages || !this.openPackage(cx)) return; }
     else if (key === "enter" && this.selected) { this.detail = true; this.pkgSel = null; }
+    else if (key === "escape" && this.review) this.review = null;
     else if (key === "escape" && inJob && this.pkgSel) this.pkgSel = null;
     else if (key === "escape" && this.level === "job" && !this.pinned) this.leaveJob(cx);
     else if (key === "t" && this.currentJob && !this.pinned) this.openInTab(this.currentJob, cx);
@@ -361,10 +393,12 @@ export default class Lens extends View {
   jobLevel(t, board, job, bindings, place, now) {
     this.rowOrder = R.railOrder(job).map((pkg) => pkg.id);
     if (this.pkgSel && !this.rowOrder.includes(this.pkgSel)) this.pkgSel = null;
+    const review = this.review?.jobId === job.id ? job.packages.find((pkg) => pkg.id === this.review.pkgId) ?? null : null;
+    if (!review) this.review = null;
     this.shown = { jobId: job.id, bindings: J.jobBindings(job, bindings) };
     this.currentJob = job;
     const layout = place !== "side" && !this.compact ? "wide" : "compact";
-    return jobView(this, t, job, { now, bindings, terminals: terminals(), layout, place, offline: board.offline === true });
+    return jobView(this, t, job, { now, bindings, terminals: terminals(), layout, place, offline: board.offline === true, review });
   }
 
   render(_cx) {
