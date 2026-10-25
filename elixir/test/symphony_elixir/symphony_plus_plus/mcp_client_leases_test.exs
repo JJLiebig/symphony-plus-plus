@@ -16,7 +16,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPClientLeasesTest do
       )
 
     assert {:ok, %{active_client_count: 1}} = ClientLeases.attach("client-a", server)
-    assert_receive :dashboard_opened, 100
+    await_dashboard_opened()
 
     assert {:ok, %{active_client_count: 2}} = ClientLeases.attach("client-b", server)
     refute_receive :dashboard_opened, 20
@@ -24,7 +24,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPClientLeasesTest do
     assert {:ok, %{active_client_count: 1}} = ClientLeases.detach("client-a", server)
     assert {:ok, %{active_client_count: 0}} = ClientLeases.detach("client-b", server)
     assert {:ok, %{active_client_count: 1}} = ClientLeases.attach("client-c", server)
-    assert_receive :dashboard_opened, 100
+    await_dashboard_opened()
   end
 
   test "does not open when a dashboard event stream is already connected" do
@@ -277,6 +277,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPClientLeasesTest do
       |> Keyword.merge(extra_opts)
 
     start_supervised!({ClientLeases, opts})
+  end
+
+  defp await_dashboard_opened do
+    # The test timeout bounds completion of the opener's timer and separate Task.
+    receive do
+      :dashboard_opened -> :ok
+    end
   end
 
   defp start_opener(name, parent) do

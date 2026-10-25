@@ -317,8 +317,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
       %{
         "work_request_id" => current_work_request_id_schema(),
         "work_package_id" => described_string_schema("Explicit descendant WorkPackage to synchronize through GitHub."),
-        "url" => described_string_schema("PR URL from the normal worker handoff. Supply head_sha with it to reconcile readiness without a worker claim."),
-        "head_sha" => described_string_schema("Expected PR head from the handoff; must match the fetched provider head.")
+        "url" => described_string_schema("PR URL to synchronize; merged PRs close delivery from GitHub merge evidence."),
+        "number" => pr_number_schema(),
+        "repository" => string_schema(),
+        "head_sha" => described_string_schema("Optional expected PR head; when supplied, must match the fetched provider head.")
       },
       ["work_package_id"]
     )
