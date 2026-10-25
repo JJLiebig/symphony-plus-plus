@@ -77,6 +77,41 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   expect((await native.raw({}, {}, 'POST', nativePath)).status).toBe(405);
   expect((await native.raw(null, {}, 'GET', '/api/v1/sympp/operator/dashboard/hydrated')).status).toBe(401);
   expect((await native.raw({ title: 'Denied native intake' }, {}, 'POST', '/api/v1/sympp/operator/work-requests')).status).toBe(401);
+  const intake = {
+    title: 'Native human intake', repo: 'example/native', base_branch: 'beta',
+    human_description: 'A human request created without browser metadata.', future_field: true,
+  };
+  const nativeActions = [
+    '/api/v1/sympp/herdr/work-requests',
+    `/api/v1/sympp/herdr/work-requests/${id}/questions/missing/answer`,
+    `/api/v1/sympp/herdr/work-packages/${nativePackage}/guidance/missing/answer`,
+  ];
+  for (const action of nativeActions) {
+    for (const headers of [
+      { origin: new URL(endpoint).origin }, { origin: 'https://example.invalid' }, { origin: 'null' },
+      { 'sec-fetch-site': 'same-origin' }, { 'sec-fetch-mode': 'cors' }, { 'sec-fetch-dest': 'empty' },
+      { 'sec-fetch-user': '?1' }, { 'sec-fetch-future': '1' }, { host: 'example.invalid' },
+      { forwarded: 'for=127.0.0.1' }, { 'x-real-ip': '127.0.0.1' },
+      { 'x-forwarded-for': '127.0.0.1' }, { 'x-forwarded-host': 'localhost' },
+      { 'x-forwarded-proto': 'http' }, { 'x-forwarded-port': '4000' }, { 'x-forwarded-future': '1' },
+      { 'content-type': 'text/plain' }, { 'content-type': 'application/x-www-form-urlencoded' }, { 'content-type': '' },
+    ]) expect((await native.raw(intake, headers, 'POST', action)).status).toBe(401);
+    for (const method of ['GET', 'PUT', 'DELETE', 'OPTIONS']) {
+      expect((await native.raw(null, { origin: new URL(endpoint).origin }, method, action)).status).toBe(405);
+    }
+  }
+  const unchangedBoard = await native.raw(null, {}, 'GET', nativePath);
+  expect(unchangedBoard.body.work_requests.total_count).toBe(browserBoard.work_requests.total_count);
+  expect((await native.raw({}, {}, 'POST', nativeActions[0])).status).toBe(422);
+  const createdNative = await native.raw(intake, { 'content-type': 'application/json; charset=utf-8' }, 'POST', nativeActions[0]);
+  expect(createdNative.status).toBe(201);
+  const nativeId = createdNative.body.work_request.work_request.id;
+  expect(createdNative.body.refresh).toEqual({ dashboard: true, work_request_id: nativeId });
+  const nativeDetail = await native.raw(null, {}, 'GET', `/api/v1/sympp/herdr/work-requests/${nativeId}`);
+  expect(nativeDetail.body.work_request.title).toBe(intake.title);
+  expect(nativeDetail.body.work_request.status).toBe('ready_for_clarification');
+  expect(nativeDetail.body.work_packages).toEqual([]);
+  expect((await native.raw({}, {}, 'POST', `/api/v1/sympp/operator/work-requests/${nativeId}/delete`)).status).toBe(401);
   expect((await fresh.call('read_work_request', { work_request_id: id })).work_packages.map((entry: any) => entry.id)).toEqual([nativePackage]);
   const bound = await fresh.call('get_current_assignment');
   expect((await fresh.rpc('initialize', initialize)).error.data.reason).toBe('already_initialized');

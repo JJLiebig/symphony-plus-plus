@@ -353,16 +353,23 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   @spec operator_create_work_request(Conn.t(), map()) :: Conn.t()
   def operator_create_work_request(conn, params) do
-    send_local_operator_response(conn, :work_request_update, Target.ledger(), :operator_create_work_request, fn repo ->
-      attrs = LocalOperatorDashboard.work_request_attrs(params)
+    send_local_operator_response(conn, :work_request_update, Target.ledger(), :operator_create_work_request, &create_work_request_response(&1, conn, params))
+  end
 
-      with {:ok, work_request} <- WorkRequestService.create(repo, attrs),
-           {:ok, detail} <- LocalOperatorDashboard.operator_work_request_detail_payload(repo, work_request.id) do
-        conn
-        |> put_status(201)
-        |> json(mutation_success_payload(%{work_request: detail}, %{work_request_id: work_request.id}))
-      end
-    end)
+  @spec herdr_create_work_request(Conn.t(), map()) :: Conn.t()
+  def herdr_create_work_request(conn, params) do
+    send_native_operator_response(conn, :work_request_update, Target.ledger(), :operator_create_work_request, &create_work_request_response(&1, conn, params))
+  end
+
+  defp create_work_request_response(repo, conn, params) do
+    attrs = LocalOperatorDashboard.work_request_attrs(params)
+
+    with {:ok, work_request} <- WorkRequestService.create(repo, attrs),
+         {:ok, detail} <- LocalOperatorDashboard.operator_work_request_detail_payload(repo, work_request.id) do
+      conn
+      |> put_status(201)
+      |> json(mutation_success_payload(%{work_request: detail}, %{work_request_id: work_request.id}))
+    end
   end
 
   @spec operator_update_settings(Conn.t(), map()) :: Conn.t()
@@ -551,21 +558,34 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   end
 
   @spec operator_answer_question(Conn.t(), map()) :: Conn.t()
-  def operator_answer_question(conn, %{"work_request_id" => work_request_id, "question_id" => question_id} = params) do
+  def operator_answer_question(conn, %{"work_request_id" => work_request_id} = params) do
     send_local_operator_response(
       conn,
       :question_answer,
       work_request_target(work_request_id),
       :operator_answer_question,
-      fn repo ->
-        with {:ok, question} <- LocalOperatorActions.scoped_question(repo, work_request_id, question_id),
-             :ok <- LocalOperatorActions.require_open_question(question),
-             {:ok, attrs} <- LocalOperatorActions.local_operator_question_answer_attrs(question, params),
-             {:ok, _answered} <- WorkRequestService.answer_question(repo, question.id, question.status, attrs) do
-          json(conn, mutation_success_payload(%{work_request_id: work_request_id, question_id: question.id}, %{work_request_id: work_request_id}))
-        end
-      end
+      &answer_question_response(&1, conn, params)
     )
+  end
+
+  @spec herdr_answer_question(Conn.t(), map()) :: Conn.t()
+  def herdr_answer_question(conn, %{"work_request_id" => work_request_id} = params) do
+    send_native_operator_response(
+      conn,
+      :question_answer,
+      work_request_target(work_request_id),
+      :operator_answer_question,
+      &answer_question_response(&1, conn, params)
+    )
+  end
+
+  defp answer_question_response(repo, conn, %{"work_request_id" => work_request_id, "question_id" => question_id} = params) do
+    with {:ok, question} <- LocalOperatorActions.scoped_question(repo, work_request_id, question_id),
+         :ok <- LocalOperatorActions.require_open_question(question),
+         {:ok, attrs} <- LocalOperatorActions.local_operator_question_answer_attrs(question, params),
+         {:ok, _answered} <- WorkRequestService.answer_question(repo, question.id, question.status, attrs) do
+      json(conn, mutation_success_payload(%{work_request_id: work_request_id, question_id: question.id}, %{work_request_id: work_request_id}))
+    end
   end
 
   @spec operator_answer_guidance(Conn.t(), map()) :: Conn.t()
@@ -575,20 +595,28 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
       :guidance_request_answer,
       guidance_request_target(work_package_id, guidance_request_id),
       :operator_answer_guidance,
-      fn repo ->
-        attrs = Map.put(params, "work_package_id", work_package_id)
-
-        with {:ok, result} <-
-               GuidanceRequestService.answer_human_info_needed_for_local_operator(
-                 repo,
-                 :local_operator,
-                 guidance_request_id,
-                 attrs
-               ) do
-          json(conn, mutation_success_payload(%{guidance_request_id: result.guidance_request.id}, %{work_package_id: work_package_id}))
-        end
-      end
+      &answer_guidance_response(&1, conn, params)
     )
+  end
+
+  @spec herdr_answer_guidance(Conn.t(), map()) :: Conn.t()
+  def herdr_answer_guidance(conn, %{"work_package_id" => work_package_id, "guidance_request_id" => guidance_request_id} = params) do
+    send_native_operator_response(
+      conn,
+      :guidance_request_answer,
+      guidance_request_target(work_package_id, guidance_request_id),
+      :operator_answer_guidance,
+      &answer_guidance_response(&1, conn, params)
+    )
+  end
+
+  defp answer_guidance_response(repo, conn, %{"work_package_id" => package_id, "guidance_request_id" => id} = params) do
+    attrs = Map.put(params, "work_package_id", package_id)
+
+    with {:ok, result} <-
+           GuidanceRequestService.answer_human_info_needed_for_local_operator(repo, :local_operator, id, attrs) do
+      json(conn, mutation_success_payload(%{guidance_request_id: result.guidance_request.id}, %{work_package_id: package_id}))
+    end
   end
 
   @spec operator_create_architect_handoff(Conn.t(), map()) :: Conn.t()
@@ -667,15 +695,41 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   defp send_online_or_local_response(conn, action, target, tool_name, fun) do
     if local_operator_browser?(conn) do
-      Runtime.with_dashboard_repo(fn repo ->
-        local_operator_response(repo, conn, action, target, tool_name, fun)
-      end)
-      |> case do
-        {:error, reason} -> error_response(conn, reason)
-        %Conn{} = conn -> conn
-      end
+      send_authorized_operator_response(conn, action, target, tool_name, fun)
     else
       error_response(conn, :unauthorized)
+    end
+  end
+
+  defp send_native_operator_response(conn, action, target, tool_name, fun) do
+    if native_operator_request?(conn) do
+      send_authorized_operator_response(conn, action, target, tool_name, fun)
+    else
+      error_response(conn, :unauthorized)
+    end
+  end
+
+  defp native_operator_request?(conn) do
+    herdr_consumer?(conn) and native_json_request?(conn) and
+      Enum.all?(conn.req_headers, fn {name, _value} ->
+        name != "origin" and not String.starts_with?(name, ["sec-fetch-", "x-forwarded-"])
+      end)
+  end
+
+  defp native_json_request?(conn) do
+    case Conn.get_req_header(conn, "content-type") do
+      [content_type] -> match?({:ok, "application", "json", _params}, Conn.Utils.media_type(content_type))
+      _headers -> false
+    end
+  end
+
+  defp send_authorized_operator_response(conn, action, target, tool_name, fun) do
+    Runtime.with_dashboard_repo(fn repo ->
+      local_operator_response(repo, conn, action, target, tool_name, fun)
+    end)
+    |> case do
+      {:error, reason} -> error_response(conn, reason)
+      %Conn{} = conn -> conn
     end
   end
 
@@ -835,6 +889,7 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   defp error_response(conn, :active_runtime), do: error_response(conn, 412, "active_runtime", "Closeout is blocked by active worker state")
   defp error_response(conn, :claim_not_current), do: error_response(conn, 412, "runtime_lease_conflict", "Closeout runtime state changed; retry the action")
   defp error_response(conn, :stale_status), do: error_response(conn, 409, "stale_status", "WorkPackage status changed; refresh and retry")
+  defp error_response(conn, :work_package_scope_mismatch), do: error_response(conn, :not_found)
   defp error_response(conn, :work_package_mismatch), do: error_response(conn, 409, "work_package_mismatch", "WorkPackage no longer matches its WorkPackage")
   defp error_response(conn, :work_package_not_abandonable), do: error_response(conn, 412, "work_package_not_abandonable", "WorkPackage cannot be abandoned from its current history")
 
