@@ -15,6 +15,9 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
       work_packages: [contract('Persisted snapshot package')],
     })).work_package_ids;
     const before = await architect.call('read_work_request', { work_request_id: request });
+    const sourceBoard = await architect.raw(null, {}, 'GET', '/api/v1/sympp/herdr/dashboard');
+    expect(sourceBoard.status).toBe(200);
+    expect(sourceBoard.body.runtime).toEqual({ offline: false });
     const sourceBytes = await readFile(source.database);
     const walBytes = await readFile(source.database + '-wal');
     expect((await copy.snapshot(source)).code).toBe(0);
@@ -38,7 +41,16 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
 
     const offline = copy.start('viewer-profile', true);
     const viewer = new Client(await offline.endpoint, offline.receipt);
-    const hydrated = JSON.stringify(await viewer.inspect('/api/v1/sympp/operator/dashboard/hydrated'));
+    const browserBoard = await viewer.inspect('/api/v1/sympp/operator/dashboard/hydrated');
+    const nativeBoard = await viewer.raw(null, {}, 'GET', '/api/v1/sympp/herdr/dashboard');
+    expect(nativeBoard.status).toBe(200);
+    expect(nativeBoard.body.runtime).toEqual({ offline: true });
+    const { generated_at: browserTime, ...browserProjection } = browserBoard;
+    const { generated_at: nativeTime, ...nativeProjection } = nativeBoard.body;
+    expect(nativeProjection).toEqual(browserProjection);
+    const copiedRequest = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === request);
+    expect(copiedRequest.work_packages.map((entry: any) => entry.id)).toContain(wp);
+    const hydrated = JSON.stringify(browserBoard);
     expect(hydrated).toContain('Synthetic online snapshot');
     expect(hydrated).toContain('Persisted snapshot package');
     for (const route of ['/mcp', '/mcp/client-lease']) {

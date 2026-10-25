@@ -11,6 +11,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   }
 
   alias SymphonyElixir.SymphonyPlusPlus.DeploymentObservation
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
@@ -136,7 +137,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context),
          {:ok, base} <- priority_dashboard_payload(repo, context, work_requests, projection_context),
          {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
-      {:ok, Map.merge(base, active)}
+      {:ok, Map.merge(base, active) |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?()})}
     end
   end
 

@@ -2245,6 +2245,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  assert Enum.any?(detail["product_tree"]["nodes"], &(&1["id"] == group.id))
                  signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
                  assert signal["active_blocker_count"] == 1
+                 assert board["runtime"] == %{"offline" => false}
                  assert repo.query!("SELECT total_changes()", []).rows == before_read
                  repo.rollback(:native_read_verified)
                end)
@@ -2260,7 +2261,39 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
           |> get("/api/v1/sympp/herdr/dashboard")
 
         assert json_response(denied, 401)["error"]["code"] == "unauthorized"
+
+        for path <- [
+              "/api/v1/sympp/herdr/work-requests",
+              "/api/v1/sympp/herdr/work-requests/#{work_request.id}/questions/missing/answer",
+              "/api/v1/sympp/herdr/work-packages/#{active.id}/guidance/missing/answer"
+            ] do
+          mutation =
+            native_operator_conn()
+            |> Map.put(:host, host)
+            |> Map.put(:remote_ip, remote_ip)
+            |> post(path, Jason.encode!(%{answer: "Denied network input"}))
+
+          assert json_response(mutation, 401)["error"]["code"] == "unauthorized"
+        end
       end
+
+      with_local_operator_dashboard_origin("http://localhost", fn ->
+        for method <- [:post, :options],
+            path <- [
+              "/api/v1/sympp/herdr/work-requests",
+              "/api/v1/sympp/herdr/work-requests/#{work_request.id}/questions/missing/answer",
+              "/api/v1/sympp/herdr/work-packages/#{active.id}/guidance/missing/answer"
+            ] do
+          request =
+            native_operator_conn()
+            |> put_req_header("origin", "http://localhost")
+            |> dispatch(@endpoint, method, path, "{}")
+
+          assert request.status == if(method == :post, do: 401, else: 405)
+          assert Plug.Conn.get_resp_header(request, "access-control-allow-origin") == []
+          assert Plug.Conn.get_resp_header(request, "access-control-allow-methods") == []
+        end
+      end)
 
       forwarded =
         build_conn()
@@ -2303,11 +2336,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  context: "A product decision is needed."
                })
 
+      native_answer = fn package_id, attrs ->
+        native_operator_conn()
+        |> post("/api/v1/sympp/herdr/work-packages/#{package_id}/guidance/#{guidance.id}/answer", Jason.encode!(attrs))
+      end
+
+      assert json_response(native_answer.(needs_human.id, %{answer: "Cannot bypass architect guidance"}), 422)["error"]["code"] == "invalid_status"
+      assert repo.get!(GuidanceRequest, guidance.id).status == "open"
+
       assert {:ok, _guidance} =
                GuidanceRequestRepository.escalate_human_info_needed(repo, guidance.id, %{
                  human_info_reason: "Product decision required",
                  recommended_language: "en",
-                 blocker_id: "herdr-human-guidance"
+                 blocker_id: "herdr-human-guidance",
+                 decision_prompt: %{
+                   "tl_dr" => "Choose the approved UX",
+                   "details" => "The human owns this product decision.",
+                   "options" => [%{"id" => "keep", "label" => "Keep", "answer" => "Keep the approved interaction."}]
+                 }
                })
 
       script = Path.join(root, "review.py")
@@ -2367,6 +2413,36 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert human_activity["waiting_reason"] == "Product decision required"
         assert human_activity["next_actor"] == "human"
         assert human_activity["next_action"] == "answer_guidance"
+
+        attrs = %{answer_choice: "keep", answer_note: "Retain keyboard access.", future_field: true}
+
+        assert :ok =
+                 repo.checkout(fn ->
+                   before_refusal = repo.query!("SELECT total_changes()", []).rows
+                   assert json_response(native_answer.(reviewing.id, attrs), 404)["error"]["code"] == "not_found"
+
+                   operator_mismatch =
+                     local_operator_conn()
+                     |> post("/api/v1/sympp/operator/work-packages/#{reviewing.id}/guidance/#{guidance.id}/answer", attrs)
+
+                   assert json_response(operator_mismatch, 404)["error"]["code"] == "not_found"
+                   assert repo.query!("SELECT total_changes()", []).rows == before_refusal
+                   :ok
+                 end)
+
+        assert json_response(native_answer.(needs_human.id, %{answer_choice: "unknown"}), 422)["error"]["code"] == "invalid_answer_choice"
+        assert repo.get!(GuidanceRequest, guidance.id).status == "human_info_needed"
+        assert repo.get!(GuidanceRequest, guidance.id).answer == nil
+
+        assert :ok = DashboardPubSub.subscribe()
+        answered = json_response(native_answer.(needs_human.id, attrs), 200)
+        assert answered["refresh"] == %{"dashboard" => true, "work_package_id" => needs_human.id}
+        assert_received :operator_dashboard_changed
+        persisted = repo.get!(GuidanceRequest, guidance.id)
+        assert persisted.answer == "Keep the approved interaction. Retain keyboard access."
+        assert persisted.answered_by == "local-operator"
+        assert persisted.status == "answered"
+        assert json_response(native_answer.(needs_human.id, attrs), 422)["error"]["code"] == "invalid_status"
       after
         :ets.delete(observation, {:observation, Path.expand(root), "origin/beta"})
         :ets.delete(observation, :review_suite_script)
@@ -4452,6 +4528,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     dashboard
     |> Map.get("work_packages", [])
     |> Enum.map(& &1["id"])
+  end
+
+  defp native_operator_conn do
+    build_conn()
+    |> Map.put(:host, "localhost")
+    |> Map.put(:remote_ip, {127, 0, 0, 1})
+    |> put_req_header("content-type", "application/json")
   end
 
   defp local_operator_conn do
