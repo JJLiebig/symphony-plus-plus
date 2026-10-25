@@ -7,7 +7,7 @@ Small fixes need no WorkRequest or worker claim.
 The installed plugin or portable Skills bundle includes
 `scripts/sympp-herdr.js`. Run it with Node on the machine where the worker will
 execute. It uses the existing `hc connect` API and the selected provider's own
-configuration and login. It never configures a provider, copies credentials,
+configuration and login. It prepares workspace trust only; it never copies credentials,
 dispatches a package, claims a grant, or reconfigures a running agent.
 
 ## Start and hand off
@@ -42,6 +42,44 @@ complete environment. Provider authentication stays on the execution machine.
 Profile configuration and MCP availability are separate from process launch;
 ordinary workers need no MCP claim. An existing Codex/Claude MCP installation
 can still use the optional worker adapter when explicitly requested.
+
+## Workspace trust
+
+A launch authorizes the selected provider to trust the exact `--cwd`, including
+an ordinary folder or a new Git worktree. No trusted-main-checkout prerequisite
+applies. Other folders, credentials, models and tool permissions are untouched.
+
+Claude records `projects[path].hasTrustDialogAccepted: true` in
+`CLAUDE_CONFIG_DIR/.claude.json`, or `~/.claude.json` when no profile is selected.
+On Windows it uses forward slashes and preserves the launched path's drive
+letter spelling, matching Claude Code. An already trusted entry is left alone;
+other fields in the same entry are preserved. The helper acquires Claude's
+`<config-file>.lock` directory, re-reads the config, merges only this trust flag,
+atomically replaces the file and verifies the flag, with one fresh merge/retry
+if verification fails. It waits for an existing lock and never steals it.
+
+Claude Code 2.1.310 has exit writers that ignore that lock. This is an accepted
+residual race: an exiting Claude session can overwrite the new trust entry and
+bring back the dialog; the helper can also overwrite unrelated changes saved
+by an unlocked exit writer between its read and replacement. Verification and
+the single retry reduce interference but cannot prevent either lost update.
+Replace this workaround when Claude provides a safe native trust writer or all
+of its config writers honor the same lock. Retire it when fresh launch folders
+no longer require a persisted trust record, verified with the installed CLI.
+
+Codex uses the selected CLI's native `config/read` and `config/value/write`
+app-server API to set `projects[path].trust_level = "trusted"` in its user
+`config.toml`. This preserves TOML comments and other settings, uses the native
+version check and atomic editor, then re-reads to verify. Its project key uses
+the canonical path and Codex's Windows casing. A version conflict or refused
+edit stops before the worker starts. See the [native config API](https://developers.openai.com/codex/app-server).
+OpenCode has no equivalent workspace trust prompt; the helper leaves its
+settings and [tool permission prompts](https://opencode.ai/docs/permissions/) unchanged.
+
+The receipt's `workspace_trust` reports `trusted`, `changed`, and `reason`:
+`launch_authorized`, `already_trusted`, or `no_workspace_trust_prompt`.
+Preparation failure stops before worker launch; `workspace_trust_*` errors
+identify lock contention, refused edits or verification failures.
 
 `--parent <terminal>` gives the worker its return address. Inside the same
 core, the current terminal is the default parent. A selected `--session`
@@ -90,7 +128,7 @@ Use `--json` for native clients; agent-facing output defaults to compact TOON.
 `launch` and `check` return a v1 receipt with `launch_id`, `core_id`,
 `terminal_id`, `pid`, `provider`, `model`, `role`, `work_request_id`,
 `work_package_id`, hashed `ledger_id`, `cwd`, `created_at`, absolute `receipt`
-path, `state`, `status`, and `reason`. Successful launch also reports `reused`.
+path, `state`, `status`, `reason`, and `workspace_trust`. Successful launch also reports `reused`.
 `check` reports `state: stale` when identity has changed. A UI may focus only a
 fresh `state: live` receipt, using its own machine-qualified terminal address.
 
@@ -114,7 +152,7 @@ its configured MCP transport; this helper adds no remote ledger authentication.
 
 The owning Node subprocess suite proves adapter argument/environment behavior,
 bounded assignment binding, replay/conflict handling, unknown spawn outcomes,
-stale-shell refusal and status-conditional sends with a controlled JSON-RPC
+workspace trust edits, concurrent interference, stale-shell refusal and status-conditional sends with a controlled JSON-RPC
 peer. It starts no models and is not live Herdr or provider qualification.
 
 Before claiming a provider/platform combination qualified, run it against a
