@@ -64,7 +64,7 @@ export function staleBar(v, t, now) {
 function needRow(v, t, need, now) {
   const job = need.job;
   return v_flex().id(`need-${need.key}`).flex_none().px(14).py(12).gap(7).rounded(10).cursor_pointer()
-    .bg(tint(t.blocked, "10")).border_l(1).border_color(t.blocked)
+    .bg(tint(t.blocked, "12"))
     .hover((s) => s.bg(tint(t.blocked, "1c")))
     .accessibility_label(`${need.label}: ${need.text}. ${job.title}`)
     .on_click((_e, cx) => {
@@ -72,6 +72,7 @@ function needRow(v, t, need, now) {
       v.openJob(job.id, cx);
     })
     .child(h_flex().gap(8).items_center()
+      .child(mark(t, "needs_you"))
       .child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label))
       .child(div().flex_1())
       .when(need.since !== null, (el) => el.child(div().text_size(11).font_family(MONO).text_color(t.muted).child(M.ago(need.since, now)))))

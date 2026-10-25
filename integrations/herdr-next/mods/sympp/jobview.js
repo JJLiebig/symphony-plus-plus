@@ -96,8 +96,9 @@ function attention(v, t, job, ctx) {
       const action = question ? button(t, `need-answer-${need.key}`, "Answer", (cx) => v.openAnswer(question, cx), { strong: true })
         : need.pkgId ? button(t, `need-show-${need.key}`, "Show", (cx) => v.selectPackage(need.pkgId, cx), { strong: true })
         : v.dashboard ? button(t, `need-dashboard-${need.key}`, "Answer in dashboard", (cx) => v.openDashboard(cx), { strong: true }) : null;
-      return v_flex().id(`need-${need.key}`).px(12).py(8).gap(6).rounded(6).bg(tint(t.blocked, "10")).border_l(2).border_color(t.blocked)
+      return v_flex().id(`need-${need.key}`).px(12).py(8).gap(6).rounded(6).bg(tint(t.blocked, "12"))
         .child(h_flex().gap(10).items_center().min_w(0)
+          .child(mark(t, "needs_you"))
           .child(div().flex_none().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.foreground).child(need.text))
           .when(Boolean(need.pkgId && titles.get(need.pkgId)), (el) => el.child(div().flex_none().max_w(180).truncate().text_size(11.5).text_color(t.muted).child(titles.get(need.pkgId))))
