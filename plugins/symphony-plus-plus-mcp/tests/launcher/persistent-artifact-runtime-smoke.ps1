@@ -69,10 +69,29 @@ function Invoke-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashta
 function Read-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment) {
   $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
-    $stdout = $process.StandardOutput.ReadToEndAsync()
-    $stderr = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(120000)) { $process.Kill($true); throw "Native command timed out: $FilePath" }
-    $result = @{ exit = $process.ExitCode; stdout = $stdout.GetAwaiter().GetResult(); stderr = $stderr.GetAwaiter().GetResult() }
+    $streams = @{
+      stdout = @{ reader = $process.StandardOutput; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
+      stderr = @{ reader = $process.StandardError; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
+    }
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
+    do {
+      $readAny = $false
+      foreach ($stream in $streams.Values) {
+        if ($stream.closed) { continue }
+        if (-not $stream.pending) { $stream.pending = $stream.reader.ReadLineAsync() }
+        if ($stream.pending.Wait(20)) {
+          if ($null -eq $stream.pending.Result) { $stream.closed = $true }
+          else { $stream.lines.Add($stream.pending.Result) }
+          $stream.pending = $null
+          $readAny = $true
+        }
+      }
+      # Hosted process fixtures can leave pipe handles in a detached backend.
+      if ($process.HasExited -and -not $readAny) { break }
+      if ([DateTime]::UtcNow -gt $deadline) { $process.Kill($true); throw "Native command timed out: $FilePath" }
+      if (-not $readAny) { Start-Sleep -Milliseconds 10 }
+    } while ($true)
+    $result = @{ exit = $process.ExitCode; stdout = [string]::Join("`n", $streams.stdout.lines); stderr = [string]::Join("`n", $streams.stderr.lines) }
     Write-Host ($result | ConvertTo-Json -Compress)
     return $result
   } finally { $process.Dispose() }

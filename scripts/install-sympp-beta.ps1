@@ -76,9 +76,12 @@ function Start-InstallBackend {
   $powershell = if ($env:SYMPP_POWERSHELL) { $env:SYMPP_POWERSHELL } else { 'pwsh' }
   New-Item -ItemType Directory -Force -Path $env:SYMPP_LOG_DIR | Out-Null
   $startupLog = Join-Path $env:SYMPP_LOG_DIR ('beta-install-' + [guid]::NewGuid().ToString('N') + '.log')
-  $arguments = Join-ProcessArgumentList @('-NoProfile', '-NonInteractive', '-File', $launcher, '-PrepareRuntimeOnly')
-  $process = Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden -PassThru `
-    -RedirectStandardOutput $startupLog -RedirectStandardError "$startupLog.err"
+  . (Join-Path $helpers 'sympp-windows-backend.ps1')
+  $stdinFile = "$startupLog.in"
+  [IO.File]::WriteAllBytes($stdinFile, [byte[]]@())
+  $command = [pscustomobject]@{ file = $powershell; args = @('-NoProfile', '-NonInteractive', '-File', $launcher, '-PrepareRuntimeOnly') }
+  $process = Start-SymppWindowsBackend $command $pluginRoot $stdinFile $startupLog "$startupLog.err"
+  $null = $process.Handle
   try {
     # Waiting for pipe EOF also waits for the detached Windows backend.
     if (-not $process.WaitForExit(330000)) { $process.Kill($true); throw "Beta startup timed out. See $startupLog.err" }

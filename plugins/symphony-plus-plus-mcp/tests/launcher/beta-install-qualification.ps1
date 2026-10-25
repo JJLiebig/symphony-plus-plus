@@ -1,6 +1,13 @@
 # Extends the owning installed-runtime journey with a connected bridge and real release.
 function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $CandidateManifest) {
   $installer = Join-Path $repoRoot 'scripts/install-sympp-beta.ps1'
+  if ($HostedProcessCreation) {
+    $wrapper = Join-Path $tempRoot 'beta-install-hosted.ps1'
+    $preload = (Join-Path $PSScriptRoot 'hosted-backend-preload.ps1').Replace("'", "''")
+    $entrypoint = $installer.Replace("'", "''")
+    [IO.File]::WriteAllText($wrapper, "param([string]`$SymppHome, [string]`$HerdrAppHome, [string]`$ArtifactManifest)`n`$ErrorActionPreference = 'Stop'`n. '$preload'`n& '$entrypoint' @PSBoundParameters`nexit `$LASTEXITCODE`n")
+    $installer = $wrapper
+  }
   $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
   $nativeHome = Join-Path $tempRoot 'native home'
   $channelFile = Join-Path $tempRoot 'install-beta.json'

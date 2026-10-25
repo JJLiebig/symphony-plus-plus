@@ -84,7 +84,8 @@ URL. See [Operations](operations.md) for the Work board and starting a request.
 
 ### Reload an existing Windows beta factory
 
-From an S++ checkout, use explicit absolute factory and Herdr-app homes:
+From an S++ checkout on your logged-in Windows desktop, use explicit absolute
+factory and Herdr-app homes:
 
 ```powershell
 pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
