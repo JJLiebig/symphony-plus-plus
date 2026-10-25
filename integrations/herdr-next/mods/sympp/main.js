@@ -1,7 +1,8 @@
-// S++ Lens: the shared S++ board, natively in Herdr. Levels run Factory > Topic > Space > Job; this
-// copy draws the current overview (what needs you, then moving jobs) and the Job level. A copy opened
-// with props.job is that job's own tab. Intake and answers persist through S++; terminal jumps and
-// "Live" both rest on a trusted execution helper's check, never on terminal labels or text.
+// S++ Lens: the shared S++ board, natively in Herdr. Levels run Factory > Topic > Space > Job under a
+// breadcrumb; Esc goes up one. A copy opened with props.job is that job's own tab. A panel copy follows
+// Herdr's focus (a job's terminal or tab, else the space, else its topic) until it is pinned. A toast
+// says when something newly needs the person. Intake and answers persist through S++; terminal jumps
+// and "Live" both rest on a trusted execution helper's check, never on terminal labels or text.
 //
 // Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel", job?: "<work request id>",
 //   bridge: { node, helper },
@@ -9,14 +10,16 @@
 //   hosts?: { local: { node, helper, session? }, "machine": { node, helper, session? } } }
 // Hosts may also be configured explicitly in shared("sympp.hosts").
 //
-// Modules: model.js (board in, view data out), job.js (the Job level's pure logic), controls.js
-// (persisted actions), transport.js (HTTP through exec), ui.js (shared look), overview.js and
-// jobview.js (what each level draws), rails.js (package rails on a shared time axis).
+// Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel
+// following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
+// transport.js (HTTP through exec), ui.js (shared look), overview.js and jobview.js (what each level
+// draws), rails.js (package rails on a shared time axis).
 
 import { View } from "gpui-kit";
-import { v_flex, h_flex, InputState, TextareaState } from "gpui-base";
-import { props, theme, shared, spaces, panes, terminals, run, window as appWindow, exec } from "herdr";
+import { v_flex, InputState, TextareaState } from "gpui-base";
+import { props, theme, shared, setShared, spaces, panes, terminals, focused, notify, run, window as appWindow, exec } from "herdr";
 import * as M from "./model.js";
+import * as L from "./levels.js";
 import * as J from "./job.js";
 import * as R from "./rails.js";
 import * as C from "./controls.js";
@@ -27,7 +30,18 @@ import { jobView } from "./jobview.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
+const DAY = 24 * 3600e3;
 const KEYS = { j: "down", k: "up", down: "down", up: "up" };
+const TOP = { topic: null, space: null, job: null };
+
+function storedPath() {
+  try {
+    const path = JSON.parse(localStorage.getItem("path") ?? "null");
+    return path && typeof path === "object" ? { ...TOP, ...path } : TOP;
+  } catch {
+    return TOP;
+  }
+}
 
 export default class Lens extends View {
   init(p, cx) {
@@ -45,8 +59,6 @@ export default class Lens extends View {
     this.reading = false;
     this.detailReading = false;
     this.turn = 0;
-    this.selected = null;
-    this.detail = false;
     this.companion = false;
     this.pkgSel = null;
     this.review = null;
@@ -56,9 +68,15 @@ export default class Lens extends View {
     this.checking = false;
     this.checkedFor = null;
     this.checkedAt = 0;
-    this.order = [];
-    this.scoped = [];
-    this.scopeKey = localStorage.getItem("scope") ?? "all";
+    // Where this copy is: its own across restarts. A panel's pin stops it following focus.
+    this.path = storedPath();
+    this.pin = localStorage.getItem("pin") === "1";
+    this.lastFocus = null;
+    this.cursor = null;
+    this.rows = [];
+    this.expanded = new Set();
+    this.awaiting = null;
+    this.seenNeeds = null;
     this.painted = Date.now();
     this.keys = cx.focus_handle();
     this.intake = false;
@@ -70,8 +88,8 @@ export default class Lens extends View {
     this.tick(cx);
   }
 
-  // Data timer: the board when due; while a job view shows, its details and agent checks at the
-  // same cadence. Otherwise it repaints now and then so ages keep moving.
+  // Data timer: the board when due; while a job view shows, its details at the same cadence, and
+  // agent checks for whichever level lists agents. Otherwise it repaints now and then so ages move.
   tick(cx) {
     if (!this.endpoint) return;
     const now = Date.now();
@@ -80,7 +98,8 @@ export default class Lens extends View {
     if (!this.reading && M.fetchDue(this.net, now, appWindow().active)) { this.read(cx); busy = true; }
     const shown = this.shown;
     if (shown && !this.detailReading && J.detailDue(this.detailNet, shown.jobId, cadence, now)) { this.readDetail(shown.jobId, cx); busy = true; }
-    if (shown && !this.checking && (this.checkedFor !== shown.jobId || now - this.checkedAt >= cadence)) this.checkAgents(shown, cx);
+    const watch = this.agentWatch;
+    if (watch && !this.checking && (this.checkedFor !== watch.key || now - this.checkedAt >= cadence)) this.checkAgents(watch, cx);
     if (!busy && now - this.painted >= REPAINT) {
       this.painted = now;
       cx.notify();
@@ -113,6 +132,7 @@ export default class Lens extends View {
       if (turn !== this.turn) return;
       const now = Date.now();
       this.net = outcome.board ? M.fetchSucceeded(this.net, outcome.board, now) : M.fetchFailed(this.net, outcome.error, now);
+      if (outcome.board) this.announce(outcome.board);
       this.painted = now;
       if (this.refreshAfterRead) {
         this.refreshAfterRead = false;
@@ -124,6 +144,34 @@ export default class Lens extends View {
         // The view closed or reloaded while reading; nothing is left to draw.
       }
     });
+  }
+
+  // A toast only for a need that appeared between two successful reads of this copy. Copies share
+  // what was announced, so each need is announced once however many S++ views are open.
+  announce(board) {
+    const { seen, fresh } = L.newNeeds(this.seenNeeds, board);
+    this.seenNeeds = seen;
+    if (!fresh.length) return;
+    const now = Date.now();
+    const before = shared("sympp.toasted");
+    const told = Object.fromEntries(Object.entries(before && typeof before === "object" ? before : {}).filter(([, at]) => now - at < DAY));
+    let posted = false;
+    for (const need of fresh) {
+      const id = L.toastId(need);
+      if (told[id]) continue;
+      told[id] = now;
+      posted = true;
+      notify({ title: need.label, body: `${need.text} · ${need.job.title}`, level: "warning", action: this.jobAction(need.job) });
+    }
+    if (posted) setShared("sympp.toasted", told);
+  }
+
+  // The job's open tab when there is one, else a new one.
+  jobAction(job) {
+    const tabs = shared("sympp.jobTabs");
+    const open = new Set(this.spaceList().flatMap((s) => (s.tabs ?? []).map((tab) => tab.id)));
+    const tab = Object.entries(tabs && typeof tabs === "object" ? tabs : {}).find(([id, jobId]) => jobId === job.id && open.has(id))?.[0];
+    return tab ? { name: "tab.select", args: { id: tab } } : { name: "tab.new", args: J.jobTabArgs(this.given, job, this.spaceList()) };
   }
 
   // The shown job's recorded decisions; the last good list survives a failed read.
@@ -152,8 +200,8 @@ export default class Lens extends View {
   }
 
   // "Live" means the trusted helper confirmed this exact launch and process just now.
-  checkAgents({ jobId, bindings }, cx) {
-    this.checkedFor = jobId;
+  checkAgents({ key, bindings }, cx) {
+    this.checkedFor = key;
     this.checkedAt = Date.now();
     const due = bindings.filter((b) => b.available);
     if (!due.length) return;
@@ -182,32 +230,98 @@ export default class Lens extends View {
     if (this.dashboard) cx.open_url(this.dashboard);
   }
 
-  select(id, cx) {
-    this.following = null;
-    if (id !== this.selected) {
-      this.pkgSel = null;
-      this.review = null;
-    }
-    this.selected = id;
-    if (this.compact) this.detail = true;
-    this.keys.focus();
-    cx.notify();
-  }
+  // ---------- Levels ----------
 
-  openJob(id, cx) {
-    this.select(id, cx);
-    this.detail = true;
-    cx.notify();
-  }
-
-  leaveJob(cx) {
-    this.detail = false;
-    this.following = null;
-    this.pkgSel = null;
+  // Moving to a level. Following focus never takes the keyboard; the person's own moves do.
+  go(path, cx, { pkg = null, follow = false } = {}) {
+    this.path = { topic: path.topic ?? null, space: path.space ?? null, job: path.job ?? null };
+    this.cursor = null;
+    this.pkgSel = pkg;
     this.review = null;
-    if (this.currentScope?.kind === "job") this.setScope("all", cx);
+    try { localStorage.setItem("path", JSON.stringify(this.path)); } catch { /* storage is a convenience */ }
+    if (follow) return;
     this.keys.focus();
     cx.notify();
+  }
+
+  goUp(cx) {
+    this.go(L.up(this.path), cx);
+  }
+
+  openTopic(id, cx) {
+    this.go({ topic: id }, cx);
+  }
+
+  openSpace(spaceId, topicId, cx) {
+    this.go({ topic: topicId, space: spaceId }, cx);
+  }
+
+  // A job opened from a topic or space stays under it; from the factory it sits under its home topic.
+  openJob(job, { pkg = null } = {}, cx) {
+    const under = this.level === "topic" || this.level === "space" ? { topic: this.path.topic, space: this.path.space } : { topic: this.place?.home(job) ?? null };
+    this.go({ ...under, job: job.id }, cx, { pkg });
+  }
+
+  togglePin(cx) {
+    this.pin = !this.pin;
+    try { localStorage.setItem("pin", this.pin ? "1" : "0"); } catch { /* storage is a convenience */ }
+    this.lastFocus = null;
+    cx.notify();
+  }
+
+  toggleExpanded(key, cx) {
+    if (this.expanded.has(key)) this.expanded.delete(key);
+    else this.expanded.add(key);
+    cx.notify();
+  }
+
+  // Rows register in reading order as they draw, so keys reach every row a pointer can.
+  row(key, open) {
+    this.rows.push({ key, open });
+    return this.cursor === key && this.keys.is_focused();
+  }
+
+  // The panel follows Herdr's focus when it changes; the person's own moves stand until it does.
+  follow(board, desk, cx) {
+    const f = focused();
+    const tabs = shared("sympp.jobTabs");
+    const seen = f ? [f.space, f.tab, f.pane, f.terminal, f.shown, tabs?.[f.tab]].join("|") : "";
+    if (seen === this.lastFocus) return;
+    this.lastFocus = seen;
+    const next = L.followPath(L.focusTarget(f, terminals(), tabs, panes()), board.jobs, desk, this.place);
+    if (next && JSON.stringify(next) !== JSON.stringify(this.path)) this.go(next, cx, { follow: true });
+  }
+
+  // Herdr draws a mod pane only while its tab is the shown one, so a drawing job tab is the focused
+  // tab. It records itself so a panel and toasts can find the job's tab.
+  registerTab(cx) {
+    const f = focused();
+    if (!f?.tab || this.registered === f.tab || !panes().some((p) => p.tab === f.tab && !p.terminal)) return;
+    this.registered = f.tab;
+    const before = shared("sympp.jobTabs");
+    const current = before && typeof before === "object" ? before : {};
+    if (current[f.tab] === this.pinned) return;
+    const open = new Set(this.spaceList().flatMap((s) => (s.tabs ?? []).map((tab) => tab.id)));
+    const next = Object.fromEntries(Object.entries(current).filter(([id]) => open.has(id)));
+    next[f.tab] = this.pinned;
+    cx.spawn(async () => setShared("sympp.jobTabs", next));
+  }
+
+  // Herdr's own topics and spaces; the drawn-structure tests substitute fixtures here.
+  deskTopics() {
+    return shared("desk.topics");
+  }
+
+  spaceList() {
+    return spaces();
+  }
+
+  // The agents a Topic or Space level lists, and the bindings the timer then checks.
+  agentsFor(jobs, all, bindings, spaceIds, now) {
+    const rows = L.agentRows(jobs, all, bindings, terminals(), spaceIds, this.agentChecks, now);
+    const watched = rows.flatMap((r) => M.bindingsFor(bindings, r.job.id, r.pkgId ?? null));
+    this.agentWatch = { key: `${this.level}:${spaceIds.join(",")}:${jobs.map((j) => j.id).join(",")}`, bindings: watched.filter((b, i) => watched.findIndex((o) => o.address === b.address) === i) };
+    return rows;
   }
 
   // An open review drill-down follows the selected package.
@@ -237,13 +351,6 @@ export default class Lens extends View {
     run("tab.new", J.jobTabArgs(this.given, job, spaces()));
   }
 
-  setScope(key, cx) {
-    this.following = null;
-    this.scopeKey = key;
-    localStorage.setItem("scope", key);
-    cx.notify();
-  }
-
   input(placeholder, multiline = false) {
     const state = multiline ? TextareaState.new({ placeholder, rows: 4 }) : InputState.new({ placeholder });
     state.on("change", (_e, cx) => cx.notify());
@@ -252,9 +359,9 @@ export default class Lens extends View {
 
   openIntake(cx) {
     if (!this.draft.repo.value()) {
-      const scope = this.currentScope;
-      const active = spaces().find((s) => s.active);
-      this.draft.repo.set_value(scope?.kind === "repo" ? scope.repo : active?.folder ?? "");
+      const here = this.path.space ? L.spaceById(L.deskOf(this.deskTopics(), this.spaceList()), this.path.space)?.space : null;
+      const active = this.spaceList().find((s) => s.active);
+      this.draft.repo.set_value((here ?? active)?.folder ?? "");
     }
     this.intake = true;
     this.draft.title.focus();
@@ -272,10 +379,8 @@ export default class Lens extends View {
       }, (id) => {
         for (const input of Object.values(this.draft)) input.set_value("");
         this.intake = false;
-        this.scopeKey = "all";
-        this.selected = id;
-        this.following = id;
-        this.detail = true;
+        this.awaiting = id;
+        this.go({ topic: this.path.topic, space: this.path.space, job: id }, cx);
         this.retry(cx);
       });
       cx.notify();
@@ -318,7 +423,6 @@ export default class Lens extends View {
         if (destination.pane) run("pane.focus", { pane: destination.pane });
         else {
           this.companion = destination.alongside;
-          this.detail = destination.alongside;
           run("space.select", { id: destination.space });
           run("terminal.keep", { terminal: binding.address, place: destination.alongside ? "right" : "tab" });
         }
@@ -353,9 +457,9 @@ export default class Lens extends View {
     if (!this.keys.is_focused()) return;
     const key = e.key;
     const nav = KEYS[key];
-    // Keys move packages on the Job level, and in the overview's preview once a package is picked;
-    // Esc clears that package first, then leaves the job.
-    const inJob = this.level === "job" || Boolean(this.shown && this.pkgSel);
+    // On the Job level keys move packages and Esc clears the package first; above it they move
+    // through the level's rows. Esc then goes up a level, except in a job's own tab.
+    const inJob = this.level === "job";
     const packages = inJob && Boolean(this.currentJob);
     if (key === "escape" && this.intake) {
       if (this.creation.pending) return;
@@ -363,13 +467,18 @@ export default class Lens extends View {
     } else if (this.intake) return;
     else if (packages && nav) this.selectPackage(R.moveRow(this.rowOrder, this.pkgSel, nav === "down" ? 1 : -1) ?? this.pkgSel, cx);
     else if (inJob && nav) return;
-    else if (nav === "down" || nav === "up") this.selected = M.moveSelection(this.scoped, this.selected, nav === "down" ? 1 : -1) ?? this.selected;
+    else if (nav) this.cursor = R.moveRow(this.rows.map((r) => r.key), this.cursor, nav === "down" ? 1 : -1) ?? this.cursor;
     else if (key === "enter" && inJob) { if (!packages || !this.openPackage(cx)) return; }
-    else if (key === "enter" && this.selected) { this.detail = true; this.pkgSel = null; }
+    else if (key === "enter") {
+      const row = this.rows.find((r) => r.key === this.cursor);
+      if (!row) return;
+      row.open(cx);
+    }
     else if (key === "escape" && this.review) this.review = null;
     else if (key === "escape" && inJob && this.pkgSel) this.pkgSel = null;
-    else if (key === "escape" && this.level === "job" && !this.pinned) this.leaveJob(cx);
+    else if (key === "escape" && !this.pinned && this.level !== "factory") this.goUp(cx);
     else if (key === "t" && this.currentJob && !this.pinned) this.openInTab(this.currentJob, cx);
+    else if (key === "p" && this.role === "panel" && !this.pinned) this.togglePin(cx);
     else if (key === "r") this.retry(cx);
     else if (key === "o") this.openDashboard(cx);
     else return;
@@ -396,18 +505,21 @@ export default class Lens extends View {
     const review = this.review?.jobId === job.id ? job.packages.find((pkg) => pkg.id === this.review.pkgId) ?? null : null;
     if (!review) this.review = null;
     this.shown = { jobId: job.id, bindings: J.jobBindings(job, bindings) };
+    this.agentWatch = { key: job.id, bindings: this.shown.bindings };
     this.currentJob = job;
     const layout = place !== "side" && !this.compact ? "wide" : "compact";
     return jobView(this, t, job, { now, bindings, terminals: terminals(), layout, place, offline: board.offline === true, review });
   }
 
-  render(_cx) {
+  render(cx) {
     this.compact = this.role === "panel" || this.companion || this.viewportWidth() < 1000;
     const t = theme();
     const now = Date.now();
     this.shown = null;
+    this.agentWatch = null;
     this.currentJob = null;
-    this.level = this.pinned ? "job" : "list";
+    this.rows = [];
+    this.level = this.pinned ? "job" : "factory";
     if (!this.endpoint) {
       return this.root(t, [message(t, "S++ isn't connected", "Give this block an endpoint prop with the local S++ address, for example http://127.0.0.1:4000.")]);
     }
@@ -423,6 +535,7 @@ export default class Lens extends View {
       ? binding : { ...binding, available: false, unavailable: board.offline ? "Offline copy" : "Update S++ for agent access" });
 
     if (this.pinned) {
+      this.registerTab(cx);
       const job = board.jobs.find((j) => j.id === this.pinned);
       if (!job) {
         return this.root(t, [O.staleBar(this, t, now), message(t, "This job isn't here", "It isn't on this S++ board. It may have been archived, or this tab belongs to another factory.", [
@@ -433,31 +546,33 @@ export default class Lens extends View {
       return this.root(t, [O.staleBar(this, t, now), this.jobLevel(t, board, job, bindings, "tab", now)]);
     }
 
-    const scopes = M.scopesOf(board.jobs, shared("desk.topics"), spaces(), this.repoTopics);
-    const followed = board.jobs.find((job) => job.id === this.selected);
-    if (followed) scopes.push({ key: `job:${followed.id}`, label: "Selected job", kind: "job", id: followed.id });
-    const scope = scopes.find((s) => s.key === this.scopeKey) ?? scopes[0];
-    this.currentScope = scope;
-    const jobs = M.applyScope(board.jobs, scope, this.repoTopics);
-    this.scoped = jobs;
-    this.order = M.selectableJobs(jobs);
-    if (this.following && board.jobs.some((job) => job.id === this.following)) this.following = null;
-    this.selected = this.following ?? M.pickSelection(jobs, this.selected);
-    const needs = M.needsOf(jobs);
-    const job = jobs.find((j) => j.id === this.selected) ?? null;
-    const top = [O.header(this, t, scopes, scope, jobs, now), O.staleBar(this, t, now)];
-    if (this.intake) return this.root(t, [...top, O.intakeForm(this, t)]);
+    const desk = L.deskOf(this.deskTopics(), this.spaceList());
+    this.place = L.placeJobs(board.jobs, desk, this.repoTopics);
+    if (this.role === "panel" && !this.pin) this.follow(board, desk, cx);
+    if (this.awaiting && board.jobs.some((job) => job.id === this.awaiting)) this.awaiting = null;
+    const path = this.path = L.resolvePath(this.path, desk, board.jobs, this.awaiting);
+    this.level = L.levelOf(path);
+    const trail = L.crumbs(path, desk, board.jobs);
+    const needs = M.verdictCounts(board.jobs).needs;
+    const names = new Map(desk.map((topic) => [topic.id, topic.name]));
 
-    if ((this.detail || scope.kind === "job") && (job || this.following)) {
-      this.level = "job";
-      return this.root(t, [O.staleBar(this, t, now), job ? this.jobLevel(t, board, job, bindings, "full", now) : message(t, "Reading new job…", null)]);
+    if (this.level === "job") {
+      const job = board.jobs.find((j) => j.id === path.job);
+      return this.root(t, [O.levelBar(this, t, trail, { now, needs, slim: true }), O.staleBar(this, t, now),
+        job ? this.jobLevel(t, board, job, bindings, "full", now) : message(t, "Reading new job…", null)]);
     }
-    if (this.compact) return this.root(t, [...top, O.list(this, t, jobs, needs, now)]);
-    return this.root(t, [...top,
-      h_flex().flex_1().min_h(0)
-        .child(O.list(this, t, jobs, needs, now))
-        .child(v_flex().id("lens-detail").w(460).max_w_full().flex_shrink(1).h_full().border_l(1).border_color(t.border)
-          .child(job ? this.jobLevel(t, board, job, bindings, "side", now) : message(t, "No job selected", "Pick a job on the left to follow it."))),
-    ]);
+    const top = [O.levelBar(this, t, trail, { now, needs }), O.staleBar(this, t, now)];
+    if (this.intake) return this.root(t, [...top, O.intakeForm(this, t)]);
+    if (this.level === "factory") return this.root(t, [...top, O.factoryLevel(this, t, board.jobs, L.factoryRows(board.jobs, desk, this.place), now)]);
+    if (this.level === "topic") {
+      const topic = desk.find((x) => x.id === path.topic);
+      const groups = L.topicWork(topic, board.jobs, this.place);
+      const agents = this.agentsFor(groups.flatMap((g) => g.jobs), board.jobs, bindings, topic.spaces.map((s) => s.id), now);
+      return this.root(t, [...top, O.topicLevel(this, t, topic, groups, agents, names, now)]);
+    }
+    const found = L.spaceById(desk, path.space);
+    const work = L.spaceWork(found.space, board.jobs);
+    const agents = this.agentsFor(work.jobs, board.jobs, bindings, [found.space.id], now);
+    return this.root(t, [...top, O.spaceLevel(this, t, found, work, agents, now)]);
   }
 }

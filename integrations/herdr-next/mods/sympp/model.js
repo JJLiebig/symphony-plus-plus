@@ -141,7 +141,7 @@ function buildJob(detail, now, guidance, runs) {
   const escalation = request.operator_report?.human_escalation;
   const ask = escalation?.question && !escalation.resolved_at ? { text: escalation.question, since: ms(escalation.raised_at) ?? now } : null;
   const needs = [
-    ...(ask ? [{ key: `${request.id}:ask`, kind: "ask", label: "Architect asks", text: ask.text, since: ask.since, jobId: request.id, pkgId: null }] : []),
+    ...(ask ? [{ key: `${request.id}:ask`, kind: "ask", label: "Architect asks", text: ask.text, since: ask.since, raisedAt: ms(escalation.raised_at), jobId: request.id, pkgId: null }] : []),
     ...guidanceQuestions,
     ...packages.filter((pkg) => pkg.stage !== "done" && pkg.activity.nextActor === "human" && !guidanceQuestions.some((q) => q.pkgId === pkg.id)).map((pkg) => ({
       key: `${request.id}:${pkg.id}:guidance`,
@@ -179,6 +179,9 @@ function buildJob(detail, now, guidance, runs) {
     needs,
     architect: placeOf(request.architect_session_location),
     packages,
+    // Prerequisite → dependent package pairs from the effective execution graph.
+    edges: (detail.product_tree?.execution_graph?.effective_edges ?? [])
+      .map((edge) => [edge?.prerequisite_work_package_id, edge?.dependent_work_package_id]).filter(([pre, dep]) => pre && dep),
     counts: { live: live.length, queued: queued.length, done: done.length, total: packages.length },
     state: settled ? "settled" : live.length > 0 || needs.length > 0 ? "live" : "resting",
     lastMoveAt: Math.max(createdAt, ...packages.map((pkg) => pkg.since ?? 0)),
@@ -371,29 +374,6 @@ export function lanesOf(jobs) {
   return lanes;
 }
 
-export function needsOf(jobs) {
-  return jobs.flatMap((job) => job.needs.map((need) => ({ ...need, job }))).sort((a, b) => (a.since ?? 0) - (b.since ?? 0));
-}
-
-// Reading order of the selectable jobs, matching what the list draws.
-export function selectableJobs(jobs) {
-  const lanes = lanesOf(jobs);
-  return [...lanes.moving, ...lanes.parked, ...lanes.backlog, ...lanes.landed];
-}
-
-export function pickSelection(jobs, current) {
-  const order = selectableJobs(jobs);
-  if (current && jobs.some((job) => job.id === current)) return current;
-  return needsOf(jobs)[0]?.jobId ?? order[0]?.id ?? null;
-}
-
-export function moveSelection(jobs, current, delta) {
-  const order = selectableJobs(jobs);
-  if (order.length === 0) return null;
-  const at = order.findIndex((job) => job.id === current);
-  return order[at < 0 ? 0 : Math.max(0, Math.min(order.length - 1, at + delta))].id;
-}
-
 // Packages in three parts that never mix: moving now, up next, landed.
 export function packageSections(job) {
   return {
@@ -432,43 +412,6 @@ export function verdictCounts(jobs) {
     if (job.lane === "backlog") counts.planned += 1;
   }
   return counts;
-}
-
-// ---------- Scope: S++ areas and personal topics ----------
-
-// Topics use explicit repository mappings first; folder matching only uses the leaf.
-// A cross-repository request remains one job, referenced from every participating repo.
-export function scopesOf(jobs, deskTopics, spaceList, repoTopics) {
-  const areas = [...new Set(jobs.filter((job) => job.state !== "settled").map((job) => job.area[0]))].sort();
-  const groups = Array.isArray(deskTopics?.groups) ? deskTopics.groups : [];
-  const topics = groups.filter((g) => g && g.id && g.name).map((g) => ({
-    key: `topic:${g.id}`, label: g.name, kind: "topic", id: g.id, names: spaceNames(g.spaces, spaceList),
-  }));
-  const active = (spaceList ?? []).find((s) => s.active);
-  const focused = active ? [{ key: `space:${active.id}`, label: active.name || shortRepo(active.folder), kind: "space", names: spaceNames([active.id], spaceList) }] : [];
-  const repos = [...new Set(jobs.flatMap((job) => job.repos))].sort();
-  return [{ key: "all", label: "Everything", kind: "all" }, ...topics, ...focused,
-    ...areas.map((area) => ({ key: `area:${area}`, label: area, kind: "area" })),
-    ...repos.map((repo) => ({ key: `repo:${repo}`, label: shortRepo(repo), kind: "repo", repo }))];
-}
-
-export function applyScope(jobs, scope, repoTopics) {
-  if (!scope || scope.kind === "all") return jobs;
-  if (scope.kind === "job") return jobs.filter((job) => job.id === scope.id);
-  if (scope.kind === "area") return jobs.filter((job) => job.area[0] === scope.label);
-  if (scope.kind === "repo") return jobs.filter((job) => job.repos.includes(scope.repo));
-  return jobs.filter((job) => job.repos.some((repo) => inTopic(repo, scope, repoTopics)));
-}
-
-function inTopic(repo, topic, repoTopics) {
-  const explicit = repoTopics && typeof repoTopics === "object" ? repoTopics[repo] ?? repoTopics[shortRepo(repo)] : undefined;
-  if (topic.kind === "topic" && typeof explicit === "string") return explicit === topic.id || explicit === topic.label;
-  return Boolean(repo) && topic.names.has(shortRepo(repo).toLowerCase());
-}
-
-function spaceNames(ids, spaceList) {
-  const wanted = new Set(Array.isArray(ids) ? ids : []);
-  return new Set((spaceList ?? []).filter((s) => wanted.has(s.id)).map((s) => shortRepo(s.folder || s.name).toLowerCase()).filter(Boolean));
 }
 
 // ---------- Terminal bindings ----------

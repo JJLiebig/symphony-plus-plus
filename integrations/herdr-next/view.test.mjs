@@ -15,7 +15,7 @@ const available = !spawnSync(app, ['--version'], { encoding: 'utf8', windowsHide
 const wrapper = (spec) => `import Lens from "./lens.js";
 import * as M from "./model.js";
 import * as J from "./job.js";
-import { NOW, boardPayload, detailPayload } from "./fixture.js";
+import { NOW, boardPayload, detailPayload, deskFixture } from "./fixture.js";
 const CASE = ${JSON.stringify(spec)};
 export default class SpecLens extends Lens {
   init(_p, cx) {
@@ -25,13 +25,15 @@ export default class SpecLens extends Lens {
     const now = Date.now();
     this.net = M.fetchSucceeded(this.net, M.parseBoard(boardPayload()), now);
     if (CASE.error) this.net = M.fetchFailed(this.net, CASE.error, now);
-    if (CASE.select) this.selected = CASE.select;
-    if (CASE.detail) this.detail = true;
+    if (CASE.path) this.path = { topic: null, space: null, job: null, ...CASE.path };
+    if (CASE.pin) this.pin = true;
     if (CASE.review) this.review = CASE.review;
     this.detailNet = { ...M.fetchSucceeded(M.initialFetch(), J.decisionsOf(detailPayload()), now), jobId: CASE.decisionsFor ?? null };
   }
   tick() {}
   viewportWidth() { return CASE.width; }
+  deskTopics() { return deskFixture().topics; }
+  spaceList() { return deskFixture().spaces; }
 }
 `;
 
@@ -115,13 +117,39 @@ test('missing, empty and stale jobs say so', skip, async (t) => {
   assert.ok(stale.out.includes('Connection lost'));
 });
 
-test('the overview leads into the Job level and offers its own tab', skip, async (t) => {
-  const side = await render(t, { props: {}, width: 1400, select: 'wr-pr' });
-  assert.ok(side.has('lens-detail') && side.has('job-view-side') && side.has('rails-compact') && side.has('open-tab'));
-  assert.ok(side.has('job-wr-pr'), 'the job list stays beside it');
-  const full = await render(t, { props: {}, width: 1400, select: 'wr-pr', detail: true });
-  assert.ok(full.has('job-view') && full.has('rails') && full.has('back') && full.has('open-tab'));
-  const panel = await render(t, { props: { role: 'panel' }, width: 1400, select: 'wr-pr', detail: true });
-  assert.ok(panel.has('job-view-full') && panel.has('rails-compact'), 'the panel role always stacks');
+test('the factory ranks what needs you and gives one row per Herdr topic', skip, async (t) => {
+  const view = await render(t, { props: {}, width: 1400 });
+  for (const id of ['lens-overview', 'breadcrumb', 'crumb-factory', 'factory-main', 'factory-aside', 'needs-queue', 'topic-rows',
+    'topic-t-herdr', 'topic-t-tools', 'topic-t-live', 'topic-unsorted', 'need-wr-cross:ask', 'unblocks-wr-cross:ask'])
+    assert.ok(view.has(id), id);
+  const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
+  assert.ok(at('need-wr-cross:ask') < at('need-guidance:g-web'), 'what unblocks most comes first');
+  assert.ok(view.text('Unblocks 2') && view.text('web · shares 1 job with Personal Tools') && view.text('Quiet'));
+  assert.ok(view.text('1 needs you') && view.text('2 need you'));
+  assert.ok(view.text("You're needed in 2"));
+  assert.equal(view.has('topic-nowhere'), false, 'no row for an empty catch-all');
+  const narrow = await render(t, { props: { role: 'panel' }, width: 1400 });
+  assert.ok(narrow.has('factory') && narrow.has('pin') && !narrow.has('factory-aside'), 'the panel stacks and can be pinned');
 });
 
+test('a topic shows its work by repository, references and agents; a space says when it has no S++ work', skip, async (t) => {
+  const topic = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr' } });
+  for (const id of ['crumb-factory', 'crumb-topic', 'topic-main', 'repo-web', 'space-s-web', 'job-wr-pr', 'ref-web-wr-cross', 'planned-t-herdr:web', 'level-agents'])
+    assert.ok(topic.has(id), id);
+  assert.ok(topic.text('from Personal Tools') && topic.text('1 planned'));
+  assert.equal(topic.has('job-wr-shaping'), false, 'planned jobs fold into the count');
+  const space = await render(t, { props: {}, width: 700, path: { topic: 't-herdr', space: 's-web' } });
+  assert.ok(space.has('crumb-space') && space.has('space-facts') && space.has('job-wr-cross') && space.text('also in api · moved 2h 00m ago'));
+  assert.ok(space.text('web · this machine · main'));
+  const empty = await render(t, { props: {}, width: 1400, path: { topic: 'unsorted', space: 's-home' } });
+  assert.ok(empty.has('space-empty') && empty.text('No S++ work here. Ordinary Herdr work stays ordinary.'));
+});
+
+test('the Job level sits under the breadcrumb, with its own tab action and no second way back', skip, async (t) => {
+  const full = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr', space: 's-web', job: 'wr-pr' } });
+  assert.ok(full.has('crumb-job') && full.has('crumb-space') && full.has('job-view') && full.has('rails') && full.has('open-tab'));
+  assert.equal(full.has('back') || full.has('new-job'), false);
+  const panel = await render(t, { props: { role: 'panel' }, width: 1400, path: { job: 'wr-pr' }, pin: true });
+  assert.ok(panel.has('job-view-full') && panel.has('rails-compact'), 'the panel role always stacks');
+  assert.ok(panel.text('Unpin'));
+});

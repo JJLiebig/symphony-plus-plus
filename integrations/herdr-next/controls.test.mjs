@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import * as M from './mods/sympp/model.js';
 import * as C from './mods/sympp/controls.js';
+import * as L from './mods/sympp/levels.js';
 
 const prompt = {
   tl_dr: 'Choose the delivery order.', details: 'The API can ship independently.',
@@ -42,24 +43,7 @@ test('open questions are answerable detail, while explicit escalation and actual
   assert.equal(urgent.needs[0].id, undefined, 'escalation text must not become a postable question');
   assert.equal(urgent.guidance[0].id, 'g2');
   assert.equal(C.answerPath(urgent.guidance[0]), '/api/v1/sympp/herdr/work-packages/wp2/guidance/g2/answer');
-  assert.equal(M.needsOf([normal, urgent]).length, 2, 'guidance and its human activity signal must not duplicate');
-});
-
-test('repository and topic scopes reference one cross-repo job and never match ancestor folders', () => {
-  const jobs = board([
-    detail('cross', 'owner/web', [{ id: 'api', repo: 'owner/api' }]),
-    detail('ancestor', 'owner/code'), detail('other', 'owner/other'),
-  ]).jobs;
-  const spaces = [{ id: 's1', name: 'My workspace', folder: 'C:\\code\\owner\\web\\', active: true }];
-  const topics = { groups: [{ id: 'work', name: 'Work', spaces: ['s1'] }, { id: 'personal', name: 'Personal', spaces: [] }] };
-  const scopes = M.scopesOf(jobs, topics, spaces);
-  const inScope = (key, mapping) => M.applyScope(jobs, scopes.find((s) => s.key === key), mapping);
-  assert.deepEqual(inScope('topic:work').map((j) => j.id), ['cross']);
-  assert.deepEqual(inScope('space:s1').map((j) => j.id), ['cross']);
-  assert.equal(inScope('repo:owner/api')[0], jobs[0], 'package repository must reference the canonical request detail');
-  assert.deepEqual(inScope('topic:personal', { 'owner/web': 'personal' }).map((j) => j.id), ['cross']);
-  assert.equal(inScope('topic:work', { 'owner/web': 'personal' }).length, 0);
-  assert.deepEqual(M.applyScope(jobs, { kind: 'job', id: 'cross' }), [jobs[0]]);
+  assert.equal(L.needsQueue([normal, urgent]).length, 2, 'guidance and its human activity signal must not duplicate');
 });
 
 const host = { node: 'C:\\Program Files\\nodejs\\node.exe', helper: 'C:\\Herdr Home\\tools\\sympp-herdr.js', session: 'scratch' };

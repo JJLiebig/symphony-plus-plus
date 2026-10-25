@@ -17,6 +17,13 @@ $origin = ([Uri]$runtime.frontend.url).GetLeftPart([System.UriPartial]::Authorit
 node integrations/herdr-next/install.mjs --endpoint $origin --open overview
 ```
 
+The view opens at the Factory: what needs you, ranked by how many packages
+wait on each answer, then one row per Herdr topic. A topic shows its work by
+repository and its agents; a space shows the work on its repository. Click a
+row or the breadcrumb, or use ↑/↓ (j/k), Enter and Esc. Each copy remembers
+where it was. A toast appears when something newly needs you; click it to open
+the job's tab.
+
 Herdr-app must already be open. If its executable is not on `PATH`, pass
 `--app <executable>`. `--home <folder>` selects an isolated Herdr-app home;
 otherwise the installer follows `HERDR_APP_HOME` or `~/.config/herdr-app`.
@@ -30,6 +37,10 @@ For a native panel beside the focused terminal:
 ```powershell
 node integrations/herdr-next/install.mjs --endpoint $origin --open panel
 ```
+
+The panel follows what you focus in its tab: an S++ agent's terminal or a job
+tab shows that job; otherwise the space, or its topic when no S++ work touches
+the space. It never takes focus. Pin (P) keeps it where it is.
 
 The installer adds `mods/sympp`, two scripts under `tools/`, and a private
 request directory under `data/`. It leaves layouts, topics, compositions,
