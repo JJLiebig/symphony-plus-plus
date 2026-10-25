@@ -28,9 +28,24 @@ test('segments start only at recorded moments and say who is acting', () => {
   const reviewing = { ...pkgOf(job, 'wp-build'), activity: { ...pkgOf(job, 'wp-build').activity, waitingCode: 'review_in_progress' } };
   assert.equal(R.segmentsOf(reviewing, NOW).at(-1).waiting, false, 'a running review is not waiting');
   assert.equal(R.segmentsOf(waiting, NOW).at(-1).waiting, true, 'a recorded waiting reason dims the current span');
-  const unrecorded = { ...pkgOf(job, 'wp-build'), stage: 'checks', untimed: true };
+  const unrecorded = { ...pkgOf(job, 'wp-build'), stage: 'checks', untimed: true, enteredAt: null };
   assert.deepEqual(shape(R.segmentsOf(unrecorded, NOW)).at(-1), ['build', 90, 0, 'provider', false], 'an unrecorded stage start is not drawn');
   assert.equal(R.timingsOf(unrecorded, NOW).stage, null);
+});
+
+test('an unrecorded stage entry is not taken from nearby evidence, and integration is not the person', () => {
+  const payload = boardPayload();
+  const slice = payload.work_request_details[0].work_packages.find((p) => p.id === 'wp-review');
+  // Checks passed before the review; the package is now ready to merge, with no recorded merge entry.
+  slice.board_state = { stage: 'merge', track: 'pr' };
+  slice.pr_signal.checks.changed_at = new Date(NOW - 250 * MIN).toISOString();
+  slice.review_signal = { ...slice.review_signal, status: 'passed' };
+  slice.activity_signal = { next_actor: 'architect', next_action: 'integrate', waiting_reason: 'awaiting_integration' };
+  const pkg = M.parseBoard(payload).jobs[0].packages.find((p) => p.id === 'wp-review');
+  const segments = R.segmentsOf(pkg, NOW);
+  assert.deepEqual(segments.map((s) => s.stage), ['queued', 'build', 'review'], 'Merge is not drawn before the review it follows');
+  assert.equal(segments.some((s) => s.actor === 'human'), false, 'the architect integrates; no "You" span');
+  assert.equal(R.timingsOf(pkg, NOW).stage, null);
 });
 
 test('work without a PR is work, then done', () => {

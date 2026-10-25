@@ -233,7 +233,7 @@ function railRow(v, t, job, row, axis, report, ctx) {
   const stageName = R.STAGE_NAME[R.stageOf(pkg)] ?? cap(pkg.stage);
   const sub = [pkg.stage === "done" ? M.stageText(pkg, ctx.now) : stageName, c.holder?.text,
     c.after.length ? `after ${c.after.join(", ")}` : null,
-    pkg.stage !== "done" && pkg.stage !== "queued" && pkg.untimed ? "start not recorded" : null].filter(Boolean).join(" · ");
+    pkg.stage !== "done" && pkg.stage !== "queued" && R.stageEntry(pkg) === null ? "start not recorded" : null].filter(Boolean).join(" · ");
   const before = R.beforeAxis(row, axis);
   const marks = before ? [] : [div().absolute().left(0).top(11).w_full().h(1).bg(tint(t.border, "80"))];
   if (before) {

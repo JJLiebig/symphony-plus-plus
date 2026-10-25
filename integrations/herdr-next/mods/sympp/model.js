@@ -212,6 +212,8 @@ function buildPackage(slice, groups, now, runs) {
     outcome,
     since: observed ?? ms(slice.dispatched_at) ?? ms(slice.inserted_at),
     untimed: observed === null,
+    // The backend's own stage entry; nearby evidence times are not stage entries.
+    enteredAt: ms(board?.entered_at),
     // Recorded moments only, for the package rails: creation, dispatch and recorded delivery.
     createdAt: ms(slice.inserted_at),
     dispatchedAt: ms(slice.dispatched_at),

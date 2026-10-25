@@ -50,6 +50,7 @@ export default class Lens extends View {
     this.companion = false;
     this.pkgSel = null;
     this.shown = null;
+    this.rowOrder = [];
     this.agentChecks = {};
     this.checking = false;
     this.checkedFor = null;
@@ -321,17 +322,21 @@ export default class Lens extends View {
     if (!this.keys.is_focused()) return;
     const key = e.key;
     const nav = KEYS[key];
-    const inJob = this.level === "job";
+    // Keys move packages on the Job level, and in the overview's preview once a package is picked;
+    // Esc clears that package first, then leaves the job.
+    const inJob = this.level === "job" || Boolean(this.shown && this.pkgSel);
+    const packages = inJob && Boolean(this.currentJob);
     if (key === "escape" && this.intake) {
       if (this.creation.pending) return;
       this.intake = false;
     } else if (this.intake) return;
-    else if (inJob && nav) this.pkgSel = R.moveRow(this.rowOrder, this.pkgSel, nav === "down" ? 1 : -1) ?? this.pkgSel;
+    else if (packages && nav) this.pkgSel = R.moveRow(this.rowOrder, this.pkgSel, nav === "down" ? 1 : -1) ?? this.pkgSel;
+    else if (inJob && nav) return;
     else if (nav === "down" || nav === "up") this.selected = M.moveSelection(this.scoped, this.selected, nav === "down" ? 1 : -1) ?? this.selected;
-    else if (key === "enter" && inJob) { if (!this.openPackageAgent(cx)) return; }
+    else if (key === "enter" && inJob) { if (!packages || !this.openPackageAgent(cx)) return; }
     else if (key === "enter" && this.selected) { this.detail = true; this.pkgSel = null; }
     else if (key === "escape" && inJob && this.pkgSel) this.pkgSel = null;
-    else if (key === "escape" && inJob && !this.pinned) this.leaveJob(cx);
+    else if (key === "escape" && this.level === "job" && !this.pinned) this.leaveJob(cx);
     else if (key === "t" && this.currentJob && !this.pinned) this.openInTab(this.currentJob, cx);
     else if (key === "r") this.retry(cx);
     else if (key === "o") this.openDashboard(cx);

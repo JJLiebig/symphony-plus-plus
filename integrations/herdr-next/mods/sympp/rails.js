@@ -10,7 +10,8 @@ export const BREAK_AFTER = 3 * HOUR;
 const BREAK_SHARE = 0.05;
 // Room after the now line, as a share of the drawn time.
 const NOW_PAD = 0.03;
-const STAGE_ACTOR = { build: "provider", work: "provider", checks: "ci", review: "provider", merge: "human" };
+// Merging is the integrator's work; the person acts only when the canonical next actor says so.
+const STAGE_ACTOR = { build: "provider", work: "provider", checks: "ci", review: "provider", merge: "provider" };
 // Waiting reasons that mean a review provider or CI is acting on the package: not dimmed.
 const ACTING = new Set(["review_in_progress", "validation_pending"]);
 export const STAGE_NAME ={ queued: "Queued", build: "Build", work: "Work", checks: "Checks", review: "Review", merge: "Merge", done: "Done" };
@@ -23,12 +24,21 @@ export function stageOf(pkg, stage = pkg.stage) {
 
 // humanSince: when the person became the next actor, if recorded. The current span turns to "You"
 // only from then; without a record, it keeps its stage's actor and is marked as needing the person.
+// When the current stage began, by its own record: the backend's entry time, else dispatch for
+// build work and the round or review start for review. Checks and merge have no such fallback.
+export function stageEntry(pkg) {
+  if (pkg.enteredAt !== null && pkg.enteredAt !== undefined) return pkg.enteredAt;
+  if (pkg.stage === "build") return pkg.dispatchedAt;
+  if (pkg.stage === "review") return pkg.review.roundStartedAt ?? pkg.review.startedAt;
+  return null;
+}
+
 export function segmentsOf(pkg, now, humanSince = null) {
   const marks = [
     { stage: "queued", at: pkg.createdAt },
     { stage: "build", at: pkg.dispatchedAt },
     { stage: "review", at: pkg.review.startedAt },
-    pkg.stage !== "done" && !pkg.untimed ? { stage: pkg.stage, at: pkg.since } : null,
+    pkg.stage !== "done" ? { stage: pkg.stage, at: stageEntry(pkg) } : null,
     pkg.stage === "done" ? { stage: "done", at: pkg.doneAt } : null,
   ].filter((m) => m && m.at !== null && m.at !== undefined).sort((a, b) => a.at - b.at)
     .map((m) => ({ ...m, stage: stageOf(pkg, m.stage) }))
@@ -84,7 +94,7 @@ export function timingsOf(pkg, now) {
   const reviewFrom = pkg.review.startedAt ?? pkg.review.roundStartedAt;
   return {
     total: pkg.dispatchedAt !== null && end !== null && end >= pkg.dispatchedAt ? span(end - pkg.dispatchedAt) : null,
-    stage: pkg.stage !== "done" && pkg.stage !== "queued" && !pkg.untimed && pkg.since !== null ? span(now - pkg.since) : null,
+    stage: pkg.stage !== "done" && pkg.stage !== "queued" && stageEntry(pkg) !== null ? span(now - stageEntry(pkg)) : null,
     review: pkg.stage === "review" && reviewFrom !== null ? span(now - reviewFrom) : null,
   };
 }
