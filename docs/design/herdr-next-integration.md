@@ -1,7 +1,8 @@
 # S++ × Herdr-next
 
-Status: target contract and active delivery plan. The native integration is not
-yet delivered. Current source baseline: S++ beta `dc754ba5`.
+Status: native delivery in [#760](https://github.com/JJLiebig/symphony-plus-plus/pull/760).
+The backend and execution tooling have landed on S++ beta; the native package
+is completing review and hosted qualification.
 
 ## Product contract
 
@@ -125,7 +126,8 @@ identity from legacy Codex-only bindings or from terminal text.
 
 The shared projection exposes `runtime.offline`. Agent navigation requires an
 explicit `false`, checks that capability again at activation, then verifies the
-core, terminal, PID and launch labels through the trusted installed helper. A
+core, terminal, PID, launch and canonical request/package identity through the
+trusted installed helper. A
 Copy-and-View ledger can contain the same job IDs as the online source; copied
 identities cannot authorize focus.
 
@@ -155,11 +157,11 @@ recovery restores shells rather than restarting the original agent.
 | Slice | Acceptance | State |
 |---|---|---|
 | Native read boundary | Same canonical board projection, local native policy, no reads causing writes; standalone routes unchanged. | Landed in [#757](https://github.com/JJLiebig/symphony-plus-plus/pull/757); 78 API acceptance cases and all required hosted gates passed. |
-| Native working view | Real S++ state, topic/repo/job scope, attention and agent navigation using existing mod APIs. | Opus implementation passes native mod loading; interactions and native visual qualification in progress. |
+| Native working view | Real S++ state, topic/repo/job scope, attention and agent navigation using existing mod APIs. | Native rendering, intake typing and keyboard traversal passed in an isolated Windows home. A real intake and structured answer persisted in the canonical ledger. Agent placement passed through the public app API with an unchanged process; a physical click after that fix, compact layout and light theme remain unqualified. |
 | Native human actions | Intake and persisted question/guidance answers, with browser exclusion and canonical scope/status checks. | Landed in [#758](https://github.com/JJLiebig/symphony-plus-plus/pull/758); API/offline acceptance and all required hosted gates passed. |
-| Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | [#759](https://github.com/JJLiebig/symphony-plus-plus/pull/759) in final qualification. |
+| Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | Landed in [#759](https://github.com/JJLiebig/symphony-plus-plus/pull/759); six controlled-core checks and all required hosted gates passed. Native receipt checks also reject mismatched canonical request/package IDs. |
 | Cross-provider execution | Scoped launches and handoffs through herdr-core, provider qualification and recovery evidence. | Six controlled-core checks; real Windows Codex, Claude Opus and OpenCode launches and both fresh Codex/Opus handoffs passed in an isolated core. In-place sends to done/unknown agents remain unsupported by core 0.1.10. |
-| Delivery qualification | Native view checked in an isolated home, owning source/hosted checks, review, packaged installation and real boundary evidence. | Planned |
+| Delivery qualification | Native view checked in an isolated home, owning source/hosted checks, review, packaged installation and real boundary evidence. | Twelve focused native tests and installed `herdr-app check` passed. FAST review and exact-head hosted checks are in progress. Existing installed factories remain untouched. |
 
 This table records actual evidence as work lands. A design, source commit,
 simulated fixture or healthy web interface alone does not qualify the native

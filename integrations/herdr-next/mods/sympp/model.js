@@ -457,6 +457,8 @@ export function discoverBindings(hosts, terminalList) {
     return [{
       jobId: labels["sympp.work_request_id"], pkgId: labels["sympp.work_package_id"] || null,
       role: labels["sympp.role"] || "agent", address, terminalId, machine,
+      provider: { codex: "Codex", claude: "Claude", opencode: "OpenCode" }[labels["sympp.provider"]] || "Agent",
+      status: typeof terminal.status === "string" ? terminal.status : terminal.status?.state ?? null,
       launchId: labels["sympp.launch_id"], coreId: labels["sympp.core_id"], pid, receipt,
       host: configured ? host : null,
       available: configured && identity && absoluteReceipt && terminal.state === "live",
@@ -474,13 +476,23 @@ export function bindingCheckArgs(binding) {
     ...(binding.host.session ? ["--session", binding.host.session] : []), "--json"];
 }
 
+export function agentDestination(binding, paneList, spaceList) {
+  const pane = paneList.find(p => p.terminal === binding.address);
+  if (pane) return { pane: pane.pane };
+  const sameMachine = space => (space.machine ?? null) === binding.machine;
+  const space = spaceList.find(space => space.active && sameMachine(space)) || spaceList.find(sameMachine);
+  if (!space) throw new Error("Open a space on the agent's machine, then try again.");
+  return { space: space.id, alongside: space.active === true };
+}
+
 // Recheck after the asynchronous helper call: the terminal may have been replaced meanwhile.
 export function checkedBinding(binding, result, terminalList) {
   if (!binding.available || result?.code !== 0) return false;
   let receipt;
   try { receipt = JSON.parse(result.stdout); } catch { return false; }
   if (receipt.state !== "live" || receipt.core_id !== binding.coreId || receipt.terminal_id !== binding.terminalId ||
-      receipt.pid !== binding.pid || receipt.launch_id !== binding.launchId) return false;
+      receipt.pid !== binding.pid || receipt.launch_id !== binding.launchId ||
+      receipt.work_request_id !== binding.jobId || (receipt.work_package_id ?? null) !== binding.pkgId) return false;
   const current = discoverBindings({ [binding.machine ?? "local"]: binding.host }, terminalList).find((b) => b.address === binding.address);
   return Boolean(current?.available && current.coreId === binding.coreId && current.launchId === binding.launchId &&
     current.pid === binding.pid && current.receipt === binding.receipt && current.jobId === binding.jobId && current.pkgId === binding.pkgId);

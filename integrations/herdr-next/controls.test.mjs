@@ -67,7 +67,7 @@ const terminal = (remote = false) => ({ address: remote ? 'build/t8' : 't8', pid
   'sympp.launch_id': 'launch-1', 'sympp.core_id': 'core-1', 'sympp.receipt': remote ? '/home/me/launch.json' : 'C:\\receipt with spaces.json',
   'sympp.pid': '123', 'sympp.work_request_id': 'wr1', 'sympp.work_package_id': 'wp1', 'sympp.role': 'worker',
 } });
-const checked = (overrides = {}) => ({ code: 0, stdout: JSON.stringify({ state: 'live', core_id: 'core-1', terminal_id: 't8', pid: 123, launch_id: 'launch-1', ...overrides }) });
+const checked = (overrides = {}) => ({ code: 0, stdout: JSON.stringify({ state: 'live', core_id: 'core-1', terminal_id: 't8', pid: 123, launch_id: 'launch-1', work_request_id:'wr1', work_package_id:'wp1', ...overrides }) });
 
 test('agent jumps require trusted host configuration, a live receipt and unchanged terminal identity', () => {
   for (const remote of [false, true]) {
@@ -77,7 +77,8 @@ test('agent jumps require trusted host configuration, a live receipt and unchang
     assert.equal(binding.machine, remote ? 'build' : null);
     assert.deepEqual(M.bindingCheckArgs(binding), [host.helper, 'check', '--receipt', term.labels['sympp.receipt'], '--session', 'scratch', '--json']);
     assert.equal(M.checkedBinding(binding, checked(), [term]), true);
-    for (const mismatch of [{ state: 'stale' }, { core_id: 'new-core' }, { terminal_id: 't9' }, { pid: 456 }, { launch_id: 'new-launch' }]) {
+    for (const mismatch of [{ state: 'stale' }, { core_id: 'new-core' }, { terminal_id: 't9' }, { pid: 456 }, { launch_id: 'new-launch' },
+      { work_request_id:'another-job' }, { work_package_id:'another-package' }]) {
       assert.equal(M.checkedBinding(binding, checked(mismatch), [term]), false);
     }
     assert.equal(M.checkedBinding(binding, checked(), [{ ...term, pid: 456 }]), false, 'recovered shells cannot be focused');
@@ -112,6 +113,15 @@ test('failed saves retain the draft and concurrent activations cannot submit it 
   assert.throws(() => C.answerBody({ prompt }, 'unknown', ''), /Choose/);
   assert.deepEqual(C.answerBody({ prompt }, '__custom_redirect__', ' UI first '), { answer_choice: '__custom_redirect__', answer_note: 'UI first' });
   assert.deepEqual(C.answerBody({}, null, ' plain answer '), { answer: 'plain answer' });
+});
+
+test('agent navigation retains an existing pane or opens a tab on the correct machine', () => {
+  const local = { address:'t4',machine:null }, remote = { address:'build/t4',machine:'build' };
+  const spaces = [{id:'local',machine:null,active:true},{id:'remote',machine:'build',active:false}];
+  assert.deepEqual(M.agentDestination(local, [], spaces), {space:'local',alongside:true});
+  assert.deepEqual(M.agentDestination(remote, [], spaces), {space:'remote',alongside:false});
+  assert.deepEqual(M.agentDestination(remote, [{pane:'existing',terminal:'build/t4'}], spaces), {pane:'existing'});
+  assert.throws(() => M.agentDestination(remote, [], spaces.slice(0,1)), /agent's machine/);
 });
 
 test('native actions send JSON-only requests and surface persisted success or actionable server errors', async (t) => {

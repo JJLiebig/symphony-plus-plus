@@ -10,7 +10,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button, Input, InputState, Textarea, TextareaState } from "gpui-base";
-import { props, theme, shared, spaces, terminals, run, window as appWindow, exec } from "herdr";
+import { props, theme, shared, spaces, panes, terminals, run, window as appWindow, exec } from "herdr";
 import * as M from "./model.js";
 import * as C from "./controls.js";
 import { createTransport } from "./transport.js";
@@ -37,6 +37,7 @@ export default class Lens extends View {
     this.turn = 0;
     this.selected = null;
     this.detail = false;
+    this.companion = false;
     this.order = [];
     this.scoped = [];
     this.scopeKey = localStorage.getItem("scope") ?? "all";
@@ -196,7 +197,16 @@ export default class Lens extends View {
         try { result = await exec(binding.host.node, M.bindingCheckArgs(binding), { on: binding.machine }); }
         catch { throw new Error("Agent helper unavailable. Check the execution host."); }
         if (!M.checkedBinding(binding, result, terminals())) throw new Error("Agent unavailable. Refresh and try again.");
-      }, () => run("agent.focus", { terminal: binding.address }));
+        return M.agentDestination(binding, panes(), spaces());
+      }, destination => {
+        if (destination.pane) run("pane.focus", { pane: destination.pane });
+        else {
+          this.companion = destination.alongside;
+          this.detail = destination.alongside;
+          run("space.select", { id: destination.space });
+          run("terminal.keep", { terminal: binding.address, place: destination.alongside ? "right" : "tab" });
+        }
+      });
       cx.notify();
       await submission;
       cx.notify();
@@ -329,7 +339,7 @@ export default class Lens extends View {
   section(t, label, count, tone = t.dim) {
     return h_flex().pt(18).pb(6).px(4).gap(6).items_center().flex_none()
       .child(div().text_size(11.5).font_medium().text_color(tone).child(label))
-      .when(count !== null, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(String(count))));
+      .when(count !== null, (el) => el.child(div().text_size(11.5).text_color(t.muted).child(String(count))));
   }
 
   // ---------- Header ----------
@@ -340,7 +350,7 @@ export default class Lens extends View {
     const stale = M.isStale(this.net, now);
     const needed = this.net.data?.offline === true ? div().flex_none().text_size(12).text_color(t.muted).child("Offline copy") : counts.needs > 0
       ? h_flex().gap(7).items_center().flex_none().child(div().size(7).rounded(4).bg(t.blocked)).child(div().text_size(12.5).font_semibold().text_color(t.blocked).child(`You're needed in ${counts.needs}`))
-      : div().flex_none().text_size(12.5).text_color(t.dim).child("Nothing needs you");
+      : div().flex_none().text_size(12.5).text_color(t.muted).child("Nothing needs you");
     const fresh = div().flex_none().text_size(11).font_family(MONO).text_color(stale ? t.blocked : t.dim)
       .child(this.reading && !this.net.receivedAt ? "Reading…" : `${stale ? "Last read" : "Read"} ${M.ago(this.net.receivedAt, now)}`);
     const chips = h_flex().gap(2).items_center().min_w(0).flex_wrap().children(scopes.map((s) => {
@@ -392,7 +402,7 @@ export default class Lens extends View {
   needRow(t, need, now) {
     const job = need.job;
     return v_flex().id(`need-${need.key}`).flex_none().px(14).py(12).gap(7).rounded(10).cursor_pointer()
-      .bg(tint(t.blocked, "10")).border_l(3).border_color(t.blocked)
+      .bg(tint(t.blocked, "10")).border_l(1).border_color(t.blocked)
       .hover((s) => s.bg(tint(t.blocked, "1c")))
       .accessibility_label(`${need.label}: ${need.text}. ${job.title}`)
       .on_click((_e, cx) => {
@@ -403,7 +413,7 @@ export default class Lens extends View {
       .child(h_flex().gap(8).items_center()
         .child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label))
         .child(div().flex_1())
-        .when(need.since !== null, (el) => el.child(div().text_size(11).font_family(MONO).text_color(t.dim).child(M.ago(need.since, now)))))
+        .when(need.since !== null, (el) => el.child(div().text_size(11).font_family(MONO).text_color(t.muted).child(M.ago(need.since, now)))))
       .child(div().w_full().text_size(14).text_color(t.foreground).child(need.text))
       .child(h_flex().gap(8).items_center()
         .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(`${job.area[0]} › ${job.repoShort} · ${job.title}`))
@@ -423,14 +433,14 @@ export default class Lens extends View {
       .child(v_flex().flex_1().min_w(0).gap(5)
         .child(h_flex().gap(8).items_center()
           .child(div().min_w(0).flex_shrink(1).truncate().text_size(13.5).font_semibold().text_color(job.state === "settled" ? t.muted : t.foreground).child(job.title))
-          .when(job.offPrimary, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(`→ ${job.baseBranch}`)))
+          .when(job.offPrimary, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`→ ${job.baseBranch}`)))
           .child(div().flex_1())
           .when(loud, (el) => el.child(div().flex_none().text_size(11.5).font_medium().text_color(job.verdict === "needs_you" ? t.blocked : job.verdict === "parked" ? t.muted : t.foreground).child(M.VERDICT_LABEL[job.verdict])))
-          .when(job.counts.total > 0, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(`${job.counts.done}/${job.counts.total}`))))
+          .when(job.counts.total > 0, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`${job.counts.done}/${job.counts.total}`))))
         .child(h_flex().gap(10).items_center()
           .when(job.counts.total > 0, (el) => el.child(this.strip(t, job, now)))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(job.brief)))
-        .when(!compact, (el) => el.child(h_flex().gap(6).text_size(11).text_color(t.dim)
+        .when(!compact, (el) => el.child(h_flex().gap(6).text_size(11).text_color(t.muted)
           .child(div().min_w(0).truncate().child(`${job.area.join(" › ")} · ${job.repoShort}`))
           .child(div().flex_none().child(`· moved ${M.ago(job.lastMoveAt, now)}`)))));
   }
@@ -452,9 +462,9 @@ export default class Lens extends View {
     lane("Not started", lanes.backlog);
     lane("Landed · last 24 hours", lanes.landed);
     const away = [lanes.settled.length ? `${lanes.settled.length} settled` : null, lanes.dormant.length ? `${lanes.dormant.length} dormant` : null].filter(Boolean);
-    if (!rows.length) rows.push(div().pt(28).px(4).text_size(13).text_color(t.dim).child(jobs.length ? "Nothing open here right now." : "No S++ jobs in this scope."));
+    if (!rows.length) rows.push(div().pt(28).px(4).text_size(13).text_color(t.muted).child(jobs.length ? "Nothing open here right now." : "No S++ jobs in this scope."));
     if (away.length) {
-      rows.push(h_flex().pt(18).px(4).gap(6).items_center().text_size(11.5).text_color(t.dim)
+      rows.push(h_flex().pt(18).px(4).gap(6).items_center().text_size(11.5).text_color(t.muted)
         .child(`${away.join(" · ")}, kept in the dashboard`));
     }
     return v_flex().id(`lens-list-${this.role}`).flex_1().min_w(0).min_h(0).px(this.role === "panel" ? 8 : 16).pb(20).overflow_y_scrollbar().mode("hover").children(rows);
@@ -465,7 +475,7 @@ export default class Lens extends View {
   line(t, label, value, tone = t.muted) {
     if (!value) return null;
     return h_flex().gap(10).items_start().text_size(11.5)
-      .child(div().w(62).flex_none().text_color(t.dim).child(label))
+      .child(div().w(62).flex_none().text_color(t.muted).child(label))
       .child(div().flex_1().min_w(0).text_color(tone).child(value));
   }
 
@@ -476,13 +486,15 @@ export default class Lens extends View {
         const action = this.jumps[b.address];
         return v_flex().gap(4)
           .child(b.available
-            ? h_flex().child(this.button(t, `go-${key}-${i}`, action?.pending ? "Checking…" : `Go to ${b.role}`, (cx) => this.focusAgent(b, cx), { strong: true, glyph: "terminal", tip: b.address, disabled: action?.pending }))
-            : div().text_size(11.5).text_color(t.dim).child(b.unavailable))
+            ? h_flex().gap(7).items_center()
+              .child(this.button(t, `go-${key}-${i}`, action?.pending ? "Checking…" : `Open ${b.provider} ${b.role}`, (cx) => this.focusAgent(b, cx), { strong: true, glyph: "terminal", tip: `${b.provider} ${b.role} · ${b.address}`, disabled: action?.pending }))
+              .when(Boolean(b.status), row => row.child(div().text_size(11).text_color(t.muted).child(cap(b.status))))
+            : div().text_size(11.5).text_color(t.muted).child(b.unavailable))
           .when(Boolean(action?.error), (el) => el.child(div().role("alert").text_size(11.5).text_color(t.blocked).child(action.error)));
       }));
     }
     if (!place) return null;
-    return div().id(`seen-${key}`).text_size(11.5).text_color(t.dim).tooltip("A last known location, not proof the session still runs")
+    return div().id(`seen-${key}`).flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).tooltip(`Last seen ${place.where}. This is not proof the session still runs.`)
       .child(`Last seen ${place.where}${place.seenAt ? ` · ${M.ago(place.seenAt, now)}` : ""}`);
   }
 
@@ -498,7 +510,7 @@ export default class Lens extends View {
       .child(h_flex().gap(10).items_center().flex_wrap()
         .child(this.pip(t, pkg))
         .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(pkg.stage === "done" ? t.muted : pkg.stage === "queued" ? t.muted : t.foreground).child(pkg.title))
-        .when(Boolean(pkg.group), (el) => el.child(div().flex_none().max_w(120).truncate().text_size(11).text_color(t.dim).child(pkg.group)))
+        .when(Boolean(pkg.group), (el) => el.child(div().flex_none().max_w(120).truncate().text_size(11).text_color(t.muted).child(pkg.group)))
         .child(div().flex_none().text_size(11.5).text_color(pkg.failed ? t.blocked : t.muted).child(M.stageText(pkg, now))))
       .when(moving, (el) => el.child(v_flex().pl(17).gap(4).children([
         this.line(t, "Actor", actor),
@@ -515,7 +527,7 @@ export default class Lens extends View {
     const brief = job.report.brief;
     const done = sections.done.slice(-DONE_SHOWN);
     const part = (label, list, extra = null) => list.length ? [
-      h_flex().pt(4).gap(6).items_center().child(div().text_size(11.5).font_medium().text_color(t.dim).child(label)).child(div().text_size(11.5).text_color(t.dim).child(String(list.length))),
+      h_flex().pt(4).gap(6).items_center().child(div().text_size(11.5).font_medium().text_color(t.muted).child(label)).child(div().text_size(11.5).text_color(t.muted).child(String(list.length))),
       v_flex().children(list.map((pkg, i) => this.packageRow(t, job, pkg, bindings, now, i === 0))),
       ...(extra ? [extra] : []),
     ] : [];
@@ -523,33 +535,31 @@ export default class Lens extends View {
 
     return v_flex().gap(16).p(20)
       .child(v_flex().gap(6)
-        .child(div().text_size(11.5).text_color(t.dim).child(`${job.area.join(" › ")} · ${job.repoShort}`))
+        .child(div().text_size(11.5).text_color(t.muted).child(`${job.area.join(" › ")} · ${job.repoShort}`))
         .child(div().w_full().text_size(18).font_semibold().text_color(t.foreground).child(job.title))
         .child(h_flex().gap(10).items_center()
           .child(h_flex().gap(6).items_center().child(this.mark(t, job.verdict)).child(div().text_size(12).font_medium().text_color(job.verdict === "needs_you" ? t.blocked : t.foreground).child(M.VERDICT_LABEL[job.verdict])))
-          .when(job.offPrimary, (el) => el.child(div().text_size(11).font_family(MONO).text_color(t.dim).child(`→ ${job.baseBranch}`)))
-          .child(div().text_size(11.5).text_color(t.dim).child(`opened ${M.ago(job.createdAt, now)}`))))
+          .when(job.offPrimary, (el) => el.child(div().text_size(11).font_family(MONO).text_color(t.muted).child(`→ ${job.baseBranch}`)))
+          .child(div().text_size(11.5).text_color(t.muted).child(`opened ${M.ago(job.createdAt, now)}`))))
       .child(v_flex().gap(5)
         .child(div().w_full().text_size(13.5).text_color(brief ? t.foreground : t.muted).child(job.brief))
-        .child(div().text_size(11).text_color(t.dim).child(brief ? `Architect · ${M.ago(brief.at, now)}` : "From the ledger; no architect brief yet"))
+        .when(Boolean(brief), el => el.child(div().text_size(11).text_color(t.muted).child(`Architect · ${M.ago(brief.at, now)}`)))
         .when(Boolean(job.report.eta), (el) => el.child(div().text_size(12).text_color(t.muted).child(`ETA from the architect: ${job.report.eta.text}`)))
         .when(Boolean(job.report.parked), (el) => el.child(div().text_size(12).text_color(t.muted).child(`Parked ${M.ago(job.report.parked.at, now)}: ${job.report.parked.text}`))))
-      .when(Boolean(architect), (el) => el.child(h_flex().gap(10).items_center().child(div().w(62).flex_none().text_size(11.5).text_color(t.dim).child("Architect")).child(architect)))
-      .when(job.needs.some((need) => !need.id), (el) => el.child(v_flex().gap(8).children(job.needs.filter((need) => !need.id).map((need) => v_flex().px(12).py(10).gap(5).rounded(8).bg(tint(t.blocked, "10")).border_l(3).border_color(t.blocked)
-        .child(h_flex().gap(8).child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label)).child(div().flex_1()).when(need.since !== null, (row) => row.child(div().text_size(11).font_family(MONO).text_color(t.dim).child(M.ago(need.since, now)))))
+      .when(Boolean(architect), (el) => el.child(h_flex().gap(10).items_center().child(div().w(62).flex_none().text_size(11.5).text_color(t.muted).child("Architect")).child(architect)))
+      .when(job.needs.some((need) => !need.id), (el) => el.child(v_flex().gap(8).children(job.needs.filter((need) => !need.id).map((need) => v_flex().px(12).py(10).gap(5).rounded(8).bg(tint(t.blocked, "10")).border_l(1).border_color(t.blocked)
+        .child(h_flex().gap(8).child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label)).child(div().flex_1()).when(need.since !== null, (row) => row.child(div().text_size(11).font_family(MONO).text_color(t.muted).child(M.ago(need.since, now)))))
         .child(div().w_full().text_size(13.5).text_color(t.foreground).child(need.text))
         .when(Boolean(this.dashboard), (row) => row.child(h_flex().child(this.button(t, `detail-answer-${need.key}`, "Answer in dashboard", (cx) => this.openDashboard(cx), { strong: true }))))))))
       .children([...job.guidance, ...job.questions].map((question) => this.questionRow(t, question)))
       .when(job.bumps.length > 0, (el) => el.child(v_flex().gap(4).children(job.bumps.map((bump) => h_flex().gap(8).items_center().text_size(12.5).text_color(t.foreground)
         .child(div().size(6).flex_none().rounded(1.5).bg(t.working)).child(div().flex_1().min_w(0).child(bump))))))
-      .when(job.counts.total === 0, (el) => el.child(div().text_size(12.5).text_color(t.dim).child("No packages yet.")))
       .children([
         ...part("Now", sections.now),
         ...part("Up next", sections.next),
-        ...part("Landed", done, sections.done.length > done.length ? div().pl(17).text_size(11.5).text_color(t.dim).child(`and ${sections.done.length - done.length} earlier`) : null),
+        ...part("Landed", done, sections.done.length > done.length ? div().pl(17).text_size(11.5).text_color(t.muted).child(`and ${sections.done.length - done.length} earlier`) : null),
       ])
       .when(Boolean(this.dashboard), (el) => el.child(h_flex().pt(4).gap(8).items_center()
-        .child(div().flex_1().text_size(11.5).text_color(t.dim).child("Closing and archiving happen in the dashboard."))
         .child(this.button(t, "detail-dashboard", "Open dashboard", (cx) => this.openDashboard(cx), { strong: true }))));
   }
 
@@ -571,7 +581,7 @@ export default class Lens extends View {
   }
 
   render(_cx) {
-    this.compact = this.role === "panel" || window.viewport_size().width < 1000;
+    this.compact = this.role === "panel" || this.companion || window.viewport_size().width < 1000;
     const t = theme();
     const now = Date.now();
     if (!this.endpoint) {
