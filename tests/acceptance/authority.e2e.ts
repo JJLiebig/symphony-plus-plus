@@ -53,6 +53,31 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   }
   await fresh.reject('append_progress', { summary: 'Unclaimed mutation', idempotency_key: 'unclaimed' }, 'claim_required');
   const id = await fresh.request('Trusted initialization');
+  const [nativePackage] = await packages(fresh, ['Native board findings']);
+  const nativePath = '/api/v1/sympp/herdr/dashboard';
+  const native = new Client(endpoint, factory.receipt);
+  const browserBoard = await fresh.inspect('/api/v1/sympp/operator/dashboard/hydrated');
+  const nativeBoard = await native.raw(null, {}, 'GET', nativePath);
+  expect(nativeBoard.status).toBe(200);
+  const { generated_at: browserTime, ...browserProjection } = browserBoard;
+  const { generated_at: nativeTime, ...nativeProjection } = nativeBoard.body;
+  expect(nativeProjection).toEqual(browserProjection);
+  const detail = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === id);
+  expect(detail.product_tree.root_work_package_ids).toContain(nativePackage);
+  expect(detail.work_packages.find((entry: any) => entry.id === nativePackage).board_state.stage).toBe('build');
+  for (const headers of [
+    { host: 'example.invalid' }, { forwarded: 'for=127.0.0.1' },
+    { 'x-forwarded-for': '127.0.0.1' }, { 'x-forwarded-host': 'localhost' },
+    { 'x-forwarded-proto': 'http' }, { 'x-real-ip': '127.0.0.1' },
+  ]) {
+    const denied = await native.raw(null, headers, 'GET', nativePath);
+    expect(denied.status).toBe(401);
+    expect(denied.body.error.code).toBe('unauthorized');
+  }
+  expect((await native.raw({}, {}, 'POST', nativePath)).status).toBe(405);
+  expect((await native.raw(null, {}, 'GET', '/api/v1/sympp/operator/dashboard/hydrated')).status).toBe(401);
+  expect((await native.raw({ title: 'Denied native intake' }, {}, 'POST', '/api/v1/sympp/operator/work-requests')).status).toBe(401);
+  expect((await fresh.call('read_work_request', { work_request_id: id })).work_packages.map((entry: any) => entry.id)).toEqual([nativePackage]);
   const bound = await fresh.call('get_current_assignment');
   expect((await fresh.rpc('initialize', initialize)).error.data.reason).toBe('already_initialized');
   expect((await fresh.call('get_current_assignment')).assignment.work_package_id).toBe(bound.assignment.work_package_id);

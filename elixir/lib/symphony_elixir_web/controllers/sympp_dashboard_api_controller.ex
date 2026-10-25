@@ -213,6 +213,25 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
     end
   end
 
+  @spec herdr_dashboard(Conn.t(), map()) :: Conn.t()
+  def herdr_dashboard(conn, _params) do
+    if herdr_consumer?(conn) do
+      Runtime.with_dashboard_repo(&herdr_dashboard_response(&1, conn), migrate?: false)
+      |> case do
+        {:error, reason} -> error_response(conn, reason)
+        %Conn{} = conn -> conn
+      end
+    else
+      error_response(conn, :unauthorized)
+    end
+  end
+
+  defp herdr_dashboard_response(repo, conn) do
+    with {:ok, payload} <- LocalOperatorDashboard.operator_dashboard_hydrated_payload(repo) do
+      json(conn, payload)
+    end
+  end
+
   @spec herdr_work_request_detail(Conn.t(), map()) :: Conn.t()
   def herdr_work_request_detail(conn, %{"work_request_id" => work_request_id}) do
     if herdr_consumer?(conn) do
