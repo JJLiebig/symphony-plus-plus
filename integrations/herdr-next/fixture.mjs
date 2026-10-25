@@ -28,7 +28,14 @@ export function boardPayload() {
           }),
           pkg('wp-review', 'Review lens', 3, { stage: 'review', track: 'pr', entered_at: at(40) }, {
             dispatched_at: at(300), pr_signal: { status: 'open', number: 812, checks: { status: 'passing' } },
-            review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: '3', started_at: at(200), round_started_at: at(40) },
+            review_signal: {
+              type: 'review_suite', mode: 'fast', status: 'in_progress', round: 3, started_at: at(200), round_started_at: at(40),
+              round_history: [
+                { number: 1, started_at: at(200), finished_at: at(150), outcome: 'findings', findings: 4 },
+                { number: 2, started_at: at(120), finished_at: at(60), outcome: 'findings', findings: 2 },
+                { number: 3, started_at: at(40), finished_at: null, outcome: null, findings: null },
+              ],
+            },
             activity_signal: { current_actor: { role: 'worker', name: 'opus-lens' }, observation_state: 'stale', waiting_reason: 'review_in_progress', next_actor: 'human', next_action: 'answer_guidance', last_update_at: at(25) },
           }),
           // Landed a day before the rest started: a long stretch nobody acted in.

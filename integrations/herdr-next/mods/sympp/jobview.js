@@ -213,7 +213,8 @@ function chips(v, t, job, pkg, rounds) {
       : div().id(`round-${pkg.id}-${r.n}`))
       .h(16).px(4).rounded(3).border(1).border_color(r.current ? tone : tint(tone, "60")).bg(r.current ? tint(tone, "22") : CLEAR)
       .text_size(10).font_family(MONO).text_color(r.late ? t.working : r.current ? t.foreground : t.muted)
-      .accessibility_label(`Review round ${r.n}${r.current ? ", in progress" : ""}`)
+      .accessibility_label(r.tip)
+      .tooltip(r.tip)
       .child(r.label);
     return chip;
   }));
@@ -252,6 +253,13 @@ function railRow(v, t, job, row, axis, report, ctx) {
           .bg(s.waiting ? tint(color, "45") : color).border_r(1).border_color(t.canvas).tooltip(tip));
       // Needs the person, but since when was not recorded: a "You" cap at now, not a guessed span.
       if (s.needsYou) marks.push(div().absolute().left(pct(axis.nowX)).top(6).w(4).h(12).rounded(1).bg(t.blocked));
+    }
+    // Each later review round starts at its recorded moment.
+    for (const r of row.rounds) {
+      if (r.n > 1 && r.startedAt !== null && r.startedAt >= axis.start) {
+        marks.push(div().id(`tick-${pkg.id}-${r.n}`).absolute().left(pct(axis.x(r.startedAt))).top(4).w(2).h(16).rounded(1)
+          .bg(r.late ? t.working : tint(t.foreground, "70")).tooltip(r.tip));
+      }
     }
     if (pkg.doneAt !== null && pkg.doneAt >= axis.start) marks.push(div().absolute().left(pct(axis.x(pkg.doneAt))).top(7).size(10).rounded(5).bg(pkg.outcome === "dropped" ? t.dim : t.ansi2));
     marks.push(div().absolute().left(pct(axis.nowX)).top(0).h(24).w(1).bg(tint(t.accent, "90")));

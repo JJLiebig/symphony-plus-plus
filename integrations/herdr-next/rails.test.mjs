@@ -42,9 +42,14 @@ test('work without a PR is work, then done', () => {
 
 test('review rounds are chips and turn into a road bump from round three', () => {
   const job = jobOf('wr-pr');
-  assert.deepEqual(R.roundsOf(pkgOf(job, 'wp-review')).map((r) => [r.label, r.current, r.late]), [['R1', false, false], ['R2', false, false], ['R3', true, true]]);
-  assert.deepEqual(R.roundsOf(pkgOf(job, 'wp-done')).map((r) => [r.label, r.current]), [['R1', false]]);
+  const rounds = R.roundsOf(pkgOf(job, 'wp-review'));
+  assert.deepEqual(rounds.map((r) => [r.label, r.current, r.late]), [['R1', false, false], ['R2', false, false], ['R3', true, true]]);
+  assert.deepEqual(rounds.map((r) => r.tip), ['Round 1 · findings (4) · 50m', 'Round 2 · findings (2) · 1h 00m', 'Round 3 · in progress']);
+  assert.equal(rounds[1].startedAt, NOW - 120 * MIN, 'later rounds start at their recorded moment');
+  assert.deepEqual(R.roundsOf(pkgOf(job, 'wp-done')).map((r) => [r.label, r.current]), [['R1', false]], 'an older signal without history still counts');
   assert.deepEqual(R.roundsOf(pkgOf(job, 'wp-queued')), []);
+  const before = { ...pkgOf(job, 'wp-build'), round: 0, review: { ...pkgOf(job, 'wp-build').review, type: 'review_suite', history: [] } };
+  assert.deepEqual(R.roundsOf(before), [], 'zero rounds before the first review');
 });
 
 test('each row has wall time, time in its stage and time in its review', () => {

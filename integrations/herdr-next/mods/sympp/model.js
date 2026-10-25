@@ -218,7 +218,8 @@ function buildPackage(slice, groups, now, runs) {
     doneAt: stage === "done" ? observed : null,
     failed: pr.checks?.status === "failing",
     track: board?.track ?? null,
-    round: Number(review.round) || 1,
+    // Review Suite counts rounds from zero before the first; older signals carry no count.
+    round: Number.isSafeInteger(Number(review.round)) && review.round !== null && review.round !== "" ? Number(review.round) : 1,
     pr: { status: pr.status ?? null, number: pr.number ?? null, url: pr.url ?? null, checks: pr.checks?.status ?? null, checksAt: ms(pr.checks?.changed_at) },
     review: {
       type: review.type ?? null,
@@ -230,6 +231,10 @@ function buildPackage(slice, groups, now, runs) {
       observation: review.observation_state ?? null,
       startedAt: ms(review.started_at),
       roundStartedAt: ms(review.round_started_at),
+      history: (Array.isArray(review.round_history) ? review.round_history : []).map((h) => ({
+        n: Number(h?.number), startedAt: ms(h?.started_at), finishedAt: ms(h?.finished_at),
+        outcome: h?.outcome ?? null, findings: Number.isSafeInteger(h?.findings) ? h.findings : null,
+      })).filter((h) => Number.isSafeInteger(h.n) && h.n > 0),
     },
     activity: {
       actor: actor ? { name: actor.name || actor.id || null, role: actor.role ?? null } : null,

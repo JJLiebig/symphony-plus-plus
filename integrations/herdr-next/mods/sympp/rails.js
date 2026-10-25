@@ -58,13 +58,24 @@ export function segmentsOf(pkg, now, humanSince = null) {
   return segments;
 }
 
-// Rounds as the review signal counts them; the third and later are a road bump.
+// Rounds as the review provider counts them, with each round's recorded history when it has one.
+// The third and later are a road bump.
 export function roundsOf(pkg) {
-  const reviewed = pkg.review.type || (pkg.review.status && pkg.review.status !== "unavailable") || pkg.review.startedAt !== null;
-  if (!reviewed || (pkg.stage === "queued" && pkg.round <= 1)) return [];
-  return Array.from({ length: pkg.round }, (_, i) => ({
-    n: i + 1, label: `R${i + 1}`, current: i + 1 === pkg.round && pkg.stage === "review", late: i + 1 >= 3,
-  }));
+  const history = new Map((pkg.review.history ?? []).map((h) => [h.n, h]));
+  const reviewed = pkg.review.type || (pkg.review.status && pkg.review.status !== "unavailable") || pkg.review.startedAt !== null || history.size > 0;
+  const count = Math.max(pkg.round, ...history.keys());
+  if (!reviewed || count < 1 || (pkg.stage === "queued" && count <= 1 && !history.size)) return [];
+  return Array.from({ length: count }, (_, i) => {
+    const n = i + 1;
+    const h = history.get(n) ?? null;
+    const current = n === count && pkg.stage === "review" && (!h || h.finishedAt === null);
+    const outcome = h?.outcome ? `${h.outcome}${h.findings !== null ? ` (${h.findings})` : ""}` : null;
+    const took = h?.startedAt !== null && h?.startedAt !== undefined && h.finishedAt !== null ? span(h.finishedAt - h.startedAt) : null;
+    return {
+      n, label: `R${n}`, current, late: n >= 3, startedAt: h?.startedAt ?? (current ? pkg.review.roundStartedAt : null),
+      tip: [`Round ${n}`, current ? "in progress" : null, outcome, took].filter(Boolean).join(" · "),
+    };
+  });
 }
 
 // Wall time since dispatch, time in the current stage, time in the current review.
