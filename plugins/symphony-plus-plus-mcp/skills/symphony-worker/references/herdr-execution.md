@@ -44,10 +44,12 @@ can still use the optional worker adapter when explicitly requested.
 
 `--parent <terminal>` gives the worker its return address. Inside the same
 core, the current terminal is the default parent. A selected `--session`
-requires an explicit parent if one is wanted. Cross-provider delegation works
-in either direction: use the same bounded assignment, select the child CLI,
-then read the child's actual handoff and reconcile it through the parent's MCP
-session. Provider conversation history and credentials are not transferred.
+requires an explicit parent if one is wanted. For a cross-provider handoff,
+the parent saves the first worker's evidence and decisions in a bounded task
+or assignment, then launches the next provider with that input. Read the new
+worker's actual result and reconcile it through the parent's MCP session.
+Provider conversation history and credentials are not transferred. A fresh
+launch does not depend on the first provider accepting another turn.
 
 Use `--space <id> --tab <id>` to place the terminal in an existing native Herdr
 composition. IDs are local to that core, without the app's machine prefix.
@@ -64,10 +66,14 @@ node <bundle>/scripts/sympp-herdr.js send --receipt <receipt.json> --message fol
 
 No arguments lists last-known receipts for the current directory. `check`
 reads current core identity, terminal, PID and launch label. `send` repeats that
-check and uses the core's status condition at input time; it refuses blocked or
-unknown-status programs and recovered shells. For permission or authentication
-dialogs, focus the terminal and let the person decide. A missing OSC status is
-`unknown`; process launch never proves that an agent accepted or completed work.
+check and uses the core's status condition at input time. Herdr-core 0.1.10
+supports only exact `idle` or `working` conditions; `send` refuses all other
+states, including `done`, blocked or unknown-status programs and recovered
+shells. Preserve observed states without translating `done` to `idle`. Focus
+the terminal for manual continuation, or launch a fresh bounded handoff. For
+permission or authentication dialogs, let the person decide. A missing OSC
+status is `unknown`; process launch never proves that an agent accepted or
+completed work.
 
 Receipts live under `$SYMPP_HOME/herdr-launches` (default
 `~/.agents/splusplus/herdr-launches`). Repeating an identical launch reuses its
