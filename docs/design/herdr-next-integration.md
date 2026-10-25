@@ -182,18 +182,22 @@ local process; it does not authenticate an application brand. Existing browser
 authorization remains separate. The answer controls follow persisted prompt
 options and canonical S++ validation.
 
-Herdr currently exposes `fetch` but grants mods no network access. The explicit
-desktop transport is an installed Node HTTP adapter invoked through existing
-`exec`; private request files avoid body arguments and Windows command limits.
-It sends no browser/forwarding metadata, follows no redirects, retains actual
-HTTP status and never retries uncertain writes. Refresh stays modest (15 seconds
-for active work; 60 seconds when quiet or in the background). Node and one process
-per refresh are the desktop costs; future mobile clients need a native transport.
+The desktop transport uses Herdr's `fetch` for board/job reads and JSON actions.
+Installed Windows Herdr-app 0.1.4 permits direct loopback GET and POST without
+browser or forwarding metadata. This removes the HTTP helper, private request
+files and one Node process per refresh; agent navigation/execution retains its
+separate Node helper. Refresh stays modest (15 seconds for active work; 60 seconds
+when quiet or in the background). The ordinary web UI remains available.
 
-[App issue #14](https://github.com/herdrdev/herdr-app/issues/14) proposes scoped
-per-mod HTTP declarations for Can's agreement. That is a documented host
-capability gap, independent of S++ business state. No app policy change is
-included in this integration.
+The native routes return JSON directly and never redirect. Herdr fetch may follow
+same-origin redirects, but its
+[redirect policy](https://github.com/herdrdev/herdr-app/blob/b975f5beaa6909cd7806a40096859c5e47938a19/vendor/gpui-kit/crates/shell/src/engine/quickjs/standard/fetch.rs#L341-L355)
+refuses cross-origin redirects for non-GET methods (line 341) and requests with
+caller-supplied headers (line 351). Every S++ request supplies `Accept`, and POST
+also supplies JSON `Content-Type`. A response marked redirected or with a URL
+different from the request fails before its payload is parsed or displayed.
+Actual returned HTTP status is preserved, including on that failure; the view
+does not retry uncertain writes. Browser mutation authorization is unchanged.
 
 Reuse S++'s durable session-location observations where their identity is
 applicable. Herdr-next bindings must retain the core/machine identity and full
@@ -248,9 +252,8 @@ This table records actual evidence as work lands. A design, source commit,
 simulated fixture or healthy web interface alone does not qualify the native
 integration or an installed execution provider.
 
-The integration uses existing Herdr core/app model and commands. Scoped native
-network access is proposed separately and follows that repository's Can agreement
-process. Preserve live sessions, installed runtime identity and existing
+The integration uses existing Herdr core/app model, commands and network grants.
+Preserve live sessions, installed runtime identity and existing
 standalone behavior throughout delivery.
 
 The [native package guide](../../integrations/herdr-next/README.md) owns install

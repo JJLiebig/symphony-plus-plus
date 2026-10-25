@@ -45,8 +45,9 @@ The panel follows what you focus in its tab: an S++ agent's terminal or a job
 tab shows that job; otherwise the space, or its topic when no S++ work touches
 the space. It never takes focus. Pin (P) keeps it where it is.
 
-The installer adds `mods/sympp`, two scripts under `tools/`, and a private
-request directory under `data/`. It leaves layouts, topics, compositions,
+The installer adds `mods/sympp` and the agent helper `tools/sympp-herdr.js`.
+Updating removes the former HTTP helper and its private request directory.
+It leaves layouts, topics, compositions,
 settings and terminals intact. Existing edits are protected; use `--replace`
 explicitly to install this version over a differing copy. Close an S++ pane
 with Herdr's ordinary pane or tab controls.
@@ -150,15 +151,21 @@ observation, without claiming that its agent is still alive.
 Native agent jumps require an online factory and a fresh process identity check.
 An offline copy can retain identical job IDs; it cannot authorize agent access.
 
-The desktop view needs local Node.js. Herdr currently exposes `fetch` but gives
-mods no network grants ([upstream proposal](https://github.com/herdrdev/herdr-app/issues/14)).
-This package therefore uses an explicit installed HTTP adapter through existing
-`exec`, with one process per refresh. Requests use private files rather than
-command arguments, are removed after completion, and are never automatically
-replayed. A crash can leave a request file in that private directory. Responses
-keep their real HTTP status; redirects are not followed.
+Reads and actions use Herdr's `fetch` directly, without a Node process per
+refresh or private request files. The installed Windows Herdr-app 0.1.4 was
+qualified for loopback GET and JSON POST without browser or forwarding headers.
+Responses retain their real HTTP status; the view never automatically retries
+a write.
 
-Agent execution uses the separate
+Native S++ routes do not redirect. Herdr fetch can follow same-origin redirects;
+its [redirect policy](https://github.com/herdrdev/herdr-app/blob/b975f5beaa6909cd7806a40096859c5e47938a19/vendor/gpui-kit/crates/shell/src/engine/quickjs/standard/fetch.rs#L341-L355)
+refuses cross-origin redirects for non-GET methods (line 341) and requests with
+caller-supplied headers (line 351). Every S++ request sends `Accept`, and JSON
+POSTs also send `Content-Type`. A redirect flag or changed response URL makes
+the request fail before its JSON can be parsed or shown, retaining the returned
+status for diagnosis.
+
+Agent navigation and execution still need Node.js and the separate
 [optional Herdr-next execution procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-worker/references/herdr-execution.md).
 Fresh cross-provider handoffs carry a bounded task and evidence. Continuing an
 existing agent depends on its reported status and the core's supported send
