@@ -42,7 +42,7 @@ export const POLL = { live: 15e3, quiet: 60e3, background: 60e3, retry: [15e3, 3
 export function normalizeEndpoint(value) {
   if (typeof value !== "string" || !value.trim()) return null;
   const base = value.trim().replace(/\/+$/, "");
-  return /^https?:\/\/[^/\s]+(\/[^\s]*)?$/i.test(base) ? base : null;
+  return /^https?:\/\/(?:\[[0-9a-f:.]+\]|[a-z0-9._-]+)(?::[0-9]{1,5})?$/i.test(base) ? base : null;
 }
 
 export function boardUrl(endpoint) {
@@ -50,7 +50,8 @@ export function boardUrl(endpoint) {
 }
 
 export function dashboardUrl(endpoint, explicit) {
-  return normalizeEndpoint(explicit) ?? (endpoint ? `${endpoint}${DASHBOARD_PATH}` : null);
+  const match = typeof explicit === "string" ? explicit.trim().match(/^(https?:\/\/[^/?#\s]+)([/?#][^\s]*)?$/i) : null;
+  return match && normalizeEndpoint(match[1]) ? match[0] : endpoint ? `${endpoint}${DASHBOARD_PATH}` : null;
 }
 
 // ---------- Fetch state ----------
@@ -73,16 +74,15 @@ export function fetchFailed(state, error, now) {
 }
 
 export function httpError(status) {
-  if (status === 401 || status === 403) return `S++ refused this native read (${status}). The view only reads from a local S++ on this machine.`;
+  if (status === 401 || status === 403) return `S++ refused this native read (${status}). Check the local S++ connection.`;
   if (status === 404) return "This S++ has no native board route (404). It needs the release with /herdr/dashboard.";
   if (status === 503) return "The S++ ledger is busy (503). Retrying.";
   return `S++ answered ${status}.`;
 }
 
 export function networkError(endpoint, caught) {
-  const host = (endpoint ?? "").replace(/^https?:\/\//i, "");
-  const detail = caught && typeof caught.message === "string" && caught.message ? ` (${caught.message})` : "";
-  return `Can't reach S++ at ${host || "the configured endpoint"}${detail}.`;
+  const host = (normalizeEndpoint(endpoint) ?? "").replace(/^https?:\/\//i, "");
+  return `Can't reach S++ at ${host || "the configured endpoint"}. Check the connection and retry.`;
 }
 
 export function nextDelay(state, active) {
@@ -109,11 +109,12 @@ export function parseBoard(payload) {
     throw new Error("S++ answered with something other than a board.");
   }
   const now = ms(payload.generated_at) ?? Date.now();
-  const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now));
+  const guidance = payload.guidance_requests?.guidance_requests ?? [];
+  const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now, guidance));
   return { now, jobs };
 }
 
-function buildJob(detail, now) {
+function buildJob(detail, now, guidance) {
   const request = detail.work_request;
   const repo = request.repo_display || request.repo || "";
   const repoShort = shortRepo(repo);
@@ -122,13 +123,24 @@ function buildJob(detail, now) {
   const packages = (detail.work_packages ?? []).map((slice) => buildPackage(slice, groups, now)).sort((a, b) => a.seq - b.seq);
   const titles = new Map(packages.map((pkg) => [pkg.id, pkg.title]));
   for (const pkg of packages) pkg.after = pkg.unmet.map((id) => titles.get(id) ?? id);
+  const questions = (detail.clarification_questions ?? []).filter((q) => q.id).map((q) => ({
+    key: `question:${q.id}`, id: q.id, kind: "question", jobId: request.id, pkgId: null,
+    text: q.question, context: q.why_needed, prompt: q.decision_prompt ?? null, status: q.status,
+    answer: q.answer, since: ms(q.inserted_at),
+  }));
+  const guidanceQuestions = guidance.filter((g) => g.id && g.status === "human_info_needed" && titles.has(g.work_package_id)).map((g) => ({
+    key: `guidance:${g.id}`, id: g.id, kind: "guidance", jobId: request.id, pkgId: g.work_package_id,
+    label: "Guidance needs you", text: g.question || g.summary, context: g.context,
+    prompt: g.decision_prompt ?? null, status: g.status, since: ms(g.updated_at ?? g.inserted_at),
+  }));
 
   const report = reportOf(request.operator_report, now);
   const escalation = request.operator_report?.human_escalation;
   const ask = escalation?.question && !escalation.resolved_at ? { text: escalation.question, since: ms(escalation.raised_at) ?? now } : null;
   const needs = [
     ...(ask ? [{ key: `${request.id}:ask`, kind: "ask", label: "Architect asks", text: ask.text, since: ask.since, jobId: request.id, pkgId: null }] : []),
-    ...packages.filter((pkg) => pkg.stage !== "done" && pkg.activity.nextActor === "human").map((pkg) => ({
+    ...guidanceQuestions,
+    ...packages.filter((pkg) => pkg.stage !== "done" && pkg.activity.nextActor === "human" && !guidanceQuestions.some((q) => q.pkgId === pkg.id)).map((pkg) => ({
       key: `${request.id}:${pkg.id}:guidance`,
       kind: "guidance",
       label: "Guidance needs you",
@@ -150,6 +162,7 @@ function buildJob(detail, now) {
     title: request.title || request.id,
     repo,
     repoShort,
+    repos: [...new Set([repo, ...packages.map((pkg) => pkg.repo)].filter(Boolean))],
     area,
     baseBranch: request.base_branch ?? null,
     offPrimary: offPrimary(request.base_branch, request.default_branch),
@@ -157,6 +170,8 @@ function buildJob(detail, now) {
     closedAt,
     report,
     ask,
+    questions,
+    guidance: guidanceQuestions,
     needs,
     architect: placeOf(request.architect_session_location),
     packages,
@@ -185,6 +200,7 @@ function buildPackage(slice, groups, now) {
   return {
     id: slice.work_package_id || slice.id,
     title: slice.title || slice.id,
+    repo: slice.repo_display || slice.repo || null,
     seq: slice.sequence ?? 0,
     group: groups.get(slice.product_tree_node_id) ?? null,
     stage,
@@ -385,65 +401,89 @@ export function verdictCounts(jobs) {
 
 // ---------- Scope: S++ areas and personal topics ----------
 
-// Areas come from S++'s operator config; personal topics from `shared("desk.topics")`, read only.
-// A job joins a topic by explicit `repoTopics` config first ("owner/repo" or "repo" -> topic id or
-// name), else when its repository's name is the name or a folder segment of a space in that topic.
+// Topics use explicit repository mappings first; folder matching only uses the leaf.
+// A cross-repository request remains one job, referenced from every participating repo.
 export function scopesOf(jobs, deskTopics, spaceList, repoTopics) {
   const areas = [...new Set(jobs.filter((job) => job.state !== "settled").map((job) => job.area[0]))].sort();
   const groups = Array.isArray(deskTopics?.groups) ? deskTopics.groups : [];
-  const topics = groups
-    .filter((group) => group && group.id && group.name)
-    .map((group) => ({ key: `topic:${group.id}`, label: group.name, kind: "topic", id: group.id, names: spaceNames(group.spaces, spaceList) }))
-    .filter((topic) => jobs.some((job) => inTopic(job, topic, repoTopics)));
-  return [{ key: "all", label: "Everything", kind: "all" }, ...areas.map((area) => ({ key: `area:${area}`, label: area, kind: "area" })), ...topics];
+  const topics = groups.filter((g) => g && g.id && g.name).map((g) => ({
+    key: `topic:${g.id}`, label: g.name, kind: "topic", id: g.id, names: spaceNames(g.spaces, spaceList),
+  }));
+  const active = (spaceList ?? []).find((s) => s.active);
+  const focused = active ? [{ key: `space:${active.id}`, label: active.name || shortRepo(active.folder), kind: "space", names: spaceNames([active.id], spaceList) }] : [];
+  const repos = [...new Set(jobs.flatMap((job) => job.repos))].sort();
+  return [{ key: "all", label: "Everything", kind: "all" }, ...topics, ...focused,
+    ...areas.map((area) => ({ key: `area:${area}`, label: area, kind: "area" })),
+    ...repos.map((repo) => ({ key: `repo:${repo}`, label: shortRepo(repo), kind: "repo", repo }))];
 }
 
 export function applyScope(jobs, scope, repoTopics) {
   if (!scope || scope.kind === "all") return jobs;
+  if (scope.kind === "job") return jobs.filter((job) => job.id === scope.id);
   if (scope.kind === "area") return jobs.filter((job) => job.area[0] === scope.label);
-  return jobs.filter((job) => inTopic(job, scope, repoTopics));
+  if (scope.kind === "repo") return jobs.filter((job) => job.repos.includes(scope.repo));
+  return jobs.filter((job) => job.repos.some((repo) => inTopic(repo, scope, repoTopics)));
 }
 
-function inTopic(job, topic, repoTopics) {
-  const explicit = repoTopics && typeof repoTopics === "object" ? repoTopics[job.repo] ?? repoTopics[job.repoShort] : undefined;
-  if (typeof explicit === "string") return explicit === topic.id || explicit === topic.label;
-  return Boolean(job.repoShort) && topic.names.has(job.repoShort.toLowerCase());
+function inTopic(repo, topic, repoTopics) {
+  const explicit = repoTopics && typeof repoTopics === "object" ? repoTopics[repo] ?? repoTopics[shortRepo(repo)] : undefined;
+  if (topic.kind === "topic" && typeof explicit === "string") return explicit === topic.id || explicit === topic.label;
+  return Boolean(repo) && topic.names.has(shortRepo(repo).toLowerCase());
 }
 
 function spaceNames(ids, spaceList) {
   const wanted = new Set(Array.isArray(ids) ? ids : []);
-  const names = new Set();
-  for (const space of spaceList ?? []) {
-    if (!wanted.has(space.id)) continue;
-    if (space.name) names.add(String(space.name).toLowerCase());
-    for (const part of String(space.folder ?? "").split(/[\\/]+/)) if (part) names.add(part.toLowerCase());
-  }
-  return names;
+  return new Set((spaceList ?? []).filter((s) => wanted.has(s.id)).map((s) => shortRepo(s.folder || s.name).toLowerCase()).filter(Boolean));
 }
 
-// ---------- Terminal bindings (seam for the execution adapter) ----------
+// ---------- Terminal bindings ----------
 
-// Only bindings the execution adapter explicitly verified, with the full core terminal address and
-// its machine (null: this computer). `live` comes from herdr-core's own terminal list right now.
-// Nothing is inferred from session locations, names, titles or terminal text.
-export function verifiedBindings(raw, terminalList) {
-  const state = new Map((terminalList ?? []).map((t) => [t.address, t.state]));
-  return (Array.isArray(raw) ? raw : [])
-    .filter((b) => b && b.verified === true && typeof b.work_request_id === "string" && typeof b.role === "string" && typeof b.address === "string" && b.address)
-    .filter((b) => (b.machine ? b.address.startsWith(`${b.machine}/`) : !b.address.includes("/")))
-    .map((b) => ({
-      jobId: b.work_request_id,
-      pkgId: typeof b.work_package_id === "string" ? b.work_package_id : null,
-      attempt: typeof b.attempt_id === "string" ? b.attempt_id : null,
-      role: b.role,
-      machine: b.machine ?? null,
-      address: b.address,
-      live: state.get(b.address) === "live",
-    }));
+// Labels identify candidates, never proof. Only trusted host configuration chooses executable paths.
+export function discoverBindings(hosts, terminalList) {
+  return (terminalList ?? []).flatMap((terminal) => {
+    const labels = terminal.labels ?? {};
+    if (!labels["sympp.launch_id"] || !labels["sympp.work_request_id"]) return [];
+    const address = terminal.address;
+    if (typeof address !== "string" || !address) return [];
+    const split = address.indexOf("/");
+    const machine = split < 0 ? null : address.slice(0, split);
+    const terminalId = split < 0 ? address : address.slice(split + 1);
+    const host = hosts?.[machine ?? "local"];
+    const pid = Number(labels["sympp.pid"]);
+    const receipt = labels["sympp.receipt"];
+    const identity = typeof labels["sympp.core_id"] === "string" && Number.isSafeInteger(pid) && pid > 0 && pid === terminal.pid;
+    const absoluteReceipt = typeof receipt === "string" && /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(receipt);
+    const configured = typeof host?.node === "string" && Boolean(host.node) && typeof host?.helper === "string" && Boolean(host.helper);
+    return [{
+      jobId: labels["sympp.work_request_id"], pkgId: labels["sympp.work_package_id"] || null,
+      role: labels["sympp.role"] || "agent", address, terminalId, machine,
+      launchId: labels["sympp.launch_id"], coreId: labels["sympp.core_id"], pid, receipt,
+      host: configured ? host : null,
+      available: configured && identity && absoluteReceipt && terminal.state === "live",
+      unavailable: !configured ? "Agent helper unavailable" : "Agent is no longer running",
+    }];
+  });
 }
 
 export function bindingsFor(bindings, jobId, pkgId) {
   return bindings.filter((b) => b.jobId === jobId && b.pkgId === (pkgId ?? null));
+}
+
+export function bindingCheckArgs(binding) {
+  return [binding.host.helper, "check", "--receipt", binding.receipt,
+    ...(binding.host.session ? ["--session", binding.host.session] : []), "--json"];
+}
+
+// Recheck after the asynchronous helper call: the terminal may have been replaced meanwhile.
+export function checkedBinding(binding, result, terminalList) {
+  if (!binding.available || result?.code !== 0) return false;
+  let receipt;
+  try { receipt = JSON.parse(result.stdout); } catch { return false; }
+  if (receipt.state !== "live" || receipt.core_id !== binding.coreId || receipt.terminal_id !== binding.terminalId ||
+      receipt.pid !== binding.pid || receipt.launch_id !== binding.launchId) return false;
+  const current = discoverBindings({ [binding.machine ?? "local"]: binding.host }, terminalList).find((b) => b.address === binding.address);
+  return Boolean(current?.available && current.coreId === binding.coreId && current.launchId === binding.launchId &&
+    current.pid === binding.pid && current.receipt === binding.receipt && current.jobId === binding.jobId && current.pkgId === binding.pkgId);
 }
 
 // ---------- Text ----------
@@ -481,7 +521,7 @@ function sentence(code) {
 }
 
 function shortRepo(repo) {
-  return String(repo).replace(/\.git$/i, "").split(/[/:]/).filter(Boolean).pop() ?? "";
+  return String(repo).replace(/[\\/]+$/, "").replace(/\.git$/i, "").split(/[\\/:]/).filter(Boolean).pop() ?? "";
 }
 
 function offPrimary(base, defaultBranch) {
