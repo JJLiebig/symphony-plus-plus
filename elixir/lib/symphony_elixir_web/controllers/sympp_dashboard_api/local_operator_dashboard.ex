@@ -410,12 +410,14 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
              if(selected_work_package, do: [{"work_package", selected_work_package.id}], else: []),
          {:ok, comment_context} <- Dashboard.comment_context(repo, comment_targets) do
       comment_counts = CommentProjection.counts_for(comment_context, "work_request", work_request_id)
+      newest_decisions = Enum.reverse(decisions)
+      visible_decisions = if Keyword.get(opts, :all_decisions?, false), do: newest_decisions, else: Enum.take(newest_decisions, 3)
 
       payload =
         %{
           work_request: operator_work_request_enrichment(work_request),
           clarification_questions: Enum.map(questions, &Dashboard.clarification_question/1),
-          decision_logs: decisions |> Enum.reverse() |> Enum.take(3) |> Enum.map(&Dashboard.decision_log_entry/1),
+          decision_logs: Enum.map(visible_decisions, &Dashboard.decision_log_entry/1),
           comments: CommentProjection.comments_for(comment_context, "work_request", work_request_id),
           summary: %{
             open_question_count: Enum.count(questions, &(&1.status == "open")),
@@ -442,7 +444,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec herdr_work_request_detail_payload(module(), String.t()) :: {:ok, map()} | {:error, term()}
   def herdr_work_request_detail_payload(repo, work_request_id) when is_binary(work_request_id) do
-    with {:ok, payload} <- operator_work_request_detail_payload(repo, work_request_id),
+    with {:ok, payload} <- operator_work_request_detail_payload(repo, work_request_id, all_decisions?: true),
          {:ok, [board_detail]} <- operator_work_request_board_details(repo, [%{id: work_request_id}], nil),
          {:ok, work_packages} <- WorkRequestRepository.list_work_packages(repo, work_request_id),
          {:ok, contexts} <- Dashboard.work_package_work_package_contexts(repo, work_packages) do

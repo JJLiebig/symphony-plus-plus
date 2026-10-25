@@ -73,6 +73,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
     def all(_query), do: raise(%Exqlite.Error{message: "database is locked"})
     def one(_query), do: raise(%Exqlite.Error{message: "database is locked"})
+    def get(_schema, _id), do: raise(%Exqlite.Error{message: "database is locked"})
   end
 
   defmodule CountingRepo do
@@ -2121,6 +2122,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   test "Herdr reads the complete execution graph and current worker sessions over direct loopback", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       work_request = create_work_request!(repo, id: "WR-HERDR-DETAIL", status: "ready_for_slicing")
+
+      for sequence <- 1..5 do
+        assert {:ok, _decision} =
+                 WorkRequestRepository.record_decision(repo, work_request.id, decision_attrs(id: "WRD-HERDR-DETAIL-#{sequence}"))
+      end
+
       assert {:ok, group} = ProductTree.create_node(repo, %{id: "group-herdr", work_request_id: work_request.id, title: "Delivery"})
 
       active =
@@ -2201,6 +2208,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       payload = json_response(conn, 200)
       assert get_in(payload, ["work_request", "id"]) == work_request.id
+      assert Enum.map(payload["decision_logs"], & &1["id"]) == Enum.map(5..1, &"WRD-HERDR-DETAIL-#{&1}")
+      assert payload["summary"]["decision_count"] == 5
+
+      assert %{
+               "work_request_id" => work_request_id,
+               "sequence" => 5,
+               "source_type" => "architect",
+               "decision" => "Keep this WorkRequest narrow.",
+               "rationale" => "The next slice owns broader orchestration.",
+               "scope_impact" => "No new runtime tools.",
+               "created_by" => "architect-1"
+             } = hd(payload["decision_logs"])
+
+      assert work_request_id == work_request.id
 
       assert Enum.sort(payload["execution_graph"]["work_package_ids"]) ==
                Enum.sort([active.id, downstream.id, stale.id, terminal.id])
@@ -2246,6 +2267,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
                  assert signal["active_blocker_count"] == 1
                  assert board["runtime"] == %{"offline" => false}
+
+                 native_detail =
+                   build_conn()
+                   |> Map.put(:host, "localhost")
+                   |> Map.put(:remote_ip, {127, 0, 0, 1})
+                   |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
+                   |> json_response(200)
+
+                 assert native_detail["decision_logs"] == payload["decision_logs"]
                  assert repo.query!("SELECT total_changes()", []).rows == before_read
                  repo.rollback(:native_read_verified)
                end)
@@ -2303,6 +2333,45 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
 
       assert %{"error" => %{"code" => "unauthorized"}} = json_response(forwarded, 401)
+    end)
+  end
+
+  test "Herdr detail returns a storage error without migrating an uninitialized ledger" do
+    database_path = WorkPackageFactory.database_path()
+    original_database = Application.get_env(:symphony_elixir, :sympp_repo_database)
+    Application.put_env(:symphony_elixir, :sympp_repo_database, database_path)
+
+    try do
+      {conn, queries} =
+        capture_queries(fn ->
+          build_conn()
+          |> Map.put(:host, "localhost")
+          |> Map.put(:remote_ip, {127, 0, 0, 1})
+          |> get("/api/v1/sympp/herdr/work-requests/missing")
+        end)
+
+      assert json_response(conn, 503) ==
+               %{"error" => %{"code" => "storage_failed", "message" => "Dashboard ledger storage failed"}}
+
+      refute Enum.any?(queries, &Regex.match?(~r/^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i, &1))
+    after
+      Application.put_env(:symphony_elixir, :sympp_repo_database, original_database)
+      File.rm(database_path)
+    end
+  end
+
+  test "Herdr detail returns the existing busy error" do
+    with_local_operator_endpoint(fn ->
+      Application.put_env(:symphony_elixir, SymphonyElixirWeb.Endpoint, sympp_repo: BusyRepo)
+
+      conn =
+        build_conn()
+        |> Map.put(:host, "localhost")
+        |> Map.put(:remote_ip, {127, 0, 0, 1})
+        |> get("/api/v1/sympp/herdr/work-requests/missing")
+
+      assert json_response(conn, 503) ==
+               %{"error" => %{"code" => "database_busy", "message" => "Dashboard ledger is busy"}}
     end)
   end
 
