@@ -2434,6 +2434,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
             Jason.encode!(%{
               review: "rvw_cold",
               status: "running",
+              rounds: 3,
+              steps: [%{index: 2, name: "correctness", state: "current"}],
+              round_history: [
+                %{
+                  number: 3,
+                  round_id: "round_cold",
+                  lane: "local",
+                  step: "correctness",
+                  status: "running",
+                  outcome: nil,
+                  findings: nil,
+                  started_at: "2026-10-01T09:00:00Z",
+                  finished_at: nil
+                }
+              ],
               next_action: "wait",
               progress: "review 2/3 correctness"
             })
@@ -2460,6 +2475,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert review["step"] == "correctness"
         assert review["next_action"] == "wait"
         assert review["observation_state"] == "current"
+        assert review["round"] == 3
+        assert review["provider_status"] == "running"
+        assert review["status"] == "in_progress"
+        assert review["steps"] == [%{"index" => 2, "name" => "correctness", "state" => "current"}]
+        assert [%{"number" => 3, "round_id" => "round_cold", "finished_at" => nil}] = review["round_history"]
+
+        web_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+        web_detail = Enum.find(web_payload["work_request_details"], &(&1["work_request"]["id"] == work_request.id))
+        web_review = Enum.find(web_detail["work_packages"], &(&1["id"] == reviewing.id))["review_signal"]
+        assert web_review == review
+
         activity = packages[reviewing.id]["activity_signal"]
         assert activity["stage"] == "reviewing"
         assert activity["elapsed_seconds"] == nil
@@ -2474,7 +2500,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         :ets.delete(observation, {:observation, Path.expand(root), "origin/beta"})
         assert {:ok, ready_payload} = LocalOperatorDashboard.herdr_work_request_detail_payload(repo, work_request.id)
-        ready_activity = Enum.find(ready_payload.work_packages, &(&1.id == reviewing.id)).activity_signal
+        ready_package = Enum.find(ready_payload.work_packages, &(&1.id == reviewing.id))
+        refute Map.has_key?(ready_package.review_signal, "steps")
+        refute Map.has_key?(ready_package.review_signal, "round_history")
+        assert ready_package.review_signal["status"] == "passed"
+        ready_activity = ready_package.activity_signal
         assert ready_activity["next_action"] == "verify_native_checks_and_review_then_merge"
         assert ready_activity["next_actor"] == "architect"
         human_activity = packages[needs_human.id]["activity_signal"]
