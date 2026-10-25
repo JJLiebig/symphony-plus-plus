@@ -50,6 +50,11 @@ see [the optional adapter](../symphony-work-package/procedure.md). Authenticatio
 scope denials still apply when using those tools. Never substitute business CLI
 commands or private state files for required parent ledger operations.
 
+When Herdr-next execution is explicitly chosen, the parent can launch Codex,
+Claude or OpenCode with the [optional execution helper](references/herdr-execution.md).
+It accepts an existing redacted assignment or an ordinary untracked task;
+it never dispatches or claims ledger work.
+
 ## Safety
 
 Never print, store, commit, or paste raw API keys, bearer tokens, GitHub tokens,
