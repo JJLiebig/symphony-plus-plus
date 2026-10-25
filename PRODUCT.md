@@ -34,6 +34,19 @@ Beta source now implements candidate sequencing, delivery resolution and visible
 work state. Combined native-host qualification is still required; source delivery
 does not qualify the installed marketplace runtime or other operating systems.
 
+## Herdr-next Integration Target
+
+S++ continues to work standalone with full orchestration and its normal web UI.
+The optional native integration into herdr-core + herdr-app should elevate that
+same workflow with topic/repository/job views, human attention handling, native
+agent navigation and cross-provider execution through herdr-core. One shared
+S++ ledger serves both interfaces. Direct Herdr work needs no S++ ceremony;
+lightweight tracking and visualization remain optional.
+
+The [S++ × Herdr-next contract](docs/design/herdr-next-integration.md) records
+the target, current delivery evidence and remaining boundaries. Xeneon hardware
+is a later opportunity, outside this delivery.
+
 ## Brand Personality
 
 Calm, dense, trustworthy. The voice is direct and operational: precise without ceremony, energetic only when the underlying system is active, and quiet when no action is needed.
