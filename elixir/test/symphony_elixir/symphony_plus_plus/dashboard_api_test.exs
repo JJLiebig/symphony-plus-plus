@@ -2432,9 +2432,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         :ets.delete(observation, {:observation, Path.expand(root), "origin/beta"})
         assert {:ok, ready_payload} = LocalOperatorDashboard.herdr_work_request_detail_payload(repo, work_request.id)
         ready_package = Enum.find(ready_payload.work_packages, &(&1.id == reviewing.id))
-        refute Map.has_key?(ready_package.review_signal, :steps)
-        refute Map.has_key?(ready_package.review_signal, :round_history)
-        assert ready_package.review_signal.status == "passed"
+        refute Map.has_key?(ready_package.review_signal, "steps")
+        refute Map.has_key?(ready_package.review_signal, "round_history")
+        assert ready_package.review_signal["status"] == "passed"
         ready_activity = ready_package.activity_signal
         assert ready_activity["next_action"] == "verify_native_checks_and_review_then_merge"
         assert ready_activity["next_actor"] == "architect"
