@@ -37,6 +37,26 @@ test('installs into a home with spaces without replacing personal layout or topi
   assert.notEqual(await readFile(join(home, 'mods', 'sympp', 'main.js'), 'utf8'), edited);
 });
 
+test('installs the lab beside the view without an endpoint or touching the view', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'spp native lab '));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  assert.equal(install(home, '--endpoint', 'http://127.0.0.1:19999').status, 0);
+  const view = await readFile(join(home, 'mods', 'sympp', 'main.js'), 'utf8');
+
+  const result = install(home, '--lab');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /"mod\\":\\"sympp-lab\\"/);
+  assert.doesNotMatch(result.stdout, /endpoint/);
+  await access(join(home, 'mods', 'sympp-lab', 'main.js'));
+  await access(join(home, 'mods', 'sympp-lab', 'play.svg'));
+  assert.equal(await readFile(join(home, 'mods', 'sympp', 'main.js'), 'utf8'), view);
+
+  await writeFile(join(home, 'mods', 'sympp-lab', 'fixtures.js'), '// my sample job\n');
+  assert.equal(install(home, '--lab').status, 1);
+  assert.equal(await readFile(join(home, 'mods', 'sympp-lab', 'fixtures.js'), 'utf8'), '// my sample job\n');
+  assert.equal(install(home, '--lab', '--replace').status, 0);
+});
+
 test('rejects credentials, unknown flags and invalid open mode before changing a home', async t => {
   const root = await mkdtemp(join(tmpdir(), 'spp native invalid '));
   t.after(() => rm(root, { recursive: true, force: true }));
