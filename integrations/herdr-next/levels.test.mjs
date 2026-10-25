@@ -192,6 +192,8 @@ test('a topic\'s chief is the one named like it, else one whose name leads or en
   assert.deepEqual(of(topic('Personal Tools'), [chief('personal-tools'), chief('Tools')]), ['personal-tools'], 'the exact name wins over a word');
   assert.deepEqual(of(topic('Nextide-Kraken'), [chief('Nextide'), chief('Kraken')]), ['Nextide', 'Kraken'], 'two at the same rule are both shown');
   assert.deepEqual(of(topic('Krakenite'), [chief('Kraken')]), [], 'a word is whole, never part of one');
+  assert.deepEqual(of(topic('Nextide-工作'), [chief('私人'), chief('工作')]), ['工作'], 'letters in any script are words');
+  assert.deepEqual(of(topic('—'), [chief('·')]), [], 'names without letters never match');
   const two = [topic('Nextide'), topic('Nextide-Live')];
   assert.deepEqual(of(two[1], [chief('Nextide')], two), [], 'a chief named exactly like another topic belongs there');
   const tools = byId(desk, 't-tools');

@@ -80,12 +80,13 @@ function reachable(v, t, el, key, open, label) {
     .on_click((_e, cx) => open(cx));
 }
 
-function needRow(v, t, need, names, now) {
+// A desk scopes its rows' keys, since the same need can sit on two chiefs' desks.
+function needRow(v, t, need, names, now, scope = "") {
   const job = need.job;
   const also = v.place.alsoIn(job).map((id) => names.get(id)).filter(Boolean);
   const where = [job.title, names.get(v.place.home(job)), also.length ? `also in ${also.join(", ")}` : null].filter(Boolean).join(" · ");
   const open = (cx) => v.openJob(job, { pkg: need.pkgId }, cx);
-  return reachable(v, t, v_flex().id(`need-${need.key}`).flex_none().px(14).py(11).gap(6), `need:${need.key}`, open, `${need.label}: ${need.text}. ${job.title}`)
+  return reachable(v, t, v_flex().id(`need-${scope}${need.key}`).flex_none().px(14).py(11).gap(6), `need:${scope}${need.key}`, open, `${need.label}: ${need.text}. ${job.title}`)
     .bg(tint(t.blocked, "12"))
     .hover((s) => s.bg(tint(t.blocked, "1c")))
     .child(h_flex().gap(8).items_center()
@@ -221,7 +222,7 @@ function agentList(v, t, agents, now) {
 
 // ---------- Chief ----------
 
-const chiefId = (chief) => chief.key.replace(/[^a-z0-9]+/g, "-");
+const chiefId = (chief) => chief.key.replace(/[^\p{L}\p{N}]+/gu, "-");
 
 // A topic row's chief: its presence mark, or a count when several match.
 function chiefMark(t, row, now) {
@@ -252,11 +253,11 @@ function chiefCard(v, t, chief, a, now) {
 
 // A request or package dispatched under the chief, and where it is now. A request's own dispatched
 // packages sit under it.
-function sentRow(v, t, item, now, nested = false) {
+function sentRow(v, t, scope, { item, nested }, now) {
   const { job, pkg } = item;
   const title = pkg ? pkg.title : job.title;
   const parent = pkg && !nested ? job.title : null;
-  return reachable(v, t, h_flex().id(`sent-${item.key}`).flex_none().pr(12).pl(nested ? 32 : 12).py(6).gap(10).items_center(), `sent:${item.key}`,
+  return reachable(v, t, h_flex().id(`sent-${scope}-${item.key}`).flex_none().pr(12).pl(nested ? 32 : 12).py(6).gap(10).items_center(), `sent:${scope}:${item.key}`,
     (cx) => v.openJob(job, { pkg: pkg?.id ?? null }, cx), `${title}, ${item.now}`)
     .child(pkg ? pip(t, pkg) : mark(t, job.verdict))
     .child(div().min_w(0).flex_shrink(1).truncate().text_size(12.5).text_color(t.foreground).child(title))
@@ -266,37 +267,42 @@ function sentRow(v, t, item, now, nested = false) {
     .when(item.at !== null, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(M.ago(item.at, now))));
 }
 
-function recapRow(v, t, recap, now) {
-  return reachable(v, t, v_flex().id(`recap-${recap.key}`).flex_none().px(12).py(8).gap(3), `recap:${recap.key}`,
+function recapRow(v, t, scope, recap, now) {
+  return reachable(v, t, v_flex().id(`recap-${scope}-${recap.key}`).flex_none().px(12).py(8).gap(3), `recap:${scope}:${recap.key}`,
     (cx) => v.openJob(recap.job, {}, cx), `Recap on ${recap.job.title}: ${recap.text}`)
     .child(div().w_full().text_size(12.5).text_color(t.foreground).child(recap.text))
     .child(div().truncate().text_size(11.5).text_color(t.muted).child(`${recap.job.title} · ${M.ago(recap.at, now)}`));
 }
 
-// The newest few, the rest one click away.
-function capped(v, t, key, rows, limit) {
-  if (rows.length <= limit) return rows;
+// The newest few, the rest one click away. Only the rows shown are drawn, so the keys reach exactly those.
+function capped(v, t, key, items, limit, draw) {
+  if (items.length <= limit) return items.map(draw);
   const open = v.expanded.has(key);
+  const rows = (open ? items : items.slice(0, limit)).map(draw);
   const toggle = reachable(v, t, h_flex().id(`more-${key}`).flex_none().px(12).py(6).gap(8).items_center(), `more:${key}`,
-    (cx) => v.toggleExpanded(key, cx), open ? "Show fewer" : `${rows.length - limit} more`)
+    (cx) => v.toggleExpanded(key, cx), open ? "Show fewer" : `${items.length - limit} more`)
     .child(svg(icon(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.dim))
-    .child(div().text_size(12).text_color(t.muted).child(open ? "Fewer" : `${rows.length - limit} more`));
-  return [...(open ? rows : rows.slice(0, limit)), toggle];
+    .child(div().text_size(12).text_color(t.muted).child(open ? "Fewer" : `${items.length - limit} more`));
+  return [...rows, toggle];
 }
 
+// Drawn top to bottom, so rows register for the keys in the order they show.
 function oneDesk(v, t, { chief, agent, desk }, names, now) {
   const id = chiefId(chief);
-  const sent = desk.work.flatMap((item) => [sentRow(v, t, item, now), ...item.packages.map((pkg) => sentRow(v, t, pkg, now, true))]);
-  return [
-    chiefCard(v, t, chief, agent, now),
-    ...(desk.needs.length ? [section(t, "Waiting on you", desk.needs.length, t.blocked),
-      v_flex().id(`chief-needs-${id}`).gap(8).children(desk.needs.map((need) => needRow(v, t, need, names, now)))] : []),
-    section(t, "Dispatched", desk.work.length || null),
-    desk.work.length ? v_flex().id(`chief-sent-${id}`).gap(1).children(capped(v, t, `sent:${id}`, sent, 8))
-      : div().px(4).text_size(12).text_color(t.muted).child("Nothing dispatched yet."),
-    ...(desk.recaps.length ? [section(t, "Recaps", desk.recaps.length),
-      v_flex().id(`chief-recaps-${id}`).gap(1).children(capped(v, t, `recaps:${id}`, desk.recaps.map((r) => recapRow(v, t, r, now)), 3))] : []),
-  ];
+  const out = [chiefCard(v, t, chief, agent, now)];
+  if (desk.needs.length) {
+    out.push(section(t, "Waiting on you", desk.needs.length, t.blocked),
+      v_flex().id(`chief-needs-${id}`).gap(8).children(desk.needs.map((need) => needRow(v, t, need, names, now, `${id}:`))));
+  }
+  out.push(section(t, "Dispatched", desk.work.length || null));
+  const sent = desk.work.flatMap((item) => [{ item, nested: false }, ...item.packages.map((pkg) => ({ item: pkg, nested: true }))]);
+  out.push(sent.length ? v_flex().id(`chief-sent-${id}`).gap(1).children(capped(v, t, `sent:${id}`, sent, 8, (row) => sentRow(v, t, id, row, now)))
+    : div().px(4).text_size(12).text_color(t.muted).child("Nothing dispatched yet."));
+  if (desk.recaps.length) {
+    out.push(section(t, "Recaps", desk.recaps.length),
+      v_flex().id(`chief-recaps-${id}`).gap(1).children(capped(v, t, `recaps:${id}`, desk.recaps, 3, (recap) => recapRow(v, t, id, recap, now))));
+  }
+  return out;
 }
 
 // A topic's chief desk; a topic without a chief gets one quiet line saying how to make one. When

@@ -156,7 +156,7 @@ test('the Job level sits under the breadcrumb, with its own tab action and no se
 
 test('a topic with a chief shows its desk first; one without says how to make one; factory rows show chief presence', skip, async (t) => {
   const topic = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr' } });
-  for (const id of ['chief-herdr', 'chief-needs-herdr', 'chief-sent-herdr', 'sent-wr-cross:x-api', 'sent-wr-pr', 'sent-wr-pr:wp-build', 'chief-recaps-herdr', 'recap-wr-cross'])
+  for (const id of ['chief-herdr', 'chief-needs-herdr', 'chief-sent-herdr', 'sent-herdr-wr-cross:x-api', 'sent-herdr-wr-pr', 'sent-herdr-wr-pr:wp-build', 'chief-recaps-herdr', 'recap-herdr-wr-cross', 'need-herdr:wr-cross:ask'])
     assert.ok(topic.has(id), id);
   assert.ok(topic.text('Herdr chief') && topic.text('Last seen build-desk › Terminal: Herdr chief 15m ago') && topic.text('Registered 3d ago · web'));
   assert.ok(topic.text('Executing · 1/4 landed') && topic.text('Building · 2h 00m') && topic.text('Shared tokens'));
@@ -164,7 +164,8 @@ test('a topic with a chief shows its desk first; one without says how to make on
   assert.equal(topic.has('open-chief-herdr') || topic.has('chief-none'), false, 'no Open without a passed check');
   const at = (id) => topic.out.indexOf(`:id[Str("${id}")]`);
   assert.ok(at('chief-herdr') < at('chief-sent-herdr') && at('chief-sent-herdr') < at('repo-web'), 'the desk comes before the work by repository');
-  assert.ok(at('sent-wr-cross:x-api') < at('sent-wr-pr'), 'newest first');
+  assert.ok(at('sent-herdr-wr-cross:x-api') < at('sent-herdr-wr-pr'), 'newest first');
+  assert.ok(at('need-herdr:wr-cross:ask') < at('sent-herdr-wr-cross:x-api'), 'rows draw, and take the keys, in reading order');
   const none = await render(t, { props: {}, width: 1400, path: { topic: 't-tools' } });
   assert.ok(none.has('chief-none') && none.text("No chief yet. Tell an agent it's the Personal Tools chief."));
   assert.equal(none.out.includes(':id[Str("chief-sent-'), false, 'nothing else changes for it');

@@ -214,7 +214,7 @@ export function agentRows(jobs, allJobs, bindings, terminalList, spaceIds, check
 
 // ---------- Chiefs ----------
 
-const words = (name) => String(name ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const words = (name) => String(name ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
 // One name's words lead or end the other's: Kraken and Nextide-Kraken, Personal and Personal Tools.
 function wordMatch(a, b) {
@@ -231,10 +231,10 @@ function wordMatch(a, b) {
 export function chiefsFor(topic, chiefs, desk, repoTopics) {
   if (topic?.kind !== "topic" || !chiefs?.length) return [];
   const name = (value) => words(value).join(" ");
-  const exact = chiefs.filter((c) => name(c.domain) === name(topic.name));
+  const exact = name(topic.name) ? chiefs.filter((c) => name(c.domain) === name(topic.name)) : [];
   if (exact.length) return exact;
   const claimed = new Set(desk.filter((t) => t.kind === "topic").map((t) => name(t.name)));
-  const free = chiefs.filter((c) => !claimed.has(name(c.domain)));
+  const free = chiefs.filter((c) => !name(c.domain) || !claimed.has(name(c.domain)));
   const named = free.filter((c) => wordMatch(words(c.domain), words(topic.name)));
   if (named.length) return named;
   return free.filter((c) => c.repos.some((repo) => topicsOfRepo(repo, desk, repoTopics).some((t) => t.id === topic.id)));
