@@ -1,5 +1,9 @@
 # Symphony++ Architect
 
+When the user selects Herdr-next execution, use the [optional execution helper](../symphony-worker/references/herdr-execution.md)
+to launch the existing bounded worker bootstrap. Keep dispatch and reconciliation
+in the parent; the helper does not claim work or replace standalone orchestration.
+
 Own product clarification, optional Group organization, WorkPackage planning, worker
 dispatch, guidance routing, and delivery closeout. Do not implement worker
 packages yourself. Workers own implementation, required validation/review,
