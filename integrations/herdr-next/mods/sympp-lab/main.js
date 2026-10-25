@@ -235,7 +235,9 @@ export default class Lab extends View {
       .overflow_hidden().cursor_pointer()
       .on_click((_e, cx) => this.select(pkg.id, cx))
       .accessibility_label(`${pkg.title}, ${M.ROOMS[pkg.room].label}`);
-    if (spot.shape === "crate") {
+    // A walking card keeps its old size, so show only what the package can show now.
+    const shape = spot.shape === "full" && !pkg.agent ? "slim" : spot.shape;
+    if (shape === "crate") {
       return el.rounded(5).border(1).border_color(on ? t.accent : tint(t.done, "80")).bg(tint(t.done, "26"))
         .flex().items_center().justify_center().tooltip(`${pkg.title} · shipped`)
         .child(svg(icon("check")).size(13).text_color(t.done));
@@ -244,13 +246,13 @@ export default class Lab extends View {
       .when(pkg.waitingFor !== null && !on, (c) => c.border_dashed())
       .when(on, (c) => c.shadow_md())
       .hover((s) => s.border_color(on ? t.accent : t.input))
-      .px(9).py(spot.shape === "full" ? 7 : 6).line_height("17px").flex().flex_col().gap(spot.shape === "full" ? 4 : 2);
+      .px(9).py(shape === "full" ? 7 : 6).line_height("17px").flex().flex_col().gap(shape === "full" ? 4 : 2);
     const top = h_flex().gap(7).items_center().min_w(0)
       .child(this.mark(t, pkg))
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().text_color(pkg.waitingFor ? t.muted : t.foreground).child(pkg.title))
       .child(div().flex_none().text_size(10.5).font_family(MONO).text_color(t.muted).child(M.duration(pkg.inRoom)));
-    if (spot.shape === "slim") {
-      const why = pkg.waitingFor ? `Waits for ${pkg.waitingFor.title}` : "Queued";
+    if (shape === "slim") {
+      const why = pkg.room === "shipped" ? "Shipped" : pkg.waitingFor ? `Waits for ${pkg.waitingFor.title}` : "Queued";
       return card.child(top).child(div().pl(15).truncate().text_size(11).text_color(t.muted).child(why));
     }
     return card.child(top)
