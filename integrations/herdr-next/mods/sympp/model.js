@@ -447,7 +447,8 @@ export function discoverBindings(hosts, terminalList) {
     const identityKey = kind === "session" ? "sympp.session_id" : "sympp.launch_id";
     const jobId = labels[`${prefix}work_request_id`] || null;
     const pkgId = labels[`${prefix}work_package_id`] || null;
-    if (!labels[identityKey] || (!jobId && (kind !== "session" || !pkgId))) return [];
+    const role = labels[`${prefix}role`] || "agent";
+    if (!labels[identityKey] || (!jobId && (kind !== "session" || (!pkgId && role !== "chief")))) return [];
     const address = terminal.address;
     if (typeof address !== "string" || !address) return [];
     const split = address.indexOf("/");
@@ -463,7 +464,7 @@ export function discoverBindings(hosts, terminalList) {
     const configured = typeof host?.node === "string" && Boolean(host.node) && typeof host?.helper === "string" && Boolean(host.helper);
     return [{
       kind, processId, jobId, pkgId,
-      role: labels[`${prefix}role`] || "agent", address, terminalId, machine,
+      role, address, terminalId, machine,
       provider: { codex: "Codex", claude: "Claude", opencode: "OpenCode" }[labels["sympp.provider"]] || "Agent",
       status: typeof terminal.status === "string" ? terminal.status : terminal.status?.state ?? null,
       launchId: labels[identityKey], coreId: labels[`${prefix}core_id`], pid, receipt,

@@ -221,7 +221,7 @@ test('a chief is Live only after a helper check of its own registered session, e
   const [herdr, live] = board().chiefs;
   const labels = {
     'sympp.session_id': 'chief-herdr', 'sympp.session_core_id': 'core-1', 'sympp.session_pid': '70', 'sympp.session_process_id': '71',
-    'sympp.session_receipt': String.raw`C:\private\chief.json`, 'sympp.session_role': 'coordinator', 'sympp.session_work_request_id': 'wr-pr',
+    'sympp.session_receipt': String.raw`C:\private\chief.json`, 'sympp.session_role': 'chief',
   };
   const terminal = { address: 't7', pid: 70, state: 'live', status: 'working', status_ms: NOW - 60e3, report: { msg: 'Slicing the board' }, labels };
   const other = { ...terminal, address: 't8', labels: { ...labels, 'sympp.session_core_id': 'core-2' } };
@@ -229,7 +229,7 @@ test('a chief is Live only after a helper check of its own registered session, e
   assert.deepEqual(M.chiefBindings(bindings, herdr).map((b) => b.address), ['t7'], 'the same session id on another core is not the chief');
   const seen = L.chiefAgent(herdr, bindings, [terminal], {}, NOW);
   assert.deepEqual([seen.state, seen.where, seen.at], ['seen', 'build-desk › Terminal: Herdr chief', NOW - 15 * 60e3], 'its labels alone never make it live');
-  assert.deepEqual([seen.role, seen.provider, seen.report.status, seen.report.msg], ['coordinator', null, 'working', 'Slicing the board']);
+  assert.deepEqual([seen.role, seen.provider, seen.report.status, seen.report.msg], ['chief', null, 'working', 'Slicing the board']);
   const checks = { t7: { ok: true, at: NOW - 1000, launchId: 'chief-herdr', pid: 70 } };
   const checked = L.chiefAgent(herdr, bindings, [terminal], checks, NOW);
   assert.equal(checked.state, 'live');

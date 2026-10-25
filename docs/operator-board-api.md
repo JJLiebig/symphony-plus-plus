@@ -17,6 +17,11 @@ a request or dispatches a package. Supersession does not rewrite this attributio
 or existing creator fields. Repository lists describe the chief's domain; they
 do not grant repository, claim or dispatch authority.
 
+Successful `register_chief` calls also return a `Sympp-Herdr-Binding` header
+with `{role: "chief", domain}`. The packaged bridge labels that session without
+requiring a request or package. The native chief desk matches the registration's
+client and core identity; Live and Open still require the trusted helper check.
+
 Both hydrated routes include `runtime: {offline: boolean}` from the running
 backend's sandbox mode. A Copy-and-View snapshot reports `true` even though its
 request/package ids match the live ledger. Native clients must disable agent
