@@ -58,8 +58,8 @@ pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-
 
 It installs the latest published beta backend and this checkout's native files,
 replacing the S++ mod while retaining personal layouts, topics and terminals.
-It opens no new tabs. An open mod uses the new files when reopened; close and
-reopen its S++ tab or pane after a view change. An unchanged backend stays running.
+It opens no new tabs. Herdr-app watches mod files and reloads changed views;
+reopen the S++ tab or pane if a view stays stale. An unchanged backend stays running.
 Coordinate restart timing with agents using the beta factory. The
 [beta reload procedure](../../docs/runtime.md#reload-an-existing-windows-beta-factory)
 describes isolation checks, contract changes, reconnects and failure recovery.

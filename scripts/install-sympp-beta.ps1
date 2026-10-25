@@ -39,9 +39,11 @@ function Assert-InHome([string]$Path, [string]$Root) {
 }
 
 function Write-InstallJson([string]$Path, $Value) {
+  $json = $Value | ConvertTo-Json -Depth 30
+  if ((Test-Path -LiteralPath $Path) -and (Get-Content -LiteralPath $Path -Raw) -ceq $json) { return }
   $temporary = "$Path.$PID.tmp"
   try {
-    [IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
     [IO.File]::Move($temporary, $Path, $true)
   } finally { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue }
 }
@@ -57,7 +59,9 @@ function Assert-FactoryReady($State, [string]$Revision, [string]$Contract) {
 }
 
 function Stop-InstallBackend($State) {
-  $backend = Get-Process -Id ([int]$State.backend.pid) -ErrorAction SilentlyContinue
+  $processId = 0
+  if (-not [int]::TryParse([string]$State.backend.pid, [ref]$processId) -or $processId -le 0) { return }
+  $backend = Get-Process -Id $processId -ErrorAction SilentlyContinue
   if (-not $backend) { return }
   Assert-InHome ([string]$State.artifact.root) $SymppHome
   if (-not $backend.Path.StartsWith(([IO.Path]::GetFullPath($State.artifact.root).TrimEnd('\') + '\'), [StringComparison]::OrdinalIgnoreCase) -or
@@ -70,8 +74,10 @@ function Stop-InstallBackend($State) {
 
 function Start-InstallBackend {
   $powershell = if ($env:SYMPP_POWERSHELL) { $env:SYMPP_POWERSHELL } else { 'pwsh' }
-  & $powershell -NoProfile -NonInteractive -File $launcher -PrepareRuntimeOnly
-  if ($LASTEXITCODE -ne 0) { throw "Beta startup failed (exit $LASTEXITCODE)." }
+  New-Item -ItemType Directory -Force -Path $env:SYMPP_LOG_DIR | Out-Null
+  $startupLog = Join-Path $env:SYMPP_LOG_DIR ('beta-install-' + [guid]::NewGuid().ToString('N') + '.log')
+  & $powershell -NoProfile -NonInteractive -File $launcher -PrepareRuntimeOnly *> $startupLog
+  if ($LASTEXITCODE -ne 0) { throw "Beta startup failed (exit $LASTEXITCODE). See $startupLog" }
 }
 
 $SymppHome = Assert-InstallPath $SymppHome
@@ -152,13 +158,14 @@ try {
   if ($revision -notmatch '^[0-9a-f]{40}$') { throw 'The beta artifact has no valid source revision.' }
   $nativeInstaller = Join-Path $repoRoot 'integrations/herdr-next/install.mjs'
   # Finish native-file preflight before interrupting connected clients.
-  & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home (Join-Path $stage 'herdr')
+  & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home (Join-Path $stage 'herdr') | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'The native view could not be prepared.' }
   $restart = $original.backend.source_revision -ne $revision -or $original.artifact.sha256 -ne $candidate.runtime.sha256
   if (-not $restart) {
     Assert-FactoryReady $original $revision $install.contract_fingerprint
-    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace
+    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The native view could not be installed; the beta backend is unchanged.' }
+    Write-InstallJson $pinFile $manifest
     Write-Host "Beta is current ($revision); backend unchanged."
     return
   }
@@ -190,7 +197,7 @@ try {
     Start-InstallBackend
     $updated = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
     Assert-FactoryReady $updated $revision $install.contract_fingerprint
-    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace
+    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The native view could not be installed.' }
   } catch {
     $failure = $_

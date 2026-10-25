@@ -24,11 +24,15 @@ function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $Cand
   $arguments = @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME, '-HerdrAppHome', $nativeHome, '-ArtifactManifest', $channelFile)
   $first = Read-IsolatedCommand $pwsh $arguments $Environment
   if ($first.exit -ne 0 -or $first.stdout -notmatch 'backend unchanged') { throw "Beta no-op failed: $($first.stdout) $($first.stderr)" }
+  $pinFile = Join-Path $state.plugin_root '.sympp-runtime-artifacts.json'
+  if (-not (Test-Path -LiteralPath $pinFile)) { throw 'An unchanged factory did not pin the selected publication.' }
+  $pinStamp = (Get-Item -LiteralPath $pinFile).LastWriteTimeUtc.Ticks
   $nativeFile = Join-Path $nativeHome 'mods/sympp/main.js'
   $stamp = (Get-Item -LiteralPath $nativeFile).LastWriteTimeUtc.Ticks
   $again = Read-IsolatedCommand $pwsh $arguments $Environment
   $state = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
-  if ($again.exit -ne 0 -or $state.backend.pid -ne $oldPid -or (Get-Item -LiteralPath $nativeFile).LastWriteTimeUtc.Ticks -ne $stamp) {
+  if ($again.exit -ne 0 -or $state.backend.pid -ne $oldPid -or (Get-Item -LiteralPath $nativeFile).LastWriteTimeUtc.Ticks -ne $stamp -or
+      (Get-Item -LiteralPath $pinFile).LastWriteTimeUtc.Ticks -ne $pinStamp) {
     throw 'Repeated beta installation restarted the backend or rewrote unchanged native files.'
   }
   foreach ($unsafeHome in @((Join-Path $tempRoot 'normal-home'), (Join-Path $tempRoot 'plugins/cache/beta'))) {
@@ -36,10 +40,20 @@ function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $Cand
     $refused = Read-IsolatedCommand $pwsh $refusedArgs $Environment
     if ($refused.exit -eq 0 -or (Test-Path -LiteralPath $unsafeHome)) { throw 'Unsafe beta home was not refused before mutation.' }
   }
-  $lockFile = Join-Path $tempRoot 'skills-lock.json'
+  $lockFile = $null
+  for ($directory = [string]$state.plugin_root; $directory; $directory = Split-Path -Parent $directory) {
+    $path = Join-Path $directory 'skills-lock.json'
+    if ((Test-Path -LiteralPath $path) -and (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).skills.'symphony-plus-plus') {
+      $lockFile = $path
+      break
+    }
+  }
+  if (-not $lockFile) { throw 'The disposable Skills installation has no owning lock.' }
   $lockText = Get-Content -LiteralPath $lockFile -Raw
   try {
-    $lockText.Replace('"beta"', '"main"') | Set-Content -LiteralPath $lockFile
+    $mainLock = $lockText | ConvertFrom-Json
+    $mainLock.skills.'symphony-plus-plus' = [pscustomobject]@{ source = 'JJLiebig/symphony-plus-plus'; sourceType = 'github'; ref = 'main' }
+    $mainLock | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $lockFile
     $stable = Read-IsolatedCommand $pwsh $arguments $Environment
     if ($stable.exit -eq 0 -or $stable.stderr -notmatch 'beta Skills installation') { throw 'A main Skills factory was accepted.' }
   } finally { [IO.File]::WriteAllText($lockFile, $lockText) }
@@ -85,7 +99,22 @@ function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $Cand
   $restored = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
   if ($restored.artifact.sha256 -ne $goodSha) { throw 'Rollback did not retain the last serving artifact.' }
   [void](Send-BridgeRequest $Bridge @{ jsonrpc = '2.0'; id = 81; method = 'tools/list'; params = @{} })
+  # Process creation can fail before the launcher publishes any backend PID.
+  $zip = [IO.Compression.ZipFile]::Open($archive, [IO.Compression.ZipArchiveMode]::Update)
+  try {
+    $entry = $zip.CreateEntry('broken.exe')
+    $writer = [IO.StreamWriter]::new($entry.Open())
+    try { $writer.Write('This is not a Windows executable.') } finally { $writer.Dispose() }
+  } finally { $zip.Dispose() }
+  $pin.artifacts[0].entrypoint = 'broken.exe'
+  $pin.artifacts[0].sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+  $pin | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $channelFile
+  $startupFailed = Read-IsolatedCommand $pwsh $arguments $Environment
+  if ($startupFailed.exit -eq 0 -or $startupFailed.stderr -notmatch 'previous runtime is serving again') { throw 'Process-creation failure did not restore the previous runtime.' }
+  $restored = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
+  if ($restored.artifact.sha256 -ne $goodSha) { throw 'Startup failure restored the wrong artifact.' }
+  [void](Send-BridgeRequest $Bridge @{ jsonrpc = '2.0'; id = 83; method = 'tools/list'; params = @{} })
   $script:backendProcessId = [int]$restored.backend.pid
   $script:backendStartTicks = (Get-Process -Id $script:backendProcessId).StartTime.ToUniversalTime().Ticks
-  Write-Host 'Beta install qualified: no-op, native preservation, production/contract refusal, restart, connected bridge recovery and rollback.'
+  Write-Host 'Beta install qualified: no-op, native preservation, production/contract refusal, restart, connected bridge recovery, native-failure rollback and process-creation rollback.'
 }

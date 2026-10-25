@@ -15,6 +15,8 @@ branch artifact. Healthy clients share their existing runtime until they close;
 there is no hot replacement. Artifact checksums, MCP contract compatibility and
 actual source SHA remain verified. Publication can lag source head; read the
 running SHA and manifest before relying on a newly merged feature.
+For a coordinated restart of an existing Windows beta Skills factory, use the
+[beta reload command](#reload-an-existing-windows-beta-factory) below.
 
 Keep beta's home, runtime file, port and ledger separate from the original factory.
 Use an empty ledger for real dogfood work. A copied live ledger is inspection-only:
