@@ -140,16 +140,21 @@ export function topicWork(topic, jobs, place) {
     const repos = topic.id === NOWHERE ? (place.home(job) === NOWHERE ? [job.repos[0] ?? ""] : []) : place.reposIn(job, topic.id);
     if (!repos.length) continue;
     const first = group(keyOf(repos[0]), shortRepo(repos[0]) || "No repository");
+    // Settled and dormant work is counted once, at home, and referenced nowhere.
+    const away = job.lane === "settled" || job.lane === "dormant";
     if (place.home(job) !== topic.id) {
-      first.refs.push({ job, from: place.home(job), via: null });
+      if (!away) first.refs.push({ job, at: first.key, from: place.home(job), via: null });
+      continue;
+    }
+    if (away) {
+      first.away += 1;
       continue;
     }
     if (job.lane === "backlog") first.planned.push(job);
-    else if (job.lane === "settled" || job.lane === "dormant") first.away += 1;
     else first.jobs.push(job);
     for (const repo of repos.slice(1)) {
       const other = group(keyOf(repo), shortRepo(repo));
-      if (other !== first) other.refs.push({ job, from: null, via: first.label });
+      if (other !== first && !other.refs.some((ref) => ref.job === job)) other.refs.push({ job, at: other.key, from: null, via: first.label });
     }
   }
   for (const g of groups.values()) {
@@ -273,7 +278,7 @@ export function followPath(target, jobs, desk, place) {
   }
   if (!found) return null;
   const work = spaceWork(found.space, jobs);
-  if (work.jobs.length > 0 || found.topic.kind !== "topic") return { topic: found.topic.id, space: found.space.id, job: null };
+  if (work.jobs.length > 0 || work.planned.length > 0 || found.topic.kind !== "topic") return { topic: found.topic.id, space: found.space.id, job: null };
   return { topic: found.topic.id, space: null, job: null };
 }
 
@@ -283,9 +288,15 @@ export function followPath(target, jobs, desk, place) {
 // an offline copy never announces anything.
 export function newNeeds(previous, board) {
   const needs = board.jobs.flatMap((job) => job.needs.map((need) => ({ ...need, job })));
-  const seen = new Set(needs.map((need) => need.key));
+  const seen = new Set(needs.map(occurrence));
   if (previous === null || board.offline === true) return { seen, fresh: [] };
-  return { seen, fresh: needs.filter((need) => !previous.has(need.key)) };
+  return { seen, fresh: needs.filter((need) => !previous.has(occurrence(need))) };
+}
+
+// An escalation raised again is a new occurrence under the same key; other needs keep their key
+// while their activity times move, so those times never make them new.
+function occurrence(need) {
+  return need.kind === "ask" && need.raisedAt ? `${need.key}@${need.raisedAt}` : need.key;
 }
 
 // One toast per need: the same need raised again later is a new item.

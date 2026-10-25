@@ -74,6 +74,15 @@ test('a topic groups work by repository; other topics\' jobs are references and 
   assert.deepEqual(tools.map((g) => [g.key, ids(g.jobs), g.refs.map((r) => r.via)]), [['api', ['wr-cross'], []]],
     'its home draws it once; its web package lives in another topic');
   assert.deepEqual(L.topicWork(byId(desk, 't-live'), jobs, place), []);
+
+  const settled = jobs.map((job) => (job.id === 'wr-cross' ? { ...job, lane: 'settled', state: 'settled' } : job));
+  assert.deepEqual(L.topicWork(byId(desk, 't-herdr'), settled, place)[0].refs, [], 'settled work is not referenced elsewhere');
+  assert.equal(L.topicWork(byId(desk, 't-tools'), settled, place)[0].away, 1, 'it is counted once, at home');
+
+  const wide = { ...byId(jobs, 'wr-pr'), id: 'wide', repos: ['owner/web', 'owner/docs', 'owner/site'] };
+  const many = [{ id: 'g', name: 'G', kind: 'topic', spaces: ['web', 'docs', 'site'].map((name) => ({ id: name, folder: `/code/${name}` })) }];
+  const refs = L.topicWork(many[0], [wide], L.placeJobs([wide], many)).flatMap((g) => g.refs);
+  assert.deepEqual(refs.map((r) => [r.at, r.via]), [['docs', 'web'], ['site', 'web']], 'each repository holds its own reference');
 });
 
 test('a space shows the jobs touching its repository with their other repositories, and empty spaces stay ordinary', () => {
@@ -126,6 +135,9 @@ test('the panel follows a job\'s terminal or tab, else the space while it has wo
   const quiet = jobs.filter((job) => !job.repos.includes('owner/web'));
   assert.deepEqual(L.followPath(L.focusTarget(focus({ pane: 'p2', terminal: 't2' }), terms, {}, panes), quiet, desk, L.placeJobs(quiet, desk)),
     { topic: 't-herdr', space: null, job: null }, 'a quiet space in a topic shows its topic');
+  const plannedOnly = jobs.filter((job) => job.id === 'wr-shaping');
+  assert.deepEqual(L.followPath(L.focusTarget(focus({ pane: 'p2', terminal: 't2' }), terms, {}, panes), plannedOnly, desk, L.placeJobs(plannedOnly, desk)),
+    { topic: 't-herdr', space: 's-web', job: null }, 'planned work keeps the space');
   assert.equal(L.focusTarget(null, terms, {}, panes), null);
 });
 
@@ -141,6 +153,15 @@ test('a toast is due only for a need that appeared between two successful reads,
   assert.deepEqual(fresh.map((n) => [n.key, n.job.id]), [['guidance:g-new', 'wr-nopr']]);
   assert.deepEqual(L.newNeeds(start.seen, { ...next, offline: true }).fresh, [], 'an offline copy never announces');
   assert.notEqual(L.toastId(fresh[0]), L.toastId({ ...fresh[0], since: NOW + 1 }), 'a need raised again later is a new item');
+
+  const later = (minutes) => new Date(NOW + minutes * 60e3).toISOString();
+  const reraised = boardPayload();
+  reraised.work_request_details.find((d) => d.work_request.id === 'wr-cross').work_request.operator_report.human_escalation.raised_at = later(1);
+  assert.deepEqual(L.newNeeds(start.seen, M.parseBoard(reraised)).fresh.map((n) => n.key), ['wr-cross:ask'], 'an escalation raised again between reads is new');
+  const moved = boardPayload();
+  const review = moved.work_request_details[0].work_packages.find((pkg) => pkg.id === 'wp-review');
+  review.activity_signal = { ...review.activity_signal, last_update_at: later(1) };
+  assert.deepEqual(L.newNeeds(start.seen, M.parseBoard(moved)).fresh, [], 'a need whose activity moved is not new');
 });
 
 test('the breadcrumb runs Factory > Topic > Space > Job, Esc goes up one level and gone places fall back', () => {

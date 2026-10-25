@@ -147,7 +147,7 @@ function jobRow(v, t, job, now, note = null) {
 function refRow(v, t, ref, names, now) {
   const { job } = ref;
   const note = ref.via ? `via ${ref.via}` : `from ${names.get(ref.from) ?? "another topic"}`;
-  return reachable(v, t, h_flex().id(`ref-${job.id}`).flex_none().px(12).py(6).gap(10).items_center(), `ref:${ref.via ?? ref.from}:${job.id}`,
+  return reachable(v, t, h_flex().id(`ref-${ref.at || "other"}-${job.id}`).flex_none().px(12).py(6).gap(10).items_center(), `ref:${ref.at}:${job.id}`,
     (cx) => v.openJob(job, {}, cx), `${job.title}, ${note}`)
     .child(mark(t, job.verdict))
     .child(div().min_w(0).flex_shrink(1).truncate().text_size(12.5).text_color(t.foreground).child(job.title))

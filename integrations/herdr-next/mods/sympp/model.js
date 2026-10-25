@@ -141,7 +141,7 @@ function buildJob(detail, now, guidance, runs) {
   const escalation = request.operator_report?.human_escalation;
   const ask = escalation?.question && !escalation.resolved_at ? { text: escalation.question, since: ms(escalation.raised_at) ?? now } : null;
   const needs = [
-    ...(ask ? [{ key: `${request.id}:ask`, kind: "ask", label: "Architect asks", text: ask.text, since: ask.since, jobId: request.id, pkgId: null }] : []),
+    ...(ask ? [{ key: `${request.id}:ask`, kind: "ask", label: "Architect asks", text: ask.text, since: ask.since, raisedAt: ms(escalation.raised_at), jobId: request.id, pkgId: null }] : []),
     ...guidanceQuestions,
     ...packages.filter((pkg) => pkg.stage !== "done" && pkg.activity.nextActor === "human" && !guidanceQuestions.some((q) => q.pkgId === pkg.id)).map((pkg) => ({
       key: `${request.id}:${pkg.id}:guidance`,

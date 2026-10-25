@@ -134,7 +134,7 @@ test('the factory ranks what needs you and gives one row per Herdr topic', skip,
 
 test('a topic shows its work by repository, references and agents; a space says when it has no S++ work', skip, async (t) => {
   const topic = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr' } });
-  for (const id of ['crumb-factory', 'crumb-topic', 'topic-main', 'repo-web', 'space-s-web', 'job-wr-pr', 'ref-wr-cross', 'planned-t-herdr:web', 'level-agents'])
+  for (const id of ['crumb-factory', 'crumb-topic', 'topic-main', 'repo-web', 'space-s-web', 'job-wr-pr', 'ref-web-wr-cross', 'planned-t-herdr:web', 'level-agents'])
     assert.ok(topic.has(id), id);
   assert.ok(topic.text('from Personal Tools') && topic.text('1 planned'));
   assert.equal(topic.has('job-wr-shaping'), false, 'planned jobs fold into the count');
