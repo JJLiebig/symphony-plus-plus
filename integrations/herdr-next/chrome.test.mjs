@@ -109,7 +109,7 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
   const tabs = await readFile(join(home, 'mods', 'desk-tabs', 'main.js'), 'utf8');
   assert.match(tabs, /shared\("workspace\.panel_buttons"\)/);
   assert.doesNotMatch(tabs.replaceAll('\r\n', ''), /\n/, 'keeps the mod\'s CRLF line endings');
-  assert.match(await readFile(join(home, 'mods', 'desk-agents', 'main.js'), 'utf8'), /symppBadge\(t, k, Date\.now\(\)\)/);
+  assert.match(await readFile(join(home, 'mods', 'desk-agents', 'main.js'), 'utf8'), /symppStage\(k\.address, Date\.now\(\)\)/);
   for (const patch of [deskTabs, deskAgents]) {
     assert.equal(await readFile(join(home, 'data', 'sympp-chrome', `${patch.mod}.main.js`), 'utf8'),
       original[join(home, 'mods', patch.mod, 'main.js')].toString());
@@ -178,6 +178,20 @@ test('an edit made after installing keeps both installing and removing from over
     const result = install(home, ...args);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout, /desk-tabs was edited after the S\+\+ chrome was installed/);
+    assert.deepEqual(await snapshot(home), before);
+  }
+});
+
+test('another installed chrome version is neither patched again nor removed', async t => {
+  const home = await deskHome(t);
+  assert.equal(install(home, ...ENDPOINT, '--chrome').status, 0);
+  const file = join(home, 'mods', 'desk-agents', 'main.js');
+  await writeFile(file, (await readFile(file, 'utf8')).replaceAll(deskAgents.mark, 'S++ chrome 0'));
+  const before = await snapshot(home);
+  for (const args of [[...ENDPOINT, '--chrome'], ['--remove-chrome']]) {
+    const result = install(home, ...args);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /desk-agents has another version of the S\+\+ chrome/);
     assert.deepEqual(await snapshot(home), before);
   }
 });

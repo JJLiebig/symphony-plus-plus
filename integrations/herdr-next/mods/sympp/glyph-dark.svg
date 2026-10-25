@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 16 16">
+  <!-- glyph.svg in lighter tones for dark themes. -->
+  <mask id="m">
+    <rect x="-2" y="-2" width="20" height="20" fill="#fff"/>
+    <rect x="-15.43" y="-2.29" width="20.57" height="20.57" rx="4.57" fill="#000"/>
+  </mask>
+  <g fill="none" stroke-width="2.7" stroke-linecap="round" mask="url(#m)">
+    <path d="M12.9 3.6C12 2.3 10.4 1.6 8.4 1.6C5.8 1.6 4 3 4 5C4 7 5.9 7.6 8.4 8" stroke="#62B6FF"/>
+    <path d="M8.4 8C10.9 8.4 12.9 9 12.9 11C12.9 13 11.1 14.4 8.4 14.4C6.4 14.4 4.8 13.7 3.9 12.4" stroke="#9479FF"/>
+  </g>
+</svg>

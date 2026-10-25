@@ -2,6 +2,7 @@
 // mods register in shared("workspace.panel_buttons"), S++'s own included, beside Files and Changes,
 // with the same toggle. Each edit's `find` must occur exactly once in the mod; `replace` takes its place.
 export default {
+  mark: 'S++ chrome 1',
   mod: 'desk-tabs',
   edits: [
     {

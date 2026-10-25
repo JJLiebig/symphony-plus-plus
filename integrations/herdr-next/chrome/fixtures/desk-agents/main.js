@@ -292,14 +292,15 @@ export default class Agents extends View {
         return h_flex()
           .id(`ag-${a.address}`)
           .h(26)
+          .px(8)
           .flex_none()
-          .justify_center()
+          .items_center()
           .gap(4)
           .hover((s) => s.bg(t.hover))
           .on_click(() => run("pane.focus", { pane: a.pane }))
           .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.contextMenu(a.address, a.pane); })
-          .child(div().text_color(t.muted).child(String(i + 1)))
-          .child(this.status(t, a));
+          .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
+          .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
       }
       const when = this.since(a);
       const idle = a.status === "idle" && !a.focused;
@@ -430,7 +431,7 @@ export default class Agents extends View {
       .when(list.length === 0 && !collapsed && !folded, (el) =>
         el.child(div().pl(40).pr(16).text_size(12).text_color(t.dim).child("No agents yet. Start one from + in the tabs.")),
       )
-      .when(!folded, (el) => el.child(v_flex().id("ag-list").flex_1().min_h(0).px(8).overflow_y_scrollbar().mode("always").children(rows)))
+      .when(!folded, (el) => el.child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows)))
       .when(!folded, (el) => el.child(
         h_flex()
           .h(28)

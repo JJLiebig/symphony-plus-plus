@@ -6,7 +6,8 @@ import deskTabs from './chrome/desk-tabs.patch.mjs';
 import deskAgents from './chrome/desk-agents.patch.mjs';
 
 const PATCHES = [deskTabs, deskAgents];
-const MARK = 'S++ chrome 1';
+// Every chrome version marks what it adds; each patch names its own version.
+const MARK = 'S++ chrome';
 const PANEL = 'sympp';
 const DESK = { 'desk-tabs': 'tabs', 'desk-agents': 'agents' };
 
@@ -76,7 +77,8 @@ export async function planInstall(home, props) {
     if (current === null) { missing.push(`mods/${patch.mod}/main.js is missing`); continue; }
     if (current.includes(MARK)) {
       const original = await contents(backup);
-      if (original === null || applyPatch(original, patch) !== current) missing.push(`${patch.mod} was edited after the S++ chrome was installed`);
+      if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
+      else if (original === null || applyPatch(original, patch) !== current) missing.push(`${patch.mod} was edited after the S++ chrome was installed`);
       continue;
     }
     const body = applyPatch(current, patch);
@@ -112,7 +114,8 @@ export async function planRemoval(home) {
     const current = await contents(file);
     if (!current?.includes(MARK)) continue;
     const original = await contents(backup);
-    if (original === null || applyPatch(original, patch) !== current) missing.push(`${patch.mod} was edited after the S++ chrome was installed; its original is ${backup}`);
+    if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
+    else if (original === null || applyPatch(original, patch) !== current) missing.push(`${patch.mod} was edited after the S++ chrome was installed; its original is ${backup}`);
     else writes.push({ to: file, body: original });
   }
   if (missing.length) return { missing };
