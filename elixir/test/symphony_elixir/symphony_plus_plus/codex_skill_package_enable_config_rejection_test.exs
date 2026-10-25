@@ -1,7 +1,8 @@
 Code.require_file("codex_skill_package_case_test.exs", __DIR__)
 
 defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageEnableConfigRejectionTest do
-  use SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase, async: true
+  # Both full diagnostics share one test budget; avoid competing PowerShell processes.
+  use SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase, async: false
 
   @moduletag :ci_slow
 
