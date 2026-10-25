@@ -259,7 +259,7 @@ try {
   if ($rollback.runtime.source_revision -ne $original.backend.source_revision) { throw 'The previous beta artifact is unavailable for rollback.' }
   if ($backendRunning) { Assert-FactoryReady $original $original.backend.source_revision $originalContract }
   if (-not $backendRunning) {
-    Write-Host 'Starting the stopped beta factory to verify installation. It stops after idle cleanup; the next MCP client starts it again.'
+    Write-Host 'Starting the stopped beta factory to verify installation. It remains ready for the next MCP client.'
     if ($bundleChanged) { Write-Host 'Updating beta Skills. Open fresh sessions for every MCP client afterward.' }
   }
   elseif ($bundleChanged) { Write-Host 'Restarting beta and updating its Skills bundle. Open fresh sessions for every MCP client afterward. Check an interrupted write before retrying it.' }

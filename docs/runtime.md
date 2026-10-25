@@ -115,11 +115,11 @@ are not replaced while the backend is running; identical native files are not
 rewritten.
 When the recorded backend has stopped, installation skips its readiness check and
 stop step, then starts and verifies the selected runtime on the same endpoint and
-ledger. This catches startup failures during installation. Without a connected
-MCP client, normal idle cleanup stops it; the next client starts it again.
+ledger. This catches startup failures during installation and leaves it ready for
+the next MCP client. Normal idle shutdown follows that client's detach.
 The old Skills directory is backed up during cutover. A failed restart or native
-installation restores that
-directory and restarts the retained previous artifact with its original contract.
+installation restores that directory and restarts the retained previous artifact
+with its original contract.
 Ledger contents are never restored or copied; startup performs only the backend's
 normal additive updates.
 The selected runtime stays pinned in this beta Skills installation until the

@@ -219,15 +219,13 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $Published | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
   $prepared = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
   if ($prepared.exit -ne 0) { throw "Could not prepare the stopped factory: $($prepared.stderr)" }
-  $stopped = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
-  Wait-ManagedRuntimeStopped ([int]$stopped.backend.pid) ([uri]$stopped.backend.url).Port
+  $stopped = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId
+  Wait-ManagedRuntimeStopped $stopped.backend_pid $stopped.backend_port
   $publication | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
-  if ($oldInstall.contract_fingerprint -ne $publication.launcher_contract.mcp_contract_fingerprint) {
-    $mismatch = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
-    if ($mismatch.exit -eq 0 -or $mismatch.stderr -notmatch 'Skills bundle and runtime channel have different MCP contracts' -or
-        $mismatch.stderr -notmatch 'install-sympp-beta.ps1' -or $mismatch.stderr -notmatch 'npx skills update') {
-      throw "Contract mismatch did not explain how to update the bundle: $($mismatch.stderr)"
-    }
+  $mismatch = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
+  if ($mismatch.exit -eq 0 -or $mismatch.stderr -notmatch 'Skills bundle and runtime channel have different MCP contracts' -or
+      $mismatch.stderr -notmatch 'install-sympp-beta.ps1' -or $mismatch.stderr -notmatch 'npx skills update') {
+    throw "Contract mismatch did not explain how to update the bundle: $($mismatch.stderr)"
   }
   $installed = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME,
     '-HerdrAppHome', $nativeHome, '-ArtifactManifest', $channelFile) $Environment
@@ -247,7 +245,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
       (Get-Item -LiteralPath $markerFile).LastWriteTimeUtc.Ticks -ne $markerStamp) {
     throw "An unchanged stopped factory could not be verified without replacing Skills: $($again.stdout) $($again.stderr)"
   }
-  $verified = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
-  Wait-ManagedRuntimeStopped ([int]$verified.backend.pid) ([uri]$verified.backend.url).Port
+  $verified = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId
+  Wait-ManagedRuntimeStopped $verified.backend_pid $verified.backend_port
   Write-Host 'Beta bundle qualified: running and stopped contract upgrades, actionable mismatch refusal, full bundle rollback, drift replacement, fresh-client ledger continuity and idempotent repeats.'
 }
