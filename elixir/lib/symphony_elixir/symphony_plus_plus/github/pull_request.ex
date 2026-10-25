@@ -108,8 +108,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest do
 
   def metadata(_metadata, _ref, _fallback_head_sha), do: {:error, :missing_pr_metadata}
 
-  @spec provider_snapshot(map(), ref(), String.t()) :: {:ok, map()} | {:error, term()}
-  def provider_snapshot(metadata, ref, expected_head_sha) when is_map(metadata) and is_map(ref) and is_binary(expected_head_sha) do
+  @spec provider_snapshot(map(), ref(), String.t() | nil) :: {:ok, map()} | {:error, term()}
+  def provider_snapshot(metadata, ref, expected_head_sha)
+      when is_map(metadata) and is_map(ref) and (is_binary(expected_head_sha) or is_nil(expected_head_sha)) do
     with :ok <- provider_snapshot_complete(metadata),
          {:ok, payload} <- metadata(metadata, ref, nil),
          :ok <- provider_changed_files_complete(metadata, payload),
@@ -132,6 +133,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest do
   end
 
   def provider_snapshot(_metadata, _ref, _expected_head_sha), do: {:error, :provider_malformed}
+
+  @spec validate_merge_evidence(map()) :: :ok | {:error, atom()}
+  def validate_merge_evidence(payload) do
+    with merged_at when is_binary(merged_at) <- clean_string(payload["merged_at"]),
+         {:ok, _datetime, _offset} <- DateTime.from_iso8601(merged_at),
+         merge_commit_sha when is_binary(merge_commit_sha) <- clean_string(payload["merge_commit_sha"]) do
+      :ok
+    else
+      nil -> {:error, :missing_strong_pr_evidence}
+      _invalid -> {:error, :invalid_strong_pr_evidence}
+    end
+  end
 
   @spec imported_snapshot(map(), ref(), String.t()) :: {:ok, map()} | {:error, term()}
   def imported_snapshot(metadata, ref, expected_head_sha) when is_map(metadata) and is_map(ref) and is_binary(expected_head_sha) do
@@ -169,6 +182,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest do
   end
 
   def head_sha_matches?(_left, _right), do: false
+
+  defp provider_head_matches(_actual, nil), do: :ok
 
   defp provider_head_matches(actual, expected) do
     if head_sha_matches?(actual, expected), do: :ok, else: {:error, {:provider_head_mismatch, expected, actual}}

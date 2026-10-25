@@ -77,6 +77,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     kind in StateMachine.dispatchable_kinds()
   end
 
+  defp merge_ready_candidate?(%WorkPackage{work_request_id: request_id, status: status, kind: kind}) when is_binary(request_id) do
+    status in ["ready_for_worker", "active", "claimed", "planning", "implementing", "reviewing", "ci_waiting", "blocked"] and
+      kind in StateMachine.dispatchable_kinds()
+  end
+
   defp merge_ready_candidate?(%WorkPackage{}), do: false
 
   defp terminal_candidate?(%WorkPackage{status: "merged", kind: kind}), do: kind in StateMachine.dispatchable_kinds()
@@ -88,7 +93,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
          {:ok, payload} <- PullRequest.metadata(metadata, pr_context.ref, nil) do
       payload = Map.put(payload, "source_tool", "sync_pr")
 
-      case merged_payload_validation(work_package, pr_context, payload) do
+      case merged_payload_validation(work_package, payload) do
         :ok -> reconcile_verified_terminal_merge(repo, work_package, progress_events, payload, metadata)
         {:error, reason, extras} -> {:ok, skipped_result(work_package, payload, reason, extras)}
       end
@@ -98,7 +103,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   end
 
   defp reconcile_verified_terminal_merge(repo, %WorkPackage{status: "merged"} = work_package, progress_events, payload, metadata) do
-    with :ok <- validate_strong_merge_evidence(payload),
+    with :ok <- PullRequest.validate_merge_evidence(payload),
          :ok <- existing_merge_evidence(progress_events, work_package, payload) do
       result =
         work_package
@@ -122,7 +127,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   end
 
   defp reconcile_verified_terminal_merge(repo, %WorkPackage{} = work_package, progress_events, payload, metadata) do
-    case validate_strong_merge_evidence(payload) do
+    case PullRequest.validate_merge_evidence(payload) do
       :ok ->
         result =
           after_sync_write(repo, work_package, payload, progress_events, fn ->
@@ -215,17 +220,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
       payload = Map.put(payload, "source_tool", "sync_pr")
 
       after_sync_write(repo, work_package, payload, progress_events, fn ->
-        maybe_transition_merged(repo, work_package, pr_context, payload, metadata)
+        maybe_transition_merged(repo, work_package, payload, metadata)
       end)
     else
       {:error, reason} -> error_result(work_package, pr_ref_payload(pr_context.ref), reason)
     end
   end
 
-  defp maybe_transition_merged(repo, %WorkPackage{} = work_package, pr_context, payload, metadata) do
-    case merged_payload_validation(work_package, pr_context, payload) do
+  defp maybe_transition_merged(repo, %WorkPackage{} = work_package, payload, metadata) do
+    case merged_payload_validation(work_package, payload) do
       :ok ->
-        transition_merged(repo, work_package, payload, metadata)
+        {:ok, result} = reconcile_transition_delivery(repo, work_package, transition_merged(repo, work_package, payload, metadata))
+        result
 
       {:error, "pr_not_merged", _extras} ->
         synced_result(work_package, payload, "pr_not_merged")
@@ -235,7 +241,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     end
   end
 
-  defp merged_payload_validation(%WorkPackage{} = work_package, pr_context, payload) do
+  defp merged_payload_validation(%WorkPackage{} = work_package, payload) do
     cond do
       not PullRequestProgress.merged?(payload) ->
         {:error, "pr_not_merged", []}
@@ -252,30 +258,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
       not base_branch_matches?(work_package, payload) ->
         {:error, "base_branch_mismatch", expected_base_branch: work_package.base_branch, actual_base_branch: payload["base_branch"]}
 
-      is_nil(pr_context.expected_head_sha) ->
-        {:error, "missing_head_evidence", []}
-
-      not PullRequest.head_sha_matches?(payload["head_sha"], pr_context.expected_head_sha) ->
-        {:error, "head_mismatch", expected_head_sha: pr_context.expected_head_sha, actual_head_sha: payload["head_sha"]}
-
       true ->
-        :ok
-    end
-  end
-
-  defp validate_strong_merge_evidence(payload) do
-    with merged_at when is_binary(merged_at) <- clean_string(payload["merged_at"]),
-         {:ok, _datetime, _offset} <- DateTime.from_iso8601(merged_at),
-         merge_commit_sha when is_binary(merge_commit_sha) <- clean_string(payload["merge_commit_sha"]) do
-      :ok
-    else
-      nil -> {:error, :missing_strong_pr_evidence}
-      _invalid -> {:error, :invalid_strong_pr_evidence}
+        case PullRequest.validate_merge_evidence(payload) do
+          :ok -> :ok
+          {:error, reason} -> {:error, error_reason(reason), []}
+        end
     end
   end
 
   defp transition_merged(repo, %WorkPackage{} = work_package, payload, metadata) do
-    with :ok <- StateMachine.validate_transition(work_package, "merged", @operator_actor),
+    with :ok <- validate_merge_transition(work_package),
          {:ok, updated} <- transition_merged_transaction(repo, work_package, payload, metadata) do
       work_package
       |> base_result(payload)
@@ -292,6 +284,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
       {:error, reason} -> error_result(work_package, payload, reason)
     end
   end
+
+  defp validate_merge_transition(%WorkPackage{work_request_id: request_id}) when is_binary(request_id), do: :ok
+  defp validate_merge_transition(work_package), do: StateMachine.validate_transition(work_package, "merged", @operator_actor)
 
   defp transition_merged_transaction(repo, %WorkPackage{} = work_package, payload, metadata) do
     repo
@@ -313,9 +308,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
   defp normalize_transaction_result({:error, reason}), do: {:error, reason}
 
   defp persist_merged_transition(repo, %WorkPackage{} = work_package, payload, metadata) do
-    with {:ok, updated} <- WorkPackageRepository.update_status(repo, work_package.id, work_package.status, "merged"),
-         {:ok, _event} <- append_merge_evidence(repo, work_package, updated, payload, metadata) do
-      {:ok, updated}
+    with {:ok, _event} <- append_merge_evidence(repo, work_package, %{work_package | status: "merged"}, payload, metadata) do
+      if is_binary(work_package.work_request_id) do
+        with {:ok, _delivery} <- DeliveryReconciler.reconcile_work_package(repo, work_package.id) do
+          WorkPackageRepository.get(repo, work_package.id)
+        end
+      else
+        WorkPackageRepository.update_status(repo, work_package.id, work_package.status, "merged")
+      end
     end
   end
 
@@ -389,11 +389,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
 
   defp current_pr_context(progress_events) do
     with {:ok, %{ref: ref}} <- PullRequestProgress.current_pr_state(progress_events, ["attach_pr"]) do
-      {:ok,
-       %{
-         ref: ref,
-         expected_head_sha: PullRequestProgress.expected_head_sha(progress_events, ref)
-       }}
+      {:ok, %{ref: ref}}
     end
   end
 
@@ -404,9 +400,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.MergeReconciler do
     end
   end
 
-  defp repaired_pr_context(progress_events, %{"attachment_repair" => true} = payload) do
+  defp repaired_pr_context(_progress_events, %{"attachment_repair" => true} = payload) do
     with {:ok, ref} <- PullRequest.parse(payload, nil) do
-      {:ok, %{ref: ref, expected_head_sha: PullRequestProgress.expected_head_sha(progress_events, ref)}}
+      {:ok, %{ref: ref}}
     end
   end
 

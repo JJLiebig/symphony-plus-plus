@@ -252,9 +252,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
       assert {:ok, _revoked} = AccessGrantService.revoke(repo, claimed_grant.id)
 
-      accepted = mcp_tool(repo, session, "sync_pr", handoff)
+      mismatch = mcp_tool(repo, session, "sync_pr", Map.put(handoff, "head_sha", String.duplicate("b", 40)))
+      assert get_in(mismatch, ["error", "data", "reason"]) =~ "provider_head_mismatch"
+      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
+
+      url_only = Map.delete(handoff, "head_sha")
+      accepted = mcp_tool(repo, session, "sync_pr", url_only)
       assert get_in(accepted, ["result", "structuredContent", "work_package", "status"]) == "ready_for_merge"
       assert repo.get!(ClaimLease, other_owner.id).status == "released"
+
+      FakeGitHubClient.put_response("nextide/repo", 413, GitHubPullRequestFixtures.metadata(413, head, base_branch: anchor.base_branch, merged?: true))
+      different_pr = mcp_tool(repo, session, "sync_pr", Map.put(url_only, "url", "https://github.com/nextide/repo/pull/413"))
+      assert get_in(different_pr, ["error", "data", "reason"]) == "pr_reference_mismatch"
+      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_merge"
+
+      FakeGitHubClient.put_response("nextide/repo", 412, GitHubPullRequestFixtures.metadata(412, String.duplicate("c", 40), base_branch: anchor.base_branch, merged?: true))
+      landed = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id, "number" => 412, "repository" => "nextide/repo"})
+      assert get_in(landed, ["result", "structuredContent", "work_package", "status"]) == "merged"
+      assert repo.get_by!(WorkPackageDelivery, work_package_id: approved_slice.id).outcome == "pr_merged"
     after
       restore_app_env(:sympp_github_client, original_client)
       FakeGitHubClient.clear()

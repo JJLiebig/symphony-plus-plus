@@ -1305,6 +1305,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
   defp architect_error({:storage_failed, _reason} = reason, tool), do: service_error(reason, tool)
   defp architect_error({:migration_failed, _reason} = reason, tool), do: service_error(reason, tool)
 
+  defp architect_error({:provider_head_mismatch, expected, actual}, tool),
+    do: {:error, -32_602, "Invalid params", %{"tool" => tool, "reason" => "provider_head_mismatch", "expected_head_sha" => expected, "actual_head_sha" => actual}}
+
   defp architect_error(reason, tool),
     do: {:error, -32_602, "Invalid params", %{"tool" => tool, "reason" => reason_text(reason)}}
 

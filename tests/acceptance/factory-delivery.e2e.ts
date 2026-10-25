@@ -170,7 +170,11 @@ test('ordinary PR handoff observes pending qualification then reconciles an exac
   provider.set(101, pr(101, head('a'), {
     statusCheckRollup: [{ status: 'IN_PROGRESS', conclusion: null }], reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED',
   }));
-  await sync(architect, wp, 101, head('a'));
+  const tools = await architect.rpc('tools/list', {});
+  const syncSchema = tools.result.tools.find((tool: any) => tool.name === 'sync_pr').inputSchema;
+  expect(syncSchema.properties.head_sha.type).toBe('string');
+  expect(syncSchema.required).not.toContain('head_sha');
+  await architect.call('sync_pr', { work_package_id: wp, url: prUrl(101) });
   const waiting = await detail();
   expect(waiting.metadata.pr.check_summary.status).toBe('pending');
   expect(waiting.metadata.pr.review_state.status).toBe('review_required');
@@ -180,7 +184,7 @@ test('ordinary PR handoff observes pending qualification then reconciles an exac
   expect((await row(architect, request, wp)).merge_eligibility.next_action).toBe('verify_native_checks_and_review_then_merge');
 
   provider.set(101, pr(101, head('a')));
-  await sync(architect, wp, 101, head('a'));
+  await architect.call('sync_pr', { work_package_id: wp, number: 101, repository: 'example/service' });
   const qualified = await detail();
   expect(qualified.metadata.pr.check_summary.status).toBe('passing');
   expect(qualified.metadata.pr.review_state.status).toBe('approved');
@@ -196,7 +200,7 @@ test('ordinary PR handoff observes pending qualification then reconciles an exac
 
   const mergeTime = new Date().toISOString();
   provider.set(101, pr(101, head('a'), { state: 'MERGED', mergedAt: mergeTime, mergeCommit: { oid: head('f') } }));
-  await architect.call('sync_pr', { work_package_id: wp });
+  await architect.call('sync_pr', { work_package_id: wp, url: prUrl(101) });
   const delivered = await row(architect, request, wp);
   expect(delivered.raw_status).toBe('merged');
   expect(delivered.delivery_outcome).toBe('pr_merged');
@@ -263,31 +267,25 @@ test('provider errors and incomplete or wrong-head evidence cannot complete a di
   expect(failed.metadata.pr.check_summary.status).toBe('failing');
   expect(failed.metadata.pr.merge_state).toEqual({ merged: false, status: 'blocked' });
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
-  // A later observation of another head never authorizes terminal reconciliation.
-  provider.set(102, pr(102, head('b'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
-  const wrong = await architect.rpc('tools/call', { name: 'sync_pr', arguments: { work_package_id: wp } });
-  expect(wrong.error).toBeTruthy();
-  expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
-  // Periodic observation persists the mismatched snapshot before refusing merge.
-  // Repeating that observation must never promote it to authoritative head evidence.
-  for (const changed of [true, false]) {
-    const observed = await architect.operator('/api/v1/sympp/operator/github/sync-prs', { mode: 'auto' });
-    expect(observed.status).toBe(200);
-    expect(observed.body.sync.merged_count).toBe(0);
-    expect(observed.body.sync.dashboard_changed).toBe(changed);
-    expect(observed.body.sync.results[0].reason).toBe('head_mismatch');
-    expect(observed.body.sync.results[0].expected_head_sha).toBe(head('a'));
-    const stored = await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);
-    expect(stored.progress.filter((event: any) => event.payload?.source_tool === 'sync_pr').at(-1).payload.head_sha).toBe(head('b'));
-    expect((await row(architect, request, wp)).raw_status).toBe('ready_for_merge');
-    expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
-  }
   for (const missing of [{ mergedAt: new Date().toISOString(), mergeCommit: null }, { mergedAt: null, mergeCommit: { oid: head('f') } }]) {
     provider.set(102, pr(102, head('a'), { state: 'MERGED', ...missing }));
     await architect.reject('sync_pr', { work_package_id: wp }, 'missing_strong_pr_evidence');
     expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
   }
   expect((await architect.inspect(`/api/v1/sympp/operator/work-requests/${request}`)).work_request.completed_at).toBeNull();
+  // An explicitly supplied head still refuses a mismatch, including after merge.
+  provider.set(102, pr(102, head('b'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
+  await architect.reject('sync_pr', handoff, 'provider_head_mismatch');
+  await architect.reject('sync_pr', { work_package_id: wp, head_sha: head('a') }, 'provider_head_mismatch');
+  expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
+  // GitHub's merge evidence closes the attached PR even when the handoff head is old.
+  const observed = await architect.operator('/api/v1/sympp/operator/github/sync-prs', { mode: 'auto' });
+  expect(observed.status).toBe(200);
+  expect(observed.body.sync.merged_count).toBe(1);
+  expect((await row(architect, request, wp)).raw_status).toBe('merged');
+  expect((await row(architect, request, wp)).delivery_outcome).toBe('pr_merged');
+  const replay = await architect.call('reconcile_work_request', { apply: true });
+  expect(replay.reconciliation.applied_count).toBe(0);
 });
 
 test('typed no-PR closeout resolves blockers once and terminal packages cannot reactivate', async ({ delivery: { factory } }) => {
