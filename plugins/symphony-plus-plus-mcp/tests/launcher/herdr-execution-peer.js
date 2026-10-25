@@ -17,8 +17,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     case "hello": result = { generation: 1, core: { id: state.core_id, name: "controlled" } }; break;
     case "terminal.run":
       if (!params.argv[0].includes("/")) { error = { data: { kind: "template_collision" } }; break; }
+      if (!/^[a-z0-9][a-z0-9._-]{0,31}$/.test(params.name)) { error = { data: { kind: "invalid_params" } }; break; }
+      if (state.terminals?.some(terminal => terminal.state === "live" && terminal.name === params.name)) {
+        error = { data: { kind: "name_taken" } }; break;
+      }
       state.runs++;
-      state.terminal = { address: "t9", pid: 900, state: "live", labels: params.labels, status: state.report === false ? null : { state: "idle", app: params.argv[0] } };
+      state.terminal = { address: "t9", name: params.name, pid: 900, state: "live", labels: params.labels, status: state.report === false ? null : { state: "idle", app: params.argv[0] } };
+      (state.terminals ||= []).push(state.terminal);
       result = state.terminal;
       if (state.lose_reply) { write(); process.exit(0); }
       break;

@@ -28,6 +28,19 @@ names the already verified dispatch ledger; its hash separates bindings from
 other ledgers. A launch receipt is an observation, never authorization. The
 helper cannot verify ledger authority and does not contact the ledger.
 
+Terminals use readable names such as `review-drill-down-claude`, derived from
+the package title (`assignment.title`, `assignment.work_package.title` or
+`work_package.title`), then a leading
+`You own WorkPackage <id>: <title>` prompt line. Ordinary tasks use the first
+line of their task file, falling back to `task-<provider>`. Use `--name <text>`
+to override that text. Names become lowercase slugs, shortened at word boundaries
+where possible to the core's 32-character limit, always preserving the provider
+suffix. Path-bearing or recognizable credential text is discarded. Supply only
+redacted titles and task files. A short disambiguator appears before the provider
+only when the core rejects a live-name collision; finished names can be reused.
+Display names confer no identity: labels and receipts keep the launch identity.
+Changing only `--name` reuses the same receipt and leaves its existing name intact.
+
 All providers receive a short prompt pointing at the input file. This keeps
 large assignments out of OS command-line limits and process listings. The helper
 adds no permission-bypass flags; provider configuration determines prompts.

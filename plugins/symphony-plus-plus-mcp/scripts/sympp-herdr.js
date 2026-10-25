@@ -15,13 +15,13 @@ const FORWARD_ENV = ["PATH", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "OPENCODE_CONFIG
 const TRANSPORT_ENV = [...FORWARD_ENV, "PATHEXT", "SystemRoot", "WINDIR", "COMSPEC", "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "LANG", "LC_ALL", "LC_CTYPE", "SHELL", "USER", "LOGNAME", "HC_SESSION", "HC_SOCKET", "HC_TERMINAL_SOCKET"];
 const FLAGS = {
   list: ["cwd", "fields", "json", "help"],
-  launch: ["provider", "assignment", "ledger", "task", "cwd", "model", "provider-home", "space", "tab", "parent", "attempt", "session", "json", "help"],
+  launch: ["provider", "assignment", "ledger", "task", "cwd", "model", "provider-home", "space", "tab", "parent", "attempt", "name", "session", "json", "help"],
   check: ["receipt", "session", "json", "help"],
   send: ["receipt", "message", "session", "json", "help"],
 };
 const HELP = {
   list: "list [--cwd <folder>] [--fields <comma-separated receipt fields>] [--json]\nLists last-known launches for this folder; check a receipt for current state.",
-  launch: "launch --provider codex|claude|opencode --cwd <folder> (--assignment <bootstrap.json> --ledger <identity> | --task <task.txt>)\n  [--model <model>] [--provider-home <folder>] [--space <id>] [--tab <id>] [--parent <terminal>]\n  [--attempt <name>] [--session <core-session>] [--json]\nDefaults: provider's configured model/home; current core; attempt=first. No dispatch or claim.\nExamples:\n  launch --provider claude --model opus --assignment worker.json --ledger local-main --cwd .\n  launch --provider opencode --task fix.txt --cwd .\n  launch --provider codex --task fix.txt --cwd . --attempt retry-after-inspection",
+  launch: "launch --provider codex|claude|opencode --cwd <folder> (--assignment <bootstrap.json> --ledger <identity> | --task <task.txt>)\n  [--model <model>] [--provider-home <folder>] [--space <id>] [--tab <id>] [--parent <terminal>]\n  [--name <text>] [--attempt <name>] [--session <core-session>] [--json]\nDefaults: title/task-derived name with provider suffix; provider's configured model/home; current core; attempt=first. No dispatch or claim.\nExamples:\n  launch --provider claude --model opus --assignment worker.json --ledger local-main --cwd .\n  launch --provider opencode --task fix.txt --cwd . --name review\n  launch --provider codex --task fix.txt --cwd . --attempt retry-after-inspection",
   check: "check --receipt <receipt.json> [--session <core-session>] [--json]\nVerifies the core, terminal, process and launch labels. Does not focus or send.\nExamples:\n  check --receipt ./launch.json\n  check --receipt ./launch.json --json",
   send: "send --receipt <receipt.json> --message <text-file> [--session <core-session>] [--json]\nSends to the verified idle/working agent; refuses unknown status, blocked agents and recovered shells.\nExamples:\n  send --receipt ./launch.json --message followup.txt\n  send --receipt ./launch.json --message handoff.txt --json",
 };
@@ -77,7 +77,20 @@ function assignment(file) {
       !text(wp.work_package_id) || !text(wr.work_request_id) || !text(bootstrap.launch_prompt)) {
     fail("invalid_assignment", "Save the redacted worker_bootstrap from the existing dispatch response; do not dispatch again.", 2);
   }
-  return { work_package_id: wp.work_package_id, work_request_id: wr.work_request_id, role: "worker", digest: hash(JSON.stringify(bootstrap)) };
+  const title = [bootstrap.assignment?.title, bootstrap.assignment?.work_package?.title, bootstrap.work_package?.title, input.work_package?.title,
+    bootstrap.launch_prompt.match(/^You own WorkPackage \S+:\s*([^\r\n]+)/)?.[1]?.replace(/\s+\(parent WorkRequest [^)]+\)\.?$/, "")].find(text);
+  return { work_package_id: wp.work_package_id, work_request_id: wr.work_request_id, role: "worker", title, digest: hash(JSON.stringify(bootstrap)) };
+}
+
+function terminalName(title, provider, disambiguator = "") {
+  // Inputs are redacted; discard path-bearing or recognizable credential text rather than slugging it.
+  const privateText = /[\\/]|\b(?:bearer\s+\S+|(?:api[_ -]?key|token|secret|password)\s*[:=]\s*\S+|(?:sk-|gh[pousr]_|github_pat_)\S+)/i;
+  const safe = text(title) && !privateText.test(title) ? title : "task";
+  const slug = safe.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "task";
+  const tail = `${disambiguator}-${provider}`;
+  const limit = 32 - tail.length;
+  const end = slug.length > limit ? slug.slice(0, limit + 1).lastIndexOf("-") : slug.length;
+  return slug.slice(0, end > 0 ? end : limit) + tail;
 }
 
 function executable(provider) {
@@ -305,7 +318,8 @@ async function publishPid(core, receipt) {
 async function launch(core, info, options) {
   const cwd = path.resolve(options.cwd);
   const input = path.resolve(options.assignment || options.task);
-  const source = options.assignment ? assignment(input) : { role: null, work_request_id: null, work_package_id: null, digest: hash(read(input)) };
+  const task = options.task ? read(input) : null;
+  const source = options.assignment ? assignment(input) : { role: null, work_request_id: null, work_package_id: null, title: task.split(/\r?\n/, 1)[0], digest: hash(task) };
   const ledger = options.assignment ? hash(options.ledger) : null;
   const launchId = hash(JSON.stringify([info.id, ledger, source.work_package_id || input, options.attempt || "first"]));
   const file = receiptPath(launchId);
@@ -345,12 +359,22 @@ async function launch(core, info, options) {
       : options.provider === "codex" ? await codexTrust(cwd, options.executable, { ...process.env, ...env })
       : { trusted: false, changed: false, reason: "no_workspace_trust_prompt" };
     save(file, receipt); // A lost spawn reply must not silently launch a second worker.
-    const result = await core.call("terminal.run", {
+    const params = {
       argv: providerArgv(options.provider, options.executable, options.model, prompt + returnTo), cwd, env, labels,
-      name: `sympp-${launchId.slice(0, 24)}`, parent: parent || undefined,
+      parent: parent || undefined,
       no_parent: !parent, no_notify: false, wait: false, keep: Boolean(options.space),
-    });
-    const terminal = result;
+    };
+    let terminal;
+    for (let collision = 0; ; collision++) {
+      const suffix = collision ? `-${launchId.slice(0, 6)}${collision > 1 ? `-${collision}` : ""}` : "";
+      try {
+        terminal = await core.call("terminal.run", { ...params, name: terminalName(options.name || source.title, options.provider, suffix) });
+        break;
+      } catch (error) {
+        // name_taken is rejected before spawn; every other failure remains uncertain.
+        if (error.code !== "name_taken") throw error;
+      }
+    }
     if (!text(terminal?.address) || !Number.isSafeInteger(terminal.pid) || terminal.pid <= 0) fail("launch_unconfirmed", `Check receipt ${JSON.stringify(file)} and the selected core; no second process was requested.`);
     Object.assign(receipt, { terminal_id: terminal.address, pid: terminal.pid, state: terminal.state, status: terminal.status?.state || "unknown", reason: terminal.reason || null });
     save(file, receipt);
