@@ -31,7 +31,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
       ttl_ms: ttl_ms,
       runner: runner,
       find_executable: find_executable,
-      codex_home: Keyword.get(opts, :codex_home, codex_home())
+      codex_home: Keyword.get(opts, :codex_home, codex_home()),
+      user_home: Keyword.get(opts, :user_home, System.user_home!())
     })
   end
 
@@ -44,10 +45,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
       ttl_ms: ttl_ms,
       runner: runner,
       find_executable: find_executable,
-      codex_home: codex_home
+      codex_home: codex_home,
+      user_home: user_home
     } = config
 
-    discover_script = fn -> discover(runner, find_executable, codex_home) end
+    discover_script = fn -> discover(runner, find_executable, codex_home, user_home) end
 
     if :ets.insert_new(table, {:refreshing, self()}) do
       try do
@@ -154,7 +156,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
     end
   end
 
-  defp discover(runner, find_executable, codex_home) do
+  defp discover(runner, find_executable, codex_home, user_home) do
     with codex when is_binary(codex) <- find_executable.("codex"),
          {:ok, output} <- runner.(codex, ["plugin", "list", "--json"], @timeout_ms, @max_output_bytes),
          {:ok, %{"installed" => installed}} when is_list(installed) <- Jason.decode(output),
@@ -166,8 +168,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
          true <- File.regular?(script) do
       {:ok, script}
     else
+      [] -> portable_script(user_home)
       _missing_or_ambiguous -> :error
     end
+  end
+
+  defp portable_script(user_home) do
+    script = Path.join([user_home, ".agents", "skills", "review-suite", "plugins", "review-suite", "scripts", "review.py"])
+    if File.regular?(script), do: {:ok, script}, else: :error
   end
 
   defp status(script, worktree, base, runner, find_executable) do

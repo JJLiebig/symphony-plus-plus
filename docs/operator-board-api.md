@@ -116,6 +116,12 @@ at 240 characters; steps are capped at 20 entries. Round timestamps must be ISO
 omitted when unavailable. Older Review Suite versions that omit `steps` or
 `round_history` leave those fields absent from the signal.
 
+Review observations use the enabled Review Suite marketplace plugin first. If
+Codex reports no enabled Review Suite plugin, discovery checks the portable
+skills bundle at `~/.agents/skills/review-suite/plugins/review-suite/scripts/review.py`.
+That fallback must be a regular file at the fixed user-home location; discovery
+does not search PATH or a package's worktree for a provider script.
+
 A dispatched package is building from `dispatched_at`, without worker reports,
 runtime observations, or a reporting cadence. Native review observations augment
 this state. A recorded `superseded` or `abandoned` outcome has a null stage and

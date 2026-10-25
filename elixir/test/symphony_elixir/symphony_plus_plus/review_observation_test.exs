@@ -5,6 +5,56 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals
 
+  test "skills bundle in the user home supplies review status when no marketplace plugin is enabled", %{test: test} do
+    %{codex_home: codex_home, plugin: plugin, package: package} = fixture(test)
+    script = portable_script(codex_home)
+    File.mkdir_p!(Path.dirname(script))
+    File.write!(script, "# portable fixture\n")
+
+    for installed <- [[], [Map.put(installed_plugin(plugin), "enabled", false)]] do
+      runner = fn
+        _, ["plugin", "list", "--json"], _, _ -> {:ok, Jason.encode!(%{installed: installed})}
+        _, [^script, "--status" | _args], _, _ -> {:ok, Jason.encode!(%{review: "rvw_portable", status: "running", rounds: 3})}
+      end
+
+      observation = ReviewObservation.observe([package], test_opts(runner, codex_home))[package.id]
+      assert observation.evidence_id == "rvw_portable"
+      assert observation.round == 3
+    end
+  end
+
+  test "marketplace plugin keeps precedence over the skills bundle", %{test: test} do
+    %{codex_home: codex_home, plugin: plugin, package: package} = fixture(test)
+    portable = portable_script(codex_home)
+    File.mkdir_p!(Path.dirname(portable))
+    File.write!(portable, "# portable fixture\n")
+    script = Path.join([plugin, "scripts", "review.py"])
+
+    runner = fn
+      _, ["plugin", "list", "--json"], _, _ -> {:ok, plugin_json(plugin)}
+      _, [^script, "--status" | _args], _, _ -> {:ok, Jason.encode!(%{review: "rvw_plugin", status: "done"})}
+      _, [_other_script, "--status" | _args], _, _ -> {:ok, Jason.encode!(%{review: "rvw_unexpected", status: "done"})}
+    end
+
+    assert ReviewObservation.observe([package], test_opts(runner, codex_home))[package.id].evidence_id == "rvw_plugin"
+    File.rm!(script)
+    assert ReviewObservation.observe([package], test_opts(runner, codex_home)) == %{}
+  end
+
+  test "portable discovery requires a regular file at the fixed user-home location", %{test: test} do
+    %{codex_home: codex_home, worktree: worktree, package: package} = fixture(test)
+    File.write!(Path.join(worktree, "review.py"), "# untrusted fixture\n")
+
+    runner = fn
+      _, ["plugin", "list", "--json"], _, _ -> {:ok, Jason.encode!(%{installed: []})}
+      _, _unexpected_command, _, _ -> {:ok, Jason.encode!(%{review: "rvw_unexpected", status: "done"})}
+    end
+
+    assert ReviewObservation.observe([package], test_opts(runner, codex_home)) == %{}
+    File.mkdir_p!(portable_script(codex_home))
+    assert ReviewObservation.observe([package], test_opts(runner, codex_home)) == %{}
+  end
+
   test "literal declared bases isolate grouping and cached outcomes in one worktree", %{test: test} do
     %{codex_home: codex_home, worktree: worktree, plugin: plugin, package: package} = fixture(test)
     frozen_base = String.duplicate("a", 40)
@@ -240,9 +290,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
       cache_table: :ets.new(:review_observation_test, [:set, :public]),
       runner: runner,
       codex_home: codex_home,
+      user_home: Path.join(codex_home, "home"),
       find_executable: fn name -> name end,
       now_ms: 10_000
     ]
+  end
+
+  defp portable_script(codex_home) do
+    Path.join([codex_home, "home", ".agents", "skills", "review-suite", "plugins", "review-suite", "scripts", "review.py"])
   end
 
   defp plugin_json(plugin), do: Jason.encode!(%{"installed" => [installed_plugin(plugin)]})
