@@ -13,7 +13,8 @@
 // Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel
 // following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
 // transport.js (HTTP through exec), ui.js (shared look), overview.js and jobview.js (what each level
-// draws), rails.js (package rails on a shared time axis).
+// draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
+// list shows on S++ agents).
 
 import { View } from "gpui-kit";
 import { v_flex, InputState, TextareaState } from "gpui-base";
@@ -23,6 +24,7 @@ import * as L from "./levels.js";
 import * as J from "./job.js";
 import * as R from "./rails.js";
 import * as C from "./controls.js";
+import * as Chrome from "./chrome.js";
 import { createTransport } from "./transport.js";
 import { button, message } from "./ui.js";
 import * as O from "./overview.js";
@@ -93,9 +95,11 @@ export default class Lens extends View {
   tick(cx) {
     if (!this.endpoint) return;
     const now = Date.now();
-    const cadence = M.nextDelay(this.net, appWindow().active);
+    // A copy that starts with the app (the S++ panel) ticks before Herdr has a window.
+    const active = appWindow()?.active !== false;
+    const cadence = M.nextDelay(this.net, active);
     let busy = false;
-    if (!this.reading && M.fetchDue(this.net, now, appWindow().active)) { this.read(cx); busy = true; }
+    if (!this.reading && M.fetchDue(this.net, now, active)) { this.read(cx); busy = true; }
     const shown = this.shown;
     if (shown && !this.detailReading && J.detailDue(this.detailNet, shown.jobId, cadence, now)) { this.readDetail(shown.jobId, cx); busy = true; }
     const watch = this.agentWatch;
@@ -132,7 +136,11 @@ export default class Lens extends View {
       if (turn !== this.turn) return;
       const now = Date.now();
       this.net = outcome.board ? M.fetchSucceeded(this.net, outcome.board, now) : M.fetchFailed(this.net, outcome.error, now);
-      if (outcome.board) this.announce(outcome.board);
+      if (outcome.board) {
+        this.announce(outcome.board);
+        const agents = Chrome.nextDecorations(shared(Chrome.AGENTS), Chrome.decorations(outcome.board, terminals(), this.endpoint, now), this.endpoint, now);
+        if (agents) setShared(Chrome.AGENTS, agents);
+      }
       this.painted = now;
       if (this.refreshAfterRead) {
         this.refreshAfterRead = false;

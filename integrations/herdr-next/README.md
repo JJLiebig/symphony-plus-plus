@@ -48,6 +48,39 @@ settings and terminals intact. Existing edits are protected; use `--replace`
 explicitly to install this version over a differing copy. Close an S++ pane
 with Herdr's ordinary pane or tab controls.
 
+## S++ in your desk tabs and agents
+
+On a personal desk layout (its own `desk-tabs` bar and `desk-agents` list),
+`--chrome` adds S++ to them:
+
+```powershell
+node integrations/herdr-next/install.mjs --endpoint $origin --chrome
+```
+
+- **S++** sits beside Files and Changes and toggles the S++ panel the same way.
+- An agent started for S++ shows the S++ mark in the Agents list, with its
+  package's stage: build, checks, review with its round (amber from the third),
+  ready to merge or landed, and an orange dot on the mark when it needs you. A
+  stage older than about two minutes shows dimmed as last known. Stages arrive
+  from an open S++ view's board reads, the panel included, once it has been shown.
+
+The installer backs up the layout and both mods under `data/sympp-chrome`, adds
+a `sympp` panel to the layout's `panel-body` stack, and patches the two mods in
+place; running it again changes nothing. It refuses, listing what is missing,
+when the layout has no `panel-body` stack, uses Herdr's own `tabs` or `agents`
+mod, or either desk mod differs from what the patch expects or was edited after
+installing. Other mods can add their panels the same way through
+`shared("workspace.panel_buttons")` entries `{ id, label, icon, iconDark? }`: an
+SVG icon is tinted like Files and Changes; a picture shows as it is, `iconDark`
+on a dark theme.
+
+```powershell
+node integrations/herdr-next/install.mjs --remove-chrome
+```
+
+restores both mods from their backups and removes the S++ panel from the layout,
+keeping any other layout change made since.
+
 The native view requires a backend with the native board endpoint. Updating the
 view with this installer does not update or restart S++. For an existing Windows
 beta factory, update both with one command from an S++ checkout:
