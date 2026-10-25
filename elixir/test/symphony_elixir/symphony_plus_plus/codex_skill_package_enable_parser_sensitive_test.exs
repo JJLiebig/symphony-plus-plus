@@ -1,8 +1,7 @@
 Code.require_file("codex_skill_package_case_test.exs", __DIR__)
 
 defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageEnableParserSensitiveTest do
-  # Both full diagnostics share one test budget; avoid competing PowerShell processes.
-  use SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase, async: false
+  use SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase
 
   @moduletag :ci_slow
 
