@@ -42,6 +42,28 @@ view does not update or restart S++. Follow the normal
 [installed runtime procedure](../../docs/runtime.md); healthy clients retain
 their current runtime until a supported cutover.
 
+## Factory-floor lab
+
+A separate prototype shows one job as a factory floor on a built-in sample job.
+Packages stand in rooms (Your desk, Yard, Build bay, Checks, Review room,
+Merge dock, Shipped), walk the corridor between them and circle the review
+track once per round. It needs no S++ backend and never replaces the view:
+
+```powershell
+node integrations/herdr-next/install.mjs --lab --open overview
+```
+
+`--home`, `--app`, `--open panel` and `--replace` work as above. Without
+`--open`, open it later in Herdr with
+`herdr-app do tab.new '{"name":"S++ Lab","mod":"sympp-lab"}'`.
+
+The replay bar steps through the job; Motion turns animation off, since Herdr
+animations do not follow the system's reduced-motion setting. Keys: ←/→ step,
+Home/End jump to the start or now, Space replays, ↑/↓ select a package and M
+toggles motion. The same actions are Herdr commands (`sympp-lab.next`,
+`.prev`, `.first`, `.last`, `.play`, `.motion`, `.up`, `.down`) for
+`keys.json` or `herdr-app do`.
+
 ## Machines and access
 
 The endpoint belongs to the S++ factory; it is independent of the machine
@@ -76,6 +98,7 @@ conditions; it is not a shared provider transcript.
 ```text
 node --test integrations/herdr-next/*.test.mjs
 herdr-app check integrations/herdr-next/mods/sympp
+herdr-app check integrations/herdr-next/mods/sympp-lab
 ```
 
 Use an isolated `HERDR_APP_HOME` and core session when checking native behavior.
