@@ -67,6 +67,10 @@ export function reviewDetail(pkg, now) {
     };
   }).reverse();
   const lastFinish = history.at(-1)?.finishedAt ?? null;
+  // The latest round runs until its recorded finish, else until now while the review is open.
+  const latest = history.find((h) => h.n === total) ?? null;
+  const roundFrom = latest?.startedAt ?? r.roundStartedAt;
+  const roundEnd = latest && latest.finishedAt !== null ? latest.finishedAt : active ? now : null;
   const bumps = reviewBumps(pkg, now);
   return {
     reviewed: reviewed(pkg),
@@ -79,7 +83,7 @@ export function reviewDetail(pkg, now) {
     total,
     omitted: history.length ? Math.max(0, total - history.length) : 0,
     rows,
-    round: active && r.roundStartedAt !== null ? span(now - r.roundStartedAt) : null,
+    round: roundFrom !== null && roundEnd !== null && roundEnd >= roundFrom ? span(roundEnd - roundFrom) : null,
     overall: r.startedAt === null ? null : active ? span(now - r.startedAt) : lastFinish !== null && lastFinish >= r.startedAt ? span(lastFinish - r.startedAt) : null,
     bumps,
     reslice: bumps.some((b) => b.kind === "long"),

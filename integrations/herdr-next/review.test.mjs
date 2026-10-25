@@ -30,6 +30,9 @@ test('a churning review reads as its stage, step ladder and rounds, newest first
     [1, 'Tier 1 review', 'Broad discovery', 'Findings', 4, '50m', false],
   ]);
   assert.deepEqual([d.round, d.overall, d.total, d.omitted, d.observation, d.observedAt], ['40m', '3h 20m', 3, 0, null, NOW - 2 * MIN]);
+  const waiting = reviewing({ ...boardPayload().work_request_details[0].work_packages.find((p) => p.id === 'wp-review').review_signal, provider_status: 'followup-pending',
+    round_history: [{ number: 3, lane: 'review_t1', started_at: at(40), finished_at: at(30), outcome: 'findings' }] });
+  assert.deepEqual([Rv.reviewDetail(waiting, NOW).round, Rv.reviewDetail(waiting, NOW).overall], ['10m', '3h 20m'], 'a finished round stops at its recorded finish');
 });
 
 test('a 25-round review lists the 20 reported rounds and counts the five before them', () => {
