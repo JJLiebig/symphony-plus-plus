@@ -1,5 +1,41 @@
 import { expect } from 'e2e';
+import { writeFile } from 'node:fs/promises';
 import { contract, test } from '../support/factory.js';
+
+test('dispatch and delivery board payload measurements for a 25-package request', async ({ factory }) => {
+  const architect = await factory.client();
+  const description = [
+    'Deliver a scoped service rollout with separate API, client, storage and operator work.',
+    'Each package owns its repository and branch, required checks, review and PR handoff.',
+    'Preserve dependency ordering, source attribution, delivery evidence and recovery after restart.',
+    'Keep production state and provider credentials outside this disposable acceptance fixture.',
+  ].join(' ').repeat(4);
+  const created = await architect.call('create_work_request', {
+    repo: 'example/service', base_branch: 'beta', title: 'Service rollout payload measurement',
+    description, request_kind: 'feature', status: 'ready_for_slicing', claimed_by: 'acceptance-architect',
+  });
+  const request = created.work_request.id;
+  await architect.call('claim_local_architect_assignment', { work_request_id: request, claimed_by: 'acceptance-architect' });
+  const ids = (await architect.call('slice_work_request', {
+    work_packages: Array.from({ length: 25 }, (_, index) => contract(`Rollout package ${index + 1}`)),
+  })).work_package_ids;
+  const dispatch = (await architect.rpc('tools/call', {
+    name: 'dispatch_work_package', arguments: { work_package_id: ids[0] },
+  })).result;
+  const board = (await architect.rpc('tools/call', {
+    name: 'read_delivery_board', arguments: { work_request_id: request },
+  })).result;
+  expect(dispatch.structuredContent.work_package.id).toBe(ids[0]);
+  expect(board.structuredContent.delivery_board.work_packages.length).toBe(25);
+  const chars = (value: unknown) => JSON.stringify(value).length;
+  const sizes = {
+    checkout: process.env.ACCEPTANCE_CHECKOUT_SHA, packages: 25,
+    dispatch: chars(dispatch), bootstrap: chars(dispatch.structuredContent.worker_bootstrap),
+    assignment: chars(dispatch.structuredContent.worker_bootstrap.assignment), board: chars(board),
+  };
+  await writeFile('.e2e/payload-sizes.json', JSON.stringify(sizes, null, 2));
+  console.log(`Payload character counts: ${JSON.stringify(sizes)}`);
+});
 
 test('skipping every planned package leaves the goal unfinished in persisted and visible state', async ({ factory }) => {
   const architect = await factory.client();
