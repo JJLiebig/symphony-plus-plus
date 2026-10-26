@@ -93,15 +93,37 @@ node integrations/herdr-next/install.mjs --remove-chrome
 restores both mods from their backups and removes the S++ panel from the layout,
 keeping any other layout change made since. A desk with another version of the
 chrome is refused; remove it with the installer that added it, then install again.
-The desk-tabs patch is now chrome 2 (tab marks). A desk with chrome 1 from an
-earlier checkout is upgraded with that checkout's installer, then this one:
+Both patches are now chrome 3 (the new S marks). Upgrade a desk with chrome 2
+using its matching installer to remove it first, then install this checkout:
 
 ```powershell
-git worktree add $env:TEMP/sympp-chrome-1 76846ad8
-node $env:TEMP/sympp-chrome-1/integrations/herdr-next/install.mjs --remove-chrome
+git worktree add C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove 77ef41d796a2a5e9688bfb97b736212a589b8849
+node C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove/integrations/herdr-next/install.mjs --remove-chrome
 node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace
-git worktree remove $env:TEMP/sympp-chrome-1
+git worktree remove C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove
+git worktree prune
 ```
+
+For chrome 1, use revision `76846ad8` for the removal worktree instead. Pass
+the same `--home`, `--app` and `--session` selections to both installers when
+using a nondefault desk. Removal and installation check the mods and retain
+their existing rollback behavior.
+
+Four blue-violet marks are available: **A · Cut ribbon**, **B · Open ribbon**,
+**C · Fold**, and **D · Solid**. To switch all three surfaces together:
+
+```powershell
+node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace --mark a
+```
+
+Use `a`, `b`, `c` or `d`; A is the default. Repeat another choice on later installs.
+Switching marks on chrome 3 needs no removal. The installer keeps its edit
+protection, mod checks and rollback.
+
+Each option has light/dark SVGs for the Agents badge and studio window, with
+the provider icon's ring kept transparent, plus a panel SVG and transparent
+64 px PNG export. B/C/D sources live in `marks/<letter>/`; A uses the default
+assets in `mods/sympp/`.
 
 ## UI studio
 

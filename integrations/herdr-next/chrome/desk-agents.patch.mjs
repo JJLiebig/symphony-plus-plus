@@ -1,15 +1,15 @@
-// S++ chrome 2 for the personal desk-agents mod (cloned from Herdr's agents 0.1.4): the S++ glyph
+// S++ chrome 3 for the personal desk-agents mod (cloned from Herdr's agents 0.1.4): the S++ glyph
 // tucked behind an S++ agent's icon, with its package's stage from the S++ view's reads after the name.
 // Each edit's `find` must occur exactly once in the mod; `replace` takes its place. The injected code
 // imports what it uses itself; the only mod locals it touches (a, k) are in its own anchors.
 export default {
-  mark: 'S++ chrome 2',
+  mark: 'S++ chrome 3',
   mod: 'desk-agents',
   edits: [
     {
       find: `export default class Agents extends View {
 `,
-      replace: `// S++ chrome 2: an S++ agent (its terminal carries S++ launch or session labels) shows the S++ glyph
+      replace: `// S++ chrome 3: an S++ agent (its terminal carries S++ launch or session labels) shows the S++ glyph
 // behind the right of its icon; the glyph has the icon's ring cut out, so the row shows through it.
 // The S++ view's reads (shared("sympp.agents"), by terminal address) add its package's stage, the
 // review round (from the third in the working color) and an orange dot when it needs you. A read

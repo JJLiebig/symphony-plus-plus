@@ -128,6 +128,24 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
   assert.match(again.stdout, /chrome: "unchanged"/);
   assert.deepEqual(await snapshot(home), installed);
 
+  // A mark switch updates the badge, studio and panel together, without repatching the desk.
+  const marks = ['glyph.svg', 'glyph-dark.svg', 'glyph-ui.svg', 'glyph-ui-dark.svg', 'mark.svg', 'mark-dark.svg', 'mark.png', 'mark-dark.png'];
+  const backups = await snapshot(join(home, 'data', 'sympp-chrome'));
+  for (const mark of ['a', 'c', 'b', 'd', 'a']) {
+    const switched = install(home, ...ENDPOINT, '--chrome', '--replace', '--mark', mark);
+    assert.equal(switched.status, 0, switched.stdout + switched.stderr);
+    const source = mark === 'a' ? join(here, 'mods', 'sympp') : join(here, 'marks', mark);
+    for (const name of marks) assert.deepEqual(await readFile(join(home, 'mods', 'sympp', name)), await readFile(join(source, name)), `${mark}/${name}`);
+    assert.equal(await readFile(join(home, 'mods', 'desk-tabs', 'main.js'), 'utf8'), tabs);
+    assert.deepEqual(await snapshot(join(home, 'data', 'sympp-chrome')), backups);
+    if (mark === 'a') {
+      const before = await snapshot(home);
+      assert.equal(install(home, ...ENDPOINT, '--chrome', '--mark', 'c').status, 1, 'switching keeps explicit replacement consent');
+      assert.deepEqual(await snapshot(home), before);
+    }
+  }
+  assert.deepEqual(await snapshot(home), installed, 'switching back to A restores the full installed state');
+
   // The person resizes the panel and opens S++ in it before removing the chrome.
   layout.children[2].size = { px: 500 };
   body.active = 'sympp';

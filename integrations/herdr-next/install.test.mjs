@@ -74,6 +74,8 @@ test('rejects credentials, unknown flags and invalid open mode before changing a
     ['--endpoint', 'http://localhost:19998/sympp/board'],
     ['--endpoint', 'http://localhost:19998', '--opne', 'overview'],
     ['--endpoint', 'http://localhost:19998', '--open', 'bogus'],
+    ['--endpoint', 'http://localhost:19998', '--mark', '../mods/sympp'],
+    ['--lab', '--mark', 'a'],
   ]) {
     const result = install(home, ...args);
     assert.equal(result.status, 2, result.stdout + result.stderr);

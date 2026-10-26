@@ -1,12 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 16 16">
-  <!-- The S++ glyph for the Agents list, drawn 14 px wide 12.5 px into a 16 px icon slot. The mask cuts
-       out that icon with a 1 px ring so the row shows between them. -->
-  <mask id="m">
-    <rect x="-2" y="-2" width="20" height="20" fill="#fff"/>
-    <rect x="-15.43" y="-2.29" width="20.57" height="20.57" rx="4.57" fill="#000"/>
-  </mask>
-  <g fill="none" stroke-width="2.7" stroke-linecap="round" mask="url(#m)">
-    <path d="M12.9 3.6C12 2.3 10.4 1.6 8.4 1.6C5.8 1.6 4 3 4 5C4 7 5.9 7.6 8.4 8" stroke="#2F7BF5"/>
-    <path d="M8.4 8C10.9 8.4 12.9 9 12.9 11C12.9 13 11.1 14.4 8.4 14.4C6.4 14.4 4.8 13.7 3.9 12.4" stroke="#5A31DA"/>
+  <!-- Candidate A (Cut ribbon), traced from Codex imagegen. The provider icon's 1 px ring stays transparent. -->
+  <defs>
+    <linearGradient id="s" x1="2" y1="2" x2="14" y2="14" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#087EF5"/><stop offset="1" stop-color="#6530E8"/>
+    </linearGradient>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+      <rect width="16" height="16" fill="#fff"/>
+      <rect x="-15.43" y="-2.29" width="20.57" height="20.57" rx="4.57" fill="#000"/>
+    </mask>
+  </defs>
+  <g mask="url(#m)">
+    <g transform="translate(3.2 1.2) scale(.82)" fill="url(#s)">
+      <path d="M9.03 .75L13.17 3.22L4.9 5.92L3.55 5.58Q2.75 5.25 2.75 4.4Q2.75 3.7 3.44 3.33Z"/>
+      <path d="M2.75 4.45Q2.75 5.3 3.7 5.65L11.95 8.33Q12.7 8.6 12.7 9.5V11.15Q12.7 11.65 12.2 11.85V11.6Q12.2 11.35 11.8 11.2L3.6 8.45Q2.75 8.17 2.75 7.5Z"/>
+      <path d="M2.75 12.6L8.36 10.38L12.2 11.69L7.08 14.65Q6.8 14.82 6.55 14.66Z"/>
+    </g>
   </g>
 </svg>

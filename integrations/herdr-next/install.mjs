@@ -16,6 +16,7 @@ Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [o
   --open <overview|panel> Open a native tab or a pane beside the focused terminal
   --app <executable>     Herdr-app executable (default: herdr-app)
   --session <name>       Explicit local core session for agent navigation
+  --mark <a|b|c|d>       S++ mark to install (default: a); use --replace to switch
   --replace              Replace a previously installed mod with this version
   --chrome               Also add an S++ panel button to your desk-tabs bar and S++ badges to your
                          desk-agents list (both backed up first)
@@ -90,7 +91,7 @@ async function main() {
   try {
     ({ values } = parseArgs({ options: {
       endpoint: { type: 'string' }, home: { type: 'string' },
-      open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' },
+      open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' }, mark: { type: 'string' },
       replace: { type: 'boolean' }, lab: { type: 'boolean' }, help: { type: 'boolean' },
       chrome: { type: 'boolean' }, 'remove-chrome': { type: 'boolean' },
     } }));
@@ -99,6 +100,10 @@ async function main() {
     return 2;
   }
   if (values.help) { process.stdout.write(`${help}\n`); return 0; }
+  if (values.mark !== undefined && (!['a', 'b', 'c', 'd'].includes(values.mark) || values.lab)) {
+    emit({ error: values.lab ? '--mark selects the S++ view, not the lab' : '--mark must be a, b, c or d', help });
+    return 2;
+  }
   if (values['remove-chrome']) return removeChrome(values);
   if (values.chrome && values.lab) {
     emit({ error: '--chrome adds the S++ view, not the lab', help });
@@ -127,8 +132,11 @@ async function main() {
   const here = dirname(fileURLToPath(import.meta.url));
   const helper = join(home, 'tools', 'sympp-herdr.js');
   const source = join(here, 'mods', mod);
+  const markSource = values.mark && values.mark !== 'a' ? join(here, 'marks', values.mark) : source;
   const names = (await readdir(source)).filter(name => name.endsWith('.js') || name === 'mod.json' || name.endsWith('.svg') || name.endsWith('.png'));
-  const sources = names.map(name => ({ from: join(source, name), to: join(target, name) }));
+  const sources = names.map(name => ({
+    from: join(!values.lab && /^(glyph|mark)[.-]/.test(name) ? markSource : source, name), to: join(target, name),
+  }));
   if (!values.lab) {
     sources.push({ from: resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts/sympp-herdr.js'), to: helper });
   }
@@ -174,7 +182,7 @@ async function main() {
       return 1;
     }
   }
-  emit({ installed: target, ...(endpoint ? { endpoint } : {}),
+  emit({ installed: target, ...(endpoint ? { endpoint, mark: values.mark || 'a' } : {}),
     ...(chrome ? { chrome: chrome.writes.length ? 'installed' : 'unchanged', layout: chrome.layout, backups: chrome.backups } : {}),
     ...(values.open ? { opened: values.open } : { command, args: JSON.stringify(args) }) });
   return 0;
