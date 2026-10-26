@@ -71,7 +71,7 @@ test('dispatch and delivery board payload measurements for a 25-package request'
   const outsider = await factory.client();
   const unbound = await outsider.rpc('resources/read', { uri: dispatch.structuredContent.assignment_uri });
   expect(unbound.error).toBeTruthy();
-  await outsider.request('Unrelated request');
+  await outsider.request('Foreign repository request', 'ready_for_slicing', 'beta', 'example/foreign');
   const denied = await outsider.rpc('resources/read', { uri: dispatch.structuredContent.assignment_uri });
   expect(denied.error).toBeTruthy();
   expect(JSON.stringify(denied)).not.toContain(description);
