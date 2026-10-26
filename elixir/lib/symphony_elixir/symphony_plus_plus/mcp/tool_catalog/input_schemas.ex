@@ -144,6 +144,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "document" => string_enum_schema(Renderer.virtual_files()),
+        "detail" => payload_detail_schema(),
         "before_sequence" => integer_schema() |> Map.put("minimum", 1)
       },
       ["document"]
@@ -289,13 +290,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   end
 
   def architect_tool_input_schema("read_work_request") do
-    schema(%{"work_request_id" => string_schema(), "session_description" => session_description_schema()}, ["work_request_id"])
+    schema(%{"work_request_id" => string_schema(), "session_description" => session_description_schema(), "detail" => payload_detail_schema()}, ["work_request_id"])
   end
 
   def architect_tool_input_schema("read_plan") do
     schema(
       %{
         "work_request_id" => described_string_schema("Scoped WorkRequest id to project."),
+        "detail" => payload_detail_schema(),
         "view" =>
           ToolCatalog.work_request_product_tree_views()
           |> string_enum_schema()
@@ -1051,6 +1053,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     ["summary", "full"]
     |> string_enum_schema()
     |> Map.put("default", "summary")
-    |> Map.put("description", "Summary by default; full includes the complete worker bootstrap or delivery evidence.")
+    |> Map.put("description", "Summary by default; full includes the complete payload.")
   end
 end

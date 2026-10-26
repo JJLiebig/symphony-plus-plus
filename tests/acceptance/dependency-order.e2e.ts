@@ -3,7 +3,7 @@ import { contract, type Client } from '../support/factory.js';
 import { close, head, pr, prUrl, row, sync, test } from '../support/delivery.js';
 
 const endpoint = (id: string, kind = 'work_package') => ({ kind, id });
-const graph = async (client: Client, request: string) => (await client.call('read_plan', {
+const graph = async (client: Client, request: string) => (await client.call('read_plan', { detail: 'full',
   work_request_id: request, view: 'groups_with_work_packages',
 })).product_tree.execution_graph;
 
@@ -84,10 +84,10 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   expect(selection.candidate_head_sha).toBe(head('a'));
   expect(selection.candidate_state).toBe('current');
   expect(selection.selection_updated_at).toBeTruthy();
-  const contextBefore = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
+  const contextBefore = (await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
   const invalidContext = await architect.rpc('tools/call', { name: 'upsert_dependency', arguments: { ...pinned, dependency_id: pin, reason: '', decision_ref: {} } });
   expect(invalidContext.error).toBeTruthy();
-  const contextAfter = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
+  const contextAfter = (await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
   expect(contextAfter).toEqual(contextBefore);
   expect(contextAfter.decision_ref).toEqual({ id: decision.decision_log_entry.id });
   expect((await graph(architect, request)).effective_edges.find((edge: any) => edge.dependent_work_package_id === ui).constraints[0].candidate_head_sha).toBe(head('a'));

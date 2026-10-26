@@ -25,7 +25,7 @@ test('human answers retain decision provenance and stale replay cannot append a 
   expect(answer.work_request.status).toBe('human_info_needed');
   await architect.reject('answer_question_and_record_decision', args, 'already_answered');
   const observer = await factory.client();
-  const read = await observer.call('read_work_request', { work_request_id: id });
+  const read = await observer.call('read_work_request', { detail: 'full', work_request_id: id });
   expect(read.decision_log_entries).toHaveLength(1);
   const decision = read.decision_log_entries[0];
   expect(decision.id).toBe(answer.decision_log_entry.id);
@@ -61,7 +61,7 @@ test('questions, human escalation and review waits preserve explicit package blo
     work_package_id: anchor, summary: 'A human scope choice is needed.', idempotency_key: 'escalation',
     payload: { type: 'architect_operator_report', human_escalation: { question: 'Should the optional detail ship?' } },
   });
-  const escalated = await architect.call('read_work_request', { work_request_id: id });
+  const escalated = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
   expect(escalated.work_request.operator_report.human_escalation.question).toBe('Should the optional detail ship?');
   await architect.call('append_progress', {
     work_package_id: affected, summary: 'Waiting for hosted review.', status: 'ci_waiting', idempotency_key: 'ordinary-wait',
@@ -106,7 +106,7 @@ test('questions, human escalation and review waits preserve explicit package blo
   });
   expect((await packageState(architect, id, affected)).blocker_state['active?']).toBe(false);
   expect(await packageState(architect, id, sibling)).toEqual(siblingBefore);
-  const report = (await architect.call('read_work_request', { work_request_id: id })).work_request.operator_report;
+  const report = (await architect.call('read_work_request', { detail: 'full', work_request_id: id })).work_request.operator_report;
   expect(report.human_escalation.question).toBe('Should the optional detail ship?');
   expect(report.human_escalation.resolved_at).toBeTruthy();
 });
@@ -127,7 +127,7 @@ test('human choice submission rejects unknown or empty redirects and preserves t
     } });
     expect(response.error.code).toBe(-32602);
   }
-  expect((await architect.call('read_work_request', { work_request_id: id })).clarification_questions).toEqual([]);
+  expect((await architect.call('read_work_request', { detail: 'full', work_request_id: id })).clarification_questions).toEqual([]);
   const ask = async (decision_prompt?: object) => (await architect.call('ask_question', {
     work_request_id: id, category: 'scope', question: 'Which path should ship?', why_needed: 'Record the human choice.',
     ...(decision_prompt ? { decision_prompt } : {}),
@@ -140,14 +140,14 @@ test('human choice submission rejects unknown or empty redirects and preserves t
     const rejected = await architect.operator(path, invalid);
     expect(rejected.status).toBe(422);
     expect((await architect.raw(invalid, {}, 'POST', path.replace('/operator/', '/herdr/'))).status).toBe(422);
-    const current = await architect.call('read_work_request', { work_request_id: id });
+    const current = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
     expect(current.clarification_questions[0].status).toBe('open');
     expect(current.decision_log_entries).toEqual([]);
   }
   expect((await architect.operator(path, {
     answer_choice: 'continue', answer_note: 'Keep the detail deferred.', answer: 'Stale autofilled answer.',
   })).status).toBe(200);
-  const read = await architect.call('read_work_request', { work_request_id: id });
+  const read = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
   expect(read.clarification_questions[0].answer).toBe('Continue with the bounded path. Keep the detail deferred.');
   expect(read.clarification_questions[0].answered_by).toBe('local-operator');
 
@@ -165,7 +165,7 @@ test('human choice submission rejects unknown or empty redirects and preserves t
     expect((await architect.raw(choice.input, {}, 'POST', foreign)).status).toBe(404);
     expect((await architect.raw(choice.input, {}, 'POST', endpoint)).status).toBe(200);
     expect((await architect.raw(choice.input, {}, 'POST', endpoint)).status).toBe(409);
-    const result = await architect.call('read_work_request', { work_request_id: id });
+    const result = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
     expect(result.clarification_questions.find((entry: any) => entry.id === q).answer).toBe(choice.answer);
     expect(result.work_request.status).toBe('human_info_needed');
   }
@@ -173,7 +173,7 @@ test('human choice submission rejects unknown or empty redirects and preserves t
   await architect.call('close_question', { work_request_id: id, question_id: closed });
   expect((await architect.raw({ answer: 'Too late.' }, {}, 'POST', `/api/v1/sympp/herdr/work-requests/${id}/questions/${closed}/answer`)).status).toBe(409);
   await architect.reject('answer_question', { work_request_id: id, question_id: closed, answer: 'Too late.' }, 'already_closed');
-  const final = await architect.call('read_work_request', { work_request_id: id });
+  const final = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
   expect(final.clarification_questions.find((entry: any) => entry.id === closed).answer).toBe(null);
   expect(final.decision_log_entries).toEqual([]);
 });

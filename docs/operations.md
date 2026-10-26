@@ -61,6 +61,18 @@ do not change blockers or completion. See the
 [architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#guidance)
 for optional milestone updates and resolving answers given in the conversation.
 
+MCP `read_work_request` defaults to a compact overview: request description,
+open questions, package status/PR/next action, and five recent decision previews.
+Omission counts point to `detail: "full"` for complete contracts and history.
+`read_plan` uses the same detail option for package fields while retaining the
+execution graph and dependency evidence. Large progress documents summarize five
+recent events; request full detail with the same document/cursor to read their
+evidence bodies. Smaller reads retain their existing payloads. Herdr and the web
+board use their own HTTP projections and keep complete detail.
+
+Upgrade the Skills bundle and open fresh MCP sessions to load the updated tool
+schemas; an existing session does not acquire the new detail options automatically.
+
 ### Herdr Execution Inspector
 
 Install the optional Herdr plugin from the repository root:

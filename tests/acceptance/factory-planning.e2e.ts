@@ -115,12 +115,12 @@ test('a clarified request becomes a revised plan and ordinary worker assignment'
     work_request_id: id, question_id: question.clarification_question.id,
     expected_question_status: 'open', answer: 'Ship the agreed behavior.', answered_by: 'human-operator',
   });
-  expect((await architect.call('read_work_request', { work_request_id: id })).work_request.status).toBe('human_info_needed');
+  expect((await architect.call('read_work_request', { detail: 'full', work_request_id: id })).work_request.status).toBe('human_info_needed');
 
   const sliced = await architect.call('slice_work_request', { work_packages: [contract('Agreed scope')] });
   expect(sliced.status.work_request_status).toBe('sliced');
   const [wp] = sliced.work_package_ids;
-  const before = await architect.call('read_work_request', { work_request_id: id });
+  const before = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
   expect(before.work_packages).toHaveLength(1);
   const revision = before.work_packages[0].contract_revision;
   const updated = await architect.call('update_work_package', {
@@ -131,7 +131,7 @@ test('a clarified request becomes a revised plan and ordinary worker assignment'
     work_package_id: wp, expected_contract_revision: revision, patch: { title: 'Lost update' },
   }, 'contract_revision_conflict');
   expect(stale.current_contract_revision).toBe(revision + 1);
-  expect((await architect.call('read_work_request', { work_request_id: id })).work_packages[0].title).toBe('Refined agreed scope');
+  expect((await architect.call('read_work_request', { detail: 'full', work_request_id: id })).work_packages[0].title).toBe('Refined agreed scope');
 
   const plan = await architect.call('read_task_plan', { work_package_id: wp });
   const task = await architect.call('update_task_plan', {
@@ -195,7 +195,7 @@ test('invalid batches are atomic and secondary delivery preserves repository and
     await architect.reject('slice_work_request', {
       work_packages: [contract('Valid prefix'), incomplete],
     }, 'invalid_work_packages');
-    expect((await architect.call('read_work_request', { work_request_id: id })).work_packages).toEqual([]);
+    expect((await architect.call('read_work_request', { detail: 'full', work_request_id: id })).work_packages).toEqual([]);
   }
   await architect.reject('slice_work_request', {
     work_packages: [contract('Foreign branch', { repo: 'example/client', base_branch: 'foreign' })],
@@ -203,11 +203,11 @@ test('invalid batches are atomic and secondary delivery preserves repository and
   for (const patch of [{ title: '' }, { goal: ' ' }, { acceptance_criteria: [null] }, { validation_steps: 'run checks' }, { stop_conditions: {} }]) {
     await architect.reject('slice_work_request', { work_packages: [contract('Invalid contract', patch)] }, 'invalid_work_packages');
   }
-  expect((await architect.call('read_work_request', { work_request_id: id })).work_packages).toEqual([]);
+  expect((await architect.call('read_work_request', { detail: 'full', work_request_id: id })).work_packages).toEqual([]);
   const normalized = contract('Canonical primary scope', { base_branch: ' refs/remotes/origin/main ' });
   const sliced = await architect.call('slice_work_request', { work_packages: [secondary, normalized] });
   const [wp, primary] = sliced.work_package_ids;
-  const read = await architect.call('read_work_request', { work_request_id: id });
+  const read = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
   expect(read.work_packages[0].repo).toBe('example/client');
   expect(read.work_packages[0].base_branch).toBe('integration');
   const dispatch = await architect.call('dispatch_work_package', { detail: 'full', work_package_id: wp });
@@ -235,7 +235,7 @@ test('groups organize scope while the effective dependency graph prevents premat
     dependent: { kind: 'group', id: child }, prerequisite: { kind: 'group', id: parent },
     reason: 'Child implementations require the parent documentation, not themselves or each other.',
   });
-  const overlap = (await architect.call('read_plan', { work_request_id: id, view: 'groups_with_work_packages' })).product_tree.execution_graph;
+  const overlap = (await architect.call('read_plan', { detail: 'full', work_request_id: id, view: 'groups_with_work_packages' })).product_tree.execution_graph;
   expect(overlap.effective_edges.map((edge: any) => [edge.prerequisite_work_package_id, edge.dependent_work_package_id]).sort())
     .toEqual([[documentation, api], [documentation, peerApi]].sort());
   expect(overlap.cycles).toEqual([]);
@@ -253,7 +253,7 @@ test('groups organize scope while the effective dependency graph prevents premat
   await architect.reject('upsert_dependency', {
     dependent: { kind: 'group', id: parent }, prerequisite: { kind: 'group', id: parent }, reason: 'A group cannot depend on itself.',
   }, 'invalid_dependency');
-  const graph = (await architect.call('read_plan', { work_request_id: id, view: 'groups_with_work_packages' })).product_tree.execution_graph;
+  const graph = (await architect.call('read_plan', { detail: 'full', work_request_id: id, view: 'groups_with_work_packages' })).product_tree.execution_graph;
   expect(graph.effective_edges.some((edge: any) => edge.dependent_work_package_id === client && edge.prerequisite_work_package_id === api)).toBe(true);
   expect((await architect.call('dispatch_work_package', { work_package_id: independent })).work_package.id).toBe(independent);
 
@@ -271,10 +271,10 @@ test('groups organize scope while the effective dependency graph prevents premat
   await architect.call('update_work_package', {
     work_package_id: client, expected_contract_revision: 1, patch: { group_id: null },
   });
-  const beforeDelete = await architect.call('read_work_request', { work_request_id: id });
+  const beforeDelete = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
   const documentationRevision = beforeDelete.work_packages.find((wp: any) => wp.id === documentation).contract_revision;
   await architect.call('delete_group', { group_id: parent });
-  const tree = (await architect.call('read_plan', { work_request_id: id, view: 'groups_with_work_packages' })).product_tree;
+  const tree = (await architect.call('read_plan', { detail: 'full', work_request_id: id, view: 'groups_with_work_packages' })).product_tree;
   expect(tree.groups.some((group: any) => group.id === parent)).toBe(false);
   expect(tree.groups.find((group: any) => group.id === child).parent_group_id).toBe(survivingParent);
   expect(tree.groups.find((group: any) => group.id === child).work_package_ids).toContain(api);
@@ -283,7 +283,7 @@ test('groups organize scope while the effective dependency graph prevents premat
   expect(tree.dependency_intents.some((edge: any) => edge.id === dependency)).toBe(false);
   expect(tree.execution_graph.effective_edges).toEqual([]);
   // Deleting organization never deletes a package or fabricates delivery.
-  const afterDelete = await architect.call('read_work_request', { work_request_id: id });
+  const afterDelete = await architect.call('read_work_request', { detail: 'full', work_request_id: id });
   expect(afterDelete.work_packages).toHaveLength(5);
   expect(afterDelete.work_packages.find((wp: any) => wp.id === documentation).contract_revision).toBe(documentationRevision + 1);
   await architect.reject('update_work_package', {

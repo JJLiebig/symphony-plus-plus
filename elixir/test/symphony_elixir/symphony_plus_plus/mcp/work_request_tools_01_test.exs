@@ -160,7 +160,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     refute Map.has_key?(listed_work_request, "decision_count")
     refute Map.has_key?(listed_work_request, "work_package_count")
 
-    read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => in_scope.id})
+    read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => in_scope.id})
     read_payload = get_in(read_response, ["result", "structuredContent"])
 
     assert read_payload["work_request"]["id"] == in_scope.id
@@ -193,7 +193,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     refute inspect(list_response) =~ "WR-MCP-WR-OTHER-REPO"
     refute inspect(read_response) =~ "raw-secret-value"
 
-    out_of_scope_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => other_branch.id})
+    out_of_scope_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => other_branch.id})
 
     assert get_in(out_of_scope_response, ["error", "code"]) == -32_004
     assert get_in(out_of_scope_response, ["error", "data", "reason"]) == "not_found"
@@ -224,12 +224,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     assert get_in(list_denied, ["error", "data", "reason"]) == "insufficient_capability"
     assert get_in(list_denied, ["error", "data", "reason_code"]) == "insufficient_capability"
 
-    read_denied = mcp_tool(repo, insufficient_session, "read_work_request", %{"work_request_id" => insufficient_target.id})
+    read_denied = mcp_tool(repo, insufficient_session, "read_work_request", %{"detail" => "full", "work_request_id" => insufficient_target.id})
     assert get_in(read_denied, ["error", "code"]) == -32_003
     assert get_in(read_denied, ["error", "data", "reason"]) == "insufficient_capability"
     assert get_in(read_denied, ["error", "data", "reason_code"]) == "insufficient_capability"
 
-    missing_read_denied = mcp_tool(repo, insufficient_session, "read_work_request", %{"work_request_id" => "WR-MCP-WR-AUTHZ-MISSING"})
+    missing_read_denied = mcp_tool(repo, insufficient_session, "read_work_request", %{"detail" => "full", "work_request_id" => "WR-MCP-WR-AUTHZ-MISSING"})
     assert get_in(missing_read_denied, ["error", "code"]) == -32_003
     assert get_in(missing_read_denied, ["error", "data", "reason"]) == "insufficient_capability"
     assert get_in(missing_read_denied, ["error", "data", "reason_code"]) == "insufficient_capability"
@@ -294,7 +294,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     assert Enum.map(list_payload["work_requests"], & &1["id"]) == [visible.id]
     refute inspect(list_response) =~ hidden.id
 
-    hidden_read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => hidden.id})
+    hidden_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => hidden.id})
     assert get_in(hidden_read_response, ["error", "code"]) == -32_004
     assert get_in(hidden_read_response, ["error", "data", "reason"]) == "not_found"
     refute inspect(hidden_read_response) =~ hidden.id
@@ -328,7 +328,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     assert get_in(list_response, ["error", "code"]) == -32_003
     assert get_in(list_response, ["error", "data", "reason"]) == "outside_session_scope"
 
-    read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => "WR-MCP-WR-IN"})
+    read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => "WR-MCP-WR-IN"})
     assert get_in(read_response, ["error", "code"]) == -32_003
     assert get_in(read_response, ["error", "data", "reason"]) == "outside_session_scope"
   end
@@ -357,12 +357,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools01Test do
     assert get_in(list_response, ["error", "data", "reason"]) == "outside_session_scope"
     refute inspect(list_response) =~ sibling.id
 
-    read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => sibling.id})
+    read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => sibling.id})
     assert get_in(read_response, ["error", "code"]) == -32_003
     assert get_in(read_response, ["error", "data", "reason"]) == "outside_session_scope"
     refute inspect(read_response) =~ sibling.id
 
-    missing_read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => "WR-MCP-WR-DRIFTED-MISSING"})
+    missing_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => "WR-MCP-WR-DRIFTED-MISSING"})
     assert get_in(missing_read_response, ["error", "code"]) == -32_003
     assert get_in(missing_read_response, ["error", "data", "reason"]) == "outside_session_scope"
   end

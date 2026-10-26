@@ -64,18 +64,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     refute inspect(list_response) =~ other_repo.id
     refute inspect(list_response) =~ other_base.id
 
-    sibling_read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => equivalent_sibling.id})
+    sibling_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => equivalent_sibling.id})
     assert get_in(sibling_read_response, ["result", "structuredContent", "work_request", "id"]) == equivalent_sibling.id
 
     sibling_board_response = mcp_tool(repo, session, "read_delivery_board", %{"work_request_id" => equivalent_sibling.id})
     assert get_in(sibling_board_response, ["result", "structuredContent", "work_request", "id"]) == equivalent_sibling.id
 
-    other_repo_read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => other_repo.id})
+    other_repo_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => other_repo.id})
     assert get_in(other_repo_read_response, ["error", "code"]) == -32_004
     assert get_in(other_repo_read_response, ["error", "data", "reason"]) == "not_found"
     refute inspect(other_repo_read_response) =~ other_repo.id
 
-    other_base_read_response = mcp_tool(repo, session, "read_work_request", %{"work_request_id" => other_base.id})
+    other_base_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => other_base.id})
     assert get_in(other_base_read_response, ["error", "code"]) == -32_004
     assert get_in(other_base_read_response, ["error", "data", "reason"]) == "not_found"
     refute inspect(other_base_read_response) =~ other_base.id

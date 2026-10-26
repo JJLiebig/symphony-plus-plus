@@ -35,7 +35,7 @@ several domains, attribution uses its most recent still-current registration.
    `phase_scope_not_available` or `work_request_terminal`, follow
    [bootstrap recovery](references/operations.md#bootstrap-recovery).
 2. For WorkRequest lanes, read `read_work_request(work_request_id)`,
-   `read_plan(work_request_id, view?)`, and
+   `read_plan(work_request_id, view?, detail?)`, and
    `list_guidance_requests(work_request_id?)` before planning WorkPackages or rearranging
    Groups. The WorkRequest guidance filter requires the usual
    `read:work_request` grant.
@@ -52,6 +52,14 @@ omit secrets and private connection details. Do not add a registration step.
 
 TOON is presentation only. Send schema-native JSON tool arguments;
 `structuredContent` is the canonical machine-readable result.
+
+`read_work_request` defaults to the request description, open questions, compact
+package rows with PRs/next actions, and the five most recent decision previews.
+Omission counts identify contracts and history available with `detail: "full"`.
+Use full detail before editing a package contract or relying on a decision's
+complete rationale. Decisions explain choices; current status remains delivery
+truth. `read_plan` also defaults to compact package references; use
+`detail: "full"` with the same `view` for complete package fields.
 
 ## Clarify
 

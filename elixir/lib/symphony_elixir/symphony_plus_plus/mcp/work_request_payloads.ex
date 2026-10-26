@@ -183,6 +183,83 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     end
   end
 
+  @spec work_request_read(repo(), WorkRequest.t(), String.t()) :: {:ok, map()} | {:error, dashboard_error()}
+  def work_request_read(repo, work_request, "full"), do: work_request_detail(repo, work_request, [])
+
+  def work_request_read(repo, work_request, "summary") do
+    with {:ok, payload} <- work_request_detail(repo, work_request, []),
+         {:ok, board} <- DeliveryBoard.project(repo, work_request.id) do
+      decisions = payload["decision_log_entries"]
+      questions = payload["clarification_questions"]
+
+      {:ok,
+       %{
+         "work_request" => Map.take(payload["work_request"], ~w(id title repo base_branch status execution_status human_description constraints operator_report)),
+         "clarification_questions" => Enum.filter(questions, &(&1["status"] == "open")),
+         "decision_log_entries" => decisions |> Enum.take(-5) |> Enum.map(&Map.take(&1, ~w(id sequence decision))) |> Enum.map(&Map.update!(&1, "decision", fn text -> one_line(text, 160) end)),
+         "work_packages" => board |> delivery_board() |> Map.fetch!("work_packages") |> Enum.map(&work_package_read_summary/1),
+         "summary" => payload["summary"],
+         "omitted" => %{
+           "package_contracts" => length(payload["work_packages"]),
+           "resolved_questions" => Enum.count(questions, &(&1["status"] != "open")),
+           "older_decisions" => max(length(decisions) - 5, 0),
+           "decision_details" => length(decisions)
+         },
+         "help" => "Use read_work_request with detail: full for all contracts, questions and decisions; read_plan for dependencies."
+       }}
+    end
+  end
+
+  defp work_package_read_summary(package) do
+    activity = get_in(package, ["operational_state", "activity_signal"]) || %{}
+    state = get_in(package, ["operational_state", "key"])
+
+    %{
+      "id" => package["id"],
+      "title" => package["title"],
+      "status" => package["raw_status"],
+      "pr_url" => get_in(package, ["work_package", "pr", "url"]) || get_in(package, ["delivery", "pr_url"]),
+      "next_action" => activity["next_action"] || package_next_action(state)
+    }
+  end
+
+  defp package_next_action("planned"), do: "dispatch_work_package"
+  defp package_next_action("ready_for_worker"), do: "launch_worker"
+  defp package_next_action("needs_closeout"), do: "reconcile_work_request"
+  defp package_next_action(state) when state in ["delivered", "completed_no_pr", "superseded", "abandoned", "skipped"], do: "none"
+  defp package_next_action(_state), do: "read_delivery_board"
+
+  @spec plan_summary(map()) :: map()
+  def plan_summary(payload) do
+    tree = payload["product_tree"]
+
+    tree = Enum.reduce(["work_packages", "work_package_refs"], tree, &compact_plan_packages/2)
+
+    payload
+    |> Map.put("work_request", Map.take(payload["work_request"], ~w(id title status execution_status)))
+    |> Map.put("product_tree", tree)
+    |> Map.put("omitted", %{"package_details" => length(Map.get(tree, "work_packages", Map.get(tree, "work_package_refs", [])))})
+    |> Map.put("help", "Use read_plan with detail: full and the same view for complete package details.")
+  end
+
+  defp compact_plan_packages(key, tree) do
+    case Map.fetch(tree, key) do
+      {:ok, packages} -> Map.put(tree, key, Enum.map(packages, &plan_package_summary/1))
+      :error -> tree
+    end
+  end
+
+  defp plan_package_summary(package) do
+    package
+    |> Map.take(~w(id title group_id sequence status attention_reason_codes))
+    |> Map.put("state", get_in(package, ["operational_state", "key"]))
+  end
+
+  defp one_line(text, limit) do
+    text = text |> String.split() |> Enum.join(" ")
+    if String.length(text) > limit, do: String.slice(text, 0, limit - 1) <> "…", else: text
+  end
+
   @spec work_request_product_tree(repo(), WorkRequest.t(), [WorkPackage.t()], map(), binary()) :: map()
   def work_request_product_tree(repo, %WorkRequest{} = work_request, work_packages, delivery_board, view) do
     projection_work_package_payloads =
