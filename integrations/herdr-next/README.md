@@ -93,15 +93,26 @@ node integrations/herdr-next/install.mjs --remove-chrome
 restores both mods from their backups and removes the S++ panel from the layout,
 keeping any other layout change made since. A desk with another version of the
 chrome is refused; remove it with the installer that added it, then install again.
-The desk-tabs patch is now chrome 2 (tab marks). A desk with chrome 1 from an
-earlier checkout is upgraded with that checkout's installer, then this one:
+Both patches are now chrome 3 (the solid S mark). Upgrade a desk with chrome 2
+using its matching installer to remove it first, then install this checkout:
 
 ```powershell
-git worktree add $env:TEMP/sympp-chrome-1 76846ad8
-node $env:TEMP/sympp-chrome-1/integrations/herdr-next/install.mjs --remove-chrome
+git worktree add C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove 77ef41d796a2a5e9688bfb97b736212a589b8849
+node C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove/integrations/herdr-next/install.mjs --remove-chrome
 node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace
-git worktree remove $env:TEMP/sympp-chrome-1
+git worktree remove C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove
+git worktree prune
 ```
+
+For chrome 1, use revision `76846ad8` for the removal worktree instead. Pass
+the same `--home`, `--app` and `--session` selections to both installers when
+using a nondefault desk. Removal and installation check the mods and retain
+their existing rollback behavior.
+
+The blue-violet mark uses one filled S with open counters at 12–16 px. Its SVG
+sources are `mods/sympp/mark*.svg`; `mark*.png` are transparent 64 px exports for
+the panel's picture slot. `glyph*.svg` retain the provider icon's transparent
+ring, and the studio variants keep the small window outline.
 
 ## UI studio
 
