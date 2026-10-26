@@ -124,7 +124,7 @@ function strip(t, job, now) {
     const gap = i > 0 && pkg.group !== job.packages[i - 1].group;
     return div().id(`pip-${job.id}-${pkg.id}`).flex_none().when(gap, (el) => el.ml(5)).tooltip(`${pkg.title}: ${M.stageText(pkg, now)}`).child(pip(t, pkg));
   });
-  return h_flex().flex_none().gap(3).items_center().accessibility_label(`${job.counts.done} of ${job.counts.total} packages landed`).children(dots);
+  return h_flex().flex_none().gap(3).items_center().accessibility_label(`${job.counts.done} of ${job.counts.total} packages closed${job.counts.dropped ? `; ${job.counts.dropped} dropped` : ""}`).children(dots);
 }
 
 function jobRow(v, t, job, now, note = null) {
@@ -138,7 +138,7 @@ function jobRow(v, t, job, now, note = null) {
         .when(job.offPrimary, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`→ ${job.baseBranch}`)))
         .child(div().flex_1())
         .when(loud, (el) => el.child(div().flex_none().text_size(11.5).font_medium().text_color(job.verdict === "needs_you" ? t.blocked : job.verdict === "parked" ? t.muted : t.foreground).child(M.VERDICT_LABEL[job.verdict])))
-        .when(job.counts.total > 0, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`${job.counts.done}/${job.counts.total}`))))
+        .when(job.counts.total > 0, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`${job.counts.done}/${job.counts.total}${job.counts.dropped ? ` · ${job.counts.dropped} dropped` : ""}`))))
       .child(h_flex().gap(10).items_center()
         .when(job.counts.total > 0, (el) => el.child(strip(t, job, now)))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(job.brief)))

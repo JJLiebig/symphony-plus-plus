@@ -16,6 +16,7 @@ const STALL_AFTER = 2 * HOUR;
 const DORMANT_AFTER = 14 * DAY;
 const RANK = { needs_you: 0, bump: 1, stalled: 2, on_track: 3, idle: 4, parked: 5, settled: 6 };
 const OUTCOMES = { pr_merged: "merged", completed_no_pr: "finished", superseded: "dropped", abandoned: "dropped" };
+const TERMINAL_OUTCOMES = { merged: "merged", closed: "closed", abandoned: "dropped", skipped: "dropped" };
 // Packages without a backend stage: their recorded status, read as loosely as the web board does.
 const STATUS_RULES = [
   [/^(merged|github_pr_merged)$/, "done"],
@@ -180,11 +181,12 @@ function buildJob(detail, now, guidance, runs) {
   const queued = packages.filter((pkg) => pkg.stage === "queued");
   const createdAt = ms(request.inserted_at) ?? now;
   const closedAt = ms(request.completed_at);
-  const settled = (closedAt !== null && closedAt <= now) || (packages.length > 0 && done.length === packages.length && needs.length === 0);
+  const settled = request.execution_status === "closed" || (closedAt !== null && closedAt <= now) || (packages.length > 0 && done.length === packages.length && needs.length === 0);
   const job = {
     id: request.id,
     title: request.title || request.id,
     status: request.status ?? null,
+    executionStatus: request.execution_status ?? "open",
     repo,
     repoShort,
     repos: [...new Set([repo, ...packages.map((pkg) => pkg.repo)].filter(Boolean))],
@@ -204,7 +206,7 @@ function buildJob(detail, now, guidance, runs) {
     // Prerequisite → dependent package pairs from the effective execution graph.
     edges: (detail.product_tree?.execution_graph?.effective_edges ?? [])
       .map((edge) => [edge?.prerequisite_work_package_id, edge?.dependent_work_package_id]).filter(([pre, dep]) => pre && dep),
-    counts: { live: live.length, queued: queued.length, done: done.length, total: packages.length },
+    counts: { live: live.length, queued: queued.length, done: done.length, dropped: done.filter((pkg) => pkg.outcome === "dropped").length, total: packages.length },
     state: settled ? "settled" : live.length > 0 || needs.length > 0 ? "live" : "resting",
     lastMoveAt: Math.max(createdAt, ...packages.map((pkg) => pkg.since ?? 0)),
     deployFailed: deployFailed(request.deployments),
@@ -222,7 +224,8 @@ function buildPackage(slice, groups, now, runs) {
   const review = slice.review_signal ?? {};
   const activity = slice.activity_signal ?? {};
   const run = runs?.get(slice.work_package_id || slice.id) ?? null;
-  const outcome = OUTCOMES[slice.delivery?.outcome ?? ""] ?? (slice.operational_state?.key === "skipped" ? "dropped" : null)
+  const outcome = OUTCOMES[slice.delivery?.outcome ?? ""] ?? TERMINAL_OUTCOMES[slice.raw_status ?? slice.status]
+    ?? (slice.operational_state?.key === "skipped" ? "dropped" : null)
     ?? (board && (board.delivered || board.stage === "done") ? (board.track === "no_pr" ? "finished" : "merged") : null);
   const stage = outcome ? "done" : board?.stage ?? statusStage(slice);
   const observed = stageTime(slice, board, stage);
@@ -377,7 +380,11 @@ function draftBrief(job, now) {
   const { live, queued, done, total } = job.counts;
   if (job.needs.length > 0) return `Waiting on you: ${job.needs[0].text}`;
   if (job.report.parked) return `Parked: ${job.report.parked.text}`;
-  if (job.state === "settled") return total ? `All ${total} packages have landed.` : "Closed.";
+  if (job.executionStatus === "closed") return `${total} packages closed${job.counts.dropped ? `; ${job.counts.dropped} dropped` : ""}.`;
+  if (job.state === "settled") {
+    if (job.counts.dropped) return `${total - job.counts.dropped} of ${total} packages finished; ${job.counts.dropped} dropped.`;
+    return total ? `All ${total} packages have landed.` : "Closed.";
+  }
   if (total === 0) return "Not sliced into packages yet.";
   if (live === 0) {
     return isStalled(job, now) ? `Nothing has moved for ${span(now - job.lastMoveAt)}. ${done} of ${total} landed.` : `Between packages: ${done} of ${total} landed, ${queued} up next.`;
@@ -407,7 +414,7 @@ export function packageSections(job) {
 }
 
 export function stageText(pkg, now) {
-  if (pkg.stage === "done") return pkg.outcome === "dropped" ? "Dropped" : pkg.outcome === "finished" ? "Finished" : "Merged";
+  if (pkg.stage === "done") return pkg.outcome === "dropped" ? "Dropped" : pkg.outcome === "finished" ? "Finished" : pkg.outcome === "closed" ? "Closed" : "Merged";
   if (pkg.stage === "queued") return pkg.after.length ? `After ${pkg.after.join(", ")}` : "Queued";
   const label = pkg.failed ? "Checks failing" : pkg.stage === "review" ? `Review${pkg.round > 1 ? ` · round ${pkg.round}` : ""}` : STAGE_LABEL[pkg.stage];
   return pkg.untimed || pkg.since === null ? label : `${label} · ${span(now - pkg.since)}`;

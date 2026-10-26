@@ -13,7 +13,7 @@ export const LIVE_FOR = 2 * POLL.quiet;
 
 // Canonical request status and package delivery only; never a percentage or a guess.
 export function phaseOf(job) {
-  if (job.closedAt !== null) return "done";
+  if (job.closedAt !== null || job.executionStatus === "closed") return "done";
   if (SHAPING.has(job.status)) return "shaping";
   if (job.status === "ready_for_slicing") return "planning";
   if (job.status !== "sliced") return null;

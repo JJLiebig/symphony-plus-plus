@@ -141,7 +141,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.ArchitectContext do
       "human_description" => text_value(map_value(work_request, "human_description")),
       "constraints" => work_request |> map_value("constraints") |> primitive_map(),
       "desired_dispatch_shape" => text_value(map_value(work_request, "desired_dispatch_shape")),
-      "status" => text_value(map_value(work_request, "status"))
+      "status" => text_value(map_value(work_request, "status")),
+      "execution_status" => text_value(map_value(work_request, "execution_status"))
     }
     |> reject_nil_values()
   end
@@ -154,6 +155,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.AgentFormat.ArchitectContext do
     %{
       "id" => text_value(map_value(work_request, "id")),
       "status" => text_value(map_value(work_request, "status")),
+      "execution_status" => text_value(map_value(work_request, "execution_status")),
       "updated_at" => text_value(map_value(work_request, "updated_at"))
     }
     |> reject_nil_values()

@@ -64,6 +64,7 @@ function jobHeader(v, t, job, ctx) {
         .child(div().text_size(12).font_medium().text_color(job.verdict === "needs_you" ? t.blocked : t.foreground).child(M.VERDICT_LABEL[job.verdict])))
       .when(job.offPrimary, (el) => el.child(div().text_size(11).font_family(MONO).text_color(t.muted).child(`→ ${job.baseBranch}`)))
       .child(div().text_size(11.5).text_color(t.muted).child(`opened ${M.ago(job.createdAt, now)}`))
+      .when(job.counts.dropped > 0, (el) => el.child(div().text_size(11.5).text_color(t.muted).child(`${job.counts.dropped} dropped`)))
       .when(Boolean(job.report.eta), (el) => el.child(div().text_size(11.5).text_color(t.muted).child(`ETA from the architect: ${job.report.eta.text}`))))
     .child(div().w_full().max_w(760).text_size(13).text_color(brief ? t.foreground : t.muted).child(job.brief))
     .when(Boolean(brief), (el) => el.child(div().text_size(11).text_color(t.muted).child(`Architect · ${M.ago(brief.at, now)}`)))

@@ -129,6 +129,15 @@ The resource reflects current contract and evidence; capture it before launch.
 `read_delivery_board` defaults to one summary per package, retaining delivery
 outcome, attention reasons, merge eligibility and PR URL. Use `detail: "full"`
 for nested runtime, blocker, review, successor and closeout evidence.
+Terminal packages have no pending merge next action. WorkRequest reads include
+`execution_status`: `closed` means a nonempty plan is entirely terminal; `open`
+means it is not. Raw planning status stays unchanged. Closed execution does not
+claim abandoned scope was fulfilled; delivery outcomes and goal completion remain
+authoritative for that distinction.
+
+`reconcile_work_request` returns counts plus proposed, applied and error rows by
+default. Use `detail: "full"` for every skipped row and nested delivery evidence.
+Update Skills and start fresh MCP sessions after upgrading this contract.
 
 Prepare/provide worktree scope before launch. Use
 `prepare_work_package_worktree(work_package_id)` and its returned

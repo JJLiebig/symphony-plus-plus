@@ -156,4 +156,11 @@ passes the JSON bootstrap to the worker. `detail: "full"` on dispatch returns
 the complete bootstrap inline; on `read_delivery_board` it restores all nested
 package and delivery evidence. Structured results remain JSON and agent text
 uses TOON. See the [architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#dispatch).
+`reconcile_work_request` defaults to counts plus proposed, applied and error
+rows; `detail: "full"` restores skipped rows and complete delivery-board evidence.
+Terminal packages have no pending merge next action. WorkRequest reads expose
+`execution_status: "closed"` when a nonempty plan is entirely terminal, otherwise
+`"open"`. This is separate from raw planning status and goal completion: abandoned
+scope can close execution without fulfilling the goal. Native Herdr views show
+closed execution as Done and retain the dropped-package count.
 These contract changes require updated Skills and fresh MCP sessions after upgrade.

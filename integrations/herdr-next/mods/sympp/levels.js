@@ -261,7 +261,8 @@ const newest = (a, b) => (b.at ?? 0) - (a.at ?? 0);
 function jobNow(job) {
   const phase = J.PHASES.find(([key]) => key === J.phaseOf(job))?.[1] ?? null;
   const landed = job.counts.total && phase !== "Done" ? `${job.counts.done}/${job.counts.total} landed` : null;
-  return [phase, landed].filter(Boolean).join(" · ") || "Unknown";
+  const dropped = job.counts.dropped ? `${job.counts.dropped} dropped` : null;
+  return [phase, landed, dropped].filter(Boolean).join(" · ") || "Unknown";
 }
 
 // A chief's desk: the requests and packages created or dispatched under its domain, newest first and

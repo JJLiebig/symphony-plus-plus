@@ -95,7 +95,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              WorkRequestScope.work_request_repository_filters(filters),
              pagination
            ) do
-      cards = WorkRequestPayloads.work_request_cards(work_requests)
+      cards = WorkRequestPayloads.work_request_cards(config.repo, work_requests)
 
       {:ok,
        ToolResult.agent_tool_result(
@@ -135,7 +135,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              repo_scope_opts,
              pagination
            ) do
-      cards = WorkRequestPayloads.work_request_cards(work_requests)
+      cards = WorkRequestPayloads.work_request_cards(config.repo, work_requests)
 
       {:ok, ToolResult.agent_tool_result(work_request_list_payload(cards, scope, status, pagination.limit, next_cursor))}
     else
@@ -236,7 +236,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          {:ok, work_packages} <- WorkRequestService.list_work_packages(config.repo, work_request_id),
          {:ok, delivery_board} <- WorkRequestScope.scoped_delivery_board(config.repo, work_request, work_packages, filters, repo_scope_opts) do
       payload = %{
-        "work_request" => WorkRequestPayloads.work_request_mutation(work_request),
+        "work_request" => Map.put(WorkRequestPayloads.work_request_mutation(work_request), "execution_status", delivery_board.execution_status),
         "delivery_board" => WorkRequestPayloads.delivery_board(delivery_board, detail),
         "detail" => detail,
         "scope" => scope
@@ -258,7 +258,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          {:ok, work_packages} <- WorkRequestService.list_work_packages(config.repo, work_request_id),
          {:ok, delivery_board} <- WorkRequestScope.scoped_delivery_board(config.repo, work_request, work_packages, filters) do
       payload = %{
-        "work_request" => WorkRequestPayloads.work_request_mutation(work_request),
+        "work_request" => Map.put(WorkRequestPayloads.work_request_mutation(work_request), "execution_status", delivery_board.execution_status),
         "delivery_board" => WorkRequestPayloads.delivery_board(delivery_board, detail),
         "detail" => detail,
         "scope" => WorkRequestPayloads.redacted_work_request_scope(work_request)

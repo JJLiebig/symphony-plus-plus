@@ -85,6 +85,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
   @spec statuses() :: [String.t()]
   def statuses, do: @statuses
 
+  @spec execution_status([String.t()]) :: String.t()
+  def execution_status(statuses) do
+    if statuses != [] and Enum.all?(statuses, &(&1 in ["skipped", "merged", "closed", "abandoned"])),
+      do: "closed",
+      else: "open"
+  end
+
   @spec work_types() :: [String.t()]
   def work_types, do: @work_types
 

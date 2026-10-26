@@ -7,7 +7,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { previewFiles } from './preview.mjs';
+import { previewFiles, previewMain } from './preview.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = process.env.HERDR_APP || 'herdr-app';
@@ -25,6 +25,24 @@ async function render(t, spec, main = null) {
 }
 
 const skip = { skip: !available && 'herdr-app is not installed' };
+
+test('closed execution draws Done with its dropped count in the job and topic desk', skip, async (t) => {
+  const closedMain = (spec) => previewMain(spec).replace('M.parseBoard(boardPayload())', `M.parseBoard((() => {
+    const board = boardPayload();
+    const detail = board.work_request_details[0];
+    detail.work_request.execution_status = "closed";
+    detail.clarification_questions = [];
+    detail.work_packages = detail.work_packages.map((pkg, i) => ({ ...pkg,
+      board_state: { stage: "done", track: "pr", delivered: true },
+      delivery: { outcome: i === 0 ? "abandoned" : "pr_merged" },
+    }));
+    return board;
+  })())`);
+  const job = await render(t, {}, closedMain({ props: { job: 'wr-pr' }, width: 1400 }));
+  assert.ok(job.text('1 dropped') && job.out.includes('Phase: Done'));
+  const topic = await render(t, {}, closedMain({ path: { topic: 't-herdr' }, width: 1400 }));
+  assert.ok(topic.text('Done · 1 dropped'));
+});
 
 test('a job tab draws package rails on one axis, with agents and decisions beside them', skip, async (t) => {
   const view = await render(t, { props: { job: 'wr-pr' }, width: 1400, decisionsFor: 'wr-pr' });

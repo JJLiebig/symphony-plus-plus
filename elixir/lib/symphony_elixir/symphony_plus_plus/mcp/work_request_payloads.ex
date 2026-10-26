@@ -1,6 +1,8 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
   @moduledoc false
 
+  import Ecto.Query, only: [from: 2]
+
   alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.ProductTree
@@ -122,9 +124,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     }
   end
 
-  @spec work_request_cards([WorkRequest.t()]) :: [map()]
-  def work_request_cards(work_requests) do
-    Enum.map(work_requests, &work_request_card/1)
+  @spec work_request_cards(repo(), [WorkRequest.t()]) :: [map()]
+  def work_request_cards(repo, work_requests) do
+    ids = Enum.map(work_requests, & &1.id)
+
+    statuses =
+      repo.all(from(package in WorkPackage, where: package.work_request_id in ^ids, select: {package.work_request_id, package.status}))
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+
+    Enum.map(work_requests, fn request ->
+      request |> work_request_card() |> Map.put("execution_status", WorkRequest.execution_status(Map.get(statuses, request.id, [])))
+    end)
   end
 
   @spec work_request_card(WorkRequest.t()) :: map()
@@ -161,7 +171,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
 
       {:ok,
        %{
-         "work_request" => Map.put(work_request(work_request), "operator_report", Map.fetch!(operator_reports, work_request.id)),
+         "work_request" =>
+           work_request(work_request)
+           |> Map.put("operator_report", Map.fetch!(operator_reports, work_request.id))
+           |> Map.put("execution_status", WorkRequest.execution_status(Enum.map(work_packages, & &1.status))),
          "clarification_questions" => Enum.map(questions, &clarification_question/1),
          "decision_log_entries" => Enum.map(decisions, &decision_log_entry/1),
          "work_packages" => Enum.map(visible_work_packages, &work_package/1),
@@ -189,7 +202,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
       |> product_tree_view_payload(work_package_payloads, view)
 
     %{
-      "work_request" => work_request(work_request),
+      "work_request" => Map.put(work_request(work_request), "execution_status", WorkRequest.execution_status(Enum.map(work_packages, & &1.status))),
       "product_tree" => product_tree,
       "view" => view
     }
