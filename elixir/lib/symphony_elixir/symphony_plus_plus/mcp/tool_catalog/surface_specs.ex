@@ -259,7 +259,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     do:
       "Force-release a WorkPackage's worker claim, including active or paused leases and reservations left after release. Any authenticated architect may target any WorkRequest. Invalidates previous worker sessions and records an audit reason; leaves package status and delivery unchanged."
 
-  defp architect_tool_description("read_delivery_board"), do: "Read the scoped WorkRequest delivery-board projection for visible work-package closeout without broad package visibility."
+  defp architect_tool_description("read_delivery_board"), do: "Read a compact scoped WorkRequest delivery board; detail: full includes complete package and closeout evidence."
   defp architect_tool_description("attach_branch"), do: "Update canonical branch metadata for an explicit descendant WorkPackage."
 
   defp architect_tool_description("sync_pr"),
@@ -302,7 +302,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
 
   defp architect_tool_description("delete_dependency"), do: "Remove one dependency intent from the claimed current WorkRequest."
   defp architect_tool_description("skip_work_package"), do: "Skip a WorkPackage that belongs to the claimed current WorkRequest."
-  defp architect_tool_description("dispatch_work_package"), do: "Activate one planned WorkPackage and return its redacted ledger-backed worker claim bootstrap."
+
+  defp architect_tool_description("dispatch_work_package"),
+    do: "Activate one planned WorkPackage and return ids, status, workspace and assignment_uri. Read that resource for the worker bootstrap, or request detail: full inline."
+
   defp architect_tool_description("prepare_work_package_worktree"), do: "Prepare a scoped WorkPackage git worktree and record only its worktree_path."
   defp architect_tool_description("cleanup_work_package_worktree"), do: "Clean up a scoped WorkPackage git worktree after validating the recorded path and dirty state."
 

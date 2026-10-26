@@ -21,6 +21,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Surface do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Service, as: PlanningService
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
+  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch
   @agent_text_mime_type "text/vnd.toon"
   @assignment_resource "sympp://assignment/current"
   @version_resource "sympp://health/version"
@@ -86,6 +87,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Surface do
           String.t()
         ) ::
           {:ok, map()} | {:error, integer(), String.t(), map()}
+  def read_work_package_virtual_resource(repo, session, work_package_id, "worker-bootstrap.json", uri) do
+    with {:ok, state, _session} <- read_work_package_document_state(repo, session, work_package_id, "context.md", nil),
+         {:ok, bootstrap} <- WorkPackageDispatch.bootstrap(repo, state.work_package, true) do
+      {:ok, Response.json_resource(uri, bootstrap)}
+    else
+      {:error, code, message, data} -> {:error, code, message, data}
+      {:error, reason} -> service_error(reason, uri)
+    end
+  end
+
   def read_work_package_virtual_resource(repo, session, work_package_id, file_name, uri) do
     with {:ok, state, session} <- read_work_package_document_state(repo, session, work_package_id, file_name, nil) do
       virtual_resource_result(uri, state, file_name, worker_session?(session))

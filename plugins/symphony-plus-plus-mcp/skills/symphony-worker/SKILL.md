@@ -9,6 +9,11 @@ Implement the assignment, run its required native checks and review, and return
 a normal PR or evidence handoff. No Symphony++ MCP calls, claim, progress ledger,
 question record, or duplicate review receipt are required.
 
+Read the bootstrap's `assignment` alongside `launch_prompt`; the prompt does
+not repeat the assignment. Within `assignment`, a `*_ref` JSON pointer supplies
+the same field from elsewhere in that object (for example, an inherited product
+description points to `#/parent_work_request/goal`). Use that complete text.
+
 ## Scope
 
 - Understand the goal, owned/forbidden paths, acceptance, repo/base/branch/worktree,

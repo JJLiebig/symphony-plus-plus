@@ -305,7 +305,7 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   expect(switched[1].result.structuredContent.assignment.work_package_id).toBe(first);
   expect(switched[2].result.structuredContent.assignment.work_package_id).toBe(second);
   expect((await candidate.request('tools/call', { name: 'get_current_assignment', arguments: {} })).structuredContent.assignment.work_package_id).toBe(second);
-  const board = (await architect.call('read_delivery_board', { work_request_id: request })).delivery_board;
+  const board = (await architect.call('read_delivery_board', { detail: 'full', work_request_id: request })).delivery_board;
   expect(board.work_packages.find((entry: any) => entry.id === first).work_package.runtime_state.reason_codes).not.toContain('claim_lease_active');
   expect(await candidate.request('tools/list')).toEqual(catalog);
   // A following response is the barrier: blank/CRLF lines and notifications

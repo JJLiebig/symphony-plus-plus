@@ -149,3 +149,11 @@ current selections, and native checks/review. Backend delivery must precede UI m
 and pinned heads must still match after backend delivery. External merges are
 recorded truthfully even when out of order; the board flags `delivery_order_violation`
 for remediation, including after the backend eventually delivers.
+
+MCP dispatch and delivery-board reads default to compact summaries. Dispatch
+returns an `assignment_uri`; the architect reads that authorized resource and
+passes the JSON bootstrap to the worker. `detail: "full"` on dispatch returns
+the complete bootstrap inline; on `read_delivery_board` it restores all nested
+package and delivery evidence. Structured results remain JSON and agent text
+uses TOON. See the [architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#dispatch).
+These contract changes require updated Skills and fresh MCP sessions after upgrade.

@@ -119,6 +119,17 @@ as `read_plan`, rejecting cycles/unmet dependencies, and atomically activates
 the canonical row with optional worker grant/resources and an ordinary assignment
 bootstrap. Dispatch ownership belongs to the architect; workers need no claim.
 
+Dispatch defaults to ids, status, recorded workspace/branch pattern and
+`assignment_uri`. Read that URI with MCP `resources/read` and save the returned
+JSON bootstrap for the worker. This read neither dispatches nor claims again.
+Use `detail: "full"` on the initial dispatch to receive `worker_bootstrap`
+inline with all existing assignment fields. Do not redispatch to fetch details.
+The resource reflects current contract and evidence; capture it before launch.
+
+`read_delivery_board` defaults to one summary per package, retaining delivery
+outcome, attention reasons, merge eligibility and PR URL. Use `detail: "full"`
+for nested runtime, blocker, review, successor and closeout evidence.
+
 Prepare/provide worktree scope before launch. Use
 `prepare_work_package_worktree(work_package_id)` and its returned
 `worker_launch.workspace_path` as cwd. Override `branch` only when needed;

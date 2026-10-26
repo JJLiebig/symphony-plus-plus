@@ -318,7 +318,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   def architect_tool_input_schema("read_delivery_board") do
     schema(
       %{
-        "work_request_id" => current_work_request_id_schema()
+        "work_request_id" => current_work_request_id_schema(),
+        "detail" => payload_detail_schema()
       },
       []
     )
@@ -622,7 +623,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_request_id" => current_work_request_id_schema(),
-        "work_package_id" => string_schema()
+        "work_package_id" => string_schema(),
+        "detail" => payload_detail_schema()
       },
       ["work_package_id"]
     )
@@ -1042,5 +1044,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
 
   defp session_description_schema do
     described_string_schema("Optional human-readable place to find this session outside Herdr, such as Terminal window: widget work.")
+  end
+
+  defp payload_detail_schema do
+    ["summary", "full"]
+    |> string_enum_schema()
+    |> Map.put("default", "summary")
+    |> Map.put("description", "Summary by default; full includes the complete worker bootstrap or delivery evidence.")
   end
 end

@@ -218,7 +218,7 @@ test('architect scope separates same-repository discovery from foreign writes an
   await architect.call('dispatch_work_package', { work_package_id: secondaryWp });
   const secondaryWorker = await worker(factory, secondaryWp, 'secondary-worker');
   expect((await secondaryWorker.call('read_context')).work_package.base_branch).toBe('integration');
-  const scopedBoard = (await secondary.call('read_delivery_board', { work_request_id: own })).delivery_board;
+  const scopedBoard = (await secondary.call('read_delivery_board', { detail: 'full', work_request_id: own })).delivery_board;
   const hiddenRow = scopedBoard.work_packages.find((entry: any) => entry.id === ownWp);
   expect(hiddenRow.work_package).toBeNull();
   expect(hiddenRow['work_package_hidden?']).toBe(true);
@@ -255,7 +255,7 @@ test('architect scope separates same-repository discovery from foreign writes an
   await architect.call('dispatch_work_package', { work_package_id: alternateBase });
   const alternateWorker = await worker(factory, alternateBase, 'alternate-base-worker');
   expect((await alternateWorker.call('read_context')).work_package.base_branch).toBe('integration');
-  const baseBoard = (await sameRepoReader.call('read_delivery_board', { work_request_id: own })).delivery_board;
+  const baseBoard = (await sameRepoReader.call('read_delivery_board', { detail: 'full', work_request_id: own })).delivery_board;
   expect(baseBoard.work_packages.find((entry: any) => entry.id === alternateBase).work_package.id).toBe(alternateBase);
   expect(baseBoard.work_packages.find((entry: any) => entry.id === ownWp).work_package).toBeNull();
   await sameRepoReader.reject('record_work_package_delivery', { work_request_id: own, work_package_id: ownWp, outcome: 'completed_no_pr',

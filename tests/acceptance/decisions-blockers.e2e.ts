@@ -2,7 +2,7 @@ import { expect } from 'e2e';
 import { contract, test, type Client } from '../support/factory.js';
 
 async function packageState(architect: Client, request: string, wp: string) {
-  const board = await architect.call('read_delivery_board', { work_request_id: request });
+  const board = await architect.call('read_delivery_board', { detail: 'full', work_request_id: request });
   return board.delivery_board.work_packages.find((entry: any) => entry.work_package.id === wp).work_package;
 }
 
