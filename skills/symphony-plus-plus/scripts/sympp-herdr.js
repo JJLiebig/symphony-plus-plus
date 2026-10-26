@@ -75,7 +75,7 @@ function assignment(file) {
   const wr = bootstrap?.coordinates?.product_parent;
   if (bootstrap?.type !== "assignment" || wp?.kind !== "work_package" || wr?.kind !== "work_request" ||
       !text(wp.work_package_id) || !text(wr.work_request_id) || !text(bootstrap.launch_prompt)) {
-    fail("invalid_assignment", "Save the redacted worker_bootstrap from the existing dispatch response; do not dispatch again.", 2);
+    fail("invalid_assignment", "Save the full redacted bootstrap; read assignment_uri with MCP resources/read if dispatch was compact. Do not dispatch again.", 2);
   }
   const title = [bootstrap.assignment?.title, bootstrap.assignment?.work_package?.title, bootstrap.work_package?.title, input.work_package?.title,
     bootstrap.launch_prompt.match(/^You own WorkPackage \S+:\s*([^\r\n]+)/)?.[1]?.replace(/\s+\(parent WorkRequest [^)]+\)\.?$/, "")].find(text);

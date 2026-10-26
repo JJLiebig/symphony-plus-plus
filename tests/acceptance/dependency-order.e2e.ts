@@ -79,7 +79,7 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   await architect.call('upsert_dependency', { dependency_id: ordinary, dependent: endpoint(ui), prerequisite: endpoint(backend), candidate_head_sha: head('b'), reason: 'Conflicting candidate qualification.' });
   await architect.reject('dispatch_work_package', { work_package_id: ui }, 'unmet_work_package_dependencies');
   await architect.call('delete_dependency', { dependency_id: ordinary });
-  const dispatch = await architect.call('dispatch_work_package', { work_package_id: ui });
+  const dispatch = await architect.call('dispatch_work_package', { detail: 'full', work_package_id: ui });
   const selection = dispatch.worker_bootstrap.assignment.dependency_selections[0].constraints[0];
   expect(selection.candidate_head_sha).toBe(head('a'));
   expect(selection.candidate_state).toBe('current');

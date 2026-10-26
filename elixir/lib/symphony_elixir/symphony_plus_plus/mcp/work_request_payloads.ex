@@ -376,6 +376,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
     |> Redactor.redact_output()
   end
 
+  @spec delivery_board(map(), String.t()) :: map()
+  def delivery_board(board, "full"), do: delivery_board(board)
+
+  def delivery_board(board, "summary") do
+    board
+    |> delivery_board()
+    |> Map.update!("work_packages", fn work_packages ->
+      Enum.map(work_packages, fn work_package ->
+        work_package
+        |> Map.take(["id", "title", "raw_status", "delivery_outcome", "attention_reason_codes", "merge_eligibility"])
+        |> Map.put("state", get_in(work_package, ["operational_state", "key"]))
+        |> Map.put("pr_url", get_in(work_package, ["work_package", "pr", "url"]) || get_in(work_package, ["delivery", "pr_url"]))
+      end)
+    end)
+  end
+
   defp visible_work_packages_from_projection(work_packages, projection_work_package_payloads) do
     visible_work_package_ids =
       projection_work_package_payloads

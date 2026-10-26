@@ -160,7 +160,7 @@ test('ordinary PR handoff observes pending qualification then reconciles an exac
   const architect = await factory.client();
   const request = await architect.request('Qualified delivery');
   const [wp] = (await architect.call('slice_work_request', { work_packages: [contract('Service change')] })).work_package_ids;
-  const dispatch = await architect.call('dispatch_work_package', { work_package_id: wp, future_field: 'ignored' });
+  const dispatch = await architect.call('dispatch_work_package', { detail: 'full', work_package_id: wp, future_field: 'ignored' });
   expect(dispatch.worker_bootstrap.type).toBe('assignment');
   expect(dispatch.worker_grant.secret_in_response).toBe(false);
   const detail = () => architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`);

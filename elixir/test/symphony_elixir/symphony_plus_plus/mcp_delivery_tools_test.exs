@@ -73,9 +73,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
       |> stale_session_capabilities(limited_work_request_architect_capabilities())
 
     board_response =
-      mcp_tool(repo, session, "read_delivery_board", %{
-        "work_request_id" => work_request.id
-      })
+      mcp_tool(repo, session, "read_delivery_board", %{"detail" => "full", "work_request_id" => work_request.id})
 
     board_payload = get_in(board_response, ["result", "structuredContent"])
 
@@ -101,9 +99,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
     refute inspect(closeout_response) =~ evidence_query_value
 
     read_closed_response =
-      mcp_tool(repo, session, "read_delivery_board", %{
-        "work_request_id" => work_request.id
-      })
+      mcp_tool(repo, session, "read_delivery_board", %{"detail" => "full", "work_request_id" => work_request.id})
 
     assert get_in(read_closed_response, [
              "result",
@@ -825,9 +821,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
 
   defp delivery_board_payload_for(repo, session, %WorkRequest{} = work_request) do
     response =
-      mcp_tool(repo, session, "read_delivery_board", %{
-        "work_request_id" => work_request.id
-      })
+      mcp_tool(repo, session, "read_delivery_board", %{"detail" => "full", "work_request_id" => work_request.id})
 
     assert response["error"] == nil
     get_in(response, ["result", "structuredContent"])

@@ -168,11 +168,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         repo,
         session,
         "dispatch_work_package",
-        %{
-          "work_request_id" => work_request.id,
-          "work_package_id" => approved_slice.id,
-          "claimed_by" => "worker-dispatch-1"
-        },
+        %{"detail" => "full", "work_request_id" => work_request.id, "work_package_id" => approved_slice.id, "claimed_by" => "worker-dispatch-1"},
         config: Config.default(repo: repo, database: configured_database)
       )
 
@@ -329,6 +325,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         Application.put_env(:symphony_elixir, :sympp_repo_database, configured_live_database)
 
         mcp_tool(repo, session, "dispatch_work_package", %{
+          "detail" => "full",
           "work_request_id" => in_scope.id,
           "work_package_id" => approved_live_database_slice.id,
           "claimed_by" => "worker-dispatch-1"
@@ -358,11 +355,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         repo,
         session,
         "dispatch_work_package",
-        %{
-          "work_request_id" => in_scope.id,
-          "work_package_id" => approved_blank_database_slice.id,
-          "claimed_by" => "worker-dispatch-1"
-        },
+        %{"detail" => "full", "work_request_id" => in_scope.id, "work_package_id" => approved_blank_database_slice.id, "claimed_by" => "worker-dispatch-1"},
         config: Config.default(repo: repo, repo_root: test_repo_root(), database: "   ")
       )
 
@@ -389,6 +382,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
     delivery_base_response =
       mcp_tool(repo, session, "dispatch_work_package", %{
+        "detail" => "full",
         "work_request_id" => in_scope.id,
         "work_package_id" => approved_delivery_base_slice.id,
         "claimed_by" => "worker-dispatch-delivery-base"
