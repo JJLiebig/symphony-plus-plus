@@ -38,7 +38,17 @@ test('closed execution is Done with dropped scope counted, without inventing com
   assert.equal(job.state, 'settled');
   assert.equal(job.counts.dropped, 3);
   assert.equal(job.counts.live, 0);
-  assert.equal(job.brief, '1 of 4 packages finished; 3 dropped.');
+  assert.equal(job.brief, '4 packages closed; 3 dropped.');
+  for (const [status, label, dropped] of [['abandoned', 'Dropped', 1], ['closed', 'Closed', 0]]) {
+    detail.work_packages = [{ id: 'missing-closeout', raw_status: status, repo: 'owner/web' }];
+    const raw = M.parseBoard(payload).jobs.find((job) => job.id === 'wr-pr');
+    assert.equal(J.phaseOf(raw), 'done');
+    assert.equal(raw.counts.live, 0);
+    assert.equal(raw.counts.dropped, dropped);
+    assert.equal(M.stageText(raw.packages[0], NOW), label);
+    assert.equal(raw.closedAt, null);
+    assert.doesNotMatch(raw.brief, /landed|finished/);
+  }
 });
 
 test('an opened package says who holds the work, what waits, what is next and the evidence, in plain words', () => {

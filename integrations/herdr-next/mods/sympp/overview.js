@@ -124,7 +124,7 @@ function strip(t, job, now) {
     const gap = i > 0 && pkg.group !== job.packages[i - 1].group;
     return div().id(`pip-${job.id}-${pkg.id}`).flex_none().when(gap, (el) => el.ml(5)).tooltip(`${pkg.title}: ${M.stageText(pkg, now)}`).child(pip(t, pkg));
   });
-  return h_flex().flex_none().gap(3).items_center().accessibility_label(`${job.counts.done} of ${job.counts.total} packages landed`).children(dots);
+  return h_flex().flex_none().gap(3).items_center().accessibility_label(`${job.counts.done} of ${job.counts.total} packages closed${job.counts.dropped ? `; ${job.counts.dropped} dropped` : ""}`).children(dots);
 }
 
 function jobRow(v, t, job, now, note = null) {
