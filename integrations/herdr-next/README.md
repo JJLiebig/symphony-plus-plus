@@ -68,6 +68,7 @@ node integrations/herdr-next/install.mjs --endpoint $origin --chrome
   when it needs you. A stage older than about two minutes shows dimmed as last
   known. Stages arrive from an open S++ view's board reads, the panel included,
   once it has been shown.
+- A UI studio tab shows the S++ glyph in a small window tucked behind its icon.
 
 The installer backs up the layout and both mods under `data/sympp-chrome`, adds
 a `sympp` panel to the layout's `panel-body` stack, and patches the two mods in
@@ -77,7 +78,9 @@ mod, or either desk mod differs from what the patch expects or was edited after
 installing. Other mods can add their panels the same way through
 `shared("workspace.panel_buttons")` entries `{ id, label, icon, iconDark? }`: an
 SVG icon is tinted like Files and Changes; a picture shows as it is, `iconDark`
-on a dark theme.
+on a dark theme. Tabs take marks the same way through `shared("workspace.tab_marks")`
+entries `{ tab, icon, iconDark?, label }`: a tab's first mark sits behind the right
+of its icon with `label` as its tooltip, so draw it 14 px with that icon's ring cut out.
 
 Chrome installation and removal require `herdr-app` on `PATH` or `--app <executable>`.
 The installer checks both desk mods and S++ after writing them. If a check fails,
@@ -90,6 +93,51 @@ node integrations/herdr-next/install.mjs --remove-chrome
 restores both mods from their backups and removes the S++ panel from the layout,
 keeping any other layout change made since. A desk with another version of the
 chrome is refused; remove it with the installer that added it, then install again.
+The desk-tabs patch is now chrome 2 (tab marks). A desk with chrome 1 from an
+earlier checkout is upgraded with that checkout's installer, then this one:
+
+```powershell
+git worktree add $env:TEMP/sympp-chrome-1 76846ad8
+node $env:TEMP/sympp-chrome-1/integrations/herdr-next/install.mjs --remove-chrome
+node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace
+git worktree remove $env:TEMP/sympp-chrome-1
+```
+
+## UI studio
+
+A UI package gets a studio: a tab named after the package, in the job's local
+space, with its worker's terminal on the left and a preview on the right, like a
+chat beside its canvas. A package is UI work when its title names UI as a word
+("UI studio tab", "Token UI") or its worker has published a preview. Open it with
+**Open UI studio** under the selected package in a job view, or U. Opening it again
+selects the open studio. An architect launching a UI worker can open the studio
+with only the ids, once any S++ view has connected:
+
+```powershell
+herdr-app do tab.new '{"name":"<package title>","mod":"sympp","props":{"studio":{"job":"<work request id>","pkg":"<work package id>"}}}'
+```
+
+A studio opened outside the job's space moves there; a second one for the same
+package hands over to the first. Neither closes a tab that holds a terminal.
+
+The studio places the worker only after the execution helper has verified its
+launch. A worker without a pane is brought into the studio; one shown in another
+tab stays there until you choose **Move here** (or **Go to it**).
+
+The preview shows, in order:
+
+- **A web page** the worker published with `sympp.preview_url` on its terminal
+  (see the [worker UI collaboration procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-worker/SKILL.md#ui-collaboration)),
+  as its address with **Open** (O or Enter) for the browser. Herdr mods cannot
+  embed a browser; a rendered picture of the page is a later addition.
+- **The Herdr view itself** when the worker is local and its worktree changes
+  `integrations/herdr-next/mods` against the job's base branch. The worktree's own
+  `preview.mjs` builds that view on the sample board as `mods/sympp-dev-<package>`
+  in the Herdr home and rebuilds on every save, so changes show within seconds. The
+  copy makes no S++ reads or writes; your own `sympp` mod is never written. The
+  copy goes when the package lands, or about a minute after its studio closes
+  while any S++ view is open.
+- Otherwise it says the agent hasn't published a preview yet.
 
 The native view requires a backend with the native board endpoint. Updating the
 view with this installer does not update or restart S++. For an existing Windows

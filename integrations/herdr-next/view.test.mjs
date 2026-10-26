@@ -3,49 +3,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readdir, copyFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { previewFiles } from './preview.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = process.env.HERDR_APP || 'herdr-app';
 const available = !spawnSync(app, ['--version'], { encoding: 'utf8', windowsHide: true }).error;
 
-const wrapper = (spec) => `import Lens from "./lens.js";
-import * as M from "./model.js";
-import * as J from "./job.js";
-import { NOW, boardPayload, detailPayload, deskFixture } from "./fixture.js";
-const CASE = ${JSON.stringify(spec)};
-export default class SpecLens extends Lens {
-  init(_p, cx) {
-    // Ages and timings are drawn at the fixture's moment, not the machine's clock.
-    Date.now = () => NOW;
-    super.init({ endpoint: "http://127.0.0.1:4000", ...CASE.props }, cx);
-    const now = Date.now();
-    this.net = M.fetchSucceeded(this.net, M.parseBoard(boardPayload()), now);
-    if (CASE.error) this.net = M.fetchFailed(this.net, CASE.error, now);
-    if (CASE.path) this.path = { topic: null, space: null, job: null, ...CASE.path };
-    if (CASE.pin) this.pin = true;
-    if (CASE.review) this.review = CASE.review;
-    this.detailNet = { ...M.fetchSucceeded(M.initialFetch(), J.decisionsOf(detailPayload()), now), jobId: CASE.decisionsFor ?? null };
-  }
-  tick() {}
-  viewportWidth() { return CASE.width; }
-  deskTopics() { return deskFixture().topics; }
-  spaceList() { return deskFixture().spaces; }
-}
-`;
-
-async function render(t, spec) {
+async function render(t, spec, main = null) {
   const dir = await mkdtemp(join(tmpdir(), 'sympp spec '));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const source = join(here, 'mods', 'sympp');
-  for (const name of await readdir(source)) {
-    if (name.endsWith('.js') || name === 'mod.json') await copyFile(join(source, name), join(dir, name === 'main.js' ? 'lens.js' : name));
-  }
-  await copyFile(join(here, 'fixture.mjs'), join(dir, 'fixture.js'));
-  await writeFile(join(dir, 'main.js'), wrapper(spec));
+  for (const [name, body] of await previewFiles('sympp-dev-spec', join(here, '..', '..'), spec)) await writeFile(join(dir, name), body);
+  if (main) await writeFile(join(dir, 'main.js'), main);
   const result = spawnSync(app, ['check', dir, '--print-spec'], { encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const out = result.stdout;
@@ -173,4 +145,47 @@ test('a topic with a chief shows its desk first; one without says how to make on
   assert.ok(factory.has('topic-chief-t-herdr') && factory.has('topic-chief-t-live') && !factory.has('topic-chief-t-tools'));
   const panel = await render(t, { props: { role: 'panel' }, width: 1400, path: { topic: 't-live' } });
   assert.ok(panel.has('chief-live') && panel.text('Unknown') && panel.text('Nothing dispatched yet.'));
+});
+
+test('a selected UI package offers its studio; other packages do not', skip, async (t) => {
+  for (const width of [1400, 700]) {
+    const ui = await render(t, { props: { job: 'wr-cross' }, width, pkg: 'x-web' });
+    assert.ok(ui.has('studio-x-web') && ui.text('Open UI studio'), `Token UI at ${width}`);
+    const other = await render(t, { props: { job: 'wr-pr' }, width, pkg: 'wp-build' });
+    assert.equal(other.has('studio-wp-build') || other.text('Open UI studio'), false, `Stage board at ${width}`);
+  }
+});
+
+// The studio's own pane in each state, drawn from studioview.js with fixed inputs.
+const studioCase = (s) => `import { View } from "gpui-kit";
+import { theme } from "herdr";
+import { studioView } from "./studioview.js";
+const CASE = ${JSON.stringify(s)};
+const v = { workerChecking: false, moveWorker() {}, goToWorker() {}, openPreview() {}, retry() {}, showPreview() {} };
+export default class StudioCase extends View {
+  render() { return studioView(v, theme(), CASE); }
+}
+`;
+
+test('a studio shows a published preview with Open, says when there is none, and shrinks over a native one', skip, async (t) => {
+  const base = { pkg: { title: 'Token UI' }, worker: { state: 'live', provider: 'Claude' }, place: { step: null }, kind: 'none', url: null, native: { state: 'idle', error: null, builtAt: null }, landed: false, strip: false };
+  const draw = (s) => render(t, {}, studioCase({ ...base, ...s }));
+  const web = await draw({ kind: 'web', url: 'http://127.0.0.1:5173/' });
+  assert.ok(web.has('studio-head') && web.has('studio-card') && web.has('studio-open'));
+  assert.ok(web.text('Token UI') && web.text('Claude · Live') && web.text('http://127.0.0.1:5173/') && web.text('Preview'));
+  const none = await draw({});
+  assert.ok(none.text("The agent hasn't published a preview yet"));
+  assert.equal(none.has('studio-card') || none.has('studio-open'), false);
+  const strip = await draw({ kind: 'native', native: { state: 'ready', error: null, builtAt: Date.now() }, strip: true });
+  assert.ok(strip.has('studio-head') && strip.text('Sample data · updated just now'));
+  assert.equal(strip.has('studio-card') || strip.out.includes('text "Building the preview'), false, 'over a native preview only the header is drawn');
+  const failed = await draw({ kind: 'native', native: { state: 'error', error: 'SyntaxError: Unexpected token', builtAt: null } });
+  assert.ok(failed.text("The preview didn't build") && failed.text('SyntaxError: Unexpected token'));
+  const elsewhere = await draw({ place: { step: 'elsewhere', pane: 'p7', tab: 'tb5' } });
+  assert.ok(elsewhere.has('studio-move') && elsewhere.has('studio-go') && elsewhere.text('Claude · in another tab'));
+  const waiting = await draw({ worker: { state: 'gone', provider: null } });
+  assert.ok(waiting.text('Waiting for the worker') && waiting.has('studio-retry') && waiting.text("The worker isn't running"));
+  const landed = await draw({ landed: true });
+  assert.ok(landed.text('Landed'));
+  assert.equal(landed.has('studio-retry'), false);
 });
