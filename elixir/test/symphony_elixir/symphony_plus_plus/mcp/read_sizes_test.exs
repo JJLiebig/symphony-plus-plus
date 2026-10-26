@@ -190,6 +190,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ReadSizesTest do
     changed = mcp_tool(repo, architect, "read_work_request", %{"work_request_id" => request.id})["result"]["structuredContent"]
     assert hd(changed["work_packages"])["pr_url"] == "https://github.com/nextide/symphony-plus-plus/pull/123"
     assert Enum.at(changed["work_packages"], 1)["next_action"] == "reconcile_work_request"
+
+    assert {:ok, _delivery} =
+             RequestRepository.record_work_package_delivery(repo, request.id, Enum.at(packages, 1).id, %{
+               outcome: "pr_merged",
+               idempotency_key: "fixture-merged",
+               recorded_by: "fixture-architect",
+               pr_url: "https://github.com/nextide/symphony-plus-plus/pull/124",
+               pr_number: 124,
+               pr_repository: request.repo,
+               pr_merged_at: DateTime.utc_now(:microsecond),
+               merge_commit_sha: "merged124"
+             })
+
+    delivered = mcp_tool(repo, architect, "read_work_request", %{"work_request_id" => request.id})["result"]["structuredContent"]
+    assert Enum.at(delivered["work_packages"], 1)["next_action"] == "none"
+    assert Enum.at(delivered["work_packages"], 1)["pr_url"] == "https://github.com/nextide/symphony-plus-plus/pull/124"
   end
 
   defp measure(result) do

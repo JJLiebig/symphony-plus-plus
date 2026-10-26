@@ -226,7 +226,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads do
   defp package_next_action("planned"), do: "dispatch_work_package"
   defp package_next_action("ready_for_worker"), do: "launch_worker"
   defp package_next_action("needs_closeout"), do: "reconcile_work_request"
-  defp package_next_action(state) when state in ["merged", "completed_no_pr", "superseded", "abandoned", "skipped"], do: "none"
+  defp package_next_action(state) when state in ["delivered", "completed_no_pr", "superseded", "abandoned", "skipped"], do: "none"
   defp package_next_action(_state), do: "read_delivery_board"
 
   @spec plan_summary(map()) :: map()
