@@ -93,7 +93,7 @@ node integrations/herdr-next/install.mjs --remove-chrome
 restores both mods from their backups and removes the S++ panel from the layout,
 keeping any other layout change made since. A desk with another version of the
 chrome is refused; remove it with the installer that added it, then install again.
-Both patches are now chrome 3 (the solid S mark). Upgrade a desk with chrome 2
+Both patches are now chrome 3 (the new S marks). Upgrade a desk with chrome 2
 using its matching installer to remove it first, then install this checkout:
 
 ```powershell
@@ -109,10 +109,21 @@ the same `--home`, `--app` and `--session` selections to both installers when
 using a nondefault desk. Removal and installation check the mods and retain
 their existing rollback behavior.
 
-The blue-violet mark uses one filled S with open counters at 12–16 px. Its SVG
-sources are `mods/sympp/mark*.svg`; `mark*.png` are transparent 64 px exports for
-the panel's picture slot. `glyph*.svg` retain the provider icon's transparent
-ring, and the studio variants keep the small window outline.
+Four blue-violet marks are available: **A · Cut ribbon**, **B · Open ribbon**,
+**C · Fold**, and **D · Solid**. To switch all three surfaces together:
+
+```powershell
+node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace --mark a
+```
+
+Use `a`, `b`, `c` or `d`; A is the default. Repeat another choice on later installs.
+Switching marks on chrome 3 needs no removal. The installer keeps its edit
+protection, mod checks and rollback.
+
+Each option has light/dark SVGs for the Agents badge and studio window, with
+the provider icon's ring kept transparent, plus a panel SVG and transparent
+64 px PNG export. B/C/D sources live in `marks/<letter>/`; A uses the default
+assets in `mods/sympp/`.
 
 ## UI studio
 
