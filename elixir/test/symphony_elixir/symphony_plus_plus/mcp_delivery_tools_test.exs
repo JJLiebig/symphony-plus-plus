@@ -72,7 +72,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
       get_in(response, ["result", "structuredContent"])
     end
 
-    assert read.("read_work_request", %{"work_request_id" => work_request.id})["work_request"]["execution_status"] == "open"
+    assert read.("read_work_request", %{"detail" => "full", "work_request_id" => work_request.id})["work_request"]["execution_status"] == "open"
 
     packages =
       for index <- 1..25 do
@@ -101,7 +101,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
       read.("record_work_package_delivery", args)
     end
 
-    assert read.("read_work_request", %{"work_request_id" => work_request.id})["work_request"]["execution_status"] == "open"
+    assert read.("read_work_request", %{"detail" => "full", "work_request_id" => work_request.id})["work_request"]["execution_status"] == "open"
     active = read.("read_delivery_board", %{"work_request_id" => work_request.id})["delivery_board"]["work_packages"] |> List.last()
     assert active["merge_eligibility"]["next_action"] == "finish_worker_qualification"
 
@@ -116,7 +116,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
       assert Enum.all?(board["delivery_board"]["work_packages"], &is_nil(&1["merge_eligibility"]["next_action"]))
     end
 
-    request = read.("read_work_request", %{"work_request_id" => work_request.id})["work_request"]
+    request = read.("read_work_request", %{"detail" => "full", "work_request_id" => work_request.id})["work_request"]
     assert request["execution_status"] == "closed"
     assert request["status"] == "sliced"
     listed = read.("list_work_requests", %{})["work_requests"] |> Enum.find(&(&1["id"] == work_request.id))

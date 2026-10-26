@@ -113,7 +113,7 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   expect(nativeDetail.body.work_request.status).toBe('ready_for_clarification');
   expect(nativeDetail.body.work_packages).toEqual([]);
   expect((await native.raw({}, {}, 'POST', `/api/v1/sympp/operator/work-requests/${nativeId}/delete`)).status).toBe(401);
-  expect((await fresh.call('read_work_request', { work_request_id: id })).work_packages.map((entry: any) => entry.id)).toEqual([nativePackage]);
+  expect((await fresh.call('read_work_request', { detail: 'full', work_request_id: id })).work_packages.map((entry: any) => entry.id)).toEqual([nativePackage]);
   const bound = await fresh.call('get_current_assignment');
   expect((await fresh.rpc('initialize', initialize)).error.data.reason).toBe('already_initialized');
   expect((await fresh.call('get_current_assignment')).assignment.work_package_id).toBe(bound.assignment.work_package_id);
@@ -144,7 +144,7 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   const notification = await fresh.raw({ jsonrpc: '2.0', method: 'notifications/initialized' });
   expect(notification.status).toBe(202);
   expect(notification.body).toBeNull();
-  expect((await fresh.call('read_work_request', { work_request_id: id })).work_request.id).toBe(id);
+  expect((await fresh.call('read_work_request', { detail: 'full', work_request_id: id })).work_request.id).toBe(id);
 });
 
 test('architect scope separates same-repository discovery from foreign writes and hides sibling endpoints', async ({ processes }) => {
@@ -159,14 +159,14 @@ test('architect scope separates same-repository discovery from foreign writes an
     decision_prompt: { tl_dr: 'Private malformed prompt sentinel', details: 'Missing options' },
   }, 'decision_prompt must contain 1 to 4 options');
   expect(JSON.stringify(malformedQuestion)).not.toContain('Private malformed prompt sentinel');
-  expect((await architect.call('read_work_request', { work_request_id: own })).clarification_questions).toEqual([]);
+  expect((await architect.call('read_work_request', { detail: 'full', work_request_id: own })).clarification_questions).toEqual([]);
   const peer = await factory.client();
   const other = await peer.request('Other request');
   const [otherWp] = (await peer.call('slice_work_request', { work_packages: [contract('Hidden sibling')] })).work_package_ids;
   const question = (await peer.call('ask_question', {
     work_request_id: other, category: 'scope', question: 'Which behavior is required?', why_needed: 'A concrete choice is needed.',
   })).clarification_question;
-  expect((await architect.call('read_work_request', { work_request_id: other })).work_request.id).toBe(other);
+  expect((await architect.call('read_work_request', { detail: 'full', work_request_id: other })).work_request.id).toBe(other);
   for (const [name, args] of [
     ['set_work_request_status', { work_request_id: other, current_status: 'sliced', next_status: 'clarifying' }],
     ['slice_work_request', { work_request_id: other, work_packages: [contract('Stolen')] }],
@@ -196,9 +196,9 @@ test('architect scope separates same-repository discovery from foreign writes an
   } });
   expect(foreignDependency.error.code).toBe(-32602);
   expect(foreignDependency.error.data.reason).toContain('product_tree_dependency_target_scope');
-  const tree = await architect.call('read_plan', { work_request_id: own, view: 'groups_with_work_packages' });
+  const tree = await architect.call('read_plan', { detail: 'full', work_request_id: own, view: 'groups_with_work_packages' });
   expect(JSON.stringify(tree)).not.toContain(otherWp);
-  const unchanged = await peer.call('read_work_request', { work_request_id: other });
+  const unchanged = await peer.call('read_work_request', { detail: 'full', work_request_id: other });
   expect(unchanged.work_request.title).toBe('Other request');
   expect(unchanged.work_packages[0].status).toBe('planned');
   expect(unchanged.clarification_questions.find((entry: any) => entry.id === question.id).status).toBe('open');
@@ -212,7 +212,7 @@ test('architect scope separates same-repository discovery from foreign writes an
 
   const secondary = await factory.client();
   await secondary.request('Secondary repository reader', 'ready_for_slicing', 'integration', 'example/client');
-  expect((await secondary.call('read_work_request', { work_request_id: own })).work_request.id).toBe(own);
+  expect((await secondary.call('read_work_request', { detail: 'full', work_request_id: own })).work_request.id).toBe(own);
   await secondary.reject('set_work_request_status', { work_request_id: own, current_status: 'sliced', next_status: 'clarifying' }, 'not_found');
   const [secondaryWp] = (await architect.call('slice_work_request', { work_packages: [contract('Secondary delivery', { repo: 'example/client', base_branch: 'integration' })] })).work_package_ids;
   await architect.call('dispatch_work_package', { work_package_id: secondaryWp });
@@ -230,19 +230,19 @@ test('architect scope separates same-repository discovery from foreign writes an
   for (const [wp, group] of [[ownWp, hiddenGroup], [secondaryWp, visibleGroup]]) {
     await architect.call('update_work_package', { work_package_id: wp, expected_contract_revision: 1, patch: { group_id: group } });
   }
-  const scopedPlan = await secondary.call('read_plan', { work_request_id: own, view: 'groups_with_work_packages' });
+  const scopedPlan = await secondary.call('read_plan', { detail: 'full', work_request_id: own, view: 'groups_with_work_packages' });
   expect(scopedPlan.product_tree.groups.map((entry: any) => entry.id).sort()).toEqual([parentGroup, visibleGroup].sort());
   expect(JSON.stringify(scopedPlan)).not.toContain('Confidential primary group');
   await peer.reject('update_work_package', { work_package_id: otherWp, expected_contract_revision: 1, patch: { group_id: visibleGroup } }, 'not_found');
   const dependencyArgs = { dependent: { kind: 'group', id: hiddenGroup }, prerequisite: { kind: 'work_package', id: secondaryWp }, reason: 'Scoped dependency' };
   const dependency = (await architect.call('upsert_dependency', dependencyArgs)).dependency.id;
-  const beforeEdges = (await architect.call('read_plan', { work_request_id: own, view: 'groups_with_work_packages' })).product_tree.dependency_intents;
+  const beforeEdges = (await architect.call('read_plan', { detail: 'full', work_request_id: own, view: 'groups_with_work_packages' })).product_tree.dependency_intents;
   const foreignUpdate = await architect.rpc('tools/call', { name: 'upsert_dependency', arguments: {
     ...dependencyArgs, dependency_id: dependency, prerequisite: { kind: 'work_package', id: otherWp },
   } });
   expect(foreignUpdate.error.code).toBe(-32602);
   expect(foreignUpdate.error.data.reason).toContain('product_tree_dependency_target_scope');
-  expect((await architect.call('read_plan', { work_request_id: own, view: 'groups_with_work_packages' })).product_tree.dependency_intents).toEqual(beforeEdges);
+  expect((await architect.call('read_plan', { detail: 'full', work_request_id: own, view: 'groups_with_work_packages' })).product_tree.dependency_intents).toEqual(beforeEdges);
   await close(architect, ownWp);
   const hiddenTerminal = await row(secondary, own, ownWp);
   expect(hiddenTerminal.work_package).toBeNull();
@@ -265,7 +265,7 @@ test('architect scope separates same-repository discovery from foreign writes an
   for (const [repo, branch] of [['foreign/service', 'beta'], ['example/service', 'other-branch']]) {
     const outsider = await factory.client();
     const foreign = await outsider.request('Confidential outside scope', 'ready_for_slicing', branch, repo);
-    await architect.reject('read_work_request', { work_request_id: foreign }, 'not_found');
+    await architect.reject('read_work_request', { detail: 'full', work_request_id: foreign }, 'not_found');
     const listed = await architect.call('list_work_requests', {});
     expect(JSON.stringify(listed)).not.toContain(foreign);
   }
@@ -278,7 +278,7 @@ test('plan views preserve complete authoring and confine partial readers to visi
   const reader = await factory.client();
   await reader.request('Secondary plan reader', 'ready_for_slicing', 'integration', 'example/client');
   const views = ['groups_only', 'groups_with_work_package_refs', 'groups_with_work_packages'];
-  const read = async (client: Client, view: string) => (await client.call('read_plan', { work_request_id: request, view })).product_tree;
+  const read = async (client: Client, view: string) => (await client.call('read_plan', { detail: 'full', work_request_id: request, view })).product_tree;
   const group = async (title: string, parent?: string) => (await architect.call('upsert_group', {
     title, ...(parent ? { parent_group_id: parent } : {}),
   })).group.id as string;
@@ -388,7 +388,7 @@ test('worker mutations and resources remain confined to its package while explic
   const peer = await worker(factory, sibling, 'peer-worker');
   const siblingComment = (await peer.call('add_comment', { body: 'Private sibling note' })).comment;
   for (const [name, args] of [
-    ['read_work_package_document', { document: 'progress.md' }],
+    ['read_work_package_document', { detail: 'full', document: 'progress.md' }],
     ['append_progress', { summary: 'Stolen', idempotency_key: 'stolen-progress' }],
     ['append_finding', { title: 'Stolen', body: 'Stolen', idempotency_key: 'stolen-finding' }],
     ['attach_branch', { branch: 'feature/authority', head_sha: 'a'.repeat(40) }],
@@ -431,7 +431,7 @@ test('worker mutations and resources remain confined to its package while explic
   expect(note.comment.body).toBe('An explicit local operator note');
   expect(note.comment.author_name).toBe('acceptance-worker');
   expect((await peer.call('list_comments')).comments[0].status).toBe('open');
-  expect((await peer.call('read_work_package_document', { document: 'progress.md' })).progress_events).toEqual([]);
+  expect((await peer.call('read_work_package_document', { detail: 'full', document: 'progress.md' })).progress_events).toEqual([]);
 });
 
 test('force release rotates worker authority without changing delivery and allows a new owner', async ({ processes }) => {
@@ -459,7 +459,7 @@ test('force release rotates worker authority without changing delivery and allow
   expect(recycledRow.work_package.runtime_state.lifecycle_state).toBe('recycled');
   expect(recycledRow.work_package.runtime_state.reason_codes).toContain('worker_recycled');
   expect(JSON.stringify(released)).not.toContain('synthetic-release-secret');
-  const before = (await architect.call('read_work_request', { work_request_id: request })).work_packages.find((entry: any) => entry.id === wp);
+  const before = (await architect.call('read_work_request', { detail: 'full', work_request_id: request })).work_packages.find((entry: any) => entry.id === wp);
   expect(before.status).toBe('active');
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
   await replacement.call('claim_local_assignment', { work_package_id: wp, claimed_by: 'replacement-worker' });
@@ -467,7 +467,7 @@ test('force release rotates worker authority without changing delivery and allow
   expect((await previous.rpc('tools/call', { name: 'append_progress', arguments: { ...mutation, idempotency_key: 'old-owner' } })).error).toBeTruthy();
   expect((await replacement.call('append_progress', mutation)).progress_event.id).toBe(first.id);
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
-  const document = await replacement.call('read_work_package_document', { document: 'progress.md' });
+  const document = await replacement.call('read_work_package_document', { detail: 'full', document: 'progress.md' });
   expect(document.progress_events.filter((event: any) => event.idempotency_key?.endsWith(':old-owner'))).toEqual([]);
 });
 
@@ -492,7 +492,7 @@ test('explicit revocation retires live worker calls resources and persisted reco
   expect(staleMutation.binding).toBe('clear');
   for (const [name, args] of [
     ['append_finding', { title: 'After revocation', body: 'Must not persist', idempotency_key: 'revoked-finding' }],
-    ['read_work_package_document', { document: 'context.md' }],
+    ['read_work_package_document', { detail: 'full', document: 'context.md' }],
   ] as const) expect((await client.rpc('tools/call', { name, arguments: args })).error).toBeTruthy();
   expect((await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/progress.md` })).error).toBeTruthy();
   const fresh = await factory.client();
@@ -508,7 +508,7 @@ test('explicit revocation retires live worker calls resources and persisted reco
   expect((await retired.rpc('resources/read', { uri: 'sympp://assignment/current' })).error.data.reason).toBe('missing_session');
   expect((await peer.reconnect(await restarted.endpoint).call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
   const recoveredArchitect = architect.reconnect(await restarted.endpoint);
-  expect((await recoveredArchitect.call('read_work_request', { work_request_id: request })).work_packages.find((entry: any) => entry.id === wp).status).toBe('blocked');
+  expect((await recoveredArchitect.call('read_work_request', { detail: 'full', work_request_id: request })).work_packages.find((entry: any) => entry.id === wp).status).toBe('blocked');
   await close(recoveredArchitect, wp, 'superseded', { successor_work_package_id: sibling, superseded_reason: 'The sibling owns the recut scope.' });
   expect((await row(recoveredArchitect, request, wp)).delivery_outcome).toBe('superseded');
   expect((await peer.reconnect(await restarted.endpoint).call('get_current_assignment')).assignment.work_package_id).toBe(sibling);
@@ -630,7 +630,7 @@ test('worker plan updates are atomic and native evidence history remains complet
     [{ summary: 123, idempotency_key: 'invalid-summary' }, 'missing_summary'],
     [{ summary: 'Invalid payload', idempotency_key: 'invalid-payload', payload: false }, 'invalid_payload'],
   ] as const) await client.reject('append_progress', args, reason);
-  expect((await client.call('read_work_package_document', { document: 'progress.md' })).progress_events).toEqual([]);
+  expect((await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' })).progress_events).toEqual([]);
   for (const [args, reason] of [
     [{ document: '../progress.md' }, 'unknown_virtual_file'],
     [{ document: 'review.md', before_sequence: 1 }, 'unsupported_document_cursor'],
@@ -671,13 +671,13 @@ test('worker plan updates are atomic and native evidence history remains complet
     await client.call('append_finding', { title: `Finding ${index}`, body: `Evidence ${index}`, idempotency_key: `page-${index}` });
   }
   for (const [document, collection, total] of [['progress.md', 'progress_events', 205], ['findings.md', 'findings', 206]] as const) {
-    const latest = await client.call('read_work_package_document', { document, future_field: true });
+    const latest = await client.call('read_work_package_document', { detail: 'full', document, future_field: true });
     expect(latest[collection]).toHaveLength(100);
     const boundary = latest.next_before_sequence;
     await client.call('append_progress', { summary: 'Concurrent append', idempotency_key: `concurrent-${document}` });
     await client.call('append_finding', { title: 'Concurrent append', body: 'Must stay above cursor', idempotency_key: `concurrent-${document}` });
-    const older = await client.call('read_work_package_document', { document, before_sequence: boundary });
-    const oldest = await client.call('read_work_package_document', { document, before_sequence: older.next_before_sequence });
+    const older = await client.call('read_work_package_document', { detail: 'full', document, before_sequence: boundary });
+    const oldest = await client.call('read_work_package_document', { detail: 'full', document, before_sequence: older.next_before_sequence });
     const ids = [...latest[collection], ...older[collection], ...oldest[collection]].map((entry: any) => entry.id);
     // Findings also contain the concurrent append from the preceding progress pass.
     expect(new Set(ids).size).toBe(total + (document === 'findings.md' ? 1 : 0));
@@ -693,7 +693,7 @@ test('worker plan updates are atomic and native evidence history remains complet
   });
   expect(sensitiveFinding.finding.id).toBe(safeIdentity);
   for (const document of ['context.md', 'task_plan.md', 'findings.md', 'progress.md', 'acceptance.md', 'review.md', 'handoff.md']) {
-    const native = await client.rpc('tools/call', { name: 'read_work_package_document', arguments: { document } });
+    const native = await client.rpc('tools/call', { name: 'read_work_package_document', arguments: { detail: 'full', document } });
     const resource = await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/${document}` });
     expect(native.result.content[0].text).toBe(resource.result.contents[0].text);
     expect(resource.result.contents[0].mimeType).toBe('text/vnd.toon');
@@ -729,7 +729,7 @@ test('worker plan updates are atomic and native evidence history remains complet
   expect(redacted.result.structuredContent.progress_event.summary).toContain('[REDACTED]');
   expect(redacted.result.structuredContent.progress_event.id).not.toBe('caller-progress-id');
   const projected = await client.rpc('resources/read', { uri: `sympp://work-packages/${wp}/progress.md` });
-  const explicitProgress = await client.rpc('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } });
+  const explicitProgress = await client.rpc('tools/call', { name: 'read_work_package_document', arguments: { detail: 'full', document: 'progress.md' } });
   const audit = explicitProgress.result.structuredContent.progress_events.find((entry: any) => entry.id === redacted.result.structuredContent.progress_event.id);
   expect(Date.parse(audit.created_at)).toBeGreaterThan(Date.parse('2026-01-01T00:00:00Z'));
   for (const forged of ['forged-worker', 'forged-grant', 'forged-run']) expect(JSON.stringify(audit)).not.toContain(forged);
@@ -767,7 +767,7 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
     provider.set(302, pr(302, head('a'), { headRefName: 'feature/authority', statusCheckRollup: checks }));
     const before = provider.calls.filter((call) => call.argv[0] === 'pr').length;
     const observation = (await client.call('sync_pr', { idempotency_key: `provider-state-${status}` })).progress_event;
-    const history = await client.call('read_work_package_document', { document: 'progress.md' });
+    const history = await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' });
     const payload = history.progress_events.find((entry: any) => entry.id === observation.id).payload.observation;
     expect(payload.check_summary.status).toBe(status);
     expect(payload.review_state.status).toBe('approved');
@@ -788,7 +788,7 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   client = await worker(factory, wp);
   expect((await client.call('sync_pr', args)).progress_event.id).toBe(observed.id);
   expect(provider.calls).toHaveLength(providerCalls);
-  const document = await client.call('read_work_package_document', { document: 'progress.md' });
+  const document = await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' });
   for (const [reply, reason] of [
     [{ stdout: 'Provider offline', exitCode: 1 }, 'provider_unavailable'],
     [{ stdout: 'not json', exitCode: 0 }, 'provider_unavailable'],
@@ -799,7 +799,7 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
     expect(failed.error.code).toBe(-32000);
     expect(failed.error.data.layer).toBe('provider');
     expect(failed.error.data.reason).toBe(reason);
-    expect(await client.call('read_work_package_document', { document: 'progress.md' })).toEqual(document);
+    expect(await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' })).toEqual(document);
   }
   const beforeWrongReference = provider.calls.length;
   await client.reject('sync_pr', { url: prUrl(303) }, 'pr_reference_mismatch');
@@ -809,7 +809,7 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   expect(mismatch.expected_head_sha).toBe(head('a'));
   expect(mismatch.actual_head_sha).toBe(head('b'));
   expect(mismatch.recovery.next_action).toBe('prove_current_head_then_retry_sync_pr');
-  expect(await client.call('read_work_package_document', { document: 'progress.md' })).toEqual(document);
+  expect(await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' })).toEqual(document);
   await client.reject('sync_pr', { check_summary: { status: 'passing' } }, 'unexpected_argument');
   const recovery = { url: prUrl(302), head_sha: head('a'), branch: 'feature/authority', base_branch: 'beta',
     observed_at: '', provider_reference: 'synthetic-import-302', check_summary: { status: 'passing' }, review_state: { status: 'approved' }, merge_state: { status: 'clean', merged: false } };
@@ -817,7 +817,7 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   const imported = (await client.call('sync_pr', { recovery, idempotency_key: 'recovery-once' })).progress_event;
   await client.call('release_current_assignment', { reason: 'Reconnect imported observation' });
   client = await worker(factory, wp);
-  const importedHistory = await client.call('read_work_package_document', { document: 'progress.md' });
+  const importedHistory = await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' });
   expect(importedHistory.progress_events.find((entry: any) => entry.id === imported.id).payload.observation.provider_reference).toBe('synthetic-import-302');
   expect((await client.call('sync_pr', { recovery, idempotency_key: 'recovery-once' })).progress_event.id).toBe(imported.id);
   await client.reject('sync_pr', { recovery: { ...recovery, check_summary: { status: 'failing' } }, idempotency_key: 'recovery-once' }, 'idempotency_conflict');
@@ -838,9 +838,9 @@ deliveryTest('worker provider evidence resists spoofing mismatch failure and rep
   expect((await client.call('sync_pr', args)).progress_event.id).toBe(observed.id);
   expect(provider.calls).toHaveLength(beforeReadyReplay);
   expect((await row(architect, request, wp)).delivery_outcome).toBeNull();
-  const readyDocument = await client.call('read_work_package_document', { document: 'progress.md' });
+  const readyDocument = await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' });
   await client.reject('sync_pr', {}, 'pr_not_merged');
-  expect(await client.call('read_work_package_document', { document: 'progress.md' })).toEqual(readyDocument);
+  expect(await client.call('read_work_package_document', { detail: 'full', document: 'progress.md' })).toEqual(readyDocument);
   provider.set(302, pr(302, head('b'), { headRefName: 'feature/authority', state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
   const merged = await client.call('sync_pr');
   expect(merged.pr_sync.status).toBe('merged');
@@ -875,7 +875,7 @@ deliveryTest('worker metadata replay and short-head matching preserve distinct r
   const full = await worker(factory, ids[0]);
   const branchArgs = { branch: 'feature/authority', head_sha: head('a'), idempotency_key: 'branch-replay' };
   const branch = (await full.call('attach_branch', branchArgs)).progress_event;
-  expect((await full.call('read_work_package_document', { document: 'progress.md' })).progress_events.find((entry: any) => entry.id === branch.id).payload.observation.branch).toBe('feature/authority');
+  expect((await full.call('read_work_package_document', { detail: 'full', document: 'progress.md' })).progress_events.find((entry: any) => entry.id === branch.id).payload.observation.branch).toBe('feature/authority');
   expect((await full.call('attach_branch', { ...branchArgs, work_package_id: ids[0] })).progress_event.id).toBe(branch.id);
   await full.reject('attach_branch', { ...branchArgs, head_sha: head('b') }, 'idempotency_conflict');
   const separate = (await full.call('attach_branch', { ...branchArgs, idempotency_key: 'independent-observation' })).progress_event;
@@ -978,7 +978,7 @@ test('claim scope hints reject different repository branch and request before gr
     const client = await factory.client();
     await client.reject('claim_local_assignment', { work_package_id: wp, claimed_by: 'scope-attacker', ...hints }, reason);
     expect((await client.call('get_current_assignment')).assignment).toBeNull();
-    expect((await architect.call('read_work_request', { work_request_id: request })).work_packages[0].status).toBe('ready_for_worker');
+    expect((await architect.call('read_work_request', { detail: 'full', work_request_id: request })).work_packages[0].status).toBe('ready_for_worker');
   }
   const valid = await worker(factory, wp);
   expect((await valid.call('read_context')).work_package.id).toBe(wp);
@@ -1044,7 +1044,7 @@ test('architect reports preserve server times and partial edits while rejecting 
     work_package_id: anchor, summary: 'Operator update', idempotency_key: key,
     payload: { type: 'architect_operator_report', ...patch },
   });
-  const read = async () => (await architect.call('read_work_request', { work_request_id: request })).work_request.operator_report;
+  const read = async () => (await architect.call('read_work_request', { detail: 'full', work_request_id: request })).work_request.operator_report;
   for (const [author, target] of [[client, wp], [client, anchor], [architect, wp]] as const) {
     expect((await author.rpc('tools/call', { name: 'append_progress', arguments: {
       work_package_id: target, summary: 'Forged report', idempotency_key: 'forged-report',
@@ -1086,7 +1086,7 @@ test('architect reports preserve server times and partial edits while rejecting 
   const detail = dashboard.work_request_details.find((entry: any) => entry.work_request.id === request);
   expect(detail.work_request.operator_report).toEqual(await read());
   expect(detail.work_packages.map((entry: any) => entry.id)).not.toContain(anchor);
-  const unchanged = await architect.call('read_work_request', { work_request_id: request });
+  const unchanged = await architect.call('read_work_request', { detail: 'full', work_request_id: request });
   expect(unchanged.work_request.status).toBe('sliced');
   expect(unchanged.clarification_questions.find((entry: any) => entry.id === question.id).status).toBe('open');
   expect((await row(architect, request, wp)).attention_reason_codes).not.toContain('active_blocker');
@@ -1146,7 +1146,7 @@ test('architect question and decision mutations preserve provenance and redact c
     expect(JSON.stringify(result)).not.toContain('raw_secret_synthetic');
     ids.push(result.decision_log_entry.id);
   }
-  const persisted = await architect.call('read_work_request', { work_request_id: request });
+  const persisted = await architect.call('read_work_request', { detail: 'full', work_request_id: request });
   expect(persisted.work_request.status).toBe('clarifying');
   expect(persisted.clarification_questions.map((entry: any) => entry.status)).toEqual(['answered', 'closed', 'answered']);
   expect(persisted.decision_log_entries.map((entry: any) => entry.id)).toEqual(ids);
@@ -1221,7 +1221,7 @@ test('explicit trusted local notes remain independent of stale worker authority 
   expect(comment.comment.source_type).toBe('operator');
   expect(comment.comment.author_name).toBe('operator [REDACTED]');
   expect((await client.rpc('tools/call', { name: 'append_progress', arguments: { summary: 'Still denied', idempotency_key: 'revoked-note' } })).error).toBeTruthy();
-  const persisted = await architect.call('read_work_request', { work_request_id: request });
+  const persisted = await architect.call('read_work_request', { detail: 'full', work_request_id: request });
   const stored = persisted.decision_log_entries.find((entry: any) => entry.id === note.decision_log_entry.id);
   expect(stored.decision).toBe('Use [REDACTED]');
   expect(stored.rationale).toBe('Context [REDACTED]');

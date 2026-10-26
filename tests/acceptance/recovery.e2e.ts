@@ -43,7 +43,7 @@ test('competing real clients cannot steal claims and reconnect replay preserves 
   expect(secondClaim.local_claim.claim_lease_id).toBe(firstClaim.local_claim.claim_lease_id);
   expect(secondClaim.local_claim.caller_id).not.toBe(firstClaim.local_claim.caller_id);
   await reconnected.reject('append_progress', { ...mutation, summary: 'Conflicting replay' }, 'idempotency_conflict');
-  const document = await reconnected.call('read_work_package_document', { document: 'progress.md' });
+  const document = await reconnected.call('read_work_package_document', { detail: 'full', document: 'progress.md' });
   expect(document.progress_events.filter((event: any) => event.id === first.id)).toHaveLength(1);
   const released = await reconnected.call('release_current_assignment', { reason: 'Reconnect lifecycle' });
   expect(released.binding_cleared).toBe(true);
@@ -73,7 +73,7 @@ test('a supported disposable offline snapshot denies MCP and dispatch without ch
   expect((await client.operator(`/api/v1/sympp/operator/work-requests/${request}/work-packages/${wp}/dispatch`, {})).status).toBe(403);
   const restarted = processes.factory();
   const original = architect.reconnect(await restarted.endpoint);
-  expect((await original.call('read_work_request', { work_request_id: request })).work_packages[0].status).toBe('ready_for_worker');
+  expect((await original.call('read_work_request', { detail: 'full', work_request_id: request })).work_packages[0].status).toBe('ready_for_worker');
   expect((await original.call('list_comments', { target_kind: 'work_request', target_id: request })).comments).toEqual([]);
 });
 
@@ -82,7 +82,7 @@ test('independent architect clients preserve the owner through release reconnect
   const owner = await factory.client();
   const request = await owner.request('Architect claim continuity');
   await owner.call('set_work_request_status', { work_request_id: request, current_status: 'ready_for_slicing', next_status: 'draft' });
-  expect((await owner.call('read_work_request', { work_request_id: request })).work_request.status).toBe('draft');
+  expect((await owner.call('read_work_request', { detail: 'full', work_request_id: request })).work_request.status).toBe('draft');
   await owner.call('set_work_request_status', { work_request_id: request, current_status: 'draft', next_status: 'ready_for_slicing' });
   const peer = await factory.client();
   await peer.reject('claim_local_architect_assignment', { work_request_id: request }, 'claim_lease_active_for_other_actor');
@@ -120,7 +120,7 @@ test('backend restart recovers persisted bindings and work but a different ledge
   expect((await recovered.call('get_current_assignment')).assignment.work_package_id).toBe(wp);
   expect((await recovered.call('append_finding', mutation)).finding.id).toBe(finding.id);
   const owner = architect.reconnect(await restarted.endpoint);
-  expect((await owner.call('read_work_request', { work_request_id: request })).work_packages[0].status).toBe('active');
+  expect((await owner.call('read_work_request', { detail: 'full', work_request_id: request })).work_packages[0].status).toBe('active');
   const outsider = processes.factory('foreign-ledger');
   const wrongLedger = recovered.reconnect(await outsider.endpoint);
   const denied = await wrongLedger.raw(tool('append_finding', mutation));
@@ -128,9 +128,9 @@ test('backend restart recovers persisted bindings and work but a different ledge
   expect(denied.body.error.data.reason).toBe('unknown_state_key');
   const fresh = await outsider.client();
   expect(await realpath(outsider.database)).not.toBe(ledgerPath);
-  expect((await fresh.rpc('tools/call', { name: 'read_work_request', arguments: { work_request_id: request } })).error.data.reason).toBe('not_found');
+  expect((await fresh.rpc('tools/call', { name: 'read_work_request', arguments: { detail: 'full', work_request_id: request } })).error.data.reason).toBe('not_found');
   expect((await fresh.call('get_current_assignment')).assignment).toBeNull();
-  expect((await recovered.call('read_work_package_document', { document: 'findings.md' })).findings.filter((entry: any) => entry.id === finding.id)).toHaveLength(1);
+  expect((await recovered.call('read_work_package_document', { detail: 'full', document: 'findings.md' })).findings.filter((entry: any) => entry.id === finding.id)).toHaveLength(1);
 });
 
 test('failed-call capture is opt-in redacted and immediately disabled through operator settings', async ({ processes }) => {
@@ -192,7 +192,7 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   expect(initialized.capabilities.tools).toEqual({});
   expect(initialized.capabilities.resources).toEqual({});
   expect((await candidate.rawRequest('tools/call', { name: 'attach_branch', arguments: { branch: 'feature/authority', head_sha: 'a'.repeat(40) } })).error.data.reason).toBe('claim_required');
-  expect((await candidate.rawRequest('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } })).error.data.reason).toBe('claim_required');
+  expect((await candidate.rawRequest('tools/call', { name: 'read_work_package_document', arguments: { detail: 'full', document: 'progress.md' } })).error.data.reason).toBe('claim_required');
   for (const uri of ['sympp://assignment/current', `sympp://work-packages/${wp}/task_plan.md`]) {
     const unbound = await candidate.rawRequest('resources/read', { uri });
     expect(unbound.error.code).toBe(-32001);
@@ -294,7 +294,7 @@ test('STDIO protocol errors and batches cannot smuggle authority across requests
   expect(denied[3].result.structuredContent.assignment.work_package_id).toBe(first);
   expect(denied[4].error.data.reason).toBe('claim_required');
   expect(denied[5].error.data.reason).toBe('claim_required');
-  expect((await candidate.request('tools/call', { name: 'read_work_package_document', arguments: { document: 'progress.md' } })).structuredContent.progress_events).toEqual([]);
+  expect((await candidate.request('tools/call', { name: 'read_work_package_document', arguments: { detail: 'full', document: 'progress.md' } })).structuredContent.progress_events).toEqual([]);
   const switched = await candidate.rawPayload([
     batchTool(925, 'read_context'),
     batchTool(926, 'claim_local_assignment', { work_package_id: first, claimed_by: 'batch-owner' }),
@@ -355,7 +355,7 @@ test('failed worker rebinding preserves its current authority and successful reb
   expect((await peer.call('get_current_assignment')).assignment.work_package_id).toBe(taken);
   const recovered = await worker(factory, first, 'moving-worker');
   const recoveredEvent = (await recovered.call('append_progress', { summary: 'Original reservation recovered', idempotency_key: 'rebound' })).progress_event;
-  expect((await recovered.call('read_work_package_document', { document: 'progress.md' })).progress_events.map((entry: any) => entry.id)).toContain(recoveredEvent.id);
+  expect((await recovered.call('read_work_package_document', { detail: 'full', document: 'progress.md' })).progress_events.map((entry: any) => entry.id)).toContain(recoveredEvent.id);
   const released = await client.rpc('tools/call', { name: 'release_current_assignment', arguments: {} });
   expect(released.result.structuredContent.binding_cleared).toBe(true);
   for (const key of ['claim_lease_id', 'grant_id', 'caller_id']) expect(released.result.content[0].text).not.toContain(key);
@@ -436,7 +436,7 @@ test('HTTP location metadata follows successful authority and cannot be refreshe
   const plannerLocation = (await detail(followup)).work_request.architect_session_location;
   expect(plannerLocation.source).toBe('agent');
   expect(plannerLocation.description).toBe('Synthetic planning terminal');
-  await planner.raw(located('read_work_request', { work_request_id: followup }, 'synthetic-architect-client', 'synthetic-planning-machine'));
+  await planner.raw(located('read_work_request', { detail: 'full', work_request_id: followup }, 'synthetic-architect-client', 'synthetic-planning-machine'));
   const plannerRefreshed = (await detail(followup)).work_request.architect_session_location;
   expect(plannerRefreshed.description).toBe(plannerLocation.description);
   expect(plannerRefreshed.last_seen_at > plannerLocation.last_seen_at).toBe(true);
@@ -451,18 +451,18 @@ test('HTTP location metadata follows successful authority and cannot be refreshe
   expect(originalLocation.role).toBe('coordinator');
   expect(originalLocation.description).toBe('Synthetic planning window');
   const reader = await factory.client();
-  const otherRead = await reader.raw(located('read_work_request', { work_request_id: goal }, 'synthetic-other-client', 'synthetic-other-machine'));
+  const otherRead = await reader.raw(located('read_work_request', { detail: 'full', work_request_id: goal }, 'synthetic-other-client', 'synthetic-other-machine'));
   expect(otherRead.body.result.structuredContent.work_request.id).toBe(goal);
   expect(JSON.parse(Buffer.from(otherRead.binding!, 'base64url').toString('utf8'))).toEqual({ role: 'coordinator', show_inspector: true, work_request_id: goal });
   expect((await detail(goal)).work_request.architect_session_location).toEqual(originalLocation);
-  const ownRead = await coordinator.raw(located('read_work_request', { work_request_id: goal }, 'synthetic-coordinator-client', 'synthetic-coordinator-machine'));
+  const ownRead = await coordinator.raw(located('read_work_request', { detail: 'full', work_request_id: goal }, 'synthetic-coordinator-client', 'synthetic-coordinator-machine'));
   expect(ownRead.body.error).toBeUndefined();
   const currentLocation = (await detail(goal)).work_request.architect_session_location;
   expect(currentLocation.description).toBe(originalLocation.description);
   expect(currentLocation.last_seen_at > originalLocation.last_seen_at).toBe(true);
   const secondGoal = (await coordinator.raw(create('Next coordinator goal'))).body.result.structuredContent.work_request.id;
   expect((await detail(secondGoal)).work_request.architect_session_location.description).toBe(originalLocation.description);
-  const missing = await coordinator.raw(tool('read_work_request', { work_request_id: 'missing-request' }));
+  const missing = await coordinator.raw(tool('read_work_request', { detail: 'full', work_request_id: 'missing-request' }));
   expect(missing.body.error).toBeTruthy();
   expect(missing.binding).toBeNull();
 });
@@ -508,7 +508,7 @@ test('public architect handoff replays one unclaimed grant and trusted mutation 
   expect(initial.architect_handoff.grant.claimed_at).toBeNull();
   const draft = initial.work_request.id;
   expect((await client.call('get_current_assignment')).assignment).toBeNull();
-  await client.call('read_work_request', { work_request_id: draft });
+  await client.call('read_work_request', { detail: 'full', work_request_id: draft });
   expect((await client.call('get_current_assignment')).assignment).toBeNull();
   const path = `/api/v1/sympp/operator/work-requests/${draft}/architect-handoff`;
   expect((await client.raw({}, { origin: 'https://example.invalid' }, 'POST', path)).status).toBe(401);
@@ -544,5 +544,5 @@ test('public architect handoff replays one unclaimed grant and trusted mutation 
   expect((await client.call('get_current_assignment')).assignment).toBeNull();
   await client.call('slice_work_request', { work_request_id: ready, work_packages: [contract('Automatically claimed work')] });
   expect((await client.call('get_current_assignment')).assignment.grant_role).toBe('architect');
-  expect((await client.call('read_work_request', { work_request_id: ready })).work_packages).toHaveLength(1);
+  expect((await client.call('read_work_request', { detail: 'full', work_request_id: ready })).work_packages).toHaveLength(1);
 });

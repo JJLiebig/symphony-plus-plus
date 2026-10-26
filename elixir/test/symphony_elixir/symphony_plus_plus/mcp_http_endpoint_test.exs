@@ -509,7 +509,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
   test "bound batch metadata ignores unrelated WorkRequest calls" do
     payload = [
-      tool_call_request("read", "read_work_request", %{"work_request_id" => "WR-UNRELATED"}),
+      tool_call_request("read", "read_work_request", %{"detail" => "full", "work_request_id" => "WR-UNRELATED"}),
       tool_call_request("claim", "claim_local_assignment", %{"work_package_id" => "SYMPP-MCP-HTTP"})
     ]
 

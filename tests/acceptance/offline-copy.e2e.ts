@@ -14,7 +14,7 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
     const [wp] = (await architect.call('slice_work_request', {
       work_packages: [contract('Persisted snapshot package')],
     })).work_package_ids;
-    const before = await architect.call('read_work_request', { work_request_id: request });
+    const before = await architect.call('read_work_request', { detail: 'full', work_request_id: request });
     const sourceBoard = await architect.raw(null, {}, 'GET', '/api/v1/sympp/herdr/dashboard');
     expect(sourceBoard.status).toBe(200);
     expect(sourceBoard.body.runtime).toEqual({ offline: false });
@@ -61,7 +61,7 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
       `/api/v1/sympp/operator/work-requests/${request}/work-packages/${wp}/dispatch`,
       `/api/v1/sympp/operator/work-packages/${wp}/focus`,
     ]) expect((await viewer.operator(route, {})).status).toBe(403);
-    expect((await architect.call('read_work_request', { work_request_id: request })).work_packages).toEqual(before.work_packages);
+    expect((await architect.call('read_work_request', { detail: 'full', work_request_id: request })).work_packages).toEqual(before.work_packages);
     await offline.stop();
 
     await architect.call('add_work_request_comment', { work_request_id: request, body: 'Only the explicit refresh sees this', created_by: 'acceptance' });

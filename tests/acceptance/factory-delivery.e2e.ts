@@ -208,12 +208,12 @@ test('ordinary PR handoff observes pending qualification then reconciles an exac
   expect(delivered.delivery.merge_commit_sha).toBe(head('f'));
   expect(Date.parse(delivered.delivery.pr_merged_at)).toBe(Date.parse(mergeTime));
   expect(await completion()).toBeTruthy();
-  const revision = (await architect.call('read_plan', { work_request_id: request })).product_tree.latest_revision;
+  const revision = (await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.latest_revision;
   await architect.call('sync_pr', { work_package_id: wp });
   const replay = await architect.call('reconcile_work_request', { work_request_id: request, apply: true });
   expect(replay.reconciliation.applied_count).toBe(0);
   expect((await row(architect, request, wp)).delivery).toEqual(delivered.delivery);
-  expect((await architect.call('read_plan', { work_request_id: request })).product_tree.latest_revision).toEqual(revision);
+  expect((await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.latest_revision).toEqual(revision);
   const calls = provider.calls.filter(({ argv }) => argv[0] === 'pr');
   expect(calls.length).toBeGreaterThan(0);
   for (const { argv } of calls) {
@@ -340,10 +340,10 @@ test('typed no-PR closeout resolves blockers once and terminal packages cannot r
   const scoped = await row(architect, request, wp);
   expect(scoped.work_package.repo).toBe('example/client');
   expect(scoped.work_package.base_branch).toBe('integration');
-  expect((await architect.call('read_work_request', { work_request_id: request })).work_request.base_branch).toBe('beta');
-  const revision = (await architect.call('read_plan', { work_request_id: request })).product_tree.latest_revision;
+  expect((await architect.call('read_work_request', { detail: 'full', work_request_id: request })).work_request.base_branch).toBe('beta');
+  const revision = (await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.latest_revision;
   expect((await close(architect, wp)).work_package_delivery.id).toBe(result.work_package_delivery.id);
-  expect((await architect.call('read_plan', { work_request_id: request })).product_tree.latest_revision).toEqual(revision);
+  expect((await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.latest_revision).toEqual(revision);
   const conflict = await architect.rpc('tools/call', { name: 'record_work_package_delivery', arguments: {
     work_package_id: wp, outcome: 'completed_no_pr', idempotency_key: `close-${wp}`,
     evidence: { completed_no_pr: { no_pr_evidence: 'Replace original evidence' } },

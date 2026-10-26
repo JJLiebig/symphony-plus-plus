@@ -112,16 +112,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     %{
       "name" => name,
       "title" => name,
-      "description" => "Symphony++ worker tool #{name}.",
+      "description" => worker_tool_description(name),
       "inputSchema" => InputSchemas.worker_tool_input_schema(name)
     }
   end
+
+  defp worker_tool_description("read_work_package_document"),
+    do: "Read a scoped WorkPackage document. Large progress pages summarize recent events; use detail: full with the same document/before_sequence for complete evidence."
+
+  defp worker_tool_description(name), do: "Symphony++ worker tool #{name}."
 
   defp unbound_worker_tool_spec(name) do
     %{
       "name" => name,
       "title" => name,
-      "description" => "Symphony++ worker tool #{name}.",
+      "description" => worker_tool_description(name),
       "inputSchema" => InputSchemas.unbound_worker_tool_input_schema(name)
     }
   end
@@ -233,10 +238,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
   end
 
   defp architect_tool_description("list_work_requests"), do: "List WorkRequests scoped to the architect grant's repo and base branch."
-  defp architect_tool_description("read_work_request"), do: "Read a scoped WorkRequest with clarification questions, decisions, visible WorkPackages, and status summaries."
+
+  defp architect_tool_description("read_work_request"),
+    do: "Read a compact WorkRequest overview: status, description, open questions, package next actions and recent decisions. Use detail: full for all contracts and history."
 
   defp architect_tool_description("read_plan"),
-    do: "Read the scoped WorkRequest execution graph, Groups, effective WorkPackage dependencies, and optional WorkPackage payloads."
+    do: "Read the scoped execution graph, Groups and package references. Use detail: full with the desired view for complete package payloads."
 
   defp architect_tool_description("read_task_plan"),
     do: "Read the task plan for an explicit descendant WorkPackage."
