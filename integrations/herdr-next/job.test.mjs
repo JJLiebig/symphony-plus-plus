@@ -21,6 +21,26 @@ test('the phase comes only from request status, dispatch and delivery', () => {
   assert.equal(J.phaseOf({ ...job, status: 'something_new' }), null, 'an unknown status is not guessed');
 });
 
+test('closed execution is Done with dropped scope counted, without inventing completion', () => {
+  const payload = boardPayload();
+  const detail = payload.work_request_details[0];
+  detail.work_request.execution_status = 'closed';
+  detail.work_request.completed_at = null;
+  detail.clarification_questions = [];
+  detail.work_packages = ['pr_merged', 'abandoned', 'superseded', 'skipped'].map((outcome, i) => ({
+    id: `closed-${i}`, title: outcome, repo: 'owner/web', raw_status: outcome === 'skipped' ? 'skipped' : 'closed',
+    delivery: outcome === 'skipped' ? null : { outcome }, operational_state: { key: outcome },
+  }));
+  const job = M.parseBoard(payload).jobs.find((job) => job.id === 'wr-pr');
+  assert.equal(J.phaseOf(job), 'done');
+  assert.equal(job.closedAt, null, 'execution closure does not fabricate fulfilled scope');
+  assert.equal(job.status, 'sliced');
+  assert.equal(job.state, 'settled');
+  assert.equal(job.counts.dropped, 3);
+  assert.equal(job.counts.live, 0);
+  assert.equal(job.brief, '1 of 4 packages finished; 3 dropped.');
+});
+
 test('an opened package says who holds the work, what waits, what is next and the evidence, in plain words', () => {
   const job = jobOf('wr-pr');
   const card = (id) => J.packageCard(job.packages.find((pkg) => pkg.id === id), null, NOW);

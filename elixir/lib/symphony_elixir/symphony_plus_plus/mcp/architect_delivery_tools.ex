@@ -81,6 +81,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
          {:ok, apply?} <- optional_boolean(arguments, "apply", false),
          :ok <- require_architect_capability(live_session, reconcile_work_request_capability(apply?)),
          {:ok, arguments} <- validate_arguments(arguments, "reconcile_work_request"),
+         {:ok, detail} <- optional_string_argument(arguments, "detail", "summary"),
+         :ok <- if(detail in ["summary", "full"], do: :ok, else: {:tool_error, "invalid_detail"}),
          {:ok, work_request_id} <- CurrentWorkRequest.id_argument(arguments, live_session),
          {:ok, recorded_by} <- optional_string_argument(arguments, "recorded_by", session_claimed_by(live_session)),
          {:ok, work_request, filters, scope} <-
@@ -107,13 +109,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
              visible_work_package_ids: visible_work_package_ids,
              work_package_contexts: work_package_contexts
            ) do
-      {:ok,
-       ToolResult.tool_result(%{
-         "work_request" => WorkRequestPayloads.work_request_mutation(work_request),
-         "reconciliation" => reconciliation_payload(reconciliation),
-         "delivery_board" => WorkRequestPayloads.delivery_board(Map.fetch!(reconciliation, :delivery_board)),
-         "scope" => scope
-       })}
+      payload = %{
+        "work_request" => WorkRequestPayloads.work_request_mutation(work_request),
+        "reconciliation" => reconciliation_payload(reconciliation, detail),
+        "delivery_board" =>
+          reconciliation.delivery_board
+          |> WorkRequestPayloads.delivery_board(detail)
+          |> then(fn board -> if detail == "full", do: board, else: Map.delete(board, "work_packages") end),
+        "detail" => detail,
+        "scope" => scope
+      }
+
+      {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.read_tool_result(payload) end)}
     else
       {:tool_error, reason} ->
         {:error, -32_602, "Invalid params", %{"tool" => "reconcile_work_request", "reason" => reason}}
@@ -1422,9 +1429,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectDeliveryTools do
   defp live_expires_at?(%DateTime{} = expires_at, %DateTime{} = now),
     do: DateTime.compare(expires_at, now) == :gt
 
-  defp reconciliation_payload(reconciliation) when is_map(reconciliation) do
+  defp reconciliation_payload(reconciliation, detail) when is_map(reconciliation) do
     reconciliation
     |> Map.drop([:delivery_board, "delivery_board"])
+    |> Map.update!(:results, fn results ->
+      if detail == "full", do: results, else: Enum.filter(results, &(&1.status in ["proposed", "applied", "error"]))
+    end)
     |> json_safe_payload()
     |> Redactor.redact_output()
   end

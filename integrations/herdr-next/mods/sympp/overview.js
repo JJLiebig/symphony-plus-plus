@@ -138,7 +138,7 @@ function jobRow(v, t, job, now, note = null) {
         .when(job.offPrimary, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`→ ${job.baseBranch}`)))
         .child(div().flex_1())
         .when(loud, (el) => el.child(div().flex_none().text_size(11.5).font_medium().text_color(job.verdict === "needs_you" ? t.blocked : job.verdict === "parked" ? t.muted : t.foreground).child(M.VERDICT_LABEL[job.verdict])))
-        .when(job.counts.total > 0, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`${job.counts.done}/${job.counts.total}`))))
+        .when(job.counts.total > 0, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(`${job.counts.done}/${job.counts.total}${job.counts.dropped ? ` · ${job.counts.dropped} dropped` : ""}`))))
       .child(h_flex().gap(10).items_center()
         .when(job.counts.total > 0, (el) => el.child(strip(t, job, now)))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(job.brief)))

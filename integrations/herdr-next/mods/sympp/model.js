@@ -180,11 +180,12 @@ function buildJob(detail, now, guidance, runs) {
   const queued = packages.filter((pkg) => pkg.stage === "queued");
   const createdAt = ms(request.inserted_at) ?? now;
   const closedAt = ms(request.completed_at);
-  const settled = (closedAt !== null && closedAt <= now) || (packages.length > 0 && done.length === packages.length && needs.length === 0);
+  const settled = request.execution_status === "closed" || (closedAt !== null && closedAt <= now) || (packages.length > 0 && done.length === packages.length && needs.length === 0);
   const job = {
     id: request.id,
     title: request.title || request.id,
     status: request.status ?? null,
+    executionStatus: request.execution_status ?? "open",
     repo,
     repoShort,
     repos: [...new Set([repo, ...packages.map((pkg) => pkg.repo)].filter(Boolean))],
@@ -204,7 +205,7 @@ function buildJob(detail, now, guidance, runs) {
     // Prerequisite → dependent package pairs from the effective execution graph.
     edges: (detail.product_tree?.execution_graph?.effective_edges ?? [])
       .map((edge) => [edge?.prerequisite_work_package_id, edge?.dependent_work_package_id]).filter(([pre, dep]) => pre && dep),
-    counts: { live: live.length, queued: queued.length, done: done.length, total: packages.length },
+    counts: { live: live.length, queued: queued.length, done: done.length, dropped: done.filter((pkg) => pkg.outcome === "dropped").length, total: packages.length },
     state: settled ? "settled" : live.length > 0 || needs.length > 0 ? "live" : "resting",
     lastMoveAt: Math.max(createdAt, ...packages.map((pkg) => pkg.since ?? 0)),
     deployFailed: deployFailed(request.deployments),
@@ -377,7 +378,10 @@ function draftBrief(job, now) {
   const { live, queued, done, total } = job.counts;
   if (job.needs.length > 0) return `Waiting on you: ${job.needs[0].text}`;
   if (job.report.parked) return `Parked: ${job.report.parked.text}`;
-  if (job.state === "settled") return total ? `All ${total} packages have landed.` : "Closed.";
+  if (job.state === "settled") {
+    if (job.counts.dropped) return `${total - job.counts.dropped} of ${total} packages finished; ${job.counts.dropped} dropped.`;
+    return total ? `All ${total} packages have landed.` : "Closed.";
+  }
   if (total === 0) return "Not sliced into packages yet.";
   if (live === 0) {
     return isStalled(job, now) ? `Nothing has moved for ${span(now - job.lastMoveAt)}. ${done} of ${total} landed.` : `Between packages: ${done} of ${total} landed, ${queued} up next.`;

@@ -12,6 +12,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.GrantScope
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
+  alias SymphonyElixir.SymphonyPlusPlus.Dashboard
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{Config, Session}
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Phase
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Repository, as: PhaseRepository
@@ -59,6 +60,90 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPDeliveryToolsTest do
     end
 
     :ok
+  end
+
+  test "closed execution reads consistently without fulfilling abandoned scope and reconciliation keeps full evidence on demand", %{repo: repo} do
+    work_request = create_work_request!(repo, id: "WR-CLOSED-EXECUTION", status: "sliced")
+    session = create_work_request_architect_session(repo, work_request, ArchitectHandoff.capabilities())
+
+    read = fn tool, args ->
+      response = mcp_tool(repo, session, tool, args)
+      assert response["error"] == nil
+      get_in(response, ["result", "structuredContent"])
+    end
+
+    assert read.("read_work_request", %{"work_request_id" => work_request.id})["work_request"]["execution_status"] == "open"
+
+    packages =
+      for index <- 1..25 do
+        status = if index == 25, do: "planned", else: if(index == 2, do: "ready_for_worker", else: "reviewing")
+        create_work_package!(repo, work_request, id: "WP-CLOSED-#{index}", status: status)
+      end
+
+    for {package, index} <- Enum.with_index(Enum.take(packages, 24), 1) do
+      args =
+        case index do
+          2 ->
+            abandoned_args(work_request, package, "close-#{index}", "The operator dropped this scope.")
+
+          3 ->
+            superseded_args(work_request, package, "close-#{index}", hd(packages).id, "Covered by the first package.")
+
+          4 ->
+            pr_merged_args(work_request, package, "close-#{index}")
+            |> put_in(["evidence", "pr_merged", "pr_repository"], work_request.repo)
+            |> put_in(["evidence", "pr_merged", "pr_url"], "https://github.com/#{work_request.repo}/pull/24")
+
+          _ ->
+            no_pr_args(work_request, package, "close-#{index}", "Accepted investigation evidence.")
+        end
+
+      read.("record_work_package_delivery", args)
+    end
+
+    assert read.("read_work_request", %{"work_request_id" => work_request.id})["work_request"]["execution_status"] == "open"
+    active = read.("read_delivery_board", %{"work_request_id" => work_request.id})["delivery_board"]["work_packages"] |> List.last()
+    assert active["merge_eligibility"]["next_action"] == "finish_worker_qualification"
+
+    read.("skip_work_package", %{"work_request_id" => work_request.id, "work_package_id" => List.last(packages).id, "current_status" => "planned"})
+
+    for detail <- ["summary", "full"] do
+      board = read.("read_delivery_board", %{"work_request_id" => work_request.id, "detail" => detail})
+      assert board["work_request"]["status"] == "sliced"
+      assert board["work_request"]["execution_status"] == "closed"
+      assert board["delivery_board"]["execution_status"] == "closed"
+      assert length(board["delivery_board"]["work_packages"]) == 25
+      assert Enum.all?(board["delivery_board"]["work_packages"], &is_nil(&1["merge_eligibility"]["next_action"]))
+    end
+
+    request = read.("read_work_request", %{"work_request_id" => work_request.id})["work_request"]
+    assert request["execution_status"] == "closed"
+    assert request["status"] == "sliced"
+    listed = read.("list_work_requests", %{})["work_requests"] |> Enum.find(&(&1["id"] == work_request.id))
+    assert listed["execution_status"] == "closed"
+    assert listed["status"] == "sliced"
+    assert {:ok, native} = Dashboard.work_request_detail(repo, work_request.id)
+    assert native.work_request.execution_status == "closed"
+    assert native.work_request.completed_at == nil
+    assert repo.get!(WorkRequest, work_request.id).completed_at == nil
+
+    summary_response = mcp_tool(repo, session, "reconcile_work_request", %{"work_request_id" => work_request.id})
+    full_response = mcp_tool(repo, session, "reconcile_work_request", %{"work_request_id" => work_request.id, "detail" => "full"})
+    summary = get_in(summary_response, ["result", "structuredContent"])
+    full = get_in(full_response, ["result", "structuredContent"])
+    assert summary["reconciliation"]["results"] == []
+    assert summary["reconciliation"]["total_count"] == 25
+    assert summary["reconciliation"]["skipped_count"] == 25
+    assert summary["reconciliation"]["error_count"] == 0
+    assert length(full["reconciliation"]["results"]) == 25
+    assert length(full["delivery_board"]["work_packages"]) == 25
+    assert Map.delete(summary["reconciliation"], "results") == Map.delete(full["reconciliation"], "results")
+    assert Enum.count(full["reconciliation"]["results"], &(&1["reason"] == "already_closeout")) == 24
+    assert get_in(full, ["delivery_board", "work_packages", Access.at(0), "delivery", "no_pr_evidence"]) == "Accepted investigation evidence."
+    IO.puts("25-package reconciliation JSON chars: rows_full=#{String.length(Jason.encode!(full["reconciliation"]))} rows_summary=#{String.length(Jason.encode!(summary["reconciliation"]))}")
+
+    invalid = mcp_tool(repo, session, "reconcile_work_request", %{"work_request_id" => work_request.id, "detail" => "invalid"})
+    assert invalid["error"]
   end
 
   test "WR architect stale capabilities still read the delivery board and record closeout", %{
