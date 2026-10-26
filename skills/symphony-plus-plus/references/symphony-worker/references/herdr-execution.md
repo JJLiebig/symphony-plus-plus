@@ -17,6 +17,11 @@ Save only the redacted `worker_bootstrap`, or the redacted dispatch response,
 as a JSON file on the worker machine. Keep that file unchanged until the agent
 has read it. Do not save raw grants, secrets or private handoff material.
 
+For compact dispatch, first read `assignment_uri` with MCP `resources/read` and
+save the returned JSON bootstrap. Alternatively, use `detail: "full"` on the
+initial dispatch for the inline bootstrap. Keep the sibling `assignment` with
+`launch_prompt`; the prompt references it. Never redispatch to fetch details.
+
 ```text
 node <bundle>/scripts/sympp-herdr.js launch --provider claude --model opus --assignment worker.json --ledger <verified-ledger-identity> --cwd <worktree>
 node <bundle>/scripts/sympp-herdr.js launch --provider codex --assignment worker.json --ledger <verified-ledger-identity> --cwd <worktree>
