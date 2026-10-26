@@ -156,9 +156,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
       assignment,
       fn {key, source}, payload ->
         if get_in(payload, ["work_package", key]) == get_in(payload, source) do
-          update_in(payload, ["work_package"], fn work_package ->
-            work_package |> Map.delete(key) |> Map.put(key <> "_ref", "#/" <> Enum.join(source, "/"))
-          end)
+          work_package = payload["work_package"] |> Map.delete(key) |> Map.put(key <> "_ref", "#/" <> Enum.join(source, "/"))
+          Map.put(payload, "work_package", work_package)
         else
           payload
         end

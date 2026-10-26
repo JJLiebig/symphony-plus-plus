@@ -20,8 +20,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Surface do
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Renderer, as: PlanningRenderer
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Service, as: PlanningService
-  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Service, as: WorkRequestService
   @agent_text_mime_type "text/vnd.toon"
   @assignment_resource "sympp://assignment/current"
   @version_resource "sympp://health/version"
