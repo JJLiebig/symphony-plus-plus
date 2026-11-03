@@ -2,6 +2,13 @@ name: sympp-runtime-artifact
 
 on:
   workflow_dispatch:
+    inputs:
+      retry_macos:
+        description: Build only missing macOS for the published branch head
+        type: boolean
+        default: false
+  schedule:
+    - cron: '23 * * * *'
   pull_request:
     branches:
       - main
@@ -16,22 +23,84 @@ permissions:
   contents: read
 
 jobs:
+  schedule-macos-retry:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Retry each runtime channel
+        shell: bash
+        run: |
+          for branch in beta main; do
+            gh workflow run sympp-runtime-artifact.yml --repo "$GITHUB_REPOSITORY" \
+              --ref "$branch" -f retry_macos=true
+          done
+
+  plan-build:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RETRY_MACOS: ${{ inputs.retry_macos || false }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: Check retry decisions
+        run: python3 scripts/tests/runtime-artifact-workflow.test.py
+
+      - name: Select required builds or missing macOS
+        id: plan
+        shell: bash
+        run: |
+          if [ "$RETRY_MACOS" = true ]; then
+            case "$GITHUB_REF_NAME" in
+              beta) channel=beta ;;
+              main) channel=stable ;;
+              *) echo 'Retries require beta or main.' >&2; exit 1 ;;
+            esac
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${GITHUB_REF_NAME}" --jq .object.sha)"
+            [ "$current" = "$GITHUB_SHA" ] || exit 0
+            # Only augment a channel already published from this head.
+            if ! gh release download "sympp-runtime-$channel" --repo "$GITHUB_REPOSITORY" \
+              --pattern "sympp-runtime-artifacts-$channel.json" --dir channel; then
+              exit 0
+            fi
+            manifest="channel/sympp-runtime-artifacts-$channel.json"
+            if ! jq -e --arg sha "$GITHUB_SHA" '.source_revision == $sha' "$manifest" >/dev/null; then
+              exit 0
+            fi
+            if jq -e '.artifacts[] | select(.platform.os == "macos" and .platform.arch == "arm64")' "$manifest" >/dev/null; then
+              exit 0
+            fi
+            echo 'matrix={"include":[{"os":"macos-latest","platform":"macos-arm64","shell":"bash"}]}' >> "$GITHUB_OUTPUT"
+          else
+            echo 'matrix={"include":[{"os":"ubuntu-latest","platform":"linux-x64","shell":"bash"},{"os":"windows-latest","platform":"windows-x64","shell":"pwsh"}]}' >> "$GITHUB_OUTPUT"
+          fi
+          echo 'build=true' >> "$GITHUB_OUTPUT"
+
   build-runtime-artifact:
     name: Build runtime artifact (${{ matrix.platform }})
+    needs: plan-build
+    if: needs.plan-build.outputs.build == 'true'
     runs-on: ${{ matrix.os }}
+    outputs:
+      artifact-id: ${{ steps.upload-runtime-artifact.outputs.artifact-id }}
+    continue-on-error: ${{ inputs.retry_macos == true }}
+    timeout-minutes: 45
+    concurrency:
+      group: sympp-runtime-build-${{ github.ref }}-${{ matrix.platform }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux-x64
-            shell: bash
-          - os: windows-latest
-            platform: windows-x64
-            shell: pwsh
-          - os: macos-latest
-            platform: macos-arm64
-            shell: bash
+      matrix: ${{ fromJSON(needs.plan-build.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -234,7 +303,10 @@ jobs:
 
   publish-branch-release:
     name: Publish branch runtime channel
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta')
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta') &&
+      (!inputs.retry_macos || needs.build-runtime-artifact.outputs.artifact-id != '')
     needs: build-runtime-artifact
     runs-on: ubuntu-latest
     permissions:
@@ -259,6 +331,15 @@ jobs:
           pattern: sympp-runtime-*-${{ github.sha }}
           merge-multiple: true
 
+      - name: Reuse published required artifacts for macOS retry
+        if: inputs.retry_macos == true
+        shell: bash
+        run: |
+          for platform in linux-x64 windows-x64; do
+            gh release download "$RELEASE_TAG" --dir artifacts/sympp-runtime-release \
+              --pattern "sympp-runtime-${GITHUB_SHA}-${platform}.*"
+          done
+
       - name: Require current branch head
         shell: bash
         run: |
@@ -278,9 +359,12 @@ jobs:
       - name: Build aggregate channel manifest
         shell: pwsh
         run: |
+          $required = @("linux-x64", "windows-x64")
+          if ('${{ inputs.retry_macos }}' -eq 'true') { $required += "macos-arm64" }
           $baseUrl = "https://github.com/${env:GITHUB_REPOSITORY}/releases/download/${env:RELEASE_TAG}"
           ./scripts/publish-sympp-runtime-artifact.ps1 `
             -ManifestDir "artifacts/sympp-runtime-release" `
+            -RequiredPlatforms $required `
             -PublishedBaseUrl $baseUrl `
             -ReleaseTag "${env:RELEASE_TAG}" `
             -Repository "${env:GITHUB_REPOSITORY}" `
