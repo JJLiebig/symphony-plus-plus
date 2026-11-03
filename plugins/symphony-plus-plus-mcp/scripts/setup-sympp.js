@@ -50,7 +50,9 @@ function claudeConfig(config, registration) {
   return JSON.stringify(value, null, 2) + "\n";
 }
 function isGlobalInstall() {
-  return root.toLowerCase().startsWith((path.join(os.homedir(), ".agents", "skills") + path.sep).toLowerCase());
+  const install = fs.realpathSync(root).toLowerCase();
+  return [path.join(os.homedir(), ".agents", "skills"), path.join(os.homedir(), ".claude", "skills"), ...(process.env.CLAUDE_CONFIG_DIR ? [path.join(process.env.CLAUDE_CONFIG_DIR, "skills")] : [])]
+    .some(dir => fs.existsSync(dir) && install.startsWith(fs.realpathSync(dir).toLowerCase() + path.sep));
 }
 
 function runtimeChannel() {
@@ -107,11 +109,13 @@ function main(args) {
   for (const key of ["SYMPP_BACKEND_PORT", "SYMPP_LOG_DIR", "SYMPP_OPEN_DASHBOARD"]) if (process.env[key]) env[key] = process.env[key];
   const registration = { type: "stdio", command: process.execPath, args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
   const globalClaude = isGlobalInstall() && hosts.includes("claude");
-  let claudeUser, claudeCommand;
+  let claudeUser, claudeCommand, claudeShadow;
   if (globalClaude) {
     const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
     const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
     claudeUser = config.mcpServers?.[name];
+    const cwd = fs.realpathSync(process.cwd()).replaceAll("\\", "/").toLowerCase();
+    claudeShadow = fs.existsSync(path.join(process.cwd(), ".mcp.json")) || Object.entries(config.projects || {}).some(([dir, project]) => dir.replaceAll("\\", "/").toLowerCase() === cwd && project.mcpServers?.[name]);
     if (claudeUser && !(path.basename(claudeUser.command || "").toLowerCase().match(/^node(?:\.exe)?$/) && Array.isArray(claudeUser.args) && claudeUser.args.some(arg => typeof arg === "string" && path.basename(arg).toLowerCase() === "start-sympp-mcp-bridge.js"))) {
       throw new Error("Claude already has an unrelated user registration for symphony_plus_plus. Explicitly remove it before setup.");
     }
@@ -150,7 +154,7 @@ function main(args) {
       run(["mcp", "add", "--scope", "user", ...Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]), "--", name, registration.command, ...registration.args]);
     }
     emit("claude", unchanged ? "already configured" : "configured");
-    emit("claude_next", "A local or project symphony_plus_plus registration in this folder takes precedence over the user registration.");
+    if (claudeShadow) emit("claude_next", "A local or project symphony_plus_plus registration in this folder takes precedence over the user registration.");
   }
   emit("channel", env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);

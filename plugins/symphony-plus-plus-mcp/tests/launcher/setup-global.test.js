@@ -26,7 +26,15 @@ test("global Claude setup owns only its user entry and project setup remains loc
   const run = root => spawnSync(process.execPath, [path.join(root, "scripts", "setup-sympp.js"), "--host", "claude"], { cwd: project, env, encoding: "utf8" });
   const cfg = path.join(config, ".claude.json"), mcp = path.join(project, ".mcp.json");
   let result = run(global); assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /takes precedence/); assert.equal(fs.existsSync(mcp), false);
+  assert.doesNotMatch(result.stdout, /takes precedence/); assert.equal(fs.existsSync(mcp), false);
+  fs.writeFileSync(mcp, "{}");
+  result = run(global); assert.equal(result.status, 0, result.stdout); assert.match(result.stdout, /takes precedence/);
+  fs.unlinkSync(mcp);
+  const configValue = JSON.parse(fs.readFileSync(cfg));
+  configValue.projects = { [project.replaceAll("\\", "/")]: { mcpServers: { symphony_plus_plus: { command: "other" } } } };
+  fs.writeFileSync(cfg, JSON.stringify(configValue));
+  result = run(global); assert.equal(result.status, 0, result.stdout); assert.match(result.stdout, /takes precedence/);
+  configValue.projects = {}; fs.writeFileSync(cfg, JSON.stringify(configValue));
   let entry = JSON.parse(fs.readFileSync(cfg)).mcpServers.symphony_plus_plus;
   assert.equal(entry.args[0], path.join(global, "scripts", "start-sympp-mcp-bridge.js"));
   result = run(global); assert.match(result.stdout, /already configured/);
@@ -34,6 +42,15 @@ test("global Claude setup owns only its user entry and project setup remains loc
   result = run(global); assert.equal(result.status, 0, result.stdout); assert.equal(JSON.parse(fs.readFileSync(cfg)).mcpServers.symphony_plus_plus.args[0], path.join(global, "scripts", "start-sympp-mcp-bridge.js"));
   fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { symphony_plus_plus: { command: "unrelated" } } }));
   result = run(global); assert.notEqual(result.status, 0); assert.match(result.stdout, /unrelated/); assert.equal(JSON.parse(fs.readFileSync(cfg)).mcpServers.symphony_plus_plus.command, "unrelated");
+  fs.unlinkSync(cfg);
+  const claudeGlobal = path.join(config, "skills", "symphony-plus-plus");
+  fs.cpSync(global, claudeGlobal, { recursive: true });
+  result = run(claudeGlobal); assert.equal(result.status, 0, result.stdout); assert.equal(fs.existsSync(mcp), false);
+  assert.equal(JSON.parse(fs.readFileSync(cfg)).mcpServers.symphony_plus_plus.args[0], path.join(claudeGlobal, "scripts", "start-sympp-mcp-bridge.js"));
+  const link = path.join(home, ".claude", "skills", "symphony-plus-plus");
+  fs.mkdirSync(path.dirname(link), { recursive: true }); fs.symlinkSync(global, link, "junction");
+  result = run(link); assert.equal(result.status, 0, result.stdout); assert.equal(fs.existsSync(mcp), false);
+  assert.equal(JSON.parse(fs.readFileSync(cfg)).mcpServers.symphony_plus_plus.args[0], path.join(global, "scripts", "start-sympp-mcp-bridge.js"));
   result = run(local); assert.equal(result.status, 0, result.stdout); assert.equal(JSON.parse(fs.readFileSync(mcp)).mcpServers.symphony_plus_plus.args[0], path.join(local, "scripts", "start-sympp-mcp-bridge.js"));
 });
 
