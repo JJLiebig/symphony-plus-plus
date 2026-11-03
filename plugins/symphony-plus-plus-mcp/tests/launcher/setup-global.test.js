@@ -23,7 +23,7 @@ test("global Claude setup owns only its user entry and project setup remains loc
   fs.writeFileSync(path.join(home, ".agents", ".skill-lock.json"), JSON.stringify({ skills: { "symphony-plus-plus": { sourceType: "local" } } }));
   fs.writeFileSync(path.join(project, "skills-lock.json"), JSON.stringify({ skills: { "symphony-plus-plus": { sourceType: "local" } } }));
   const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: config, PATH: bin + path.delimiter + process.env.PATH, XDG_STATE_HOME: "" };
-  const run = root => spawnSync(process.execPath, [path.join(root, "scripts", "setup-sympp.js"), "--host", "claude"], { cwd: project, env, encoding: "utf8" });
+  const run = (root, cwd = project) => spawnSync(process.execPath, [path.join(root, "scripts", "setup-sympp.js"), "--host", "claude"], { cwd, env, encoding: "utf8" });
   const cfg = path.join(config, ".claude.json"), mcp = path.join(project, ".mcp.json");
   let result = run(global); assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.doesNotMatch(result.stdout, /takes precedence/); assert.equal(fs.existsSync(mcp), false);
@@ -34,6 +34,11 @@ test("global Claude setup owns only its user entry and project setup remains loc
   configValue.projects = { [project.replaceAll("\\", "/")]: { mcpServers: { symphony_plus_plus: { command: "other" } } } };
   fs.writeFileSync(cfg, JSON.stringify(configValue));
   result = run(global); assert.equal(result.status, 0, result.stdout); assert.match(result.stdout, /takes precedence/);
+  const repo = path.join(tmp, "repo"), subdir = path.join(repo, "sub"); fs.mkdirSync(subdir, { recursive: true });
+  assert.equal(spawnSync("git", ["init", "-q", repo]).status, 0);
+  configValue.projects = { [repo.replaceAll("\\", "/")]: { mcpServers: { symphony_plus_plus: { command: "other" } } } };
+  fs.writeFileSync(cfg, JSON.stringify(configValue));
+  result = run(global, subdir); assert.equal(result.status, 0, result.stdout); assert.match(result.stdout, /takes precedence/);
   configValue.projects = {}; fs.writeFileSync(cfg, JSON.stringify(configValue));
   let entry = JSON.parse(fs.readFileSync(cfg)).mcpServers.symphony_plus_plus;
   assert.equal(entry.args[0], path.join(global, "scripts", "start-sympp-mcp-bridge.js"));

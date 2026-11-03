@@ -114,7 +114,10 @@ function main(args) {
     const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
     const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
     claudeUser = config.mcpServers?.[name];
-    const cwd = fs.realpathSync(process.cwd()).replaceAll("\\", "/").toLowerCase();
+    const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", windowsHide: true });
+    const gitDir = git.status === 0 ? git.stdout.trim() : "";
+    const projectDir = path.basename(gitDir).toLowerCase() === ".git" ? path.dirname(gitDir) : process.cwd();
+    const cwd = fs.realpathSync(projectDir).replaceAll("\\", "/").toLowerCase();
     claudeShadow = fs.existsSync(path.join(process.cwd(), ".mcp.json")) || Object.entries(config.projects || {}).some(([dir, project]) => dir.replaceAll("\\", "/").toLowerCase() === cwd && project.mcpServers?.[name]);
     if (claudeUser && !(path.basename(claudeUser.command || "").toLowerCase().match(/^node(?:\.exe)?$/) && Array.isArray(claudeUser.args) && claudeUser.args.some(arg => typeof arg === "string" && path.basename(arg).toLowerCase() === "start-sympp-mcp-bridge.js"))) {
       throw new Error("Claude already has an unrelated user registration for symphony_plus_plus. Explicitly remove it before setup.");
