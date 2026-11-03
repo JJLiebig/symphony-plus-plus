@@ -1,6 +1,9 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   @moduledoc false
 
+  require Logger
+
+  alias SymphonyElixir.Config
   alias SymphonyElixir.PathSafety
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
@@ -9,6 +12,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreePath
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeTargetRoot
+  alias SymphonyElixir.Workspace
 
   @type repo :: module()
   @type git_failure :: %{
@@ -528,6 +532,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
          {:ok, work_package} <- persist_cleanup_proof(repo, work_package, worktree_path, repo_root, opts),
          opts <- cleanup_removal_context_opts(opts, work_package, worktree_path, repo_root),
          :ok <- clean_cargo_build(worktree_path, opts),
+         :ok <- run_before_remove_hook(worktree_path),
          :ok <- git(repo_root, ["worktree", "remove", "--force", worktree_path], opts),
          :ok <- remove_proven_residue(work_package, worktree_path),
          :ok <- git(repo_root, ["worktree", "prune"], opts),
@@ -535,6 +540,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
       {:ok, result(updated_work_package, "cleaned", worktree_path, nil, nil, repo_root)}
     else
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp run_before_remove_hook(worktree_path) do
+    case Config.settings() do
+      {:ok, _settings} ->
+        Workspace.run_before_remove_hook(worktree_path, nil)
+
+      {:error, _reason} ->
+        Logger.warning("Skipping before_remove hook: workflow configuration is unavailable")
+        :ok
     end
   end
 

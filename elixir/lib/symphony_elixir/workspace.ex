@@ -97,7 +97,7 @@ defmodule SymphonyElixir.Workspace do
       true ->
         case validate_workspace_path(workspace, nil) do
           :ok ->
-            maybe_run_before_remove_hook(workspace, nil)
+            run_before_remove_hook(workspace, nil)
             File.rm_rf(workspace)
 
           {:error, reason} ->
@@ -110,7 +110,7 @@ defmodule SymphonyElixir.Workspace do
   end
 
   def remove(workspace, worker_host) when is_binary(worker_host) do
-    maybe_run_before_remove_hook(workspace, worker_host)
+    run_before_remove_hook(workspace, worker_host)
 
     script =
       [
@@ -292,7 +292,9 @@ defmodule SymphonyElixir.Workspace do
     Path.join(Path.dirname(workspace), "#{@after_create_marker_prefix}-#{status}-#{Path.basename(workspace)}")
   end
 
-  defp maybe_run_before_remove_hook(workspace, nil) do
+  @doc false
+  @spec run_before_remove_hook(Path.t(), worker_host()) :: :ok
+  def run_before_remove_hook(workspace, nil) do
     hooks = Config.settings!().hooks
 
     case File.dir?(workspace) do
@@ -317,7 +319,7 @@ defmodule SymphonyElixir.Workspace do
     end
   end
 
-  defp maybe_run_before_remove_hook(workspace, worker_host) when is_binary(worker_host) do
+  def run_before_remove_hook(workspace, worker_host) when is_binary(worker_host) do
     hooks = Config.settings!().hooks
 
     case hooks.before_remove do
