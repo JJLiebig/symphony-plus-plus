@@ -19,9 +19,9 @@ Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [o
   --session <name>       Explicit local core session for agent navigation
   --mark <a|b|c|d>       S++ mark to install (default: a); use --replace to switch
   --replace              Replace a previously installed mod with this version
-  --chrome               Also add an S++ panel button to your desk-tabs bar and S++ badges to your
-                         desk-agents list (both backed up first)
-  --remove-chrome        Restore desk-tabs and desk-agents and remove the S++ panel
+  --chrome               Also add an S++ panel button to your desk-tabs bar, S++ badges to your
+                         desk-agents list and chief crowns to your desk-topics (backed up first)
+  --remove-chrome        Restore the desk mods and remove the S++ panel
   --help                 Show this help
 The S++ backend and your existing layouts, topics and terminals are unchanged.`;
 
@@ -82,7 +82,7 @@ async function removeChrome(values) {
     emit({ error: 'The S++ chrome was not removed; no files were changed', missing: plan.missing });
     return 1;
   }
-  if (plan.writes.length && !await checkedWrite(home, values, plan.writes, ['desk-tabs', 'desk-agents', 'sympp'])) return 1;
+  if (plan.writes.length && !await checkedWrite(home, values, plan.writes, [...plan.mods, 'sympp'])) return 1;
   emit({ chrome: plan.writes.length ? 'removed' : 'not installed', layout: plan.layout });
   return 0;
 }
@@ -164,7 +164,7 @@ async function main() {
   }
   const writes = files.filter(({ body, existing }) => !existing?.equals(body));
   if (chrome) {
-    if (!await checkedWrite(home, values, [...writes, ...chrome.writes], ['desk-tabs', 'desk-agents', 'sympp'])) return 1;
+    if (!await checkedWrite(home, values, [...writes, ...chrome.writes], [...chrome.mods, 'sympp'])) return 1;
   } else await write(writes);
   if (!values.lab) {
     await rm(join(home, 'tools', 'sympp-http.cjs'), { force: true });

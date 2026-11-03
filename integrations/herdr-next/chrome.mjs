@@ -1,11 +1,13 @@
-// The S++ chrome for a personal Herdr desk: patches its desk-tabs and desk-agents mods and adds the
-// S++ panel to the active layout's panel-body stack. Planning only reads; install.mjs writes the plan.
+// The S++ chrome for a personal Herdr desk: patches its desk-tabs and desk-agents mods (and desk-topics
+// when the desk has it) and adds the S++ panel to the active layout's panel-body stack. Planning only
+// reads; install.mjs writes the plan and checks the mods it names.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import deskTabs from './chrome/desk-tabs.patch.mjs';
 import deskAgents from './chrome/desk-agents.patch.mjs';
+import deskTopics from './chrome/desk-topics.patch.mjs';
 
-const PATCHES = [deskTabs, deskAgents];
+const PATCHES = [deskTabs, deskAgents, deskTopics];
 // Every chrome version marks what it adds; each patch names its own version.
 const MARK = 'S++ chrome';
 const PANEL = 'sympp';
@@ -70,11 +72,14 @@ export async function planInstall(home, props) {
   const backups = join(home, 'data', 'sympp-chrome');
   const missing = [...desk.missing];
   const writes = [];
+  const mods = [];
   for (const patch of PATCHES) {
     const file = join(home, 'mods', patch.mod, 'main.js');
     const backup = join(backups, `${patch.mod}.main.js`);
     const current = await contents(file);
+    if (current === null && patch.optional) continue;
     if (current === null) { missing.push(`mods/${patch.mod}/main.js is missing`); continue; }
+    mods.push(patch.mod);
     if (current.includes(MARK)) {
       const original = await contents(backup);
       if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
@@ -95,10 +100,10 @@ export async function planInstall(home, props) {
   } else if (JSON.stringify(children[at]) !== JSON.stringify({ ...children[at], ...child })) {
     children[at] = { ...children[at], ...child };
   } else {
-    return { layout: desk.name, backups, writes };
+    return { layout: desk.name, backups, writes, mods };
   }
   writes.push({ to: desk.path, body: serialize(desk.layout, desk.text) });
-  return { layout: desk.name, backups, writes };
+  return { layout: desk.name, backups, writes, mods };
 }
 
 // Writes that remove the chrome: both mods back from their backups, the S++ panel out of the layout.
@@ -108,10 +113,12 @@ export async function planRemoval(home) {
   const backups = join(home, 'data', 'sympp-chrome');
   const missing = [];
   const writes = [];
+  const mods = [];
   for (const patch of PATCHES) {
     const file = join(home, 'mods', patch.mod, 'main.js');
     const backup = join(backups, `${patch.mod}.main.js`);
     const current = await contents(file);
+    if (current !== null) mods.push(patch.mod);
     if (!current?.includes(MARK)) continue;
     const original = await contents(backup);
     if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
@@ -125,5 +132,5 @@ export async function planRemoval(home) {
     if (desk.body.active === PANEL) desk.body.active = desk.body.children[0]?.id;
     writes.push({ to: desk.path, body: serialize(desk.layout, desk.text) });
   }
-  return { layout: desk.name, backups, writes };
+  return { layout: desk.name, backups, writes, mods };
 }

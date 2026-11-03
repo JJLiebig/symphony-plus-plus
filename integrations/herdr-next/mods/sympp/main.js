@@ -9,7 +9,8 @@
 // Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel", job?: "<work request id>",
 //   studio?: { job: "<work request id>", pkg: "<work package id>" },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
-//   hosts?: { local: { node, helper, session? }, "machine": { node, helper, session? } } }
+//   hosts?: { local: { node, helper, session?, runtime? }, "machine": { node, helper, session? } } }
+// With local.runtime (the factory's runtime record) a view starts that S++ when it doesn't answer.
 // Hosts may also be configured explicitly in shared("sympp.hosts"). A copy without an endpoint uses the
 // connection the last connected copy shared ("sympp.connection"), so a scripted studio needs only its ids.
 //
@@ -42,7 +43,20 @@ const DAY = 24 * 3600e3;
 const KEYS = { j: "down", k: "up", down: "down", up: "up" };
 const TOP = { topic: null, space: null, job: null };
 const CONNECTION = "sympp.connection";
+// For other mods (the status bar): the live jobs, [{ id, title, stage, needs, failed }] with stage the
+// furthest a live package reached; and their ask to show one in the panel, { job, at }.
+const BOARD = "sympp.board";
+const OPEN = "sympp.open";
+// For the spaces sidebar's chief button: each Herdr topic's chiefs, { [topic id]: [{ domain,
+// terminal }] }, terminal only while the helper confirms the chief live.
+const CHIEFS = "sympp.chiefs";
+const STAGES = ["build", "checks", "review", "merge"];
 const SWEEP = 60e3;
+// A copy starting S++ records when ("sympp.starting"); other copies leave it to that one meanwhile.
+const STARTING = "sympp.starting";
+const START_WAIT = 60e3;
+// How often an open view renews its S++ client lease; S++ drops one unrenewed for 10 minutes.
+const LEASE = 60e3;
 // The studio's own pane shrinks to its header, under Herdr's pane header, while a native preview
 // shows below it.
 const STRIP = 88;
@@ -116,8 +130,21 @@ export default class Lens extends View {
     this.creation = { pending: false, error: null };
     this.answers = {};
     this.jumps = {};
+    this.leaseId = `herdr-app-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    this.leasedAt = 0;
     cx.timer.every(TICK, (cx) => this.tick(cx));
     this.tick(cx);
+    this.started = Date.now();
+    if (this.role === "panel") cx.timer.every(250, (cx) => this.checkOpen(cx));
+  }
+
+  // Another mod asked the panel to show a job (shared OPEN); asks from before this copy started are old.
+  checkOpen(cx) {
+    const ask = shared(OPEN);
+    if (!ask?.job || !(ask.at > (this.openedAt ?? this.started))) return;
+    this.openedAt = ask.at;
+    const job = this.net.data?.jobs.find((j) => j.id === ask.job);
+    if (job) this.openJob(job, {}, cx);
   }
 
   // Data timer: the board when due; while a job view shows, its details at the same cadence, and
@@ -132,7 +159,8 @@ export default class Lens extends View {
     if (!this.reading && M.fetchDue(this.net, now, active)) { this.read(cx); busy = true; }
     const shown = this.shown;
     if (shown && !this.detailReading && J.detailDue(this.detailNet, shown.jobId, cadence, now)) { this.readDetail(shown.jobId, cx); busy = true; }
-    const watch = this.agentWatch;
+    this.shareChiefs(now);
+    const watch = this.withChiefs(this.agentWatch);
     if (watch && !this.checking && (this.checkedFor !== watch.key || now - this.checkedAt >= cadence)) this.checkAgents(watch, cx);
     if (now - this.sweptAt >= SWEEP) this.sweep(cx);
     if (this.studio) this.studioTick(cx, now);
@@ -162,17 +190,27 @@ export default class Lens extends View {
           }
         }
       } catch (caught) {
-        outcome = { error: caught.userMessage || M.networkError(this.endpoint, caught) };
+        outcome = { error: caught.userMessage || M.networkError(this.endpoint, caught), unreachable: caught.status === undefined };
       }
       this.reading = false;
       if (turn !== this.turn) return;
       const now = Date.now();
       this.net = outcome.board ? M.fetchSucceeded(this.net, outcome.board, now) : M.fetchFailed(this.net, outcome.error, now);
+      if (outcome.unreachable) this.startServer(cx);
       if (outcome.board) {
+        this.outage = false;
+        this.startFailed = false;
+        this.holdLease(outcome.board, now, cx);
         if (this.ownConnection) this.shareConnection();
         this.announce(outcome.board);
         const agents = Chrome.nextDecorations(shared(Chrome.AGENTS), Chrome.decorations(outcome.board, terminals(), this.endpoint, now), this.endpoint, now);
         if (agents) setShared(Chrome.AGENTS, agents);
+        const live = outcome.board.jobs.filter((j) => j.state === "live").map((j) => {
+          const moving = j.packages.filter((p) => STAGES.includes(p.stage));
+          return { id: j.id, title: j.title, stage: STAGES[Math.max(-1, ...moving.map((p) => STAGES.indexOf(p.stage)))] ?? null,
+            needs: j.needs.length > 0, failed: moving.some((p) => p.failed) };
+        });
+        if (JSON.stringify(shared(BOARD)) !== JSON.stringify(live)) setShared(BOARD, live);
       }
       this.painted = now;
       if (this.refreshAfterRead) {
@@ -185,6 +223,51 @@ export default class Lens extends View {
         // The view closed or reloaded while reading; nothing is left to draw.
       }
     });
+  }
+
+  // A local S++ that doesn't answer starts through its helper, once per outage (Retry asks again), and
+  // only from one copy at a time: the others see the shared start and wait for it.
+  startServer(cx) {
+    const host = this.hosts?.local;
+    if (!host?.runtime || this.starting || this.outage) return;
+    const at = shared(STARTING);
+    if (typeof at === "number" && Date.now() - at < START_WAIT) return;
+    this.outage = true;
+    this.starting = true;
+    this.startFailed = false;
+    setShared(STARTING, Date.now());
+    cx.spawn(async (cx) => {
+      let result = null;
+      try { result = await exec(host.node, [host.helper, "start", "--runtime", host.runtime]); } catch { result = null; }
+      this.starting = false;
+      this.startFailed = result?.code !== 0;
+      setShared(STARTING, 0);
+      this.net = { ...this.net, attemptAt: null };
+      if (this.reading) this.refreshAfterRead = true;
+      else this.read(cx);
+      try { cx.notify(); } catch { /* closed while starting */ }
+    });
+  }
+
+  // While a view is open S++ counts Herdr as a client, so it stays up after the last agent session
+  // closes; the lease lapses on its own if Herdr quits before letting go.
+  holdLease(board, now, cx) {
+    if (board.offline !== false || now - this.leasedAt < LEASE) return;
+    const action = this.leasedAt ? "heartbeat" : "attach";
+    this.leasedAt = now;
+    cx.spawn(async () => {
+      try { if (!(await this.lease(action)).ok) this.leasedAt = 0; } catch { this.leasedAt = 0; }
+    });
+  }
+
+  lease(action) {
+    return this.request(`${this.endpoint}/mcp/client-lease`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_id: this.leaseId, action }),
+    });
+  }
+
+  async close() {
+    if (this.leasedAt) await this.lease("detach").catch(() => null);
   }
 
   // Lets a copy opened without connection props (a scripted studio) reach the same S++.
@@ -291,6 +374,7 @@ export default class Lens extends View {
     this.net = { ...this.net, attemptAt: null };
     this.detailNet = { ...this.detailNet, attemptAt: null };
     this.checkedFor = null;
+    this.outage = false;
     if (this.reading) this.refreshAfterRead = true;
     else this.read(cx);
     cx.notify();
@@ -396,6 +480,35 @@ export default class Lens extends View {
 
   watch(key, list) {
     this.agentWatch = { key, bindings: list.filter((b, i) => list.findIndex((o) => o.address === b.address) === i) };
+  }
+
+  bindingsOf(board) {
+    return M.discoverBindings(this.hosts ?? shared("sympp.hosts"), terminals()).map((binding) => board.offline === false
+      ? binding : { ...binding, available: false, unavailable: board.offline ? "Offline copy" : "Update S++ for agent access" });
+  }
+
+  // The panel keeps every topic's chiefs checked, whichever level it shows, and shares them.
+  // Written outside render, and only when something differs.
+  shareChiefs(now) {
+    const board = this.net.data;
+    if (this.role !== "panel" || this.studio || !board) return;
+    const desk = L.deskOf(this.deskTopics(), this.spaceList()), bindings = this.bindingsOf(board);
+    const out = {};
+    this.chiefWatch = [];
+    for (const topic of desk.filter((x) => x.kind === "topic")) {
+      const chiefs = this.chiefsOf(topic, board, desk, bindings, now);
+      this.chiefWatch.push(...chiefs.flatMap((c) => c.agent.bindings));
+      if (chiefs.length) out[topic.id] = chiefs.map(({ chief, agent }) =>
+        ({ domain: chief.domain, terminal: agent.state === "live" ? agent.binding.address : null }));
+    }
+    if (JSON.stringify(shared(CHIEFS) ?? {}) !== JSON.stringify(out)) setShared(CHIEFS, out);
+  }
+
+  withChiefs(watch) {
+    const chiefs = this.chiefWatch ?? [];
+    if (!chiefs.length) return watch;
+    const list = [...(watch?.bindings ?? []), ...chiefs];
+    return { key: `${watch?.key ?? "none"}+chiefs`, bindings: list.filter((b, i) => list.findIndex((o) => o.address === b.address) === i) };
   }
 
   // The chiefs matching a topic, each as an agent.
@@ -899,13 +1012,13 @@ export default class Lens extends View {
     const board = this.net.data;
     if (!board) {
       if (!this.net.error) return this.root(t, [message(t, "Reading S++…", null)]);
-      return this.root(t, [message(t, "Couldn't read S++", this.net.error, [
+      if (this.starting || now - (shared(STARTING) || 0) < START_WAIT) return this.root(t, [message(t, "Starting S++…", null)]);
+      return this.root(t, [message(t, this.startFailed ? "Couldn't start S++" : "Couldn't read S++", this.startFailed ? null : this.net.error, [
         button(t, "retry-first", this.reading ? "Reading…" : "Retry", (cx) => this.retry(cx), { strong: true }),
         ...(this.dashboard ? [button(t, "dashboard-first", "Open dashboard", (cx) => this.openDashboard(cx))] : []),
       ])]);
     }
-    const bindings = M.discoverBindings(this.hosts ?? shared("sympp.hosts"), terminals()).map((binding) => board.offline === false
-      ? binding : { ...binding, available: false, unavailable: board.offline ? "Offline copy" : "Update S++ for agent access" });
+    const bindings = this.bindingsOf(board);
 
     if (this.studio) return this.studioLevel(t, board, bindings, now, cx);
 

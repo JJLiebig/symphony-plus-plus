@@ -12,6 +12,7 @@ import { decorations, nextDecorations, RESTAMP } from './mods/sympp/chrome.js';
 import { boardPayload, NOW } from './fixture.mjs';
 import deskTabs from './chrome/desk-tabs.patch.mjs';
 import deskAgents from './chrome/desk-agents.patch.mjs';
+import deskTopics from './chrome/desk-topics.patch.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const checkerEnv = { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(join(here, 'chrome', 'fixtures', 'check.cjs'))}` };
@@ -82,7 +83,7 @@ async function deskHome(t, layout = deskLayout()) {
   await mkdir(join(home, 'layouts'), { recursive: true });
   await writeFile(join(home, 'shared.json'), JSON.stringify({ layout: 'desk' }));
   await writeFile(join(home, 'layouts', 'desk.json'), JSON.stringify(layout, null, 2));
-  for (const patch of [deskTabs, deskAgents]) {
+  for (const patch of [deskTabs, deskAgents, deskTopics]) {
     const target = join(home, 'mods', patch.mod);
     await cp(join(here, 'chrome', 'fixtures', patch.mod), target, { recursive: true });
   }
@@ -111,7 +112,8 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
   assert.match(tabs, /symppTabMark\(c\.id\)/, 'tabs carry the marks mods register');
   assert.doesNotMatch(tabs.replaceAll('\r\n', ''), /\n/, 'keeps the mod\'s CRLF line endings');
   assert.match(await readFile(join(home, 'mods', 'desk-agents', 'main.js'), 'utf8'), /symppStage\(k\.address, Date\.now\(\)\)/);
-  for (const patch of [deskTabs, deskAgents]) {
+  assert.match(await readFile(join(home, 'mods', 'desk-topics', 'main.js'), 'utf8'), /\.children\(symppChief\(this, group \? id : null, t, workspace\)\)/);
+  for (const patch of [deskTabs, deskAgents, deskTopics]) {
     assert.equal(await readFile(join(home, 'data', 'sympp-chrome', `${patch.mod}.main.js`), 'utf8'),
       original[join(home, 'mods', patch.mod, 'main.js')].toString());
   }
@@ -152,7 +154,7 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
   await writeFile(join(home, 'layouts', 'desk.json'), JSON.stringify(layout, null, 2));
   const removed = install(home, '--remove-chrome');
   assert.equal(removed.status, 0, removed.stdout + removed.stderr);
-  for (const patch of [deskTabs, deskAgents]) {
+  for (const patch of [deskTabs, deskAgents, deskTopics]) {
     const file = join(home, 'mods', patch.mod, 'main.js');
     assert.deepEqual(await readFile(file), original[file]);
   }
@@ -161,6 +163,17 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
   assert.equal(after.children[2].children[0].active, 'files');
   assert.deepEqual(after.children[2].size, { px: 500 });
   assert.match(install(home, '--remove-chrome').stdout, /not installed/);
+});
+
+test('a desk without desk-topics gets the rest of the chrome, and removing it leaves desk-topics absent', async t => {
+  const home = await deskHome(t);
+  await rm(join(home, 'mods', 'desk-topics'), { recursive: true });
+  const result = install(home, ...ENDPOINT, '--chrome');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(await readFile(join(home, 'mods', 'desk-tabs', 'main.js'), 'utf8'), /S\+\+ chrome/);
+  const removed = install(home, '--remove-chrome');
+  assert.equal(removed.status, 0, removed.stdout + removed.stderr);
+  assert.equal((await readdir(join(home, 'mods'))).includes('desk-topics'), false);
 });
 
 test('--chrome refuses a home without the personal desk and changes nothing', async t => {
@@ -279,7 +292,7 @@ test('current desk fixtures render after chrome install and restore byte-for-byt
     { env: { ...process.env, HERDR_APP_HOME: home }, encoding: 'utf8', windowsHide: true });
   const installed = run(...ENDPOINT, '--chrome');
   assert.equal(installed.status, 0, installed.stdout + installed.stderr);
-  for (const mod of ['desk-tabs', 'desk-agents', 'sympp']) {
+  for (const mod of ['desk-tabs', 'desk-agents', 'desk-topics', 'sympp']) {
     const result = spawnSync(app, ['check', join(home, 'mods', mod)],
       { env: { ...process.env, HERDR_APP_HOME: home }, encoding: 'utf8', windowsHide: true });
     assert.equal(result.status, 0, result.stdout + result.stderr);
