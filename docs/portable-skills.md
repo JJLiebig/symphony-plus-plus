@@ -160,8 +160,19 @@ installations retain their marketplace upgrade path.
 
 ## Update, rollback, and removal
 
-Close clients using this installation and retain selected host profiles. Save
-the current installed bundle outside the workspace before updating:
+Close clients using this installation and retain selected host profiles. For a
+global install, back up `$HOME/.agents/skills/symphony-plus-plus` and
+`$HOME/.agents/.skill-lock.json` (or `$env:XDG_STATE_HOME/skills/.skill-lock.json`
+when set), then run:
+
+```powershell
+npx --yes skills@1.7.0 update symphony-plus-plus -g --yes
+node $HOME/.agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+```
+
+To roll back the global bundle, restore the saved skill and its matching lock
+entry, then run setup. Preserve other skills' lock entries. For a project install,
+save the current installed bundle outside the workspace before updating:
 
 ```powershell
 $previousBundle = Join-Path $env:USERPROFILE 'sympp-previous-install'
@@ -185,7 +196,8 @@ Restore a stopped ledger backup when migrations or retention require it. Keep th
 original marketplace installation and paired backup for the first distribution
 change. Skills locks record branch/content hash rather than a resolved Git SHA.
 
-Before `npx --yes skills@1.7.0 remove symphony-plus-plus --yes`, close clients and
+Before `npx --yes skills@1.7.0 remove symphony-plus-plus -g --yes` (omit `-g`
+for a project install), close clients and
 remove its MCP registration from each host. Removing skill files does not
 remove host configuration.
 
