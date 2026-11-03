@@ -104,7 +104,7 @@ test('missing, empty and stale jobs say so', skip, async (t) => {
   assert.ok(shaping.text('Shaping') && shaping.text('Not sliced into packages yet.'));
   const stale = await render(t, { props: { job: 'wr-pr' }, width: 1400, error: "Can't reach S++ at 127.0.0.1:4000. Check the connection and retry." });
   assert.ok(stale.has('rails'), 'the last good rails stay on screen');
-  assert.ok(stale.out.includes('Connection lost'));
+  assert.ok(stale.has('read-status') && !stale.out.includes('Connection lost'), 'a failed read is a status mark, not a banner');
 });
 
 test('the factory ranks what needs you and gives one row per Herdr topic', skip, async (t) => {
@@ -141,7 +141,7 @@ test('the Job level sits under the breadcrumb, with its own tab action and no se
   assert.equal(full.has('back') || full.has('new-job'), false);
   const panel = await render(t, { props: { role: 'panel' }, width: 1400, path: { job: 'wr-pr' }, pin: true });
   assert.ok(panel.has('job-view-full') && panel.has('rails-compact'), 'the panel role always stacks');
-  assert.ok(panel.text('Unpin'));
+  assert.ok(panel.has('pin') && !panel.text('Unpin'), 'the panel bar uses an icon button');
 });
 
 test('a topic with a chief shows its desk first; one without says how to make one; factory rows show chief presence', skip, async (t) => {

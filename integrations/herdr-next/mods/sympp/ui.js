@@ -31,6 +31,21 @@ export function button(t, id, label, action, { strong = false, glyph = null, tip
     .when(Boolean(label), (el) => el.child(label));
 }
 
+// A square icon button for the panel's narrow bar; the tip names it.
+export function iconButton(t, id, glyph, tip, action, { strong = false } = {}) {
+  return Button.new(id).flex().flex_none().items_center().justify_center().size(24).rounded(6).cursor_pointer()
+    .border(1).border_color(strong ? t.input : CLEAR)
+    .text_color(strong ? t.foreground : t.muted)
+    .hover((s) => s.bg(t.hover).text_color(t.foreground))
+    .focus((s) => s.border_color(t.accent))
+    .accessibility_label(tip).tooltip(tip)
+    .on_click((_e, cx) => {
+      cx.stop_propagation();
+      action(cx);
+    })
+    .child(svg(icon(glyph)).size(13).flex_none());
+}
+
 export function field(t, label, state, multiline = false) {
   return v_flex().gap(6).min_w(0)
     .child(div().text_size(12).text_color(t.muted).child(label))

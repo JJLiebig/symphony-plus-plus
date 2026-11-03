@@ -788,9 +788,9 @@ export default class Lens extends View {
     const job = board.jobs.find((j) => j.id === this.studio.job);
     const pkg = job?.packages.find((p) => p.id === this.studio.pkg);
     if (!pkg) {
-      return this.root(t, [O.staleBar(this, t, now), message(t, "This package isn't here", "It isn't on this S++ board. It may have been archived, or this studio belongs to another factory.", [
+      return this.root(t, [message(t, "This package isn't here", "It isn't on this S++ board. It may have been archived, or this studio belongs to another factory.", [
         button(t, "retry-missing", this.reading ? "Reading…" : "Refresh", (cx) => this.retry(cx), { strong: true }),
-      ])]);
+      ]), O.floatingStatus(this, t, now)]);
     }
     if (!this.studioHere(job, pkg, cx)) return this.root(t, [message(t, "Opening the studio…", null)]);
     this.studioWatch = { workers: S.workerBindings(M.bindingsFor(bindings, job.id, pkg.id)).filter((b) => b.available) };
@@ -815,10 +815,10 @@ export default class Lens extends View {
     // Not while it closes: the resize would land on the studio pane once it has the column's place.
     this.fitStrip(Boolean(devPane) && !this.closingDev, cx);
     if (kind === "native") this.previewPane(devPane, cx);
-    return this.root(t, [O.staleBar(this, t, now), studioView(this, t, {
+    return this.root(t, [studioView(this, t, {
       pkg, worker: { state: w.state, provider: w.binding?.provider ?? null }, place, kind, url,
       native: this.native, landed: this.landed, strip: Boolean(devPane) && !this.closingDev,
-    })]);
+    }), O.floatingStatus(this, t, now)]);
   }
 
   input(placeholder, multiline = false) {
@@ -1026,12 +1026,12 @@ export default class Lens extends View {
       this.registerTab(cx);
       const job = board.jobs.find((j) => j.id === this.pinned);
       if (!job) {
-        return this.root(t, [O.staleBar(this, t, now), message(t, "This job isn't here", "It isn't on this S++ board. It may have been archived, or this tab belongs to another factory.", [
+        return this.root(t, [message(t, "This job isn't here", "It isn't on this S++ board. It may have been archived, or this tab belongs to another factory.", [
           button(t, "retry-missing", this.reading ? "Reading…" : "Refresh", (cx) => this.retry(cx), { strong: true }),
           ...(this.dashboard ? [button(t, "dashboard-missing", "Open dashboard", (cx) => this.openDashboard(cx))] : []),
-        ])]);
+        ]), O.floatingStatus(this, t, now)]);
       }
-      return this.root(t, [O.staleBar(this, t, now), this.jobLevel(t, board, job, bindings, "tab", now)]);
+      return this.root(t, [this.jobLevel(t, board, job, bindings, "tab", now), O.floatingStatus(this, t, now)]);
     }
 
     const desk = L.deskOf(this.deskTopics(), this.spaceList());
@@ -1046,10 +1046,10 @@ export default class Lens extends View {
 
     if (this.level === "job") {
       const job = board.jobs.find((j) => j.id === path.job);
-      return this.root(t, [O.levelBar(this, t, trail, { now, needs, slim: true }), O.staleBar(this, t, now),
+      return this.root(t, [O.levelBar(this, t, trail, { now, needs, slim: true }),
         job ? this.jobLevel(t, board, job, bindings, "full", now) : message(t, "Reading new job…", null)]);
     }
-    const top = [O.levelBar(this, t, trail, { now, needs }), O.staleBar(this, t, now)];
+    const top = [O.levelBar(this, t, trail, { now, needs })];
     if (this.intake) return this.root(t, [...top, O.intakeForm(this, t)]);
     if (this.level === "factory") {
       const rows = L.factoryRows(board.jobs, desk, this.place).map((row) => ({ ...row, chiefs: this.chiefsOf(row, board, desk, bindings, now) }));
