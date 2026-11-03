@@ -175,6 +175,8 @@ if ($original.runtime_mode -ne 'artifact' -or $original.backend.managed -ne $tru
 }
 $launcher = Join-Path $pluginRoot 'scripts/start-sympp-mcp.ps1'
 $pinFile = if ($LocalCheckout) { Join-Path $SymppHome 'runtime/checkout-artifacts.json' } else { Join-Path $pluginRoot '.sympp-runtime-artifacts.json' }
+$legacyPin = Join-Path $pluginRoot '.sympp-runtime-artifacts.json'
+$legacyPinText = if (Test-Path -LiteralPath $legacyPin) { Get-Content -LiteralPath $legacyPin -Raw } else { $null }
 $originalPinText = if (Test-Path -LiteralPath $pinFile) { Get-Content -LiteralPath $pinFile -Raw } else { $null }
 [void](Assert-InstallPath $pinFile)
 Assert-InHome $runtimeFile $SymppHome
@@ -294,6 +296,7 @@ try {
     if ($bundleChanged) {
       if (-not $LocalCheckout) { Assert-InHome $pluginRoot $workspace }
       Assert-InHome $bundleBackup $SymppHome
+      if ($LocalCheckout) { Remove-Item -LiteralPath $stagePin -Force }
       Move-Item -LiteralPath $pluginRoot -Destination $bundleBackup
       Move-Item -LiteralPath $candidateBundle -Destination $pluginRoot
     }
@@ -317,11 +320,16 @@ try {
     }
     if ($LocalCheckout) { $rollbackManifest.factory_plugin_root = $pluginRoot }
     Write-InstallJson $pinFile $rollbackManifest
+    if ($LocalCheckout) { Write-InstallJson $legacyPin $rollbackManifest }
     Write-InstallJson $runtimeFile $original
     $startupLock.Dispose(); $startupLock = $null
     Start-InstallBackend
     $restored = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
     Assert-FactoryReady $restored $original.backend.source_revision $originalContract
+    if ($LocalCheckout) {
+      if ($null -ne $legacyPinText) { [IO.File]::WriteAllText($legacyPin, $legacyPinText) }
+      else { Remove-Item -LiteralPath $legacyPin -Force }
+    }
     if ($null -ne $originalPinText) { [IO.File]::WriteAllText($pinFile, $originalPinText) }
     else { Remove-Item -LiteralPath $pinFile -Force }
     throw "Beta installation failed; the previous runtime is serving again. $($failure.Exception.Message)"

@@ -2,13 +2,34 @@ $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
 $root = Join-Path ([IO.Path]::GetTempPath()) ('sympp-checkout-pin-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $root 'runtime'), (Join-Path $root 'bundle/assets') -Force | Out-Null
+$savedGitConfig = @{}
+foreach ($name in @('GIT_CONFIG_COUNT','GIT_CONFIG_KEY_0','GIT_CONFIG_VALUE_0')) { $savedGitConfig[$name] = [Environment]::GetEnvironmentVariable($name) }
 try {
   $bundle = Join-Path $root 'bundle'
-  '{"distribution":"skills"}' | Set-Content (Join-Path $bundle '.sympp-install.json')
+  Copy-Item -LiteralPath (Join-Path $repo 'skills/symphony-plus-plus/.sympp-install.json') -Destination $bundle
+  New-Item -ItemType Directory -Path (Join-Path $bundle 'scripts') | Out-Null
+  Copy-Item -LiteralPath (Join-Path $repo 'plugins/symphony-plus-plus-mcp/scripts/setup-sympp.js') -Destination (Join-Path $bundle 'scripts/setup-sympp.js')
+  @{ skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/symphony-plus-plus'; ref = 'main' } } } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'skills-lock.json')
   @{ plugin_root = $bundle } | ConvertTo-Json | Set-Content (Join-Path $root 'runtime/codex-plugin.json')
-  $published = @{ source_revision = 'b' * 40; artifacts = @(@{ platform = 'windows-x86_64'; path = 'published.zip' }) }
-  $published | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $bundle 'assets/published.json')
-  @{ channels = @{ stable = @{ manifest = @{ path = (Join-Path $bundle 'assets/published.json') } } } } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $bundle 'assets/sympp-runtime-artifacts.json')
+  $published = @{ source_revision = 'b' * 40; mcp_contract_fingerprint = 'b' * 64; artifacts = @(@{ platform = 'windows-x86_64'; path = 'published.zip' }) }
+  $published | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'published.json')
+  @{ channels = @{ stable = @{ manifest = @{ path = (Join-Path $root 'published.json') } } } } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $bundle 'assets/sympp-runtime-artifacts.json')
+  $publishedRepo = Join-Path $root 'published-repo'
+  $publishedBundle = Join-Path $publishedRepo 'skills/symphony-plus-plus'
+  New-Item -ItemType Directory -Path $publishedBundle -Force | Out-Null
+  Copy-Item -Path "$bundle/*" -Destination $publishedBundle -Recurse
+  Copy-Item -LiteralPath (Join-Path $bundle '.sympp-install.json') -Destination $publishedBundle
+  $publishedInstall = Get-Content -LiteralPath (Join-Path $publishedBundle '.sympp-install.json') -Raw | ConvertFrom-Json
+  $publishedInstall.contract_fingerprint = 'b' * 64
+  $publishedInstall | ConvertTo-Json | Set-Content (Join-Path $publishedBundle '.sympp-install.json')
+  & git init --quiet $publishedRepo
+  & git -C $publishedRepo add .
+  & git -C $publishedRepo -c user.name=fixture -c user.email=fixture@example.invalid commit --quiet -m fixture
+  $published.source_revision = (& git -C $publishedRepo rev-parse HEAD).Trim()
+  $published | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'published.json')
+  $env:GIT_CONFIG_COUNT = '1'
+  $env:GIT_CONFIG_KEY_0 = "url.$($publishedRepo.Replace('\','/')).insteadOf"
+  $env:GIT_CONFIG_VALUE_0 = 'https://github.com/JJLiebig/symphony-plus-plus'
   $pin = Join-Path $root 'runtime/checkout-artifacts.json'
   @{ factory_plugin_root = $bundle; source_revision = 'a' * 40; checkout = @{ revision = 'a' * 40; dirty = $true }; artifacts = @(@{ platform = 'windows-x86_64'; path = 'retained-cache.zip' }) } | ConvertTo-Json -Depth 8 | Set-Content $pin
   # New processes exercise the same manifest resolver as a cold launcher.
@@ -28,23 +49,22 @@ Read-SymppArtifactManifest $Bundle | ConvertTo-Json -Depth 12 -Compress
   $otherHome = Join-Path $root 'other-factory'
   New-Item -ItemType Directory -Path $otherHome | Out-Null
   $other = & pwsh -NoProfile -File $probe $repo $bundle $otherHome | ConvertFrom-Json
-  if ($other.source_revision -ne ('b' * 40)) { throw 'Checkout pin leaked to another factory sharing Skills.' }
+  if ($other.source_revision -ne $published.source_revision) { throw 'Checkout pin leaked to another factory sharing Skills.' }
   & (Join-Path $repo 'scripts/follow-sympp-channel.ps1') -SymppHome $root
   $followed = & pwsh -NoProfile -File $probe $repo $bundle | ConvertFrom-Json
-  if ($followed.source_revision -ne ('b' * 40) -or $followed.checkout) { throw 'Follow did not return cold selection to the channel.' }
-  & (Join-Path $repo 'scripts/follow-sympp-channel.ps1') -SymppHome $root
-  $before = Get-Content -LiteralPath $pin -Raw
-  & (Join-Path $repo 'scripts/follow-sympp-channel.ps1') -SymppHome $root
-  if ((Get-Content -LiteralPath $pin -Raw) -cne $before) { throw 'Repeated follow rewrote channel selection.' }
+  if ($followed.source_revision -ne $published.source_revision -or $followed.checkout) { throw 'Follow did not return cold selection to the channel.' }
+  $restoredInstall = Get-Content -LiteralPath (Join-Path $bundle '.sympp-install.json') -Raw | ConvertFrom-Json
+  if ($restoredInstall.contract_fingerprint -ne ('b' * 64)) { throw 'Follow did not restore the published Skills contract.' }
+  if (Test-Path -LiteralPath $pin) { throw 'Follow retained a checkout pin.' }
   # Another bundle sharing this home cannot consume this factory's selection.
   $foreign = Join-Path $root 'other-bundle'
   New-Item -ItemType Directory -Path (Join-Path $foreign 'assets') -Force | Out-Null
   Copy-Item -LiteralPath (Join-Path $bundle 'assets/sympp-runtime-artifacts.json') -Destination (Join-Path $foreign 'assets/sympp-runtime-artifacts.json')
   # Keep the same home while selecting a different installed bundle.
   $isolated = & pwsh -NoProfile -File $probe $repo $foreign | ConvertFrom-Json
-  if ($isolated.source_revision -ne ('b' * 40)) { throw 'Factory pin leaked to another bundle.' }
+  if ($isolated.source_revision -ne $published.source_revision) { throw 'Factory pin leaked to another bundle.' }
   Write-Host 'Checkout pin qualified: repeated cold selection, dirty provenance, follow, and factory isolation.'
 } finally {
+  foreach ($name in $savedGitConfig.Keys) { [Environment]::SetEnvironmentVariable($name, $savedGitConfig[$name]) }
   if ([IO.Path]::GetFullPath($root).StartsWith([IO.Path]::GetTempPath(), [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $root -Recurse -Force }
 }
-

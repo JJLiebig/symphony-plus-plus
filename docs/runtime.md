@@ -39,7 +39,9 @@ open fresh agent sessions only when the command reports a Skills/contract change
 The checkout build stays selected through idle shutdown and reboot. Its commit,
 dirty flag and install time appear in the runtime record's `artifact.checkout` and
 the factory's `runtime/checkout-artifacts.json`. `just follow` replaces this pin;
-the next cold start selects the owning Skills installation's published channel.
+it restores Skills from the published runtime's commit, then the next cold start
+selects the owning installation's published channel. Use one Skills installation
+per factory; sharing its directory between independent factories is unsupported.
 Skills updates replace launcher files, so run `just install` again after one.
 
 `just test` runs fast launcher/bridge and native-view behavior tests, checkout-pin
