@@ -30,7 +30,7 @@ fi
             (root / 'gh').chmod(0o755)
             (root / 'manifest.json').write_text(json.dumps({
                 'source_revision': published,
-                'artifacts': [{'platform': {'os': 'macos', 'arch': 'arm64'}}] if mac else [],
+                'artifacts': [{'platform': {'os': 'macos', 'arch': 'aarch64'}}] if mac else [],
             }))
             output = root / 'output'
             output.touch()
@@ -64,6 +64,29 @@ fi
                      dict(published='b' * 40), dict(available=False)]:
             with self.subTest(args=args):
                 self.assertEqual(self.plan(**args), {})
+
+    def test_publication_uploads_only_rebuilt_platforms(self):
+        upload = textwrap.dedent(WORKFLOW.read_text().split('      - name: Upload platform release assets\n', 1)[1]
+                                .split('        run: |\n', 1)[1].split('      - name:', 1)[0])
+        for retry, platforms in [(True, ['macos-arm64']), (False, ['linux-x64', 'windows-x64'])]:
+            with self.subTest(retry=retry), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                assets = root / 'artifacts/sympp-runtime-release'
+                assets.mkdir(parents=True)
+                for platform in ['linux-x64', 'windows-x64', 'macos-arm64']:
+                    for suffix in ['zip', 'manifest.json']:
+                        (assets / f'sympp-runtime-{SHA}-{platform}.{suffix}').touch()
+                (root / 'gh').write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$UPLOAD_ARGS"\n')
+                (root / 'gh').chmod(0o755)
+                env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}',
+                           RELEASE_TAG='test-runtime', RETRY_MACOS=str(retry).lower(),
+                           UPLOAD_ARGS=str(root / 'args'))
+                subprocess.run(['bash', '-eu', '-o', 'pipefail', '-c', upload],
+                               cwd=root, env=env, check=True)
+                uploaded = (root / 'args').read_text().splitlines()[3:-1]
+                expected = {f'artifacts/sympp-runtime-release/sympp-runtime-{SHA}-{platform}.{suffix}'
+                            for platform in platforms for suffix in ['zip', 'manifest.json']}
+                self.assertEqual(set(uploaded), expected)
 
 
 if __name__ == '__main__':

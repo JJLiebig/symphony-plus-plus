@@ -77,7 +77,7 @@ jobs:
             if ! jq -e --arg sha "$GITHUB_SHA" '.source_revision == $sha' "$manifest" >/dev/null; then
               exit 0
             fi
-            if jq -e '.artifacts[] | select(.platform.os == "macos" and .platform.arch == "arm64")' "$manifest" >/dev/null; then
+            if jq -e '.artifacts[] | select(.platform.os == "macos" and .platform.arch == "aarch64")' "$manifest" >/dev/null; then
               exit 0
             fi
             echo 'matrix={"include":[{"os":"macos-latest","platform":"macos-arm64","shell":"bash"}]}' >> "$GITHUB_OUTPUT"
@@ -317,6 +317,7 @@ jobs:
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
+      RETRY_MACOS: ${{ inputs.retry_macos || false }}
       RELEASE_CHANNEL: ${{ github.ref_name == 'beta' && 'beta' || 'stable' }}
       RELEASE_TAG: ${{ github.ref_name == 'beta' && 'sympp-runtime-beta' || 'sympp-runtime-stable' }}
 
@@ -339,6 +340,15 @@ jobs:
             gh release download "$RELEASE_TAG" --dir artifacts/sympp-runtime-release \
               --pattern "sympp-runtime-${GITHUB_SHA}-${platform}.*"
           done
+
+      - name: Preserve already published macOS for this revision
+        if: inputs.retry_macos != true
+        shell: bash
+        run: |
+          if gh release download "$RELEASE_TAG" --dir artifacts/existing-macos \
+            --pattern "sympp-runtime-${GITHUB_SHA}-macos-arm64.*"; then
+            cp artifacts/existing-macos/* artifacts/sympp-runtime-release/
+          fi
 
       - name: Require current branch head
         shell: bash
@@ -391,11 +401,15 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          assets=(
-            artifacts/sympp-runtime-release/*.zip
-            artifacts/sympp-runtime-release/*.tar.gz
-            artifacts/sympp-runtime-release/*.manifest.json
-          )
+          if [ "$RETRY_MACOS" = true ]; then
+            assets=(artifacts/sympp-runtime-release/*-macos-arm64.zip
+                    artifacts/sympp-runtime-release/*-macos-arm64.manifest.json)
+          else
+            assets=(artifacts/sympp-runtime-release/*-linux-x64.zip
+                    artifacts/sympp-runtime-release/*-linux-x64.manifest.json
+                    artifacts/sympp-runtime-release/*-windows-x64.zip
+                    artifacts/sympp-runtime-release/*-windows-x64.manifest.json)
+          fi
           if [ "${#assets[@]}" -eq 0 ]; then
             echo "No platform release assets found." >&2
             exit 1
