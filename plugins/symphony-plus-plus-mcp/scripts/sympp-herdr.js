@@ -402,16 +402,24 @@ async function start(options) {
   const runtime = read(runtimeFile, true);
   const port = runtime?.backend?.port;
   const database = runtime?.publication?.controls?.database;
-  if (!Number.isInteger(port) || port < 1 || port > 65535 || !text(runtime?.plugin_root) || !text(database)) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || !text(runtime?.plugin_root) || (database != null && !text(database))) {
     fail("invalid_runtime", "Use the factory's published runtime record with plugin_root, backend.port and publication.controls.database.", 2);
   }
   const endpoint = `http://127.0.0.1:${port}`;
   const startFail = (code, help) => { const error = new Failure(code, help); error.endpoint = endpoint; throw error; };
+  const databasePath = value => {
+    const resolved = path.resolve(value.replace(/^\$HOME(?=\/|$)/, os.homedir()));
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
   const ready = async () => {
     try {
       const response = await fetch(`${endpoint}/mcp/readiness`, { signal: AbortSignal.timeout(500) });
       const body = await response.json();
-      return response.ok && body.status === "ok" && body.ledger?.reachable === true;
+      const identity = body.ledger?.identity;
+      const matches = identity?.kind === "sqlite" && (database
+        ? text(identity.display_path) && databasePath(identity.display_path) === databasePath(database)
+        : identity.default_home === true);
+      return response.ok && body.status === "ok" && body.ledger?.reachable === true && matches;
     } catch (_) { return false; }
   };
   if (await ready()) return { ok: true, endpoint, started: false };
@@ -423,7 +431,7 @@ async function start(options) {
   const env = Object.fromEntries(TRANSPORT_ENV.filter(key => !key.startsWith("SYMPP_") && process.env[key]).map(key => [key, process.env[key]]));
   Object.assign(env, {
     SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: path.dirname(path.dirname(runtimeFile)),
-    SYMPP_DATABASE: database, SYMPP_RUNTIME_FILE: runtimeFile,
+    ...(database ? { SYMPP_DATABASE: database } : {}), SYMPP_RUNTIME_FILE: runtimeFile,
     SYMPP_BACKEND_PORT: String(port), SYMPP_OPEN_DASHBOARD: "0",
   });
   let launchError;

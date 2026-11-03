@@ -55,7 +55,7 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
   const server = path.join(root, "backend.js");
   const pidFile = path.join(root, "backend.pid");
   fs.writeFileSync(server, `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));
-    setTimeout(()=>require('node:http').createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'ok',ledger:{reachable:true}}));}).listen(${port},'127.0.0.1'),300);
+    setTimeout(()=>require('node:http').createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'ok',ledger:{reachable:true,identity:{kind:'sqlite',display_path:${JSON.stringify(database)},default_home:true}}}));}).listen(${port},'127.0.0.1'),300);
     setTimeout(()=>process.exit(),15000);`);
   const ps = value => "'" + value.replaceAll("'", "''") + "'";
   fs.writeFileSync(path.join(plugin, "scripts", "start-sympp-mcp.ps1"), `param([switch]$PrepareRuntimeOnly)
@@ -89,6 +89,14 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
   assert.equal(second.code, 0, second.stdout);
   assert.deepEqual(JSON.parse(second.stdout), { ok: true, endpoint: `http://127.0.0.1:${port}`, started: false });
   assert.equal(fs.existsSync(observed), false, "healthy factory does not invoke launcher again");
+  fs.writeFileSync(runtime, JSON.stringify({ plugin_root: plugin, backend: { port }, publication: { controls: { database: null } } }));
+  const defaultLedger = await run();
+  assert.equal(defaultLedger.code, 0, defaultLedger.stdout);
+  assert.equal(JSON.parse(defaultLedger.stdout).started, false, "default database records remain usable");
+  const wrong = { plugin_root: path.join(root, "missing install"), backend: { port }, publication: { controls: { database: path.join(root, "another.sqlite3") } } };
+  fs.writeFileSync(runtime, JSON.stringify(wrong));
+  const mismatch = await run();
+  assert.equal(JSON.parse(mismatch.stdout).error, "launcher_unavailable", "another ledger must not satisfy readiness");
 });
 
 async function scenario(fn) {
