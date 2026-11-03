@@ -22,7 +22,7 @@ test('factory selection reaches plain view and chrome panel props', async t => {
       await writeFile(join(home, 'shared.json'), JSON.stringify({ layout: 'desk' }));
       await writeFile(join(home, 'layouts', 'desk.json'), JSON.stringify({ id: 'root', children: [
         { content: { mod: 'desk-tabs' } }, { content: { mod: 'desk-agents' } },
-        { id: 'panel-body', type: 'stack', children: [] },
+        { id: 'panel-body', type: 'stack', children: [{ id: 'sympp', type: 'block', content: { mod: 'sympp', props: { hosts: { local: { session: 'personal-core' }, remote: { machine: 'my-server' } } } } }] },
       ] }));
       for (const mod of ['desk-tabs', 'desk-agents']) {
         await cp(join(here, 'chrome', 'fixtures', mod), join(home, 'mods', mod), { recursive: true });
@@ -37,6 +37,7 @@ test('factory selection reaches plain view and chrome panel props', async t => {
       const env = { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(join(here, 'chrome', 'fixtures', 'check.cjs'))}` };
       delete env.SYMPP_RUNTIME_FILE;
       delete env.SYMPP_HOME;
+      env.HC_SESSION = 'another-core';
       if (runtimeEnv) env.SYMPP_RUNTIME_FILE = runtimeEnv;
       if (homeEnv) env.SYMPP_HOME = homeEnv;
       const result = spawnSync(process.execPath, [join(here, 'install.mjs'), '--home', home,
@@ -52,6 +53,8 @@ test('factory selection reaches plain view and chrome panel props', async t => {
       if (chrome) {
         const layout = JSON.parse(await readFile(join(home, 'layouts', 'desk.json'), 'utf8'));
         assert.equal(layout.children[2].children[0].content.props.hosts.local.runtime, expected);
+        assert.equal(layout.children[2].children[0].content.props.hosts.local.session, 'personal-core');
+        assert.equal(layout.children[2].children[0].content.props.hosts.remote.machine, 'my-server');
       }
     }
   }

@@ -112,6 +112,18 @@ function Resolve-ExpectedSourceRevision([string]$PluginRoot) {
 }
 
 function Get-SymppArtifactManifestPath([string]$PluginRoot) {
+  $factoryPin = Join-Path (Resolve-SymppPluginHome) 'runtime/checkout-artifacts.json'
+  if ((Test-Path -LiteralPath $factoryPin -PathType Leaf) -and (Read-SymppPortableInstall $PluginRoot)) {
+    $selection = Get-Content -LiteralPath $factoryPin -Raw | ConvertFrom-Json
+    $sameRoot = & node -e "const fs = require('node:fs'); const real = p => fs.existsSync(p) ? fs.realpathSync.native(p).toLowerCase() : null; const root = real(process.argv[1]); process.stdout.write(String(root !== null && root === real(process.argv[2])));" ([string]$selection.factory_plugin_root) $PluginRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the installed Skills paths.' }
+    if ($sameRoot -eq 'true') {
+      if ($selection.checkout.skills_hash -eq (Get-SymppSkillsBundleHash $PluginRoot)) { return $factoryPin }
+      Remove-Item -LiteralPath $factoryPin -Force
+      $legacyPin = Join-Path $PluginRoot '.sympp-runtime-artifacts.json'
+      if (Test-Path -LiteralPath $legacyPin) { Remove-Item -LiteralPath $legacyPin -Force }
+    }
+  }
   foreach ($relativePath in @(".sympp-runtime-artifacts.json", "assets/sympp-runtime-artifacts.json")) {
     $candidate = Join-Path $PluginRoot $relativePath
     if (Test-Path -LiteralPath $candidate -PathType Leaf) {

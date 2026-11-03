@@ -119,6 +119,17 @@ function Test-SymppInstalledMarketplacePluginRoot([string]$PluginRoot) {
   return (Split-Path -Leaf $cacheRoot) -eq "cache" -and (Split-Path -Leaf $pluginsRoot) -eq "plugins"
 }
 
+function Get-SymppSkillsBundleHash([string]$PluginRoot) {
+  $root = [IO.Path]::GetFullPath($PluginRoot).TrimEnd('\', '/')
+  $records = [string[]]@(Get-ChildItem -LiteralPath $PluginRoot -File -Recurse -Force | Where-Object {
+    $_.FullName -ine (Join-Path $PluginRoot '.sympp-runtime-artifacts.json')
+  } | ForEach-Object {
+    $_.FullName.Substring($root.Length + 1).Replace('\', '/') + ' ' + (Get-FileSha256 $_.FullName)
+  })
+  [Array]::Sort($records, [StringComparer]::Ordinal)
+  return Get-SymppStringSha256 ($records -join "`n")
+}
+
 function Read-SymppPortableInstall([string]$PluginRoot) {
   $path = Join-Path $PluginRoot ".sympp-install.json"
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }

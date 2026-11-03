@@ -231,7 +231,8 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $installed = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME,
     '-HerdrAppHome', $nativeHome, '-ArtifactManifest', $channelFile) $Environment
   $updated = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
-  if ($installed.exit -ne 0 -or $installed.stdout -notmatch 'Starting the stopped beta factory' -or
+  $started = if ([int]$updated.backend.pid -gt 0) { Get-Process -Id ([int]$updated.backend.pid) -ErrorAction SilentlyContinue }
+  if ($installed.exit -ne 0 -or -not $started -or
       $updated.backend.contract_fingerprint -ne $CandidateManifest.launcher_contract.mcp_contract_fingerprint -or
       (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $desired.Hash) {
     throw "Stopped-factory installation did not update and verify the bundle: $($installed.stdout) $($installed.stderr)"
@@ -242,7 +243,9 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $markerStamp = (Get-Item -LiteralPath $markerFile).LastWriteTimeUtc.Ticks
   $again = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME,
     '-HerdrAppHome', $nativeHome, '-ArtifactManifest', $channelFile) $Environment
-  if ($again.exit -ne 0 -or $again.stdout -notmatch 'Starting the stopped beta factory' -or
+  $restarted = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
+  $running = if ([int]$restarted.backend.pid -gt 0) { Get-Process -Id ([int]$restarted.backend.pid) -ErrorAction SilentlyContinue }
+  if ($again.exit -ne 0 -or -not $running -or
       (Get-Item -LiteralPath $markerFile).LastWriteTimeUtc.Ticks -ne $markerStamp) {
     throw "An unchanged stopped factory could not be verified without replacing Skills: $($again.stdout) $($again.stderr)"
   }

@@ -434,6 +434,7 @@ async function start(options) {
     SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: path.dirname(path.dirname(runtimeFile)),
     ...(database ? { SYMPP_DATABASE: database } : {}), SYMPP_RUNTIME_FILE: runtimeFile,
     SYMPP_BACKEND_PORT: String(port), SYMPP_OPEN_DASHBOARD: "0",
+    ...(["stable", "beta"].includes(runtime.runtime_channel) ? { SYMPP_RUNTIME_CHANNEL: runtime.runtime_channel } : {}),
     ...(text(workflow) ? { SYMPP_WORKFLOW_FILE: workflow } : {}),
   });
   let launchError;
