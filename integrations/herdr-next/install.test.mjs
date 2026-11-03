@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, access, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, access, rm, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,53 @@ import { spawnSync } from 'node:child_process';
 const here = dirname(fileURLToPath(import.meta.url));
 const install = (home, ...args) => spawnSync(process.execPath,
   [join(here, 'install.mjs'), '--home', home, ...args], { encoding: 'utf8', windowsHide: true });
+
+test('factory selection reaches plain view and chrome panel props', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'spp factory install '));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const selected = join(root, 'selected factory', 'runtime', 'codex-plugin.json');
+  const fallbackHome = join(root, 'fallback factory');
+  for (const chrome of [false, true]) {
+    const home = join(root, chrome ? 'chrome' : 'plain');
+    if (chrome) {
+      await mkdir(join(home, 'layouts'), { recursive: true });
+      await writeFile(join(home, 'shared.json'), JSON.stringify({ layout: 'desk' }));
+      await writeFile(join(home, 'layouts', 'desk.json'), JSON.stringify({ id: 'root', children: [
+        { content: { mod: 'desk-tabs' } }, { content: { mod: 'desk-agents' } },
+        { id: 'panel-body', type: 'stack', children: [] },
+      ] }));
+      for (const mod of ['desk-tabs', 'desk-agents']) {
+        await cp(join(here, 'chrome', 'fixtures', mod), join(home, 'mods', mod), { recursive: true });
+      }
+    }
+    for (const [explicit, runtimeEnv, homeEnv, expected] of [
+      [selected, 'ignored', fallbackHome, selected],
+      [null, selected, fallbackHome, selected],
+      [null, null, fallbackHome, join(fallbackHome, 'runtime', 'codex-plugin.json')],
+      [null, null, null, undefined],
+    ]) {
+      const env = { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(join(here, 'chrome', 'fixtures', 'check.cjs'))}` };
+      delete env.SYMPP_RUNTIME_FILE;
+      delete env.SYMPP_HOME;
+      if (runtimeEnv) env.SYMPP_RUNTIME_FILE = runtimeEnv;
+      if (homeEnv) env.SYMPP_HOME = homeEnv;
+      const result = spawnSync(process.execPath, [join(here, 'install.mjs'), '--home', home,
+        '--endpoint', 'http://127.0.0.1:21345', '--app', process.execPath,
+        ...(explicit ? ['--factory', explicit] : []), ...(chrome ? ['--chrome'] : [])],
+        { env, encoding: 'utf8', windowsHide: true });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const line = result.stdout.split('\n').find(line => line.startsWith('args: '));
+      const props = JSON.parse(JSON.parse(line.slice(6))).props;
+      assert.equal(props.hosts.local.runtime, expected);
+      assert.equal(props.hosts.local.node, process.execPath);
+      assert.equal(props.hosts.local.helper, join(home, 'tools', 'sympp-herdr.js'));
+      if (chrome) {
+        const layout = JSON.parse(await readFile(join(home, 'layouts', 'desk.json'), 'utf8'));
+        assert.equal(layout.children[2].children[0].content.props.hosts.local.runtime, expected);
+      }
+    }
+  }
+});
 
 test('installs into a home with spaces without replacing personal layout or topics', async t => {
   const home = await mkdtemp(join(tmpdir(), 'spp native install '));

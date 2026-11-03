@@ -13,6 +13,95 @@ const { createReporter } = require("../../scripts/sympp-session-location.js");
 const cli = path.resolve(__dirname, "../../scripts/sympp-herdr.js");
 const peer = path.join(__dirname, "herdr-execution-peer.js");
 
+test("start rejects unusable runtime records and unavailable launchers as JSON", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sympp-start-invalid-"));
+  try {
+    const runtime = path.join(root, "runtime.json");
+    for (const [record, error] of [
+      [{ backend: { port: 0 } }, "invalid_runtime"],
+      [{ plugin_root: root, backend: { port: 1 }, publication: { controls: { database: "ledger.sqlite3" } } }, "launcher_unavailable"],
+    ]) {
+      fs.writeFileSync(runtime, JSON.stringify(record));
+      const result = spawnSync(process.execPath, [cli, "start", "--runtime", runtime], { encoding: "utf8", windowsHide: true, timeout: 5000 });
+      assert.notEqual(result.status, 0);
+      assert.equal(result.stderr, "");
+      assert.equal(JSON.parse(result.stdout).error, error);
+      assert.equal(JSON.parse(result.stdout).ok, false);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("start detaches pipes, survives preparation exit 4 and reuses the backend", { skip: process.platform !== "win32" }, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sympp factory start "));
+  let backendPid;
+  t.after(() => {
+    if (backendPid) { try { process.kill(backendPid); } catch (_) { } }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const reservation = net.createServer().listen(0, "127.0.0.1");
+  await once(reservation, "listening");
+  const port = reservation.address().port;
+  await new Promise(resolve => reservation.close(resolve));
+  const plugin = path.join(root, "installed skills");
+  fs.mkdirSync(path.join(plugin, "scripts"), { recursive: true });
+  fs.copyFileSync(path.resolve(__dirname, "../../scripts/setup-sympp.js"), path.join(plugin, "scripts", "setup-sympp.js"));
+  fs.writeFileSync(path.join(root, "skills-lock.json"), JSON.stringify({ skills: { "symphony-plus-plus": { source: "JJLiebig/symphony-plus-plus", ref: "beta" } } }));
+  const home = path.join(root, "factory home");
+  fs.mkdirSync(path.join(home, "runtime"), { recursive: true });
+  const runtime = path.join(home, "runtime", "codex-plugin.json");
+  const database = path.join(home, "ledger.sqlite3");
+  fs.writeFileSync(runtime, JSON.stringify({ plugin_root: plugin, publication: { controls: { database } }, artifact: { prepared_release: { configured_workflow: "factory-workflow.md" } }, backend: { port: 1 } }));
+  const observed = path.join(root, "observed.json");
+  const server = path.join(root, "backend.js");
+  const pidFile = path.join(root, "backend.pid");
+  fs.writeFileSync(server, `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));
+    setTimeout(()=>require('node:http').createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'ok',ledger:{reachable:true,identity:{kind:'sqlite',display_path:${JSON.stringify(database)},default_home:true}}}));}).listen(${port},'127.0.0.1'),300);
+    setTimeout(()=>process.exit(),15000);`);
+  const ps = value => "'" + value.replaceAll("'", "''") + "'";
+  fs.writeFileSync(path.join(plugin, "scripts", "start-sympp-mcp.ps1"), `param([switch]$PrepareRuntimeOnly)
+    if (-not $PrepareRuntimeOnly) { exit 9 }
+    $e = @{}; Get-ChildItem Env:SYMPP_* | ForEach-Object { $e[$_.Name] = $_.Value }
+    $e | ConvertTo-Json | Set-Content -LiteralPath ${ps(observed)}
+    $runtime = Get-Content -LiteralPath $env:SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
+    $runtime.backend.port = ${port}
+    $runtime | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $env:SYMPP_RUNTIME_FILE
+    Start-Process -FilePath ${ps(process.execPath)} -ArgumentList ${ps('"' + server + '"')} -WindowStyle Hidden
+    exit 4
+  `);
+  const run = () => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, "start", "--runtime", runtime], {
+      env: { ...process.env, SYMPP_HOME: "wrong", SYMPP_DATABASE: "wrong", SYMPP_RUNTIME_CHANNEL: "wrong", SYMPP_REPO_ROOT: "wrong", SYMPP_BACKEND_URL: "http://wrong" }, windowsHide: true,
+    });
+    let stdout = "", stderr = "";
+    const timeout = setTimeout(() => { child.kill(); reject(new Error("helper or output pipes did not close")); }, 10000);
+    child.stdout.on("data", data => { stdout += data; });
+    child.stderr.on("data", data => { stderr += data; });
+    child.on("error", reject);
+    child.on("close", code => { clearTimeout(timeout); resolve({ code, stdout, stderr }); });
+  });
+  const first = await run();
+  assert.equal(first.code, 0, first.stdout + first.stderr);
+  assert.equal(first.stderr, "");
+  assert.deepEqual(JSON.parse(first.stdout), { ok: true, endpoint: `http://127.0.0.1:${port}`, started: true });
+  backendPid = Number(fs.readFileSync(pidFile, "utf8"));
+  process.kill(backendPid, 0);
+  const env = JSON.parse(fs.readFileSync(observed, "utf8").replace(/^\uFEFF/, ""));
+  assert.deepEqual(env, { SYMPP_HOME: home, SYMPP_DATABASE: database, SYMPP_RUNTIME_FILE: runtime, SYMPP_BACKEND_PORT: "1", SYMPP_OPEN_DASHBOARD: "0", SYMPP_SKILLS_MANAGED: "1", SYMPP_RUNTIME_CHANNEL: "beta", SYMPP_WORKFLOW_FILE: "factory-workflow.md" });
+  fs.unlinkSync(observed);
+  const second = await run();
+  assert.equal(second.code, 0, second.stdout);
+  assert.deepEqual(JSON.parse(second.stdout), { ok: true, endpoint: `http://127.0.0.1:${port}`, started: false });
+  assert.equal(fs.existsSync(observed), false, "healthy factory does not invoke launcher again");
+  fs.writeFileSync(runtime, JSON.stringify({ plugin_root: plugin, backend: { port }, publication: { controls: { database: null } } }));
+  const defaultLedger = await run();
+  assert.equal(defaultLedger.code, 0, defaultLedger.stdout);
+  assert.equal(JSON.parse(defaultLedger.stdout).started, false, "default database records remain usable");
+  const wrong = { plugin_root: path.join(root, "missing install"), backend: { port }, publication: { controls: { database: path.join(root, "another.sqlite3") } } };
+  fs.writeFileSync(runtime, JSON.stringify(wrong));
+  const mismatch = await run();
+  assert.equal(JSON.parse(mismatch.stdout).error, "launcher_unavailable", "another ledger must not satisfy readiness");
+});
+
 async function scenario(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "sympp-herdr-"));
   const prior = { ...process.env };

@@ -14,12 +14,14 @@ const PROFILE_ENV = { codex: "CODEX_HOME", claude: "CLAUDE_CONFIG_DIR", opencode
 const FORWARD_ENV = ["PATH", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "SYMPP_HOME", "SYMPP_DATABASE", "SYMPP_PORT", "SYMPP_RUNTIME_CHANNEL"];
 const TRANSPORT_ENV = [...FORWARD_ENV, "PATHEXT", "SystemRoot", "WINDIR", "COMSPEC", "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "LANG", "LC_ALL", "LC_CTYPE", "SHELL", "USER", "LOGNAME", "HC_SESSION", "HC_SOCKET", "HC_TERMINAL_SOCKET"];
 const FLAGS = {
+  start: ["runtime", "json", "help"],
   list: ["cwd", "fields", "json", "help"],
   launch: ["provider", "assignment", "ledger", "task", "cwd", "model", "provider-home", "space", "tab", "parent", "attempt", "name", "session", "json", "help"],
   check: ["receipt", "session", "json", "help"],
   send: ["receipt", "message", "session", "json", "help"],
 };
 const HELP = {
+  start: "start --runtime <factory/runtime/codex-plugin.json> [--json]\nStarts the local factory if stopped; returns JSON when its backend is ready.",
   list: "list [--cwd <folder>] [--fields <comma-separated receipt fields>] [--json]\nLists last-known launches for this folder; check a receipt for current state.",
   launch: "launch --provider codex|claude|opencode --cwd <folder> (--assignment <bootstrap.json> --ledger <identity> | --task <task.txt>)\n  [--model <model>] [--provider-home <folder>] [--space <id>] [--tab <id>] [--parent <terminal>]\n  [--name <text>] [--attempt <name>] [--session <core-session>] [--json]\nDefaults: title/task-derived name with provider suffix; provider's configured model/home; current core; attempt=first. No dispatch or claim.\nExamples:\n  launch --provider claude --model opus --assignment worker.json --ledger local-main --cwd .\n  launch --provider opencode --task fix.txt --cwd . --name review\n  launch --provider codex --task fix.txt --cwd . --attempt retry-after-inspection",
   check: "check --receipt <receipt.json> [--session <core-session>] [--json]\nVerifies the core, terminal, process and launch labels. Does not focus or send.\nExamples:\n  check --receipt ./launch.json\n  check --receipt ./launch.json --json",
@@ -50,6 +52,7 @@ function parse(argv) {
     }
   }
   if (options.help) return { command, options };
+  if (command === "start" && !options.runtime) fail("runtime_required", HELP.start, 2);
   if (command === "launch") {
     if (!PROVIDERS.includes(options.provider) || !options.cwd || Boolean(options.assignment) === Boolean(options.task)) fail("invalid_launch", HELP.launch, 2);
     if (options.assignment && !options.ledger) fail("ledger_required", "Pass --ledger with the assigning session's verified ledger identity.", 2);
@@ -394,6 +397,69 @@ function list(options) {
   return { bin: __filename.replace(os.homedir(), "~"), description: "Launch and inspect optional Herdr agents without changing ledger authority.", count: rows.length, observation: "last_known", launches: rows.map((row) => Object.fromEntries(fields.map((key) => [key, row[key] ?? null]))), help: rows.length ? "check --receipt <receipt.json> for current state" : "launch --help to start an ordinary task or an assigned worker" };
 }
 
+async function start(options) {
+  const runtimeFile = path.resolve(options.runtime);
+  const runtime = read(runtimeFile, true);
+  const port = runtime?.backend?.port;
+  const database = runtime?.publication?.controls?.database;
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || !text(runtime?.plugin_root) || (database != null && !text(database))) {
+    fail("invalid_runtime", "Use the factory's published runtime record with plugin_root, backend.port and publication.controls.database.", 2);
+  }
+  let endpoint = `http://127.0.0.1:${port}`;
+  const startFail = (code, help) => { const error = new Failure(code, help); error.endpoint = endpoint; throw error; };
+  const databasePath = value => {
+    const resolved = path.resolve(value.replace(/^\$HOME(?=\/|$)/, os.homedir()));
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
+  const ready = async () => {
+    try {
+      const response = await fetch(`${endpoint}/mcp/readiness`, { signal: AbortSignal.timeout(500) });
+      const body = await response.json();
+      const identity = body.ledger?.identity;
+      const matches = identity?.kind === "sqlite" && (database
+        ? text(identity.display_path) && databasePath(identity.display_path) === databasePath(database)
+        : identity.default_home === true);
+      return response.ok && body.status === "ok" && body.ledger?.reachable === true && matches;
+    } catch (_) { return false; }
+  };
+  if (await ready()) return { ok: true, endpoint, started: false };
+  const launcher = path.join(runtime.plugin_root, "scripts", "start-sympp-mcp.ps1");
+  if (process.platform !== "win32" || !fs.existsSync(launcher)) {
+    startFail("launcher_unavailable", "Starting this factory requires its installed Windows PowerShell launcher.");
+  }
+  // Use the owning install's channel resolution, never the caller's factory overrides.
+  const env = Object.fromEntries(TRANSPORT_ENV.filter(key => !key.startsWith("SYMPP_") && process.env[key]).map(key => [key, process.env[key]]));
+  const workflow = runtime.artifact?.prepared_release?.configured_workflow;
+  Object.assign(env, {
+    SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: path.dirname(path.dirname(runtimeFile)),
+    ...(database ? { SYMPP_DATABASE: database } : {}), SYMPP_RUNTIME_FILE: runtimeFile,
+    SYMPP_BACKEND_PORT: String(port), SYMPP_OPEN_DASHBOARD: "0",
+    ...(text(workflow) ? { SYMPP_WORKFLOW_FILE: workflow } : {}),
+  });
+  let launchError;
+  // Start-Process detaches without inheriting Herdr pipes; Node detached PowerShell can exit before executing.
+  const quotedLauncher = ('"' + launcher + '"').replace(/'/g, "''");
+  const psQuote = value => "'" + value.replace(/'/g, "''") + "'";
+  const setup = path.join(runtime.plugin_root, "scripts", "setup-sympp.js");
+  const command = `$env:SYMPP_RUNTIME_CHANNEL = & ${psQuote(process.execPath)} -e 'process.stdout.write(require(process.argv[1]).runtimeChannel())' ${psQuote(setup)}; if ($LASTEXITCODE -ne 0) { exit 1 }; Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', '${quotedLauncher}', '-PrepareRuntimeOnly') -WindowStyle Hidden`;
+  const child = spawn("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    cwd: runtime.plugin_root, env, stdio: "ignore", windowsHide: true,
+  });
+  child.on("error", error => { launchError = error; });
+  child.unref();
+  const deadline = Date.now() + 24000;
+  do {
+    try {
+      const publishedPort = read(runtimeFile, true)?.backend?.port;
+      if (Number.isInteger(publishedPort) && publishedPort > 0 && publishedPort <= 65535) endpoint = `http://127.0.0.1:${publishedPort}`;
+    } catch (_) { } // Publication may be replaced while the launcher starts.
+    if (await ready()) return { ok: true, endpoint, started: true };
+    if (launchError) startFail("launcher_unavailable", "Make pwsh.exe and the factory's installed launcher available.");
+    await new Promise(resolve => setTimeout(resolve, 200));
+  } while (Date.now() < deadline);
+  startFail("start_timeout", "The backend did not answer within 24 seconds. Inspect the factory logs before retrying.");
+}
+
 function toon(value, depth = 0) {
   const indent = "  ".repeat(depth);
   const scalar = (item) => JSON.stringify(item);
@@ -409,12 +475,13 @@ function toon(value, depth = 0) {
 async function main(argv = process.argv.slice(2), connect = connectCore) {
   if (argv.length === 1 && ["--version", "-v", "-V"].includes(argv[0])) { process.stdout.write(VERSION + "\n"); return; }
   let core;
-  let json = argv.includes("--json");
+  let json = argv[0] === "start" || argv.includes("--json");
   try {
     const { command, options } = parse([...argv]);
     if (options.help) { process.stdout.write(HELP[command] + "\n"); return; }
     let result;
-    if (command === "list") result = list(options);
+    if (command === "start") result = await start(options);
+    else if (command === "list") result = list(options);
     else {
       // Validate files before opening the runtime connection.
       const receipt = command !== "launch" ? loadReceipt(options.receipt) : null;
@@ -443,6 +510,10 @@ async function main(argv = process.argv.slice(2), connect = connectCore) {
     process.stdout.write((json ? JSON.stringify(publicResult) : toon(publicResult)) + "\n");
   } catch (error) {
     const output = error instanceof Failure ? { error: error.code, help: error.help } : { error: "operation_failed", help: "Check the input files and selected execution machine. No dependency output is exposed." };
+    if (argv[0] === "start") {
+      output.ok = false;
+      if (error.endpoint) output.endpoint = error.endpoint;
+    }
     process.stdout.write((json ? JSON.stringify(output) : toon(output)) + "\n");
     process.exitCode = error instanceof Failure ? error.exitCode : 1;
   } finally { core?.close(); }

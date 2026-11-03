@@ -15,6 +15,7 @@ Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [o
   --home <folder>        Herdr-app home (default: HERDR_APP_HOME or ~/.config/herdr-app)
   --open <overview|panel> Open a native tab or a pane beside the focused terminal
   --app <executable>     Herdr-app executable (default: herdr-app)
+  --factory <runtime>    Local factory runtime record (default: SYMPP_RUNTIME_FILE or SYMPP_HOME/runtime/codex-plugin.json)
   --session <name>       Explicit local core session for agent navigation
   --mark <a|b|c|d>       S++ mark to install (default: a); use --replace to switch
   --replace              Replace a previously installed mod with this version
@@ -90,7 +91,7 @@ async function main() {
   let values;
   try {
     ({ values } = parseArgs({ options: {
-      endpoint: { type: 'string' }, home: { type: 'string' },
+      endpoint: { type: 'string' }, factory: { type: 'string' }, home: { type: 'string' },
       open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' }, mark: { type: 'string' },
       replace: { type: 'boolean' }, lab: { type: 'boolean' }, help: { type: 'boolean' },
       chrome: { type: 'boolean' }, 'remove-chrome': { type: 'boolean' },
@@ -152,7 +153,8 @@ async function main() {
   let props = {};
   if (!values.lab) {
     const session = values.session || process.env.HC_SESSION;
-    const hosts = { local: { node: process.execPath, helper, ...(session ? { session } : {}) } };
+    const factory = values.factory || process.env.SYMPP_RUNTIME_FILE || (process.env.SYMPP_HOME && join(process.env.SYMPP_HOME, 'runtime', 'codex-plugin.json'));
+    const hosts = { local: { ...(factory ? { runtime: resolve(factory) } : {}), node: process.execPath, helper, ...(session ? { session } : {}) } };
     props = { endpoint, hosts };
   }
   const chrome = values.chrome ? await planInstall(home, { ...props, role: 'panel' }) : null;

@@ -32,6 +32,8 @@ Herdr-app must already be open. If its executable is not on `PATH`, pass
 otherwise the installer follows `HERDR_APP_HOME` or `~/.config/herdr-app`.
 For a nondefault local core, pass `--session <name>`; the installer otherwise
 retains its `HC_SESSION` when set.
+Use `--factory <runtime/codex-plugin.json>` to select the local factory to start;
+it defaults to `SYMPP_RUNTIME_FILE`, then `SYMPP_HOME/runtime/codex-plugin.json`, for the view and `--chrome` panel.
 Without `--open`, it installs the files and prints the Herdr command to open
 them later.
 
