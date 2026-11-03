@@ -47,6 +47,9 @@ The panel follows what you focus in its tab: an S++ agent's terminal or a job
 tab shows that job; otherwise the space, or its topic when no S++ work touches
 the space. It never takes focus. Pin (P) keeps it where it is.
 
+When the factory the view was installed for isn't running, opening S++ starts it. While any S++
+view is open, S++ counts Herdr as a client, so it stays up after the last agent session closes.
+
 The installer adds `mods/sympp` and the agent helper `tools/sympp-herdr.js`.
 Updating removes the former HTTP helper and its private request directory.
 It leaves layouts, topics, compositions,
@@ -71,12 +74,15 @@ node integrations/herdr-next/install.mjs --endpoint $origin --chrome
   known. Stages arrive from an open S++ view's board reads, the panel included,
   once it has been shown.
 - A UI studio tab shows the S++ glyph in a small window tucked behind its icon.
+- With a personal `desk-topics` sidebar, a topic whose chief is registered shows a crown on its
+  header: click opens the chief (its pane, else a peek), right-click adds it to a composition. It
+  shows dimmed while the chief isn't running. A desk without `desk-topics` gets the rest.
 
-The installer backs up the layout and both mods under `data/sympp-chrome`, adds
-a `sympp` panel to the layout's `panel-body` stack, and patches the two mods in
+The installer backs up the layout and the desk mods under `data/sympp-chrome`, adds
+a `sympp` panel to the layout's `panel-body` stack, and patches the desk mods in
 place; running it again changes nothing. It refuses, listing what is missing,
 when the layout has no `panel-body` stack, uses Herdr's own `tabs` or `agents`
-mod, or either desk mod differs from what the patch expects or was edited after
+mod, or a desk mod differs from what its patch expects or was edited after
 installing. Other mods can add their panels the same way through
 `shared("workspace.panel_buttons")` entries `{ id, label, icon, iconDark? }`: an
 SVG icon is tinted like Files and Changes; a picture shows as it is, `iconDark`
