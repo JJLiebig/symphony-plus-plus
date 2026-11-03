@@ -123,7 +123,7 @@ function main(args) {
       throw new Error("Claude already has an unrelated user registration for symphony_plus_plus. Explicitly remove it before setup.");
     }
     const found = spawnSync("where.exe", ["claude"], { encoding: "utf8", windowsHide: true });
-    claudeCommand = found.stdout.trim().split(/\r?\n/)[0];
+    claudeCommand = found.stdout.trim().split(/\r?\n/).find(file => /\.(?:exe|cmd|bat)$/i.test(file));
     if (found.status !== 0 || !claudeCommand) throw new Error("Claude executable not found. Install Claude Code and retry setup.");
   }
   const plans = hosts.filter(host => host !== "claude" || !globalClaude).map(host => {

@@ -13,6 +13,7 @@ test("global Claude setup owns only its user entry and project setup remains loc
   for (const dir of [home, config, project, bin]) fs.mkdirSync(dir, { recursive: true });
   const found = spawnSync("where.exe", ["claude.exe"], { encoding: "utf8" });
   if (found.status !== 0) { t.skip("Claude executable unavailable"); return; }
+  fs.writeFileSync(path.join(bin, "claude"), "#!/bin/sh\nexit 1\n");
   fs.writeFileSync(path.join(bin, "claude.cmd"), `@"${found.stdout.trim().split(/\r?\n/)[0]}" %*\r\n`);
   const global = path.join(home, ".agents", "skills", "symphony-plus-plus"), local = path.join(project, ".agents", "skills", "symphony-plus-plus");
   for (const root of [global, local]) {
