@@ -113,7 +113,7 @@ function Resolve-ExpectedSourceRevision([string]$PluginRoot) {
 
 function Get-SymppArtifactManifestPath([string]$PluginRoot) {
   $factoryPin = Join-Path (Resolve-SymppPluginHome) 'runtime/checkout-artifacts.json'
-  if (Test-Path -LiteralPath $factoryPin -PathType Leaf) {
+  if ((Test-Path -LiteralPath $factoryPin -PathType Leaf) -and (Read-SymppPortableInstall $PluginRoot)) {
     $selection = Get-Content -LiteralPath $factoryPin -Raw | ConvertFrom-Json
     $sameRoot = & node -e "const fs = require('node:fs'); const real = p => fs.existsSync(p) ? fs.realpathSync.native(p).toLowerCase() : null; const root = real(process.argv[1]); process.stdout.write(String(root !== null && root === real(process.argv[2])));" ([string]$selection.factory_plugin_root) $PluginRoot
     if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the installed Skills paths.' }

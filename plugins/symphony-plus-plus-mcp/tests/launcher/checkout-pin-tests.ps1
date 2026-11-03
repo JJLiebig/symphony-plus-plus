@@ -28,8 +28,9 @@ try {
   # Fresh processes use the actual cold-launch manifest resolver.
   $probe = Join-Path $root 'probe.ps1'
   @'
-param($Repo, $Bundle, $FactoryHome = (Split-Path -Parent $Bundle))
+param($Repo, $Bundle, $FactoryHome = (Split-Path -Parent $Bundle), [switch]$NoNode)
 $ErrorActionPreference = 'Stop'
+if ($NoNode) { $env:PATH = '' }
 $helpers = Join-Path $Repo 'plugins/symphony-plus-plus-mcp/scripts'
 . (Join-Path $helpers 'sympp-mcp-launcher-helpers.ps1')
 . (Join-Path $helpers 'sympp-mcp-artifact-channel.ps1')
@@ -50,6 +51,11 @@ Read-SymppArtifactManifest $Bundle | ConvertTo-Json -Depth 12 -Compress
   $selection | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pin
   $canonical = & pwsh -NoProfile -File $probe $repo $bundle $root | ConvertFrom-Json
   if ($canonical.source_revision -ne ('a' * 40)) { throw 'A junctioned recorded root ignored the checkout pin.' }
+  $other = Join-Path $root 'non-portable'
+  New-Item -ItemType Directory -Path (Join-Path $other 'assets') -Force | Out-Null
+  @{ source_revision = 'd' * 40 } | ConvertTo-Json | Set-Content (Join-Path $other 'assets/sympp-runtime-artifacts.json')
+  $fallback = & (Get-Command pwsh).Source -NoProfile -File $probe $repo $other $root -NoNode | ConvertFrom-Json
+  if ($fallback.source_revision -ne ('d' * 40) -or -not (Test-Path $pin)) { throw 'An unrelated checkout pin broke the Node-free non-portable fallback.' }
   # An outside update can change instructions without updating the install marker.
   # A rollback also retains a legacy selection for the previous installed launcher.
   @{ source_revision = 'c' * 40 } | ConvertTo-Json | Set-Content (Join-Path $bundle '.sympp-runtime-artifacts.json')
