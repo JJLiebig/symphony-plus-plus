@@ -41,6 +41,15 @@ Read-SymppArtifactManifest $Bundle | ConvertTo-Json -Depth 12 -Compress
   $first = & pwsh -NoProfile -File $probe $repo $bundle | ConvertFrom-Json
   $second = & pwsh -NoProfile -File $probe $repo $bundle | ConvertFrom-Json
   if ($first.source_revision -ne ('a' * 40) -or $second.source_revision -ne $first.source_revision -or -not $second.checkout.dirty -or -not (Test-Path $pin)) { throw 'An unchanged Skills bundle lost the checkout pin.' }
+  $alias = Join-Path $root 'claude-skills'
+  New-Item -ItemType Junction -Path $alias -Target $bundle | Out-Null
+  $junction = & pwsh -NoProfile -File $probe $repo $alias $root | ConvertFrom-Json
+  if ($junction.source_revision -ne ('a' * 40)) { throw 'A junctioned launcher ignored the checkout pin.' }
+  $selection = Get-Content -LiteralPath $pin -Raw | ConvertFrom-Json
+  $selection.factory_plugin_root = $alias
+  $selection | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pin
+  $canonical = & pwsh -NoProfile -File $probe $repo $bundle $root | ConvertFrom-Json
+  if ($canonical.source_revision -ne ('a' * 40)) { throw 'A junctioned recorded root ignored the checkout pin.' }
   # An outside update can change instructions without updating the install marker.
   # A rollback also retains a legacy selection for the previous installed launcher.
   @{ source_revision = 'c' * 40 } | ConvertTo-Json | Set-Content (Join-Path $bundle '.sympp-runtime-artifacts.json')
