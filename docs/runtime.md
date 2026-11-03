@@ -50,44 +50,11 @@ selection, dashboard type/lint checks and Vitest, plus Skills mirror validation.
 It excludes backend ExUnit, native acceptance and release qualification; run those
 when changing their surfaces. `just install` also compiles the backend release.
 
-## Marketplace Alternative In A Separate Beta Home
+## Existing Marketplace Installations
 
-Use PowerShell with Git, Node.js, PowerShell 7 and Codex available. Choose
-separate beta paths so your stable installation and ledger remain independent:
-
-```powershell
-$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
-New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
-$env:SYMPP_HOME = Join-Path $env:USERPROFILE '.agents/splusplus-beta'
-$env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'symphony_plus_plus.sqlite3'
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
-codex plugin marketplace upgrade symphony-plus-plus
-codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
-codex
-```
-
-Retain these variables in each beta terminal. `CODEX_HOME` selects the plugin
-installation and Codex configuration; `SYMPP_HOME` selects launcher state;
-`SYMPP_DATABASE` selects the ledger. Setting only `SYMPP_HOME` does not
-select a separate ledger. Use the same three paths for both hosts to share work.
-
-A fresh Codex session loads MCP tools and starts or attaches to the packaged
-runtime. A separate Codex home has its own authentication; use Codex's normal
-sign-in flow when required. Do not copy credentials.
-
-For Claude Code, install the [portable procedures](portable-skills.md), then
-register the same installed bridge from the intended project:
-
-```powershell
-$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0/scripts/start-sympp-mcp.cmd'
-claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
-claude
-```
-
-Follow host approval prompts. Verify `symphony_plus_plus` tools in the actual
-session before ledger work. Skills alone do not connect MCP. The authoritative
-[connection procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/references/mcp_wiring.md)
-covers host setup, claims and developer connections.
+Existing Codex marketplace installations can run `codex plugin marketplace upgrade
+symphony-plus-plus` and open a fresh session. For new installations use the
+[global Skills route](portable-skills.md).
 
 ## Open The Board
 

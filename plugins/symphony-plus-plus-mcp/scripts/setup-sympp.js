@@ -49,11 +49,16 @@ function claudeConfig(config, registration) {
   value.mcpServers = { ...value.mcpServers, [name]: registration };
   return JSON.stringify(value, null, 2) + "\n";
 }
+function isGlobalInstall() {
+  const install = fs.realpathSync(root).toLowerCase();
+  return [path.join(os.homedir(), ".agents", "skills"), path.join(os.homedir(), ".claude", "skills"), ...(process.env.CLAUDE_CONFIG_DIR ? [path.join(process.env.CLAUDE_CONFIG_DIR, "skills")] : [])]
+    .some(dir => fs.existsSync(dir) && install.startsWith(fs.realpathSync(dir).toLowerCase() + path.sep));
+}
+
 function runtimeChannel() {
   let directory = root;
   let entry;
-  const globalRoot = path.join(os.homedir(), ".agents", "skills") + path.sep;
-  const globalInstall = root.toLowerCase().startsWith(globalRoot.toLowerCase());
+  const globalInstall = isGlobalInstall();
   while (!globalInstall) {
     const lock = path.join(directory, "skills-lock.json");
     if (fs.existsSync(lock)) { entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["symphony-plus-plus"]; if (entry) break; }
@@ -103,7 +108,25 @@ function main(args) {
   };
   for (const key of ["SYMPP_BACKEND_PORT", "SYMPP_LOG_DIR", "SYMPP_OPEN_DASHBOARD"]) if (process.env[key]) env[key] = process.env[key];
   const registration = { type: "stdio", command: process.execPath, args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
-  const plans = hosts.map(host => {
+  const globalClaude = isGlobalInstall() && hosts.includes("claude");
+  let claudeUser, claudeCommand, claudeShadow;
+  if (globalClaude) {
+    const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
+    const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+    claudeUser = config.mcpServers?.[name];
+    const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", windowsHide: true });
+    const gitDir = git.status === 0 ? git.stdout.trim() : "";
+    const projectDir = path.basename(gitDir).toLowerCase() === ".git" ? path.dirname(gitDir) : process.cwd();
+    const cwd = fs.realpathSync(projectDir).replaceAll("\\", "/").toLowerCase();
+    claudeShadow = fs.existsSync(path.join(process.cwd(), ".mcp.json")) || Object.entries(config.projects || {}).some(([dir, project]) => dir.replaceAll("\\", "/").toLowerCase() === cwd && project.mcpServers?.[name]);
+    if (claudeUser && !(path.basename(claudeUser.command || "").toLowerCase().match(/^node(?:\.exe)?$/) && Array.isArray(claudeUser.args) && claudeUser.args.some(arg => typeof arg === "string" && path.basename(arg).toLowerCase() === "start-sympp-mcp-bridge.js"))) {
+      throw new Error("Claude already has an unrelated user registration for symphony_plus_plus. Explicitly remove it before setup.");
+    }
+    const found = spawnSync("where.exe", ["claude"], { encoding: "utf8", windowsHide: true });
+    claudeCommand = found.stdout.trim().split(/\r?\n/).find(file => /\.(?:exe|cmd|bat)$/i.test(file));
+    if (found.status !== 0 || !claudeCommand) throw new Error("Claude executable not found. Install Claude Code and retry setup.");
+  }
+  const plans = hosts.filter(host => host !== "claude" || !globalClaude).map(host => {
     const file = host === "codex" ? path.join(path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")), "config.toml") : path.join(process.cwd(), ".mcp.json");
     const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
     // Native Codex reads require an explicitly selected home to already exist.
@@ -121,9 +144,24 @@ function main(args) {
     }
     emit(plan.host, plan.before === plan.after ? "already configured" : "configured");
   }
+  if (globalClaude) {
+    const unchanged = claudeUser && JSON.stringify(claudeUser) === JSON.stringify(registration);
+    if (!unchanged) {
+      const run = args => {
+        const result = /\.(?:cmd|bat)$/i.test(claudeCommand)
+          ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "$a = ConvertFrom-Json $env:SYMPP_SETUP_ARGS; & $env:SYMPP_SETUP_COMMAND @a; exit $LASTEXITCODE"], { encoding: "utf8", windowsHide: true, env: { ...process.env, SYMPP_SETUP_COMMAND: claudeCommand, SYMPP_SETUP_ARGS: JSON.stringify(args) } })
+          : spawnSync(claudeCommand, args, { encoding: "utf8", windowsHide: true });
+        if (result.error || result.status !== 0) throw new Error("Claude could not update its user registration. Check Claude configuration and retry setup.");
+      };
+      if (claudeUser) run(["mcp", "remove", "--scope", "user", name]);
+      run(["mcp", "add", "--scope", "user", ...Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]), "--", name, registration.command, ...registration.args]);
+    }
+    emit("claude", unchanged ? "already configured" : "configured");
+    if (claudeShadow) emit("claude_next", "A local or project symphony_plus_plus registration in this folder takes precedence over the user registration.");
+  }
   emit("channel", env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);
-  if (hosts.includes("claude")) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its symphony_plus_plus entry before opening a fresh session here.");
+  if (hosts.includes("claude") && !globalClaude) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its symphony_plus_plus entry before opening a fresh session here.");
   emit("next", "Open fresh host sessions in this project and verify symphony_plus_plus tools before ledger work.");
 }
 
