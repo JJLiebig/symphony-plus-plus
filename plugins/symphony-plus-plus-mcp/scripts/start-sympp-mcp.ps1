@@ -2852,6 +2852,7 @@ try {
         sha256 = $artifactRuntime.sha256
         platform = $artifactRuntime.platform
         manifest_path = $artifactRuntime.manifest_path
+        checkout = Get-JsonPathValue $artifactRuntime @("checkout")
         prepared_release = if ($backendLaunch -and $dashboardPlan.status -eq "artifact_static") { $backendLaunch.prepared_release } else { $null }
       }
     } elseif ($null -ne $runtimeState -and $null -ne $runtimeState.artifact) {

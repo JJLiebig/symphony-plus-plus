@@ -362,6 +362,7 @@ function Resolve-SymppPreparedArtifactRuntime([string]$PluginRoot, [string]$Expe
   $extractRoot = Join-Path $cacheRoot "runtime"
   $archivePath = Join-Path $cacheRoot "artifact.zip"
   $runtimeDescriptor = New-SymppArtifactRuntimeDescriptor $extractRoot $entrypoint $workflow $runtimeArgs $sha256 $platform $cacheSourceRevision $pluginVersion $manifest.manifest_path $dashboardRoot $dashboardFingerprint
+  $runtimeDescriptor | Add-Member -NotePropertyName checkout -NotePropertyValue (Get-JsonPathValue $manifest @("checkout"))
 
   if ($ValidateOnly) {
     if (-not $PrepareArtifact) {

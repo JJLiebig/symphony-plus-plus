@@ -36,7 +36,7 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
   let backendPid;
   t.after(() => {
     if (backendPid) { try { process.kill(backendPid); } catch (_) { } }
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
   });
   const reservation = net.createServer().listen(0, "127.0.0.1");
   await once(reservation, "listening");

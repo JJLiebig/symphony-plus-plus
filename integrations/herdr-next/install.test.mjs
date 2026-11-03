@@ -22,7 +22,7 @@ test('factory selection reaches plain view and chrome panel props', async t => {
       await writeFile(join(home, 'shared.json'), JSON.stringify({ layout: 'desk' }));
       await writeFile(join(home, 'layouts', 'desk.json'), JSON.stringify({ id: 'root', children: [
         { content: { mod: 'desk-tabs' } }, { content: { mod: 'desk-agents' } },
-        { id: 'panel-body', type: 'stack', children: [] },
+        { id: 'panel-body', type: 'stack', children: [{ id: 'sympp', type: 'block', content: { mod: 'sympp', props: { hosts: { local: { session: 'personal-core' }, remote: { machine: 'my-server' } } } } }] },
       ] }));
       for (const mod of ['desk-tabs', 'desk-agents']) {
         await cp(join(here, 'chrome', 'fixtures', mod), join(home, 'mods', mod), { recursive: true });
@@ -52,6 +52,8 @@ test('factory selection reaches plain view and chrome panel props', async t => {
       if (chrome) {
         const layout = JSON.parse(await readFile(join(home, 'layouts', 'desk.json'), 'utf8'));
         assert.equal(layout.children[2].children[0].content.props.hosts.local.runtime, expected);
+        assert.equal(layout.children[2].children[0].content.props.hosts.local.session, 'personal-core');
+        assert.equal(layout.children[2].children[0].content.props.hosts.remote.machine, 'my-server');
       }
     }
   }

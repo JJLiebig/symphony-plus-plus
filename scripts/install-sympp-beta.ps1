@@ -2,6 +2,7 @@
 param(
   [Parameter(Mandatory)][string]$SymppHome,
   [Parameter(Mandatory)][string]$HerdrAppHome,
+  [switch]$LocalCheckout,
   [string]$ArtifactManifest = 'https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-runtime-beta/sympp-runtime-artifacts-beta.json'
 )
 
@@ -109,9 +110,9 @@ foreach ($path in @('mods/sympp', 'tools', 'data/sympp-requests')) {
   [void](Assert-InstallPath (Join-Path $HerdrAppHome $path))
 }
 $profileHome = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
-if ((Split-Path -Leaf $SymppHome) -notmatch '(^|[._-])beta($|[._-])' -or
+if (-not $LocalCheckout -and ((Split-Path -Leaf $SymppHome) -notmatch '(^|[._-])beta($|[._-])' -or
     $SymppHome.StartsWith((Join-Path $profileHome '.agents/splusplus').Replace('/', '\') + '\', [StringComparison]::OrdinalIgnoreCase) -or
-    $SymppHome -ieq (Join-Path $profileHome '.agents/splusplus')) {
+    $SymppHome -ieq (Join-Path $profileHome '.agents/splusplus'))) {
   throw 'Choose an explicitly beta home, separate from the default production home.'
 }
 $runtimeFile = Join-Path $SymppHome 'runtime/codex-plugin.json'
@@ -119,29 +120,35 @@ $originalText = Get-Content -LiteralPath $runtimeFile -Raw
 $original = $originalText | ConvertFrom-Json
 $pluginRoot = Assert-InstallPath ([string]$original.plugin_root)
 if ($pluginRoot -match '(?i)[\\/]plugins[\\/]cache[\\/]' -or
-    $pluginRoot.StartsWith((Join-Path $profileHome '.agents/skills').Replace('/', '\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    (-not $LocalCheckout -and $pluginRoot.StartsWith((Join-Path $profileHome '.agents/skills').Replace('/', '\') + '\', [StringComparison]::OrdinalIgnoreCase))) {
   throw 'Beta installation cannot change a marketplace cache or a global Skills installation.'
 }
 $originalInstall = Read-SymppPortableInstall $pluginRoot
 if (-not $originalInstall) { throw 'This command requires an existing beta portable Skills factory.' }
+$channel = if ($LocalCheckout) {
+  & node -e "process.stdout.write(require(process.argv[1]).runtimeChannel())" (Join-Path $pluginRoot 'scripts/setup-sympp.js')
+  if ($LASTEXITCODE -ne 0) { throw 'Could not identify the factory channel.' }
+} else { 'beta' }
 $workspace = $null
-for ($directory = $pluginRoot; $directory; $directory = Split-Path -Parent $directory) {
-  $lockFile = Join-Path $directory 'skills-lock.json'
-  if (-not (Test-Path -LiteralPath $lockFile)) { continue }
-  $entry = (Get-Content -LiteralPath $lockFile -Raw | ConvertFrom-Json).skills.'symphony-plus-plus'
-  if (-not $entry) { continue }
-  if ($entry.source -ne 'JJLiebig/symphony-plus-plus' -or $entry.ref -ne 'beta') {
-    throw 'The selected factory must belong to a beta Skills installation.'
+if (-not $LocalCheckout) {
+  for ($directory = $pluginRoot; $directory; $directory = Split-Path -Parent $directory) {
+    $lockFile = Join-Path $directory 'skills-lock.json'
+    if (-not (Test-Path -LiteralPath $lockFile)) { continue }
+    $entry = (Get-Content -LiteralPath $lockFile -Raw | ConvertFrom-Json).skills.'symphony-plus-plus'
+    if (-not $entry) { continue }
+    if ($entry.source -ne 'JJLiebig/symphony-plus-plus' -or $entry.ref -ne 'beta') {
+      throw 'The selected factory must belong to a beta Skills installation.'
+    }
+    $workspace = Assert-InstallPath $directory
+    break
   }
-  $workspace = Assert-InstallPath $directory
-  break
+  if (-not $workspace -or $workspace -ieq $profileHome -or
+      [IO.Path]::GetRelativePath($workspace, $pluginRoot).Replace('\', '/') -notin @(
+        '.agents/skills/symphony-plus-plus', '.claude/skills/symphony-plus-plus', '.codex/skills/symphony-plus-plus')) {
+    throw 'Select the beta workspace project-local Symphony++ Skills bundle.'
+  }
+  Assert-InHome $SymppHome $workspace
 }
-if (-not $workspace -or $workspace -ieq $profileHome -or
-    [IO.Path]::GetRelativePath($workspace, $pluginRoot).Replace('\', '/') -notin @(
-      '.agents/skills/symphony-plus-plus', '.claude/skills/symphony-plus-plus', '.codex/skills/symphony-plus-plus')) {
-  throw 'Select the beta workspace project-local Symphony++ Skills bundle.'
-}
-Assert-InHome $SymppHome $workspace
 foreach ($dataHome in @($SymppHome, $HerdrAppHome)) {
   if ($dataHome -ieq $pluginRoot -or $dataHome.StartsWith($pluginRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Keep runtime and Herdr data homes separate from the managed Skills directory.'
@@ -162,14 +169,24 @@ Assert-InHome ([string]$original.artifact.root) $SymppHome
 $origin = [Uri]$original.backend.url
 if ($original.runtime_mode -ne 'artifact' -or $original.backend.managed -ne $true -or
     $original.frontend.status -ne 'artifact_static' -or $original.publication.controls.offline_sandbox -eq $true -or
-    $origin.Scheme -ne 'http' -or -not $origin.IsLoopback -or $origin.Port -in @(19998, 19999) -or
+    $origin.Scheme -ne 'http' -or -not $origin.IsLoopback -or (-not $LocalCheckout -and $origin.Port -in @(19998, 19999)) -or
     $origin.AbsolutePath -ne '/' -or $origin.Query -or $origin.UserInfo -or $origin.Fragment) {
   throw 'Select a managed beta artifact factory with its own loopback port and live beta ledger.'
 }
 $launcher = Join-Path $pluginRoot 'scripts/start-sympp-mcp.ps1'
-$pinFile = Join-Path $pluginRoot '.sympp-runtime-artifacts.json'
+$pinFile = if ($LocalCheckout) { Join-Path $SymppHome 'runtime/checkout-artifacts.json' } else { Join-Path $pluginRoot '.sympp-runtime-artifacts.json' }
+$originalPinText = if (Test-Path -LiteralPath $pinFile) { Get-Content -LiteralPath $pinFile -Raw } else { $null }
 [void](Assert-InstallPath $pinFile)
 Assert-InHome $runtimeFile $SymppHome
+$nativeArgs = @('--factory', $runtimeFile)
+$installedMark = Join-Path $HerdrAppHome 'mods/sympp/mark.png'
+if (Test-Path -LiteralPath $installedMark) {
+  foreach ($mark in @('b', 'c', 'd')) {
+    if ((Get-FileSha256 $installedMark) -eq (Get-FileSha256 (Join-Path $repoRoot "integrations/herdr-next/marks/$mark/mark.png"))) { $nativeArgs += @('--mark', $mark); break }
+  }
+}
+$tabs = Join-Path $HerdrAppHome 'mods/desk-tabs/main.js'
+if ((Test-Path -LiteralPath $tabs) -and (Get-Content -LiteralPath $tabs -Raw).Contains('S++ chrome')) { $nativeArgs += '--chrome' }
 $stage = Join-Path $SymppHome ('runtime/beta-install-' + [guid]::NewGuid().ToString('N'))
 $candidateBundle = Join-Path $stage 'bundle'
 $bundleBackup = Join-Path $stage 'previous-skills'
@@ -188,7 +205,7 @@ try {
   $env:SYMPP_RUNTIME_FILE = $runtimeFile
   $env:SYMPP_DATABASE = $database
   $env:SYMPP_LOG_DIR = Join-Path $SymppHome 'logs'
-  $env:SYMPP_RUNTIME_CHANNEL = 'beta'
+  $env:SYMPP_RUNTIME_CHANNEL = $channel
   $env:SYMPP_BACKEND_PORT = [string]$origin.Port
   if ($original.publication.controls.dashboard_port_explicit) { $env:SYMPP_DASHBOARD_PORT = [string]$original.publication.controls.dashboard_port }
   $env:SYMPP_OPEN_DASHBOARD = '0'
@@ -198,7 +215,7 @@ try {
   Copy-Item -LiteralPath (Join-Path $pluginRoot '.sympp-install.json') -Destination $stage
   Copy-Item -LiteralPath $bundleSource -Destination $candidateBundle -Recurse
   $manifest = (Read-SymppManifestReferenceContent $ArtifactManifest '') | ConvertFrom-Json
-  if ((Get-JsonFirstPathValue $manifest @(@('channel'), @('release', 'channel'))) -ne 'beta') {
+  if ((Get-JsonFirstPathValue $manifest @(@('channel'), @('release', 'channel'))) -ne $channel) {
     throw 'The runtime manifest must explicitly declare the beta channel.'
   }
   $manifestLocation = Resolve-SymppManifestReferenceUri $manifest.manifest $ArtifactManifest
@@ -224,6 +241,11 @@ try {
   $candidate = Resolve-SymppPreparedArtifactRuntime $candidateBundle $null $install.contract_fingerprint -ValidateOnly -PrepareArtifact
   $revision = [string]$candidate.runtime.source_revision
   if ($revision -notmatch '^[0-9a-f]{40}$') { throw 'The beta artifact has no valid source revision.' }
+  if ($LocalCheckout) {
+    $manifest | Add-Member -NotePropertyName factory_plugin_root -NotePropertyValue $pluginRoot -Force
+    if (-not $manifest.checkout) { throw 'A checkout manifest must record its revision and dirty state.' }
+    $manifest.artifacts[0].path = Join-Path $candidate.cache_root 'artifact.zip'
+  }
   $nativeInstaller = Join-Path $repoRoot 'integrations/herdr-next/install.mjs'
   # Finish native-file preflight before interrupting connected clients.
   & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home (Join-Path $stage 'herdr') | Out-Null
@@ -234,7 +256,7 @@ try {
   $backendRunning = $null -ne (Get-InstallBackend $original)
   if (-not $restart -and $backendRunning) {
     Assert-FactoryReady $original $revision $install.contract_fingerprint
-    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace | Out-Null
+    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace @nativeArgs | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The native view could not be installed; the beta backend is unchanged.' }
     Write-InstallJson $pinFile $manifest
     Write-Host "Beta is current ($revision); backend unchanged."
@@ -244,7 +266,7 @@ try {
   if (-not $previousRuntime) { throw 'The previous beta artifact has no prepared runtime for rollback.' }
   $marker = Get-Content -LiteralPath (Join-Path $original.artifact.root '.sympp-artifact.json') -Raw | ConvertFrom-Json
   $rollbackManifest = @{
-    schema_version = 1; channel = 'beta'; source_revision = $original.backend.source_revision
+    schema_version = 1; channel = $channel; source_revision = $original.backend.source_revision
     plugin = @{ name = $originalInstall.name; version = $originalInstall.version }
     artifacts = @(@{
       platform = $marker.platform; source_revision = $original.backend.source_revision
@@ -254,20 +276,23 @@ try {
       dashboard = @{ asset_root = $marker.dashboard_root; fingerprint = $marker.dashboard_fingerprint }
     })
   }
+  if (Test-Path -LiteralPath $pinFile) {
+    $previousPin = Get-Content -LiteralPath $pinFile -Raw | ConvertFrom-Json
+    if ($previousPin.checkout) { $rollbackManifest.checkout = $previousPin.checkout }
+  }
   Write-InstallJson (Join-Path $stage '.sympp-runtime-artifacts.json') $rollbackManifest
   $rollback = Resolve-SymppPreparedArtifactRuntime $stage $null $originalContract -ValidateOnly -PrepareArtifact
   if ($rollback.runtime.source_revision -ne $original.backend.source_revision) { throw 'The previous beta artifact is unavailable for rollback.' }
   if ($backendRunning) { Assert-FactoryReady $original $original.backend.source_revision $originalContract }
-  if (-not $backendRunning) {
-    Write-Host 'Starting the stopped beta factory to verify installation. It remains ready for the next MCP client.'
-    if ($bundleChanged) { Write-Host 'Updating beta Skills. Open fresh sessions for every MCP client afterward.' }
+  if ($bundleChanged -or $originalContract -ne $install.contract_fingerprint) {
+    Write-Host 'Skills or MCP contract changed. Open fresh agent sessions to see the update.'
   }
-  elseif ($bundleChanged) { Write-Host 'Restarting beta and updating its Skills bundle. Open fresh sessions for every MCP client afterward. Check an interrupted write before retrying it.' }
-  else { Write-Host 'Restarting beta. MCP clients reconnect on their next request; reload the client if it reports a connection error. Check an interrupted write before retrying it.' }
+  if (-not $backendRunning) { Write-Host 'Starting the factory.' }
+  else { Write-Host 'Restarting the factory. MCP clients reconnect on their next request. Check an interrupted write before retrying it.' }
   try {
     if ($backendRunning) { Stop-InstallBackend $original }
     if ($bundleChanged) {
-      Assert-InHome $pluginRoot $workspace
+      if (-not $LocalCheckout) { Assert-InHome $pluginRoot $workspace }
       Assert-InHome $bundleBackup $SymppHome
       Move-Item -LiteralPath $pluginRoot -Destination $bundleBackup
       Move-Item -LiteralPath $candidateBundle -Destination $pluginRoot
@@ -277,7 +302,7 @@ try {
     Start-InstallBackend
     $updated = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
     Assert-FactoryReady $updated $revision $install.contract_fingerprint
-    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace | Out-Null
+    & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace @nativeArgs | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The native view could not be installed.' }
   } catch {
     $failure = $_
@@ -285,21 +310,24 @@ try {
     $startupLock = Enter-FileLock (Resolve-StartupLockFile $runtimeFile) 10
     Stop-InstallBackend (Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json)
     if (Test-Path -LiteralPath $bundleBackup) {
-      Assert-InHome $pluginRoot $workspace
+      if (-not $LocalCheckout) { Assert-InHome $pluginRoot $workspace }
       Assert-InHome $bundleBackup $SymppHome
       if (Test-Path -LiteralPath $pluginRoot) { Remove-Item -LiteralPath $pluginRoot -Recurse -Force }
       Move-Item -LiteralPath $bundleBackup -Destination $pluginRoot
     }
+    if ($LocalCheckout) { $rollbackManifest.factory_plugin_root = $pluginRoot }
     Write-InstallJson $pinFile $rollbackManifest
     Write-InstallJson $runtimeFile $original
     $startupLock.Dispose(); $startupLock = $null
     Start-InstallBackend
     $restored = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
     Assert-FactoryReady $restored $original.backend.source_revision $originalContract
+    if ($null -ne $originalPinText) { [IO.File]::WriteAllText($pinFile, $originalPinText) }
+    else { Remove-Item -LiteralPath $pinFile -Force }
     throw "Beta installation failed; the previous runtime is serving again. $($failure.Exception.Message)"
   }
   $completed = $true
-  Write-Host "Beta ready ($revision). Native view installed."
+  Write-Host "Factory ready ($revision). Native view installed."
 } finally {
   if ($startupLock) { $startupLock.Dispose() }
   if ($coldLock) { $coldLock.Dispose(); Remove-Item -LiteralPath "$runtimeFile.cold.lock" -Force }

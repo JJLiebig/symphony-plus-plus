@@ -112,6 +112,11 @@ function Resolve-ExpectedSourceRevision([string]$PluginRoot) {
 }
 
 function Get-SymppArtifactManifestPath([string]$PluginRoot) {
+  $factoryPin = Join-Path (Resolve-SymppPluginHome) 'runtime/checkout-artifacts.json'
+  if (Test-Path -LiteralPath $factoryPin -PathType Leaf) {
+    $selection = Get-Content -LiteralPath $factoryPin -Raw | ConvertFrom-Json
+    if ([string]$selection.factory_plugin_root -ieq $PluginRoot) { return $factoryPin }
+  }
   foreach ($relativePath in @(".sympp-runtime-artifacts.json", "assets/sympp-runtime-artifacts.json")) {
     $candidate = Join-Path $PluginRoot $relativePath
     if (Test-Path -LiteralPath $candidate -PathType Leaf) {

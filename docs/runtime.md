@@ -26,6 +26,27 @@ viewer has no MCP/agent access; Ctrl+C stops it before refresh. Never promote th
 copy to live. A factory move requires the [stopped-ledger backup and cutover
 procedure](runbooks/beta-release-cutover.md).
 
+## Local Checkout Loop (Windows)
+
+From any checkout, set `$env:SYMPP_HOME` to the existing factory's absolute home
+(for example `C:\Users\jonat\sympp-herdr-next\.sympp-beta`), then run `just install`.
+It uses the toolchain in `elixir/mise.toml`, builds current files including uncommitted
+changes, regenerates Skills, and replaces the runtime on the same endpoint and ledger.
+The previous runtime is retained for rollback. Herdr and agent sessions stay running;
+open fresh agent sessions only when the command reports a Skills/contract change.
+`HERDR_APP_HOME` selects a non-default Herdr home; existing chrome is retained.
+
+The checkout build stays selected through idle shutdown and reboot. Its commit,
+dirty flag and install time appear in the runtime record's `artifact.checkout` and
+the factory's `runtime/checkout-artifacts.json`. `just follow` replaces this pin;
+the next cold start selects the owning Skills installation's published channel.
+Skills updates replace launcher files, so run `just install` again after one.
+
+`just test` runs fast launcher/bridge and native-view behavior tests, checkout-pin
+selection, dashboard type/lint checks and Vitest, plus Skills mirror validation.
+It excludes backend ExUnit, native acceptance and release qualification; run those
+when changing their surfaces. `just install` also compiles the backend release.
+
 ## Marketplace Alternative In A Separate Beta Home
 
 Use PowerShell with Git, Node.js, PowerShell 7 and Codex available. Choose

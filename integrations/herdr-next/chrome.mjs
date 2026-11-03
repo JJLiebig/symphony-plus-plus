@@ -91,6 +91,8 @@ export async function planInstall(home, props) {
     else writes.push({ to: backup, body: current }, { to: file, body });
   }
   if (missing.length) return { missing };
+  const existing = desk.body.children?.find((c) => c?.id === PANEL)?.content?.props;
+  props = { ...existing, ...props, hosts: { ...existing?.hosts, ...props.hosts, local: { ...existing?.hosts?.local, ...props.hosts?.local, runtime: props.hosts?.local?.runtime } } };
   const child = { id: PANEL, type: 'block', content: { mod: PANEL, props } };
   const children = Array.isArray(desk.body.children) ? desk.body.children : [];
   const at = children.findIndex((c) => c?.id === PANEL);
