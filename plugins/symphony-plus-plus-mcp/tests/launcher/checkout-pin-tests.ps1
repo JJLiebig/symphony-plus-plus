@@ -50,11 +50,17 @@ Read-SymppArtifactManifest $Bundle | ConvertTo-Json -Depth 12 -Compress
   New-Item -ItemType Directory -Path $otherHome | Out-Null
   $other = & pwsh -NoProfile -File $probe $repo $bundle $otherHome | ConvertFrom-Json
   if ($other.source_revision -ne $published.source_revision) { throw 'Checkout pin leaked to another factory sharing Skills.' }
-  & (Join-Path $repo 'scripts/follow-sympp-channel.ps1') -SymppHome $root
+  $helpers = Join-Path $repo 'plugins/symphony-plus-plus-mcp/scripts'
+  foreach ($name in @('sympp-launcher-runtime', 'sympp-mcp-launcher-helpers', 'sympp-mcp-artifact-manifest', 'sympp-mcp-artifact-channel')) { . (Join-Path $helpers "$name.ps1") }
+  $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'scripts/follow-sympp-channel.ps1'), [ref]$null, [ref]$null)
+  $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-FollowSkills' }, $true)
+  Invoke-Expression $definition.Extent.Text
+  $prepared = Get-FollowSkills $bundle (Join-Path $root 'fetched')
+  $restoredInstall = Read-SymppPortableInstall $prepared.bundle
+  if ($restoredInstall.contract_fingerprint -ne ('b' * 64)) { throw 'Follow did not prepare the published Skills contract.' }
+  Remove-Item -LiteralPath $pin
   $followed = & pwsh -NoProfile -File $probe $repo $bundle | ConvertFrom-Json
   if ($followed.source_revision -ne $published.source_revision -or $followed.checkout) { throw 'Follow did not return cold selection to the channel.' }
-  $restoredInstall = Get-Content -LiteralPath (Join-Path $bundle '.sympp-install.json') -Raw | ConvertFrom-Json
-  if ($restoredInstall.contract_fingerprint -ne ('b' * 64)) { throw 'Follow did not restore the published Skills contract.' }
   if (Test-Path -LiteralPath $pin) { throw 'Follow retained a checkout pin.' }
   # Another bundle sharing this home cannot consume this factory's selection.
   $foreign = Join-Path $root 'other-bundle'
@@ -63,7 +69,7 @@ Read-SymppArtifactManifest $Bundle | ConvertTo-Json -Depth 12 -Compress
   # Keep the same home while selecting a different installed bundle.
   $isolated = & pwsh -NoProfile -File $probe $repo $foreign | ConvertFrom-Json
   if ($isolated.source_revision -ne $published.source_revision) { throw 'Factory pin leaked to another bundle.' }
-  Write-Host 'Checkout pin qualified: repeated cold selection, dirty provenance, follow, and factory isolation.'
+  Write-Host 'Checkout pin qualified: repeated cold selection, dirty provenance, published Skills preparation, and factory isolation.'
 } finally {
   foreach ($name in $savedGitConfig.Keys) { [Environment]::SetEnvironmentVariable($name, $savedGitConfig[$name]) }
   if ([IO.Path]::GetFullPath($root).StartsWith([IO.Path]::GetTempPath(), [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $root -Recurse -Force }
