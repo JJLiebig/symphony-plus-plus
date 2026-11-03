@@ -349,7 +349,7 @@ try {
       else { Remove-Item -LiteralPath $legacyPin -Force }
     }
     if ($null -ne $originalPinText) { [IO.File]::WriteAllText($pinFile, $originalPinText) }
-    else { Remove-Item -LiteralPath $pinFile -Force }
+    elseif ($LocalCheckout) { Remove-Item -LiteralPath $pinFile -Force }
     throw "Beta installation failed; the previous runtime is serving again. $($failure.Exception.Message)"
   }
   if ($LocalCheckout -and (Test-Path -LiteralPath $legacyPin)) { Remove-Item -LiteralPath $legacyPin -Force }
