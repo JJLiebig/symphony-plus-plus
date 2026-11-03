@@ -157,7 +157,7 @@ async function main() {
     const hosts = { local: { ...(factory ? { runtime: resolve(factory) } : {}), node: process.execPath, helper, ...(session ? { session } : {}) } };
     props = { endpoint, hosts };
   }
-  const chrome = values.chrome ? await planInstall(home, { ...props, role: 'panel' }) : null;
+  const chrome = values.chrome ? await planInstall(home, { ...props, role: 'panel' }, values.session) : null;
   if (chrome?.missing) {
     emit({ error: 'The S++ chrome needs your desk layout and mods; no files were changed', missing: chrome.missing });
     return 1;

@@ -37,6 +37,7 @@ test('factory selection reaches plain view and chrome panel props', async t => {
       const env = { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(join(here, 'chrome', 'fixtures', 'check.cjs'))}` };
       delete env.SYMPP_RUNTIME_FILE;
       delete env.SYMPP_HOME;
+      env.HC_SESSION = 'another-core';
       if (runtimeEnv) env.SYMPP_RUNTIME_FILE = runtimeEnv;
       if (homeEnv) env.SYMPP_HOME = homeEnv;
       const result = spawnSync(process.execPath, [join(here, 'install.mjs'), '--home', home,

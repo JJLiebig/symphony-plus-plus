@@ -45,12 +45,12 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
   const plugin = path.join(root, "installed skills");
   fs.mkdirSync(path.join(plugin, "scripts"), { recursive: true });
   fs.copyFileSync(path.resolve(__dirname, "../../scripts/setup-sympp.js"), path.join(plugin, "scripts", "setup-sympp.js"));
-  fs.writeFileSync(path.join(root, "skills-lock.json"), JSON.stringify({ skills: { "symphony-plus-plus": { source: "JJLiebig/symphony-plus-plus", ref: "beta" } } }));
+  fs.writeFileSync(path.join(root, "skills-lock.json"), JSON.stringify({ skills: { "symphony-plus-plus": { sourceType: "local" } } }));
   const home = path.join(root, "factory home");
   fs.mkdirSync(path.join(home, "runtime"), { recursive: true });
   const runtime = path.join(home, "runtime", "codex-plugin.json");
   const database = path.join(home, "ledger.sqlite3");
-  fs.writeFileSync(runtime, JSON.stringify({ plugin_root: plugin, publication: { controls: { database } }, artifact: { prepared_release: { configured_workflow: "factory-workflow.md" } }, backend: { port: 1 } }));
+  fs.writeFileSync(runtime, JSON.stringify({ plugin_root: plugin, runtime_channel: "beta", publication: { controls: { database } }, artifact: { prepared_release: { configured_workflow: "factory-workflow.md" } }, backend: { port: 1 } }));
   const observed = path.join(root, "observed.json");
   const server = path.join(root, "backend.js");
   const pidFile = path.join(root, "backend.pid");

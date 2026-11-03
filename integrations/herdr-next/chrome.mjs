@@ -67,7 +67,7 @@ async function readDesk(home) {
 const serialize = (layout, before) => JSON.stringify(layout, null, 2) + (before.endsWith('\n') ? '\n' : '');
 
 // Writes that install the chrome with the S++ panel's block props, or what is missing.
-export async function planInstall(home, props) {
+export async function planInstall(home, props, selectedSession) {
   const desk = await readDesk(home);
   const backups = join(home, 'data', 'sympp-chrome');
   const missing = [...desk.missing];
@@ -93,6 +93,7 @@ export async function planInstall(home, props) {
   if (missing.length) return { missing };
   const existing = desk.body.children?.find((c) => c?.id === PANEL)?.content?.props;
   props = { ...existing, ...props, hosts: { ...existing?.hosts, ...props.hosts, local: { ...existing?.hosts?.local, ...props.hosts?.local, runtime: props.hosts?.local?.runtime } } };
+  if (selectedSession === undefined && existing?.hosts?.local?.session) props.hosts.local.session = existing.hosts.local.session;
   const child = { id: PANEL, type: 'block', content: { mod: PANEL, props } };
   const children = Array.isArray(desk.body.children) ? desk.body.children : [];
   const at = children.findIndex((c) => c?.id === PANEL);
