@@ -45,6 +45,11 @@ export function revertPatch(text, patch) {
   return applyPatch(out, patch) === text ? out : null;
 }
 
+// The version of this patch a mod carries: the current one or an older one it lists, else null.
+function installedVersion(text, patch) {
+  return [patch, ...(patch.previous ?? [])].find((version) => text.includes(version.mark)) ?? null;
+}
+
 function walk(node, visit) {
   if (!node || typeof node !== 'object') return;
   visit(node);
@@ -95,11 +100,18 @@ export async function planInstall(home, props, selectedSession) {
     if (current === null) { missing.push(`mods/${patch.mod}/main.js is missing`); continue; }
     mods.push(patch.mod);
     if (current.includes(MARK)) {
-      // Edits made since outside the S++ lines are kept; the backup follows them.
-      const original = current.includes(patch.mark) ? revertPatch(current, patch) : null;
-      if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
+      // Edits made since outside the S++ lines are kept; the backup follows them. An older version
+      // this patch knows is replaced by it.
+      const installed = installedVersion(current, patch);
+      const original = installed ? revertPatch(current, installed) : null;
+      const body = installed && installed !== patch && original !== null ? applyPatch(original, patch) : null;
+      if (!installed) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
       else if (original === null) missing.push(`The S++ lines in ${patch.mod} were edited`);
-      else if (original !== await contents(backup)) writes.push({ to: backup, body: original });
+      else if (installed !== patch && body === null) missing.push(`${patch.mod} differs from the version this patch was written for`);
+      else {
+        if (original !== await contents(backup)) writes.push({ to: backup, body: original });
+        if (body !== null) writes.push({ to: file, body });
+      }
       continue;
     }
     const body = applyPatch(current, patch);
@@ -139,8 +151,9 @@ export async function planRemoval(home) {
     const current = await contents(file);
     if (current !== null) mods.push(patch.mod);
     if (!current?.includes(MARK)) continue;
-    const original = current.includes(patch.mark) ? revertPatch(current, patch) : null;
-    if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
+    const installed = installedVersion(current, patch);
+    const original = installed ? revertPatch(current, installed) : null;
+    if (!installed) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
     else if (original === null) missing.push(`The S++ lines in ${patch.mod} were edited; its original before the S++ chrome is ${backup}`);
     else writes.push({ to: file, body: original });
   }

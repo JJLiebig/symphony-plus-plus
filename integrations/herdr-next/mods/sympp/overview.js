@@ -6,7 +6,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
 import * as M from "./model.js";
 import * as L from "./levels.js";
-import { CLEAR, MONO, icon, tint, button, field, mark, presence, pip, section } from "./ui.js";
+import { CLEAR, MONO, icon, tint, button, iconButton, field, mark, presence, pip, section } from "./ui.js";
 
 // ---------- Bar ----------
 
@@ -26,47 +26,49 @@ export function levelBar(v, t, trail, { now, needs, slim = false }) {
   });
   const path = h_flex().id("breadcrumb").gap(2).items_center().min_w(0).flex_1().flex_wrap().children(parts);
   const pin = v.role === "panel"
-    ? button(t, "pin", v.pin ? "Unpin" : "Pin", (cx) => v.togglePin(cx), { glyph: v.pin ? "pin-off" : "pin", strong: v.pin,
-      tip: v.pin ? "Follow Herdr's focus again (P)" : "Stay here instead of following focus (P)" })
+    ? (v.compact ? iconButton(t, "pin", v.pin ? "pin-off" : "pin", v.pin ? "Follow Herdr's focus again (P)" : "Stay here instead of following focus (P)", (cx) => v.togglePin(cx), { strong: v.pin })
+      : button(t, "pin", v.pin ? "Unpin" : "Pin", (cx) => v.togglePin(cx), { glyph: v.pin ? "pin-off" : "pin", strong: v.pin,
+        tip: v.pin ? "Follow Herdr's focus again (P)" : "Stay here instead of following focus (P)" }))
     : null;
   if (slim) {
     return h_flex().flex_none().px(v.compact ? 12 : 20).py(7).gap(8).items_center().border_b(1).border_color(t.border)
-      .child(path).when(Boolean(pin), (el) => el.child(pin));
+      .child(path).child(status(v, t, now)).when(Boolean(pin), (el) => el.child(pin));
   }
   const needed = v.net.data?.offline === true ? div().flex_none().text_size(12).text_color(t.muted).child("Offline copy") : needs > 0
     ? h_flex().gap(7).items_center().flex_none().child(div().size(7).rounded(4).bg(t.blocked)).child(div().text_size(12.5).font_semibold().text_color(t.blocked).child(`You're needed in ${needs}`))
-    : div().flex_none().text_size(12.5).text_color(t.muted).child("Nothing needs you");
+    : null;
+  if (v.compact) {
+    const actions = h_flex().gap(2).items_center().flex_none()
+      .child(iconButton(t, "new-job", "plus", "New job", (cx) => v.openIntake(cx)))
+      .when(Boolean(v.dashboard), (el) => el.child(iconButton(t, "dashboard", "monitor", "Open the S++ dashboard (O)", (cx) => v.openDashboard(cx))))
+      .when(Boolean(pin), (el) => el.child(pin));
+    return v_flex().flex_none().px(12).py(6).gap(4).border_b(1).border_color(t.border)
+      .child(h_flex().gap(6).items_center().child(path).child(status(v, t, now)).child(actions))
+      .when(Boolean(needed), (el) => el.child(needed));
+  }
   const actions = h_flex().gap(4).items_center().flex_none()
     .child(button(t, "new-job", "New job", (cx) => v.openIntake(cx), { strong: true }))
-    .child(button(t, "refresh", "Refresh", (cx) => v.retry(cx), { tip: "Read S++ now (R)" }))
     .when(Boolean(v.dashboard), (el) => el.child(button(t, "dashboard", "Dashboard", (cx) => v.openDashboard(cx), { tip: "Open the S++ dashboard (O)" })))
     .when(Boolean(pin), (el) => el.child(pin));
-  if (v.compact) {
-    return v_flex().flex_none().px(12).pt(8).pb(8).gap(6).border_b(1).border_color(t.border)
-      .child(h_flex().gap(8).items_center().child(path))
-      .child(h_flex().gap(8).items_center().flex_wrap().child(needed).child(div().flex_1()).child(freshness(v, t, now)).child(actions));
-  }
   return h_flex().flex_none().py(9).px(20).gap(16).items_center().border_b(1).border_color(t.border)
-    .child(path).child(needed).child(freshness(v, t, now)).child(actions);
+    .child(path).when(Boolean(needed), (el) => el.child(needed)).child(status(v, t, now)).child(actions);
 }
 
-export function freshness(v, t, now) {
-  const stale = M.isStale(v.net, now);
-  return div().flex_none().text_size(11).font_family(MONO).text_color(stale ? t.blocked : t.dim)
-    .child(v.reading && !v.net.receivedAt ? "Reading…" : `${stale ? "Last read" : "Read"} ${M.ago(v.net.receivedAt, now)}`);
+// Where the read stands, in one 14 px slot so nothing around it moves: a spinner while S++ is read or
+// started, a red dot (its tip says why; a click reads again) once reads keep failing, else nothing.
+export function status(v, t, now) {
+  const slot = div().id("read-status").size(14).flex_none().flex().items_center().justify_center();
+  if (v.reading || v.starting) return slot.tooltip(v.starting ? "Starting S++…" : "Reading S++…").child(svg(icon("spinner")).size(12).text_color(t.dim).spin(900));
+  if (!M.isStale(v.net, now)) return slot;
+  const tip = v.net.error ? `${v.net.error} Showing the read from ${M.ago(v.net.receivedAt, now)}. Click to retry (R).` : `Last read ${M.ago(v.net.receivedAt, now)}. Click to retry (R).`;
+  return slot.cursor_pointer().tooltip(tip).accessibility_label(tip)
+    .on_click((_e, cx) => { cx.stop_propagation(); v.retry(cx); })
+    .child(div().size(7).rounded(4).bg(t.blocked));
 }
 
-// A failed read keeps the last board on screen and says so, with the way back.
-export function staleBar(v, t, now) {
-  if (!M.isStale(v.net, now)) return null;
-  const lost = v.net.error ? `Connection lost · showing the read from ${M.ago(v.net.receivedAt, now)}` : `This read is ${M.ago(v.net.receivedAt, now).replace(" ago", "")} old`;
-  return h_flex().flex_none().px(v.compact ? 12 : 20).py(8).gap(10).items_center().bg(tint(t.blocked, "14")).border_b(1).border_color(tint(t.blocked, "40"))
-    .role("alert")
-    .child(div().size(7).flex_none().rounded(1.5).bg(t.blocked))
-    .child(v_flex().flex_1().min_w(0).gap(2)
-      .child(div().text_size(12.5).font_medium().text_color(t.foreground).child(lost))
-      .when(Boolean(v.net.error), (el) => el.child(div().text_size(11.5).text_color(t.muted).truncate().child(v.net.error))))
-    .child(button(t, "retry-stale", v.reading ? "Reading…" : "Retry", (cx) => v.retry(cx), { strong: true }));
+// The same status where a view has no bar of its own (a job tab, a studio): over its top-right corner.
+export function floatingStatus(v, t, now) {
+  return div().absolute().top(8).right(10).child(status(v, t, now));
 }
 
 // ---------- Rows ----------

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parseBoard } from './mods/sympp/model.js';
 import { decorations, nextDecorations, RESTAMP } from './mods/sympp/chrome.js';
+import { applyPatch } from './chrome.mjs';
 import { boardPayload, NOW } from './fixture.mjs';
 import deskTabs from './chrome/desk-tabs.patch.mjs';
 import deskAgents from './chrome/desk-agents.patch.mjs';
@@ -112,7 +113,7 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
   assert.match(tabs, /symppTabMark\(c\.id\)/, 'tabs carry the marks mods register');
   assert.doesNotMatch(tabs.replaceAll('\r\n', ''), /\n/, 'keeps the mod\'s CRLF line endings');
   assert.match(await readFile(join(home, 'mods', 'desk-agents', 'main.js'), 'utf8'), /symppStage\(k\.address, Date\.now\(\)\)/);
-  assert.match(await readFile(join(home, 'mods', 'desk-topics', 'main.js'), 'utf8'), /\.children\(symppChief\(this, group \? id : null, t, workspace\)\)/);
+  assert.match(await readFile(join(home, 'mods', 'desk-topics', 'main.js'), 'utf8'), /\.children\(symppChief\(this, group \? id : null, group\?\.name, t, workspace\)\)/);
   for (const patch of [deskTabs, deskAgents, deskTopics]) {
     assert.equal(await readFile(join(home, 'data', 'sympp-chrome', `${patch.mod}.main.js`), 'utf8'),
       original[join(home, 'mods', patch.mod, 'main.js')].toString());
@@ -174,6 +175,20 @@ test('a desk without desk-topics gets the rest of the chrome, and removing it le
   const removed = install(home, '--remove-chrome');
   assert.equal(removed.status, 0, removed.stdout + removed.stderr);
   assert.equal((await readdir(join(home, 'mods'))).includes('desk-topics'), false);
+});
+
+test('an older desk-topics chrome upgrades in place and keeps later edits', async t => {
+  const home = await deskHome(t);
+  const file = join(home, 'mods', 'desk-topics', 'main.js');
+  const plain = await readFile(file, 'utf8');
+  const [chrome1] = deskTopics.previous;
+  await writeFile(file, applyPatch(plain, chrome1) + '// my later tweak\n');
+  const result = install(home, ...ENDPOINT, '--chrome');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const upgraded = await readFile(file, 'utf8');
+  assert.equal(upgraded, applyPatch(plain + '// my later tweak\n', deskTopics));
+  assert.doesNotMatch(upgraded, /S\+\+ chrome 1/);
+  assert.equal(await readFile(join(home, 'data', 'sympp-chrome', 'desk-topics.main.js'), 'utf8'), plain + '// my later tweak\n');
 });
 
 test('--chrome refuses a home without the personal desk and changes nothing', async t => {
