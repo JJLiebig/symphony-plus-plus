@@ -31,6 +31,20 @@ export function applyPatch(text, patch) {
   return out;
 }
 
+// The text without the patch, keeping every other change made since it was applied, or null when
+// one of its replacements is missing, repeated or no longer reverses exactly.
+export function revertPatch(text, patch) {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  let out = text;
+  for (const edit of [...patch.edits].reverse()) {
+    const replace = edit.replace.replaceAll('\n', eol);
+    const at = out.indexOf(replace);
+    if (at < 0 || out.indexOf(replace, at + 1) >= 0) return null;
+    out = out.slice(0, at) + edit.find.replaceAll('\n', eol) + out.slice(at + replace.length);
+  }
+  return applyPatch(out, patch) === text ? out : null;
+}
+
 function walk(node, visit) {
   if (!node || typeof node !== 'object') return;
   visit(node);
@@ -81,9 +95,11 @@ export async function planInstall(home, props, selectedSession) {
     if (current === null) { missing.push(`mods/${patch.mod}/main.js is missing`); continue; }
     mods.push(patch.mod);
     if (current.includes(MARK)) {
-      const original = await contents(backup);
+      // Edits made since outside the S++ lines are kept; the backup follows them.
+      const original = current.includes(patch.mark) ? revertPatch(current, patch) : null;
       if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
-      else if (original === null || applyPatch(original, patch) !== current) missing.push(`${patch.mod} was edited after the S++ chrome was installed`);
+      else if (original === null) missing.push(`The S++ lines in ${patch.mod} were edited`);
+      else if (original !== await contents(backup)) writes.push({ to: backup, body: original });
       continue;
     }
     const body = applyPatch(current, patch);
@@ -109,8 +125,8 @@ export async function planInstall(home, props, selectedSession) {
   return { layout: desk.name, backups, writes, mods };
 }
 
-// Writes that remove the chrome: both mods back from their backups, the S++ panel out of the layout.
-// The layout keeps every other change made since; its backup stays in place.
+// Writes that remove the chrome: the S++ lines out of each desk mod and the S++ panel out of the
+// layout. Both keep every other change made since; the layout's backup stays in place.
 export async function planRemoval(home) {
   const desk = await readDesk(home);
   const backups = join(home, 'data', 'sympp-chrome');
@@ -123,9 +139,9 @@ export async function planRemoval(home) {
     const current = await contents(file);
     if (current !== null) mods.push(patch.mod);
     if (!current?.includes(MARK)) continue;
-    const original = await contents(backup);
+    const original = current.includes(patch.mark) ? revertPatch(current, patch) : null;
     if (!current.includes(patch.mark)) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
-    else if (original === null || applyPatch(original, patch) !== current) missing.push(`${patch.mod} was edited after the S++ chrome was installed; its original is ${backup}`);
+    else if (original === null) missing.push(`The S++ lines in ${patch.mod} were edited; its original before the S++ chrome is ${backup}`);
     else writes.push({ to: file, body: original });
   }
   if (missing.length) return { missing };
