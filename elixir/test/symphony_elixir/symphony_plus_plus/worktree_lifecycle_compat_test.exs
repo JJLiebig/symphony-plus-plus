@@ -1,5 +1,5 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeLifecycleCompatTest do
-  use ExUnit.Case, async: false
+  use SymphonyElixir.TestSupport
 
   @moduletag :ci_slow
 
@@ -184,6 +184,124 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeLifecycleCompatTest do
     assert cleaned_package.worktree_path == nil
     assert cleaned_package.worktree_target_repo_root == nil
     assert cleaned_package.worktree_cleanup_proof == nil
+  end
+
+  test "cleanup runs before_remove inside the worktree after persisting proof", %{repo: repo} do
+    {fixture, package, prepared, opts} = prepare_hook_worktree(repo)
+    marker = Path.join(fixture.root, "hook-result")
+
+    write_workflow_file!(Workflow.workflow_file_path(),
+      hook_before_remove: "cat README.md > #{TestSupport.shell_path(marker)}"
+    )
+
+    git = System.find_executable("git")
+
+    checked_git = fn repo_root, args ->
+      if args == ["worktree", "remove", "--force", prepared.worktree_path] do
+        assert is_binary(repo.get!(WorkPackage, package.id).worktree_cleanup_proof)
+        assert File.read!(marker) == File.read!(Path.join(prepared.worktree_path, "README.md"))
+      end
+
+      System.cmd(git, ["-C", repo_root | args], stderr_to_stdout: true)
+    end
+
+    assert {:ok, %{status: "cleaned"}} = WorktreeLifecycle.cleanup(repo, package.id, Keyword.put(opts, :git, checked_git))
+    refute File.exists?(prepared.worktree_path)
+  end
+
+  test "cleanup logs before_remove failure and still removes the worktree", %{repo: repo} do
+    {_fixture, package, prepared, opts} = prepare_hook_worktree(repo)
+    write_workflow_file!(Workflow.workflow_file_path(), hook_before_remove: "exit 17")
+
+    log =
+      capture_log(fn ->
+        assert {:ok, %{status: "cleaned"}} = WorktreeLifecycle.cleanup(repo, package.id, opts)
+      end)
+
+    assert log =~ "Workspace hook failed hook=before_remove"
+    assert log =~ "status=17"
+    refute File.exists?(prepared.worktree_path)
+    assert repo.get!(WorkPackage, package.id).worktree_path == nil
+  end
+
+  test "cleanup logs before_remove timeout and still removes the worktree", %{repo: repo} do
+    {_fixture, package, prepared, opts} = prepare_hook_worktree(repo)
+    write_workflow_file!(Workflow.workflow_file_path(), hook_before_remove: "sleep 0.2", hook_timeout_ms: 10)
+
+    log =
+      capture_log(fn ->
+        assert {:ok, %{status: "cleaned"}} = WorktreeLifecycle.cleanup(repo, package.id, opts)
+      end)
+
+    assert log =~ "Workspace hook timed out hook=before_remove"
+    refute File.exists?(prepared.worktree_path)
+    assert repo.get!(WorkPackage, package.id).worktree_path == nil
+  end
+
+  test "cleanup removes the worktree without a configured hook", %{repo: repo} do
+    {_fixture, package, prepared, opts} = prepare_hook_worktree(repo)
+
+    assert {:ok, %{status: "cleaned"}} = WorktreeLifecycle.cleanup(repo, package.id, opts)
+    refute File.exists?(prepared.worktree_path)
+    assert repo.get!(WorkPackage, package.id).worktree_path == nil
+  end
+
+  test "cleanup logs unavailable workflow configuration and still removes worktrees", %{repo: repo} do
+    workflow_path = Workflow.workflow_file_path()
+    store_running? = is_pid(Process.whereis(WorkflowStore))
+    if store_running?, do: Supervisor.terminate_child(SymphonyElixir.Supervisor, WorkflowStore)
+
+    try do
+      for content <- ["---\n- invalid\n---\n", nil] do
+        {fixture, package, prepared, opts} = prepare_hook_worktree(repo)
+        unavailable_workflow = Path.join(fixture.root, "WORKFLOW.md")
+        if content, do: File.write!(unavailable_workflow, content)
+        Workflow.set_workflow_file_path(unavailable_workflow)
+        assert {:error, _reason} = Config.settings()
+
+        log =
+          capture_log(fn ->
+            assert {:ok, %{status: "cleaned"}} = WorktreeLifecycle.cleanup(repo, package.id, opts)
+          end)
+
+        assert log =~ "Skipping before_remove hook: workflow configuration is unavailable"
+        refute File.exists?(prepared.worktree_path)
+        assert repo.get!(WorkPackage, package.id).worktree_path == nil
+        repo.delete!(repo.get!(WorkPackage, package.id))
+      end
+    after
+      Workflow.set_workflow_file_path(workflow_path)
+      if store_running?, do: Supervisor.restart_child(SymphonyElixir.Supervisor, WorkflowStore)
+    end
+  end
+
+  test "cleanup skips before_remove when the checkout is already gone", %{repo: repo} do
+    {fixture, package, prepared, opts} = prepare_hook_worktree(repo)
+    marker = Path.join(fixture.root, "unexpected-hook")
+    write_workflow_file!(Workflow.workflow_file_path(), hook_before_remove: "touch #{TestSupport.shell_path(marker)}")
+    TestSupport.git_output!(fixture.repo_root, ["worktree", "remove", "--force", prepared.worktree_path])
+
+    assert {:ok, %{status: "stale_record_cleared"}} = WorktreeLifecycle.cleanup(repo, package.id, opts)
+    refute File.exists?(marker)
+    assert repo.get!(WorkPackage, package.id).worktree_path == nil
+  end
+
+  defp prepare_hook_worktree(repo) do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-worktree-hooks")
+    opts = [codex_home: Path.join(fixture.root, "codex-home")]
+
+    assert {:ok, package} =
+             Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-WT-HOOK", kind: "mcp", base_branch: "main"))
+
+    assert {:ok, prepared} =
+             WorktreeLifecycle.prepare(
+               repo,
+               package.id,
+               %{"repo_root" => fixture.repo_root, "base_branch" => "main", "branch" => "feat/cleanup-hook"},
+               opts
+             )
+
+    {fixture, package, prepared, opts}
   end
 
   defp partial_remove_git(worktree_path, status \\ 255) do
