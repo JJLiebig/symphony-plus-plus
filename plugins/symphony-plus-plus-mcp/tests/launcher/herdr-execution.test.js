@@ -50,7 +50,7 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
   fs.mkdirSync(path.join(home, "runtime"), { recursive: true });
   const runtime = path.join(home, "runtime", "codex-plugin.json");
   const database = path.join(home, "ledger.sqlite3");
-  fs.writeFileSync(runtime, JSON.stringify({ plugin_root: plugin, publication: { controls: { database } }, backend: { port } }));
+  fs.writeFileSync(runtime, JSON.stringify({ plugin_root: plugin, publication: { controls: { database } }, artifact: { prepared_release: { configured_workflow: "factory-workflow.md" } }, backend: { port: 1 } }));
   const observed = path.join(root, "observed.json");
   const server = path.join(root, "backend.js");
   const pidFile = path.join(root, "backend.pid");
@@ -62,6 +62,9 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
     if (-not $PrepareRuntimeOnly) { exit 9 }
     $e = @{}; Get-ChildItem Env:SYMPP_* | ForEach-Object { $e[$_.Name] = $_.Value }
     $e | ConvertTo-Json | Set-Content -LiteralPath ${ps(observed)}
+    $runtime = Get-Content -LiteralPath $env:SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
+    $runtime.backend.port = ${port}
+    $runtime | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $env:SYMPP_RUNTIME_FILE
     Start-Process -FilePath ${ps(process.execPath)} -ArgumentList ${ps('"' + server + '"')} -WindowStyle Hidden
     exit 4
   `);
@@ -83,7 +86,7 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
   backendPid = Number(fs.readFileSync(pidFile, "utf8"));
   process.kill(backendPid, 0);
   const env = JSON.parse(fs.readFileSync(observed, "utf8").replace(/^\uFEFF/, ""));
-  assert.deepEqual(env, { SYMPP_HOME: home, SYMPP_DATABASE: database, SYMPP_RUNTIME_FILE: runtime, SYMPP_BACKEND_PORT: String(port), SYMPP_OPEN_DASHBOARD: "0", SYMPP_SKILLS_MANAGED: "1", SYMPP_RUNTIME_CHANNEL: "beta" });
+  assert.deepEqual(env, { SYMPP_HOME: home, SYMPP_DATABASE: database, SYMPP_RUNTIME_FILE: runtime, SYMPP_BACKEND_PORT: "1", SYMPP_OPEN_DASHBOARD: "0", SYMPP_SKILLS_MANAGED: "1", SYMPP_RUNTIME_CHANNEL: "beta", SYMPP_WORKFLOW_FILE: "factory-workflow.md" });
   fs.unlinkSync(observed);
   const second = await run();
   assert.equal(second.code, 0, second.stdout);

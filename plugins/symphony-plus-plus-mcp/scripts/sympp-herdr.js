@@ -405,7 +405,7 @@ async function start(options) {
   if (!Number.isInteger(port) || port < 1 || port > 65535 || !text(runtime?.plugin_root) || (database != null && !text(database))) {
     fail("invalid_runtime", "Use the factory's published runtime record with plugin_root, backend.port and publication.controls.database.", 2);
   }
-  const endpoint = `http://127.0.0.1:${port}`;
+  let endpoint = `http://127.0.0.1:${port}`;
   const startFail = (code, help) => { const error = new Failure(code, help); error.endpoint = endpoint; throw error; };
   const databasePath = value => {
     const resolved = path.resolve(value.replace(/^\$HOME(?=\/|$)/, os.homedir()));
@@ -429,10 +429,12 @@ async function start(options) {
   }
   // Use the owning install's channel resolution, never the caller's factory overrides.
   const env = Object.fromEntries(TRANSPORT_ENV.filter(key => !key.startsWith("SYMPP_") && process.env[key]).map(key => [key, process.env[key]]));
+  const workflow = runtime.artifact?.prepared_release?.configured_workflow;
   Object.assign(env, {
     SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: path.dirname(path.dirname(runtimeFile)),
     ...(database ? { SYMPP_DATABASE: database } : {}), SYMPP_RUNTIME_FILE: runtimeFile,
     SYMPP_BACKEND_PORT: String(port), SYMPP_OPEN_DASHBOARD: "0",
+    ...(text(workflow) ? { SYMPP_WORKFLOW_FILE: workflow } : {}),
   });
   let launchError;
   // Start-Process detaches without inheriting Herdr pipes; Node detached PowerShell can exit before executing.
@@ -447,6 +449,10 @@ async function start(options) {
   child.unref();
   const deadline = Date.now() + 24000;
   do {
+    try {
+      const publishedPort = read(runtimeFile, true)?.backend?.port;
+      if (Number.isInteger(publishedPort) && publishedPort > 0 && publishedPort <= 65535) endpoint = `http://127.0.0.1:${publishedPort}`;
+    } catch (_) { } // Publication may be replaced while the launcher starts.
     if (await ready()) return { ok: true, endpoint, started: true };
     if (launchError) startFail("launcher_unavailable", "Make pwsh.exe and the factory's installed launcher available.");
     await new Promise(resolve => setTimeout(resolve, 200));
