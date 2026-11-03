@@ -46,6 +46,8 @@ Read-SymppArtifactManifest $Bundle | ConvertTo-Json -Depth 12 -Compress
   New-Item -ItemType Junction -Path $alias -Target $bundle | Out-Null
   $junction = & pwsh -NoProfile -File $probe $repo $alias $root | ConvertFrom-Json
   if ($junction.source_revision -ne ('a' * 40)) { throw 'A junctioned launcher ignored the checkout pin.' }
+  $prepared = & (Get-Command powershell.exe).Source -NoProfile -File $probe $repo $alias $root | ConvertFrom-Json
+  if ($prepared.source_revision -ne ('a' * 40)) { throw 'The Windows PowerShell prepared-start path ignored the junctioned pin.' }
   $selection = Get-Content -LiteralPath $pin -Raw | ConvertFrom-Json
   $selection.factory_plugin_root = $alias
   $selection | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pin
