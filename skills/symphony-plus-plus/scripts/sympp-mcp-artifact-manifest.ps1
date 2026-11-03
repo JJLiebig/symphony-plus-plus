@@ -115,7 +115,10 @@ function Get-SymppArtifactManifestPath([string]$PluginRoot) {
   $factoryPin = Join-Path (Resolve-SymppPluginHome) 'runtime/checkout-artifacts.json'
   if (Test-Path -LiteralPath $factoryPin -PathType Leaf) {
     $selection = Get-Content -LiteralPath $factoryPin -Raw | ConvertFrom-Json
-    if ([string]$selection.factory_plugin_root -ieq $PluginRoot) { return $factoryPin }
+    if ([string]$selection.factory_plugin_root -ieq $PluginRoot) {
+      if ($selection.checkout.skills_hash -eq (Get-SymppSkillsBundleHash $PluginRoot)) { return $factoryPin }
+      Remove-Item -LiteralPath $factoryPin -Force
+    }
   }
   foreach ($relativePath in @(".sympp-runtime-artifacts.json", "assets/sympp-runtime-artifacts.json")) {
     $candidate = Join-Path $PluginRoot $relativePath

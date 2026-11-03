@@ -4,10 +4,6 @@ set windows-shell := ["pwsh", "-NoProfile", "-Command"]
 install:
     pwsh -NoProfile -File scripts/install-sympp-checkout.ps1
 
-# Return to the owning Skills installation's published channel on next start.
-follow:
-    pwsh -NoProfile -File scripts/follow-sympp-channel.ps1
-
 # Fast launcher, native view, and dashboard checks; no release qualification.
 test:
     pwsh -NoProfile -File plugins/symphony-plus-plus-mcp/tests/launcher/checkout-pin-tests.ps1

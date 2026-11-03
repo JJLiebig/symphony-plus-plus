@@ -37,11 +37,13 @@ open fresh agent sessions only when the command reports a Skills/contract change
 `HERDR_APP_HOME` selects a non-default Herdr home; existing chrome is retained.
 
 The checkout build stays selected through idle shutdown and reboot. Its commit,
-dirty flag and install time appear in the runtime record's `artifact.checkout` and
-the factory's `runtime/checkout-artifacts.json`. `just follow` restores Skills
-from the published runtime's commit and restarts on that channel. Use one Skills installation
+dirty flag, install time and Skills bundle hash appear in `artifact.checkout` and
+the factory's `runtime/checkout-artifacts.json`. Last install wins: `npx skills update`
+returns to published builds. On the next cold start, a changed Skills bundle quietly
+drops the checkout pin; an unchanged bundle keeps it. Use one Skills installation
 per factory; sharing its directory between independent factories is unsupported.
-Skills updates replace launcher files, so run `just install` again after one.
+Restart briefly loses client leases; the panel restarts an idle factory within about
+25 seconds, and bridges cold-start it on their next request.
 
 `just test` runs fast launcher/bridge and native-view behavior tests, checkout-pin
 selection, dashboard type/lint checks and Vitest, plus Skills mirror validation.
