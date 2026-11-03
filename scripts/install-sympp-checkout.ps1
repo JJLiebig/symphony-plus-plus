@@ -6,10 +6,6 @@ if (-not $SymppHome -or -not [IO.Path]::IsPathFullyQualified($SymppHome)) { thro
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $runtimeFile = Join-Path $SymppHome 'runtime/codex-plugin.json'
 $state = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
-$pluginRoot = [string]$state.plugin_root
-# Resolve the owning channel, never the checkout branch or an inherited override.
-$channel = & node -e "process.stdout.write(require(process.argv[1]).runtimeChannel())" (Join-Path $pluginRoot 'scripts/setup-sympp.js')
-if ($LASTEXITCODE -ne 0) { throw 'Could not identify the factory channel.' }
 $revision = (& git -C $repoRoot rev-parse HEAD).Trim()
 $dirty = [bool](& git -C $repoRoot status --porcelain --untracked-files=normal)
 & node (Join-Path $repoRoot 'scripts/package-portable-skills.mjs')
@@ -22,7 +18,7 @@ try {
 } finally { Pop-Location }
 $built = Get-Content -LiteralPath (Join-Path $output "sympp-runtime-$revision-windows-x64.manifest.json") -Raw | ConvertFrom-Json
 $manifest = @{
-  schema_version = 1; channel = $channel; source_revision = $revision; plugin = $built.plugin
+  schema_version = 1; source_revision = $revision; plugin = $built.plugin
   checkout = @{ revision = $revision; dirty = $dirty; installed_at = [DateTime]::UtcNow.ToString('o') }
   artifacts = @(@{
     platform = 'windows-x86_64'; source_revision = $revision

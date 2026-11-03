@@ -10,6 +10,18 @@ try {
   @{ channels = @{ stable = @{ manifest = @{ path = (Join-Path $root 'published.json') } } } } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $bundle 'assets/sympp-runtime-artifacts.json')
   $helpers = Join-Path $repo 'plugins/symphony-plus-plus-mcp/scripts'
   . (Join-Path $helpers 'sympp-mcp-launcher-helpers.ps1')
+  Copy-Item -LiteralPath (Join-Path $repo 'skills/symphony-plus-plus/.sympp-install.json') -Destination $bundle
+  $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'scripts/install-sympp-beta.ps1'), [ref]$null, [ref]$null)
+  $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-FactoryChannel' }, $true)
+  Invoke-Expression $definition.Extent.Text
+  $savedChannel = $env:SYMPP_RUNTIME_CHANNEL
+  try {
+    $env:SYMPP_RUNTIME_CHANNEL = 'beta'
+    $generation = Get-SymppPluginGenerationKey $bundle $bundle
+    $env:SYMPP_RUNTIME_CHANNEL = $null
+    $state = [pscustomobject]@{ plugin_root = $bundle; publication = @{ generation_key = $generation } }
+    if ((Get-FactoryChannel $state) -ne 'beta') { throw 'Installation changed a local factory channel when the shell omitted it.' }
+  } finally { $env:SYMPP_RUNTIME_CHANNEL = $savedChannel }
   $hash = Get-SymppSkillsBundleHash $bundle
   $pin = Join-Path $root 'runtime/checkout-artifacts.json'
   @{ factory_plugin_root = $bundle; source_revision = 'a' * 40; checkout = @{ revision = 'a' * 40; dirty = $true; skills_hash = $hash }; artifacts = @(@{ platform = 'windows-x86_64'; path = 'retained-cache.zip' }) } | ConvertTo-Json -Depth 8 | Set-Content $pin

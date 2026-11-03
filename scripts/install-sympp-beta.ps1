@@ -15,6 +15,18 @@ foreach ($name in @('sympp-launcher-runtime', 'sympp-mcp-launcher-helpers', 'sym
 }
 function Write-Diagnostic([string]$Message) { Write-Verbose $Message }
 
+function Get-FactoryChannel($State) {
+  if ($State.runtime_channel -in @('stable', 'beta')) { return $State.runtime_channel }
+  $saved = $env:SYMPP_RUNTIME_CHANNEL
+  try {
+    foreach ($channel in @('stable', 'beta')) {
+      $env:SYMPP_RUNTIME_CHANNEL = $channel
+      if ((Get-SymppPluginGenerationKey $State.plugin_root $State.plugin_root) -eq $State.publication.generation_key) { return $channel }
+    }
+    throw 'The factory Skills changed since startup. Reopen the factory before installing.'
+  } finally { $env:SYMPP_RUNTIME_CHANNEL = $saved }
+}
+
 function Assert-InstallPath([string]$Path) {
   if (-not [IO.Path]::IsPathFullyQualified($Path)) { throw 'Choose explicit absolute installation paths.' }
   $full = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
@@ -125,10 +137,7 @@ if ($pluginRoot -match '(?i)[\\/]plugins[\\/]cache[\\/]' -or
 }
 $originalInstall = Read-SymppPortableInstall $pluginRoot
 if (-not $originalInstall) { throw 'This command requires an existing beta portable Skills factory.' }
-$channel = if ($LocalCheckout) {
-  & node -e "process.stdout.write(require(process.argv[1]).runtimeChannel())" (Join-Path $pluginRoot 'scripts/setup-sympp.js')
-  if ($LASTEXITCODE -ne 0) { throw 'Could not identify the factory channel.' }
-} else { 'beta' }
+$channel = if ($LocalCheckout) { Get-FactoryChannel $original } else { 'beta' }
 $workspace = $null
 if (-not $LocalCheckout) {
   for ($directory = $pluginRoot; $directory; $directory = Split-Path -Parent $directory) {
@@ -179,6 +188,8 @@ $pinFile = if ($LocalCheckout) { Join-Path $SymppHome 'runtime/checkout-artifact
 $legacyPin = Join-Path $pluginRoot '.sympp-runtime-artifacts.json'
 $legacyPinText = if (Test-Path -LiteralPath $legacyPin) { Get-Content -LiteralPath $legacyPin -Raw } else { $null }
 $originalPinText = if (Test-Path -LiteralPath $pinFile) { Get-Content -LiteralPath $pinFile -Raw } else { $null }
+$checkoutPin = Join-Path $SymppHome 'runtime/checkout-artifacts.json'
+$checkoutPinText = if (Test-Path -LiteralPath $checkoutPin) { Get-Content -LiteralPath $checkoutPin -Raw } else { $null }
 [void](Assert-InstallPath $pinFile)
 Assert-InHome $runtimeFile $SymppHome
 $nativeArgs = @('--factory', $runtimeFile)
@@ -218,6 +229,7 @@ try {
   Copy-Item -LiteralPath (Join-Path $pluginRoot '.sympp-install.json') -Destination $stage
   Copy-Item -LiteralPath $bundleSource -Destination $candidateBundle -Recurse
   $manifest = (Read-SymppManifestReferenceContent $ArtifactManifest '') | ConvertFrom-Json
+  if ($LocalCheckout) { $manifest | Add-Member -NotePropertyName channel -NotePropertyValue $channel -Force }
   if ((Get-JsonFirstPathValue $manifest @(@('channel'), @('release', 'channel'))) -ne $channel) {
     throw 'The runtime manifest must explicitly declare the beta channel.'
   }
@@ -263,6 +275,7 @@ try {
     & node $nativeInstaller --endpoint $origin.GetLeftPart([UriPartial]::Authority) --home $HerdrAppHome --replace @nativeArgs | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The native view could not be installed; the beta backend is unchanged.' }
     Write-InstallJson $pinFile $manifest
+    if (-not $LocalCheckout -and (Test-Path -LiteralPath $checkoutPin)) { Remove-Item -LiteralPath $checkoutPin -Force }
     if ($LocalCheckout -and (Test-Path -LiteralPath $legacyPin)) { Remove-Item -LiteralPath $legacyPin -Force }
     Write-Host "Factory is current ($revision); backend unchanged."
     return
@@ -296,6 +309,7 @@ try {
   else { Write-Host 'Restarting the factory. MCP clients reconnect on their next request. Check an interrupted write before retrying it.' }
   try {
     if ($backendRunning) { Stop-InstallBackend $original }
+    if (-not $LocalCheckout -and (Test-Path -LiteralPath $checkoutPin)) { Remove-Item -LiteralPath $checkoutPin -Force }
     if ($bundleChanged) {
       if (-not $LocalCheckout) { Assert-InHome $pluginRoot $workspace }
       Assert-InHome $bundleBackup $SymppHome
@@ -324,6 +338,7 @@ try {
     if ($LocalCheckout) { $rollbackManifest.factory_plugin_root = $pluginRoot }
     Write-InstallJson $pinFile $rollbackManifest
     if ($LocalCheckout) { Write-InstallJson $legacyPin $rollbackManifest }
+    if (-not $LocalCheckout -and $null -ne $checkoutPinText) { [IO.File]::WriteAllText($checkoutPin, $checkoutPinText) }
     Write-InstallJson $runtimeFile $original
     $startupLock.Dispose(); $startupLock = $null
     Start-InstallBackend
