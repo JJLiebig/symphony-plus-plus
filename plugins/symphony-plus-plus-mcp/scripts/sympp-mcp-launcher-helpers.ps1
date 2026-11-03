@@ -126,8 +126,7 @@ function Get-SymppSkillsBundleHash([string]$PluginRoot) {
     [IO.Path]::GetRelativePath($PluginRoot, $_.FullName).Replace('\', '/') + ' ' + (Get-FileSha256 $_.FullName)
   })
   [Array]::Sort($records, [StringComparer]::Ordinal)
-  $bytes = [Text.Encoding]::UTF8.GetBytes(($records -join "`n"))
-  return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+  return Get-SymppStringSha256 ($records -join "`n")
 }
 
 function Read-SymppPortableInstall([string]$PluginRoot) {

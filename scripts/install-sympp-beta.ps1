@@ -186,8 +186,6 @@ if ($original.runtime_mode -ne 'artifact' -or $original.backend.managed -ne $tru
 $launcher = Join-Path $pluginRoot 'scripts/start-sympp-mcp.ps1'
 $pinFile = if ($LocalCheckout) { Join-Path $SymppHome 'runtime/checkout-artifacts.json' } else { Join-Path $pluginRoot '.sympp-runtime-artifacts.json' }
 $legacyPin = Join-Path $pluginRoot '.sympp-runtime-artifacts.json'
-$legacyPinText = if (Test-Path -LiteralPath $legacyPin) { Get-Content -LiteralPath $legacyPin -Raw } else { $null }
-$originalPinText = if (Test-Path -LiteralPath $pinFile) { Get-Content -LiteralPath $pinFile -Raw } else { $null }
 $checkoutPin = Join-Path $SymppHome 'runtime/checkout-artifacts.json'
 $checkoutPinText = if (Test-Path -LiteralPath $checkoutPin) { Get-Content -LiteralPath $checkoutPin -Raw } else { $null }
 [void](Assert-InstallPath $pinFile)
@@ -335,7 +333,11 @@ try {
       if (Test-Path -LiteralPath $pluginRoot) { Remove-Item -LiteralPath $pluginRoot -Recurse -Force }
       Move-Item -LiteralPath $bundleBackup -Destination $pluginRoot
     }
-    if ($LocalCheckout) { $rollbackManifest.factory_plugin_root = $pluginRoot }
+    if ($LocalCheckout) {
+      $rollbackManifest.factory_plugin_root = $pluginRoot
+      if (-not $rollbackManifest.checkout) { $rollbackManifest.checkout = [pscustomobject]@{ revision = $original.backend.source_revision } }
+      $rollbackManifest.checkout | Add-Member -NotePropertyName skills_hash -NotePropertyValue (Get-SymppSkillsBundleHash $pluginRoot) -Force
+    }
     Write-InstallJson $pinFile $rollbackManifest
     if ($LocalCheckout) { Write-InstallJson $legacyPin $rollbackManifest }
     if (-not $LocalCheckout -and $null -ne $checkoutPinText) { [IO.File]::WriteAllText($checkoutPin, $checkoutPinText) }
@@ -344,12 +346,6 @@ try {
     Start-InstallBackend
     $restored = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
     Assert-FactoryReady $restored $original.backend.source_revision $originalContract
-    if ($LocalCheckout) {
-      if ($null -ne $legacyPinText) { [IO.File]::WriteAllText($legacyPin, $legacyPinText) }
-      else { Remove-Item -LiteralPath $legacyPin -Force }
-    }
-    if ($null -ne $originalPinText) { [IO.File]::WriteAllText($pinFile, $originalPinText) }
-    elseif ($LocalCheckout) { Remove-Item -LiteralPath $pinFile -Force }
     throw "Beta installation failed; the previous runtime is serving again. $($failure.Exception.Message)"
   }
   if ($LocalCheckout -and (Test-Path -LiteralPath $legacyPin)) { Remove-Item -LiteralPath $legacyPin -Force }

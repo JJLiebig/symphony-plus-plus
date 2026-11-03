@@ -118,6 +118,8 @@ function Get-SymppArtifactManifestPath([string]$PluginRoot) {
     if ([string]$selection.factory_plugin_root -ieq $PluginRoot) {
       if ($selection.checkout.skills_hash -eq (Get-SymppSkillsBundleHash $PluginRoot)) { return $factoryPin }
       Remove-Item -LiteralPath $factoryPin -Force
+      $legacyPin = Join-Path $PluginRoot '.sympp-runtime-artifacts.json'
+      if (Test-Path -LiteralPath $legacyPin) { Remove-Item -LiteralPath $legacyPin -Force }
     }
   }
   foreach ($relativePath in @(".sympp-runtime-artifacts.json", "assets/sympp-runtime-artifacts.json")) {
