@@ -200,16 +200,28 @@ test('--chrome refuses a home without the personal desk and changes nothing', as
   assert.deepEqual(await snapshot(home), before);
 });
 
-test('an edit made after installing keeps both installing and removing from overwriting it', async t => {
+test('edits made after installing are kept by installing and removing; edited S++ lines are refused', async t => {
   const home = await deskHome(t);
-  assert.equal(install(home, ...ENDPOINT, '--chrome').status, 0);
   const file = join(home, 'mods', 'desk-tabs', 'main.js');
+  const plain = await readFile(file, 'utf8');
+  assert.equal(install(home, ...ENDPOINT, '--chrome').status, 0);
   await writeFile(file, (await readFile(file, 'utf8')) + '// my later tweak\r\n');
+  const tweaked = await readFile(file, 'utf8');
+  const again = install(home, ...ENDPOINT, '--chrome');
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.equal(await readFile(file, 'utf8'), tweaked, 'the patched mod keeps the later edit');
+  const removed = install(home, '--remove-chrome');
+  assert.equal(removed.status, 0, removed.stdout + removed.stderr);
+  assert.equal(await readFile(file, 'utf8'), plain + '// my later tweak\r\n', 'removal takes out only the S++ lines');
+
+  assert.equal(install(home, ...ENDPOINT, '--chrome').status, 0);
+  const agents = join(home, 'mods', 'desk-agents', 'main.js');
+  await writeFile(agents, (await readFile(agents, 'utf8')).replace('symppStage(k.address, Date.now())', 'symppStage(k.address, 0)'));
   const before = await snapshot(home);
   for (const args of [[...ENDPOINT, '--chrome'], ['--remove-chrome']]) {
     const result = install(home, ...args);
     assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(result.stdout, /desk-tabs was edited after the S\+\+ chrome was installed/);
+    assert.match(result.stdout, /The S\+\+ lines in desk-agents were edited/);
     assert.deepEqual(await snapshot(home), before);
   }
 });

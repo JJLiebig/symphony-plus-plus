@@ -82,8 +82,9 @@ The installer backs up the layout and the desk mods under `data/sympp-chrome`, a
 a `sympp` panel to the layout's `panel-body` stack, and patches the desk mods in
 place; running it again changes nothing. It refuses, listing what is missing,
 when the layout has no `panel-body` stack, uses Herdr's own `tabs` or `agents`
-mod, or a desk mod differs from what its patch expects or was edited after
-installing. Other mods can add their panels the same way through
+mod, a desk mod differs from what its patch expects, or its S++ lines were edited.
+Edits made since elsewhere in a desk mod are kept, removal included. Other mods can add
+their panels the same way through
 `shared("workspace.panel_buttons")` entries `{ id, label, icon, iconDark? }`: an
 SVG icon is tinted like Files and Changes; a picture shows as it is, `iconDark`
 on a dark theme. Tabs take marks the same way through `shared("workspace.tab_marks")`
