@@ -119,7 +119,11 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     await mkdir(installed.env.CODEX_HOME!, { recursive: true });
     // The job requires this fetchable head's tree to equal the combined CI tree.
     await installed.ok('codex.exe', ['plugin', 'marketplace', 'add', 'https://github.com/JJLiebig/symphony-plus-plus', '--ref', process.env.ACCEPTANCE_HEAD_SHA!]);
-    await installed.ok('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
+    let upgrade = await installed.run('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
+    for (let attempt = 1; attempt < 3 && /git clone marketplace source timed out/.test(upgrade.stderr); attempt++) {
+      upgrade = await installed.run('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
+    }
+    expect(upgrade.code, `codex marketplace upgrade: ${upgrade.stdout}\n${upgrade.stderr}`).toBe(0);
     expect((await installed.ok('git', ['-C', join(installed.env.CODEX_HOME!, '.tmp/marketplaces/symphony-plus-plus'), 'rev-parse', 'HEAD'])).trim()).toBe(process.env.ACCEPTANCE_HEAD_SHA);
     await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus@symphony-plus-plus']);
     const companion = JSON.parse(await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus-mcp@symphony-plus-plus', '--json']));
