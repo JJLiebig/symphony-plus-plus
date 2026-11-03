@@ -301,7 +301,7 @@ try {
   if ($rollback.runtime.source_revision -ne $original.backend.source_revision) { throw 'The previous beta artifact is unavailable for rollback.' }
   if ($backendRunning) { Assert-FactoryReady $original $original.backend.source_revision $originalContract }
   if ($bundleChanged -or $originalContract -ne $install.contract_fingerprint) {
-    Write-Host 'Skills or MCP contract changed. Open fresh agent sessions to see the update.'
+    Write-Host 'Skills or MCP contract changed. Open fresh sessions to see the update.'
   }
   if (-not $backendRunning) { Write-Host 'Starting the factory.' }
   else { Write-Host 'Restarting the factory. MCP clients reconnect on their next request. Check an interrupted write before retrying it.' }
