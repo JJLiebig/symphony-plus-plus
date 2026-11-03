@@ -150,8 +150,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionArtifac
         assert status == 0, output
         assert output =~ "runtimeMode: artifact"
         assert output =~ "artifactStatus: artifact_selected"
-        assert normalize_path_fragment(output) =~ "/#{String.slice(artifact_revision, 0, 12)}/"
-        refute normalize_path_fragment(output) =~ "/#{String.slice(installed_revision, 0, 12)}/"
+        cache_key = mcp_cache_root |> Path.join("sympp-runtime.zip") |> file_sha256() |> String.slice(0, 16)
+        expected_cache = Path.join([sympp_home, "rt", "windows-x86_64", cache_key])
+        assert normalize_path_fragment(output) =~ "artifactcache: #{normalize_path_fragment(expected_cache)}"
       after
         File.rm_rf!(temp_codex_home)
       end
