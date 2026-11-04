@@ -31,7 +31,7 @@ import * as R from "./rails.js";
 import * as C from "./controls.js";
 import * as Chrome from "./chrome.js";
 import * as S from "./studio.js";
-import { request } from "./transport.js";
+import { request, remoteRequest } from "./transport.js";
 import { button, message } from "./ui.js";
 import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
@@ -99,7 +99,7 @@ export default class Lens extends View {
     this.dashboard = M.dashboardUrl(this.endpoint, given.dashboardUrl);
     this.repoTopics = given.repoTopics && typeof given.repoTopics === "object" ? given.repoTopics : null;
     this.hosts = given.hosts ?? null;
-    this.request = request;
+    this.request = given.remote ? remoteRequest(this.endpoint, async () => JSON.parse(await fs.readFile(`${appHome()}/sympp-remote.json`, "utf8"))) : request;
     this.net = M.initialFetch();
     this.detailNet = { jobId: null, ...M.initialFetch() };
     this.reading = false;
@@ -229,7 +229,7 @@ export default class Lens extends View {
   // only from one copy at a time: the others see the shared start and wait for it.
   startServer(cx) {
     const host = this.hosts?.local;
-    if (!host?.runtime || this.starting || this.outage) return;
+    if (this.given.remote || !host?.runtime || this.starting || this.outage) return;
     const at = shared(STARTING);
     if (typeof at === "number" && Date.now() - at < START_WAIT) return;
     this.outage = true;
@@ -1012,7 +1012,7 @@ export default class Lens extends View {
     const board = this.net.data;
     if (!board) {
       if (!this.net.error) return this.root(t, [message(t, "Reading S++…", null)]);
-      if (this.starting || now - (shared(STARTING) || 0) < START_WAIT) return this.root(t, [message(t, "Starting S++…", null)]);
+      if (!this.given.remote && (this.starting || now - (shared(STARTING) || 0) < START_WAIT)) return this.root(t, [message(t, "Starting S++…", null)]);
       return this.root(t, [message(t, this.startFailed ? "Couldn't start S++" : "Couldn't read S++", this.startFailed ? null : this.net.error, [
         button(t, "retry-first", this.reading ? "Reading…" : "Retry", (cx) => this.retry(cx), { strong: true }),
         ...(this.dashboard ? [button(t, "dashboard-first", "Open dashboard", (cx) => this.openDashboard(cx))] : []),

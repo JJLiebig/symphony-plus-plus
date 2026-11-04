@@ -19,6 +19,7 @@ const EXTERNAL_HEALTH_CACHE_TTL_MS = 2000;
 const HEALTH_PROBE_TIMEOUT_MS = 10000;
 const HEALTH_COALESCE_TIMEOUT_MS = 30000;
 const CLEANUP_SOURCE_CHANGED = Symbol("cleanup_source_changed");
+let remoteConnection = null;
 const agent = new http.Agent({ keepAlive: true });
 const generationWatchers = [];
 let generationWatchReady = false;
@@ -814,9 +815,9 @@ function resolveStateIdentity(state, pluginRoot, cachedIdentity) {
 function request(urlString, method, body, headers, timeoutMs) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlString);
-    if (!loopbackOrigin(url.origin)) return reject(new Error(`non-loopback URL rejected: ${url.origin}`));
+    if (!(remoteConnection ? url.origin === remoteConnection.origin : loopbackOrigin(url.origin))) return reject(new Error(`non-loopback URL rejected: ${url.origin}`));
     let connected = false;
-    const req = http.request(url, { method, headers: headers || {}, agent }, (res) => {
+    const req = http.request(url, { method, headers: { ...headers, ...(remoteConnection?.token ? { Authorization: `Bearer ${remoteConnection.token}` } : {}) }, agent }, (res) => {
       const chunks = [];
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => resolve({ status: res.statusCode || 0, headers: res.headers, body: Buffer.concat(chunks).toString("utf8") }));
@@ -855,7 +856,7 @@ async function mcpPost(url, body, sessionId, protocol, timeoutMs) {
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   if (protocol) headers["MCP-Protocol-Version"] = protocol;
   const response = await request(url, "POST", body, headers, timeoutMs);
-  return { ok: response.status >= 200 && response.status < 300, status: response.status, headers: response.headers, lines: responseLines(response), error: response.body || `HTTP ${response.status}`, mayHaveReachedBackend: true };
+  return { ok: response.status >= 200 && response.status < 300, status: response.status, headers: response.headers, lines: responseLines(response), error: response.status === 401 ? "Remote Symphony++ authentication failed (HTTP 401). Run setup --server again to refresh the token." : response.body || `HTTP ${response.status}`, mayHaveReachedBackend: true };
 }
 
 function replayableDeliveryFailure(parsed, response) {
@@ -1214,67 +1215,69 @@ async function bridge(identity, state, runtimeFile) {
     protocol = protocolFrom(initialized.lines) || protocol || "2025-03-26";
   };
   try {
-    trace("generation_attach_preflight");
-    if (!generationValidForAttachment(identity)) return false;
-    const generationValidation = beginGenerationAttachmentValidation(identity);
-    cleanupScript = prepareCleanupScript(identity);
-    if (cleanupScript === CLEANUP_SOURCE_CHANGED) {
-      trace("warm_miss_generation");
-      cleanupAllowed = false;
-      cleanupScript = null;
-      throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
-    }
-    if (!cleanupScript) {
-      trace("warm_miss_cleanup");
-      return false;
-    }
-    localLease = createLocalLease(runtimeFile, state, identity, clientId);
-    const confirmedState = readJson(runtimeFile);
-    const confirmed = resolveStateIdentity(confirmedState, path.resolve(__dirname, ".."), identity);
-    if (!confirmed || confirmed.runtimeKey.toLowerCase() !== identity.runtimeKey.toLowerCase()) {
-      trace("warm_miss_state");
-      return false;
-    }
-    current = { identity: confirmed, state: confirmedState, mcpUrl: `${confirmed.backend}/mcp` };
-    const preflight = await ensureRuntimeHealth(runtimeFile, confirmedState, confirmed, clientId);
-    if (preflight.attachedResponse) {
-      attached = true;
-    }
-    if (!preflight.healthy) {
-      trace("warm_miss_health");
-      return false;
-    }
-    let attachedResponse = preflight.attachedResponse;
-    if (!attachedResponse) {
-      try {
-        attachedResponse = await clientLease(current.mcpUrl, clientId, "attach", true);
-        attached = true;
-      } catch (_) {
-        trace("warm_miss_backend");
+    if (!remoteConnection) {
+      trace("generation_attach_preflight");
+      if (!generationValidForAttachment(identity)) return false;
+      const generationValidation = beginGenerationAttachmentValidation(identity);
+      cleanupScript = prepareCleanupScript(identity);
+      if (cleanupScript === CLEANUP_SOURCE_CHANGED) {
+        trace("warm_miss_generation");
+        cleanupAllowed = false;
+        cleanupScript = null;
+        throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+      }
+      if (!cleanupScript) {
+        trace("warm_miss_cleanup");
         return false;
       }
-    }
-    if (!await finishGenerationAttachmentValidation(generationValidation, identity, "initial")) {
-      trace("warm_miss_generation");
-      return false;
-    }
-    const cleanupChanged = cleanupSourcesChanged(identity, cleanupScript);
-    if (cleanupChanged === null) {
-      trace("warm_miss_cleanup");
-      return false;
-    }
-    if (cleanupChanged) {
-      trace("warm_miss_generation");
-      cleanupAllowed = false;
-      throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
-    }
-    if (!generationValidForAttachment(identity)) return false;
-    closeGenerationWatchers();
-    trace("generation_attach_handles_released");
-    scheduleHeartbeat(attachedResponse);
-    trace("node_bridge_selected");
-    diagnostic(`Symphony++ MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
+      localLease = createLocalLease(runtimeFile, state, identity, clientId);
+      const confirmedState = readJson(runtimeFile);
+      const confirmed = resolveStateIdentity(confirmedState, path.resolve(__dirname, ".."), identity);
+      if (!confirmed || confirmed.runtimeKey.toLowerCase() !== identity.runtimeKey.toLowerCase()) {
+        trace("warm_miss_state");
+        return false;
+      }
+      current = { identity: confirmed, state: confirmedState, mcpUrl: `${confirmed.backend}/mcp` };
+      const preflight = await ensureRuntimeHealth(runtimeFile, confirmedState, confirmed, clientId);
+      if (preflight.attachedResponse) {
+        attached = true;
+      }
+      if (!preflight.healthy) {
+        trace("warm_miss_health");
+        return false;
+      }
+      let attachedResponse = preflight.attachedResponse;
+      if (!attachedResponse) {
+        try {
+          attachedResponse = await clientLease(current.mcpUrl, clientId, "attach", true);
+          attached = true;
+        } catch (_) {
+          trace("warm_miss_backend");
+          return false;
+        }
+      }
+      if (!await finishGenerationAttachmentValidation(generationValidation, identity, "initial")) {
+        trace("warm_miss_generation");
+        return false;
+      }
+      const cleanupChanged = cleanupSourcesChanged(identity, cleanupScript);
+      if (cleanupChanged === null) {
+        trace("warm_miss_cleanup");
+        return false;
+      }
+      if (cleanupChanged) {
+        trace("warm_miss_generation");
+        cleanupAllowed = false;
+        throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+      }
+      if (!generationValidForAttachment(identity)) return false;
+      closeGenerationWatchers();
+      trace("generation_attach_handles_released");
+      scheduleHeartbeat(attachedResponse);
+      trace("node_bridge_selected");
+      diagnostic(`Symphony++ MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
 
+    }
     input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity, terminal: false });
     input.once("close", () => sessionLocation.close());
     for await (const line of input) {
@@ -1482,8 +1485,14 @@ async function main() {
   if (process.argv.includes("--runtime-supported")) {
     process.exit(0);
   }
-  if (process.argv.some((arg) => /^-(Help|ValidateOnly)$/i.test(arg)) || process.env.SYMPP_REPO_ROOT || String(process.env.SYMPP_MCP_BRIDGE_MODE || "http").toLowerCase() !== "http") process.exit(POWERSHELL_FALLBACK);
+  if (!process.env.SYMPP_SERVER_URL && (process.argv.some((arg) => /^-(Help|ValidateOnly)$/i.test(arg)) || process.env.SYMPP_REPO_ROOT || String(process.env.SYMPP_MCP_BRIDGE_MODE || "http").toLowerCase() !== "http")) process.exit(POWERSHELL_FALLBACK);
 
+  if (process.env.SYMPP_SERVER_URL) {
+    remoteConnection = require("./sympp-remote.js").remoteConnection(process.env.SYMPP_SERVER_URL, process.env.SYMPP_SERVER_TOKEN_FILE);
+    if (sessionLocation.native) await ensureLivenessProbe();
+    await bridge({ backend: remoteConnection.origin }, { backend: { managed: false } }, null);
+    return;
+  }
   const pluginRoot = path.resolve(__dirname, "..");
   const portable = portableInstall(pluginRoot);
   if (portable) {

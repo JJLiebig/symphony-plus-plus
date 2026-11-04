@@ -5,12 +5,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
+import remoteSetup from '../../plugins/symphony-plus-plus-mcp/scripts/sympp-remote.js';
 import { planInstall, planRemoval } from './chrome.mjs';
 
 const help = `Install the optional native S++ view into Herdr-app.
 Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [options]
        node integrations/herdr-next/install.mjs --lab [options]
        node integrations/herdr-next/install.mjs --remove-chrome [--home <folder>] [--app <executable>]
+  --server <ssh host>    Connect to an existing factory (or http://127.0.0.1:19998 on the server)
   --lab                  Install the factory-floor lab (sample data, no S++ needed) beside the view
   --home <folder>        Herdr-app home (default: HERDR_APP_HOME or ~/.config/herdr-app)
   --open <overview|panel> Open a native tab or a pane beside the focused terminal
@@ -91,7 +93,7 @@ async function main() {
   let values;
   try {
     ({ values } = parseArgs({ options: {
-      endpoint: { type: 'string' }, factory: { type: 'string' }, home: { type: 'string' },
+      server: { type: 'string' }, endpoint: { type: 'string' }, factory: { type: 'string' }, home: { type: 'string' },
       open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' }, mark: { type: 'string' },
       replace: { type: 'boolean' }, lab: { type: 'boolean' }, help: { type: 'boolean' },
       chrome: { type: 'boolean' }, 'remove-chrome': { type: 'boolean' },
@@ -110,6 +112,12 @@ async function main() {
     emit({ error: '--chrome adds the S++ view, not the lab', help });
     return 2;
   }
+  if (values.server && (values.endpoint || values.factory || values.lab)) {
+    emit({ error: '--server cannot be combined with --endpoint, --factory or --lab' });
+    return 2;
+  }
+  const remote = values.server ? remoteSetup.serverConnection(values.server) : null;
+  if (remote) values.endpoint = remote.endpoint;
   const badOpen = values.open && !['overview', 'panel'].includes(values.open);
   if (badOpen || (!values.endpoint && !values.lab)) {
     emit({ error: badOpen ? '--open must be overview or panel' : '--endpoint is required', help });
@@ -155,7 +163,8 @@ async function main() {
     const session = values.session || process.env.HC_SESSION;
     const factory = values.factory || process.env.SYMPP_RUNTIME_FILE || (process.env.SYMPP_HOME && join(process.env.SYMPP_HOME, 'runtime', 'codex-plugin.json'));
     const hosts = { local: { ...(factory ? { runtime: resolve(factory) } : {}), node: process.execPath, helper, ...(session ? { session } : {}) } };
-    props = { endpoint, hosts };
+    props = { endpoint, hosts, remote: Boolean(remote) };
+    if (remote) delete hosts.local.runtime;
   }
   const chrome = values.chrome ? await planInstall(home, { ...props, role: 'panel' }, values.session) : null;
   if (chrome?.missing) {
@@ -170,6 +179,7 @@ async function main() {
     await rm(join(home, 'tools', 'sympp-http.cjs'), { force: true });
     await rm(join(home, 'data', 'sympp-requests'), { recursive: true, force: true });
   }
+  if (remote) remoteSetup.privateWrite(join(home, 'sympp-remote.json'), JSON.stringify(remote));
   const command = values.open === 'panel' ? 'pane.split' : 'tab.new';
   const args = values.open === 'panel'
     ? { direction: 'right', mod, props: values.lab ? props : { ...props, role: 'panel' } }

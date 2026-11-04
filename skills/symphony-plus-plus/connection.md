@@ -76,3 +76,23 @@ To install an always-on factory on Linux from this Skills bundle, run
 See the [Linux service guide](https://github.com/JJLiebig/symphony-plus-plus/blob/beta/docs/linux-service.md)
 for prerequisites, ledger selection and the private token used by remote clients.
 This command installs the server; client registration is separate.
+
+## Connect to an existing factory
+
+Run setup with `--server <ssh-host>` to use an always-on factory over the private
+network. Setup resolves the SSH alias and reads its token once, stores that token
+with user-only permissions, and registers the bridge in the selected Codex home
+and Claude user scope. `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `SYMPP_HOME` select
+isolated client homes. The bridge never starts a local factory in this mode.
+
+```sh
+node <skill>/scripts/setup-sympp.js --server jjdev
+```
+
+On the factory machine itself, use `--server http://127.0.0.1:19998` (no token or
+SSH needed). Remote client setup and the bridge support Windows and Linux.
+
+For the optional Herdr panel, run
+`node integrations/herdr-next/install.mjs --server jjdev --chrome --replace`.
+The panel uses the same remote factory and does not start it when unreachable.
+Rerun setup or panel installation after rotating the server token.
