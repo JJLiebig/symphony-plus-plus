@@ -6,7 +6,7 @@ the configured tailnet IPv4 address. Remote requests require the factory token;
 loopback access keeps the existing local trust rules. The token grants the same
 operator access as a local client. Assignment grants and scope checks still apply.
 
-Install Git, mise, Python 3, a C/C++ build toolchain and the system libraries needed
+Install Git, mise, Python 3, iproute2 (`ss`), a C/C++ build toolchain and the system libraries needed
 by Erlang/Elixir. The installer uses `elixir/mise.toml` for Node, Erlang and Elixir.
 The user needs a working systemd user manager with linger enabled.
 

@@ -12,6 +12,7 @@ export SYMPP_SERVICE_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 [[ "$SYMPP_HOME" == /* && "$SYMPP_DATABASE" == /* ]] || { echo 'Factory home and ledger paths must be absolute.' >&2; exit 1; }
 [[ "$SYMPP_SERVICE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid service name.' >&2; exit 1; }
 systemctl --user show-environment >/dev/null
+command -v ss >/dev/null
 
 # Build before stopping the existing service. Never select a substitute ledger.
 cd "$repo_root/elixir"
@@ -21,7 +22,8 @@ mise exec -- npm --prefix assets run build
 mise exec -- mix local.hex --force
 mise exec -- mix local.rebar --force
 MIX_ENV=prod mise exec -- mix deps.get --only prod
-MIX_ENV=prod SYMPP_SOURCE_REVISION="$(git -C "$repo_root" rev-parse HEAD)" mise exec -- mix release symphony_elixir --overwrite
+export SYMPP_SOURCE_REVISION="$(git -C "$repo_root" rev-parse HEAD)"
+MIX_ENV=prod mise exec -- mix release symphony_elixir --overwrite
 
 release="$SYMPP_HOME/service/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 mkdir -p "$release" "$SYMPP_HOME/logs" "$SYMPP_SERVICE_CONFIG"
@@ -42,6 +44,7 @@ env = {
     'PATH': os.environ['PATH'],
     'SYMPP_HOME': home,
     'SYMPP_DATABASE': os.environ['SYMPP_DATABASE'],
+    'SYMPP_SOURCE_REVISION': os.environ['SYMPP_SOURCE_REVISION'],
     'SYMPP_SERVICE_MODE': '1',
     'SYMPP_SERVICE_HOST': os.environ['SYMPP_SERVICE_HOST'],
     'SYMPP_BACKEND_PORT': os.environ['SYMPP_BACKEND_PORT'],
@@ -76,16 +79,25 @@ python3 - <<'READY'
 import json
 import os
 import time
+import subprocess
 import urllib.error
 import urllib.request
 
-url = 'http://127.0.0.1:' + os.environ['SYMPP_BACKEND_PORT'] + '/mcp/readiness'
+port = os.environ['SYMPP_BACKEND_PORT']
+unit = os.environ['SYMPP_SERVICE_NAME'] + '.service'
+addresses = {'127.0.0.1:' + port, os.environ['SYMPP_SERVICE_HOST'] + ':' + port}
+url = 'http://127.0.0.1:' + port + '/mcp/readiness'
 deadline = time.monotonic() + 60
 while time.monotonic() < deadline:
     try:
         with urllib.request.urlopen(url, timeout=2) as response:
             health = json.load(response)
-        if health.get('status') == 'ok' and health.get('ledger', {}).get('reachable') is True:
+        pid = subprocess.check_output(['systemctl', '--user', 'show', unit, '-p', 'MainPID', '--value'], text=True).strip()
+        sockets = subprocess.check_output(['ss', '-H', '-ltnp', 'sport = :' + port], text=True).splitlines()
+        owned = {line.split()[3] for line in sockets if 'pid=' + pid + ',' in line}
+        if (pid != '0' and addresses <= owned and health.get('status') == 'ok'
+                and health.get('ledger', {}).get('reachable') is True
+                and health.get('source', {}).get('revision') == os.environ['SYMPP_SOURCE_REVISION']):
             break
     except (OSError, ValueError, urllib.error.URLError):
         pass

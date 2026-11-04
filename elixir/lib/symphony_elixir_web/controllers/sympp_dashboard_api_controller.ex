@@ -46,12 +46,10 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
   defp loopback_request?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
   defp loopback_request?(_remote_ip), do: false
 
-  defp local_host?(host) when is_binary(host) do
+  defp local_host?(host) do
     host = String.downcase(host)
     host in ["localhost", "127.0.0.1", "::1", "[::1]"] or String.ends_with?(host, ".localhost")
   end
-
-  defp local_host?(_host), do: false
 
   defp direct_local_request?(conn) do
     not forwarded_request?(conn)
