@@ -30,26 +30,26 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   @spec local_operator_browser?(Conn.t()) :: boolean()
   def local_operator_browser?(%Conn{} = conn) do
-    local_operator_request?(conn) and same_origin_browser_request?(conn)
+    SymphonyElixirWeb.FactoryAccessPlug.authenticated?(conn) or
+      (local_operator_request?(conn) and same_origin_browser_request?(conn))
   end
 
   @spec herdr_consumer?(Conn.t()) :: boolean()
   def herdr_consumer?(%Conn{} = conn), do: local_operator_request?(conn)
 
   defp local_operator_request?(%Conn{} = conn) do
-    loopback_request?(conn.remote_ip) and local_host?(conn.host) and direct_local_request?(conn)
+    SymphonyElixirWeb.FactoryAccessPlug.authenticated?(conn) or
+      (loopback_request?(conn.remote_ip) and local_host?(conn.host) and direct_local_request?(conn))
   end
 
   defp loopback_request?({127, _second, _third, _fourth}), do: true
   defp loopback_request?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
   defp loopback_request?(_remote_ip), do: false
 
-  defp local_host?(host) when is_binary(host) do
+  defp local_host?(host) do
     host = String.downcase(host)
     host in ["localhost", "127.0.0.1", "::1", "[::1]"] or String.ends_with?(host, ".localhost")
   end
-
-  defp local_host?(_host), do: false
 
   defp direct_local_request?(conn) do
     not forwarded_request?(conn)
@@ -711,9 +711,10 @@ defmodule SymphonyElixirWeb.SymppDashboardApiController do
 
   defp native_operator_request?(conn) do
     herdr_consumer?(conn) and native_json_request?(conn) and
-      Enum.all?(conn.req_headers, fn {name, _value} ->
-        name != "origin" and not String.starts_with?(name, ["sec-fetch-", "x-forwarded-"])
-      end)
+      (SymphonyElixirWeb.FactoryAccessPlug.authenticated?(conn) or
+         Enum.all?(conn.req_headers, fn {name, _value} ->
+           name != "origin" and not String.starts_with?(name, ["sec-fetch-", "x-forwarded-"])
+         end))
   end
 
   defp native_json_request?(conn) do

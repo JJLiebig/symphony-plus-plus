@@ -68,3 +68,11 @@ The [connection procedure](references/symphony-work-package/references/mcp_wirin
 covers marketplace/developer alternatives and assignment recovery. Skill
 visibility and health probes do not restore claims. Keep credentials out of
 skills, prompts and shared config; ordinary reviewers need no backend.
+
+## Linux factory server
+
+To install an always-on factory on Linux from this Skills bundle, run
+`SYMPP_SERVICE_HOST=100.123.207.19 bash ~/.agents/skills/symphony-plus-plus/scripts/setup-sympp-service.sh`.
+See the [Linux service guide](https://github.com/JJLiebig/symphony-plus-plus/blob/beta/docs/linux-service.md)
+for prerequisites, ledger selection and the private token used by remote clients.
+This command installs the server; client registration is separate.

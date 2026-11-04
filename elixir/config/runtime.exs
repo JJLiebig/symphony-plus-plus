@@ -21,6 +21,22 @@ if config_env() == :prod do
     end
   end
 
+  if truthy?.(System.get_env("SYMPP_SERVICE_MODE")) do
+    unless truthy?.(System.get_env("SYMPP_RUNTIME_ARTIFACT")) do
+      raise "SYMPP_SERVICE_MODE requires the packaged runtime"
+    end
+
+    host = System.fetch_env!("SYMPP_SERVICE_HOST")
+
+    case :inet.parse_address(String.to_charlist(host)) do
+      {:ok, {a, _, _, _}} when a not in [0, 127] -> :ok
+      _ -> raise "SYMPP_SERVICE_HOST must be a non-loopback IPv4 address"
+    end
+
+    config :symphony_elixir, :sympp_service, true
+    config :symphony_elixir, :sympp_service_host, host
+  end
+
   if truthy?.(System.get_env("SYMPP_RUNTIME_ARTIFACT")) do
     unless truthy?.(System.get_env("SYMPP_RUNTIME_ARTIFACT_ACKNOWLEDGED")) do
       raise "SYMPP_RUNTIME_ARTIFACT_ACKNOWLEDGED is required for packaged runtime startup"

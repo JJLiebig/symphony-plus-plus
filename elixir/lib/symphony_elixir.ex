@@ -19,6 +19,7 @@ defmodule SymphonyElixir.Application do
 
   use Application
 
+  alias SymphonyElixir.SymphonyPlusPlus.FactoryService
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.Repo
@@ -26,6 +27,7 @@ defmodule SymphonyElixir.Application do
 
   @impl true
   def start(_type, _args) do
+    :ok = FactoryService.initialize!()
     :ok = OfflineSandbox.verify!(Repo.database_path_without_side_effects())
     :ok = SymphonyElixir.LogFile.configure()
 
@@ -45,7 +47,8 @@ defmodule SymphonyElixir.Application do
       SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
     ] ++
       legacy_daemon_children() ++
-      mcp_runtime_children()
+      mcp_runtime_children() ++
+      FactoryService.listener_children()
   end
 
   defp legacy_daemon_children do
