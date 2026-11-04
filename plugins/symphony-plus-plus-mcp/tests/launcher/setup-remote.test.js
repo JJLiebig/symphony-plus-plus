@@ -24,4 +24,10 @@ test('remote setup registers a launchable bridge in selected Codex and user Clau
   const codex = fs.readFileSync(path.join(env.CODEX_HOME, 'config.toml'), 'utf8');
   assert.match(codex, /SYMPP_SERVER_URL = "http:\/\/127.0.0.1:19998"/);
   assert.doesNotMatch(codex, /SYMPP_DATABASE|SYMPP_RUNTIME_FILE/);
+  fs.writeFileSync(claude.env.SYMPP_SERVER_TOKEN_FILE, 'first-client-credential');
+  const second = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/setup-sympp.js'), '--host', 'codex', '--server', 'http://127.0.0.1:19999'], {
+    env: { ...env, CODEX_HOME: path.join(root, 'codex-second') }, cwd: root, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(second.status, 0, second.stdout + second.stderr);
+  assert.equal(fs.readFileSync(claude.env.SYMPP_SERVER_TOKEN_FILE, 'utf8'), 'first-client-credential');
 });

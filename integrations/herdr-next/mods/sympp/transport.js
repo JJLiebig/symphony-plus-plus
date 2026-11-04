@@ -16,10 +16,9 @@ export async function request(url, options = {}) {
 
 // Bind authentication to one configured origin; never send it to a navigation target.
 export function remoteRequest(endpoint, loadConfig) {
-  let config;
   return async (url, options = {}) => {
     if (new URL(url).origin !== endpoint) throw failure("S++ request does not match the configured server.");
-    config ??= await loadConfig();
+    const config = await loadConfig();
     if (config.endpoint !== endpoint) throw failure("S++ server changed. Reinstall the panel connection.");
     return request(url, { ...options, redirect: "error", headers: { ...options.headers,
       ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}) } });

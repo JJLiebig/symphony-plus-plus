@@ -27,13 +27,16 @@ test('installed remote connection authenticates board, actions and leases and re
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.closeAllConnections(); server.close(); });
   const endpoint = `http://127.0.0.1:${server.address().port}`;
-  const request = remoteRequest(endpoint, async () => ({ endpoint, token: 'panel-fixture' }));
+  let token = 'panel-fixture';
+  const request = remoteRequest(endpoint, async () => ({ endpoint, token }));
   for (const path of ['/api/v1/sympp/herdr/dashboard', '/api/v1/sympp/herdr/work-requests', '/mcp/client-lease']) {
     const res = await request(endpoint + path, path.endsWith('dashboard') ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     assert.equal(res.status, 200);
   }
   await assert.rejects(request('http://other.invalid/api'), /configured server/);
   assert.equal(paths.length, 3);
-  const denied = remoteRequest(endpoint, async () => ({ endpoint, token: 'wrong' }));
-  assert.equal((await denied(endpoint + '/api')).status, 401);
+  token = 'wrong';
+  assert.equal((await request(endpoint + '/api')).status, 401);
+  token = 'panel-fixture';
+  assert.equal((await request(endpoint + '/api')).status, 200);
 });

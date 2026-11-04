@@ -110,7 +110,7 @@ function main(args) {
   if (server) {
     const { serverConnection } = require("./sympp-remote.js");
     remote = serverConnection(server);
-    const tokenFile = path.join(symppHome, "remote-client-token");
+    const tokenFile = path.join(symppHome, `remote-client-${require("node:crypto").createHash("sha256").update(remote.endpoint).digest("hex").slice(0, 16)}.token`);
     env = { SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: symppHome, SYMPP_SERVER_URL: remote.endpoint, SYMPP_SERVER_TOKEN_FILE: tokenFile };
   }
   const registration = { type: "stdio", command: process.execPath, args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };

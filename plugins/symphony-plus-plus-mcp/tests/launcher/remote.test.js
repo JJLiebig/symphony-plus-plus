@@ -38,6 +38,7 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
     for await (const chunk of req) body += chunk;
     received.push({ url: req.url, headers: req.headers, body: JSON.parse(body) });
     if (req.headers.authorization !== "Bearer fixture-token") return res.writeHead(401).end("Unauthorized");
+    if (JSON.parse(body).params?.name === "ambiguous_mutation") { req.socket.destroy(); return; }
     res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "remote-session" });
     res.end(JSON.stringify({ jsonrpc: "2.0", id: JSON.parse(body).id, result: { protocolVersion: "2025-03-26", extra: "preserved" } }));
   });
@@ -48,7 +49,7 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
   assert.ok(nic, "a non-loopback interface exercises remote URL admission");
   const tokenFile = path.join(root, "token");
   fs.writeFileSync(tokenFile, "fixture-token");
-  async function run(token) {
+  async function run(token, tool = "list_work_requests") {
     fs.writeFileSync(tokenFile, token);
     const child = spawn(process.execPath, [path.resolve(__dirname, "../../scripts/start-sympp-mcp-bridge.js")], {
       env: { ...process.env, HC_TERMINAL_ID: "", HERDR_ENV: "", SYMPP_REPO_ROOT: "must-not-use", SYMPP_POWERSHELL: "must-not-start",
@@ -59,7 +60,7 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
     let stdout = "", stderr = "";
     child.stdout.on("data", c => stdout += c); child.stderr.on("data", c => stderr += c);
     child.stdin.end([ { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } },
-      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_work_requests", arguments: {} } } ].map(JSON.stringify).join("\n") + "\n");
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: {} } } ].map(JSON.stringify).join("\n") + "\n");
     const [code] = await once(child, "exit");
     assert.equal(code, 0, stderr);
     assert.equal(fs.existsSync(path.join(root, "runtime-must-not-exist")), false);
@@ -70,6 +71,9 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
   assert.equal(received[1].headers["mcp-session-id"], "remote-session");
   assert.ok(received[1].body.params._meta, "session location accompanies the tool request");
   assert.ok(received.every(r => r.url === "/mcp"));
+  const ambiguous = await run("fixture-token", "ambiguous_mutation");
+  assert.equal(ambiguous[1].error.data.reason, "backend_lost_after_request_started");
+  assert.equal(received.filter(r => r.body.params?.name === "ambiguous_mutation").length, 1);
   const denied = await run("wrong-token");
   assert.match(denied[0].error.data.detail, /authentication failed.*401/);
 });

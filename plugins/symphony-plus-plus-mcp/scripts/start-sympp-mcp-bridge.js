@@ -1310,6 +1310,10 @@ async function bridge(identity, state, runtimeFile) {
       } catch (error) {
         response = { ok: false, status: error.symppHttpStatus, error: error.message, lines: [], mayHaveReachedBackend: error.symppRequestMayHaveReachedBackend };
       }
+      if (remoteConnection && !response.ok && !Number.isInteger(response.status) && requestStarted && parsed?.method === "tools/call" && response.mayHaveReachedBackend !== false) {
+        process.stdout.write(`${JSON.stringify(indeterminateToolCall(parsed.id))}\n`);
+        continue;
+      }
       if (!response.ok && !Number.isInteger(response.status) && current.state.backend.managed === true) {
         const ambiguousToolCall = requestStarted && parsed && parsed.method === "tools/call" && response.mayHaveReachedBackend !== false;
         let recovered = false;
@@ -1488,6 +1492,7 @@ async function main() {
   if (!process.env.SYMPP_SERVER_URL && (process.argv.some((arg) => /^-(Help|ValidateOnly)$/i.test(arg)) || process.env.SYMPP_REPO_ROOT || String(process.env.SYMPP_MCP_BRIDGE_MODE || "http").toLowerCase() !== "http")) process.exit(POWERSHELL_FALLBACK);
 
   if (process.env.SYMPP_SERVER_URL) {
+    // The remote factory is always on; this client never elects or owns its lifecycle.
     remoteConnection = require("./sympp-remote.js").remoteConnection(process.env.SYMPP_SERVER_URL, process.env.SYMPP_SERVER_TOKEN_FILE);
     if (sessionLocation.native) await ensureLivenessProbe();
     await bridge({ backend: remoteConnection.origin }, { backend: { managed: false } }, null);

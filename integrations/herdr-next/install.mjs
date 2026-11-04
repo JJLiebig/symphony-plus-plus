@@ -5,7 +5,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
-import remoteSetup from '../../plugins/symphony-plus-plus-mcp/scripts/sympp-remote.js';
 import { planInstall, planRemoval } from './chrome.mjs';
 
 const help = `Install the optional native S++ view into Herdr-app.
@@ -116,6 +115,7 @@ async function main() {
     emit({ error: '--server cannot be combined with --endpoint, --factory or --lab' });
     return 2;
   }
+  const remoteSetup = values.server ? (await import('../../plugins/symphony-plus-plus-mcp/scripts/sympp-remote.js')).default : null;
   const remote = values.server ? remoteSetup.serverConnection(values.server) : null;
   if (remote) values.endpoint = remote.endpoint;
   const badOpen = values.open && !['overview', 'panel'].includes(values.open);
