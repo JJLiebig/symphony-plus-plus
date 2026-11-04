@@ -20,6 +20,7 @@ test:
 
 [linux]
 test:
+    node --test scripts/tests/linux-service-install.test.js
     node --test plugins/symphony-plus-plus-mcp/tests/launcher/*-tests.js plugins/symphony-plus-plus-mcp/tests/launcher/*.test.js integrations/herdr-next/*.test.mjs
     cd elixir && mise exec -- mix test test/symphony_elixir/symphony_plus_plus/mcp_http_endpoint_test.exs test/symphony_elixir/symphony_plus_plus/worktree_lifecycle_compat_test.exs test/symphony_elixir/symphony_plus_plus/factory_service_test.exs
     npm --prefix elixir/assets run quality

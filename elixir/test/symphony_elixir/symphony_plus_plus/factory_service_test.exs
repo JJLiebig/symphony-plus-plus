@@ -34,7 +34,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryServiceTest do
     System.put_env("SYMPP_HOME", home)
     System.put_env("SYMPP_MCP_SHUTDOWN_ON_IDLE", "1")
     Application.put_env(:symphony_elixir, :sympp_service, true)
-    assert :ok = FactoryService.initialize!()
+    results = Task.async_stream(1..12, fn _ -> FactoryService.initialize!() end, max_concurrency: 12)
+    assert Enum.all?(results, &(&1 == {:ok, :ok}))
     file = Path.join(home, "remote-token")
     token = File.read!(file)
     assert byte_size(String.trim(token)) == 43

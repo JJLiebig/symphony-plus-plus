@@ -9,6 +9,6 @@ if [[ ! -d "$source_root/.git" ]]; then
 else
   [[ -z "$(git -C "$source_root" status --porcelain)" ]] || { echo 'Service source checkout has local changes.' >&2; exit 1; }
   git -C "$source_root" fetch origin "$ref"
-  git -C "$source_root" merge --ff-only FETCH_HEAD
+  git -C "$source_root" checkout --detach FETCH_HEAD
 fi
 exec bash "$source_root/scripts/install-sympp-checkout.sh"

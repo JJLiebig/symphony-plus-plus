@@ -431,6 +431,9 @@ jobs:
             ${{ runner.os }}-mix-${{ hashFiles('elixir/mise.toml') }}-${{ hashFiles('elixir/mix.exs') }}-
             ${{ runner.os }}-mix-${{ hashFiles('elixir/mise.toml') }}-
 
+      - name: Qualify Linux service ref selection
+        run: node --test ../scripts/tests/linux-service-install.test.js
+
       - name: Run all retained ExUnit qualifications
         run: make ci-test
       - name: Retain complete qualification evidence
