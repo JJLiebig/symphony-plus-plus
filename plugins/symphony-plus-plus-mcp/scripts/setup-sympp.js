@@ -93,7 +93,7 @@ function main(args) {
   for (let i = 0; i < args.length; i += 2) {
     if (args[i] === "--host" && ["auto", "codex", "claude", "both"].includes(args[i + 1])) selection = args[i + 1];
     else if (args[i] === "--server" && args[i + 1]) server = args[i + 1];
-    else throw new Error("Unknown argument. " + usage);
+    else { emit("error", "Unknown argument. " + usage); process.exitCode = 2; return; }
   }
   if (!server && (process.platform !== "win32" || process.arch !== "x64")) throw new Error("Local Symphony++ Skills setup supports Windows x64 only. Use --server for an existing factory.");
   const commands = { codex: hostInstalled("codex"), claude: hostInstalled("claude") };
