@@ -17,6 +17,8 @@ duplicate status/review reporting are optional.
 
 ## Install
 
+For an always-on Linux factory shared across devices, see [Linux service](docs/linux-service.md).
+
 Windows installation and connection for Codex or Claude Code:
 
 Follow [Portable skills](docs/portable-skills.md) for the default global install

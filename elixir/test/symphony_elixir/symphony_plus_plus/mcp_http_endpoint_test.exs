@@ -148,6 +148,69 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     :ok
   end
 
+  describe "factory service token access" do
+    setup do
+      keys = [:sympp_service, :sympp_remote_token_hash]
+      previous = Map.new(keys, &{&1, Application.get_env(:symphony_elixir, &1)})
+      token = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+      Application.put_env(:symphony_elixir, :sympp_service, true)
+      Application.put_env(:symphony_elixir, :sympp_remote_token_hash, :crypto.hash(:sha256, token))
+
+      on_exit(fn ->
+        for {key, value} <- previous do
+          if is_nil(value) do
+            Application.delete_env(:symphony_elixir, key)
+          else
+            Application.put_env(:symphony_elixir, key, value)
+          end
+        end
+      end)
+
+      %{remote: [remote_ip: {100, 64, 0, 2}, host: "100.123.207.19"], headers: [{"authorization", "Bearer " <> token}]}
+    end
+
+    test "all remote entrypoints require the token before routing or parsing", %{remote: remote} do
+      for headers <- [[], [{"authorization", "Bearer wrong"}], [{"authorization", "Basic wrong"}]] do
+        for path <- ["/mcp", "/mcp/readiness", "/mcp/client-lease", "/sympp/board", "/assets/index.js", "/api/v1/sympp/herdr/dashboard", "/api/v1/sympp/operator/dashboard"] do
+          assert get_local(path, headers, remote).status == 401
+        end
+
+        assert post_raw("not json", headers, remote).status == 401
+        assert post_raw("not json", headers, Keyword.put(remote, :path, "/api/v1/sympp/herdr/work-requests")).status == 401
+      end
+    end
+
+    test "remote token grants the existing MCP operator session and dashboard access", %{remote: remote, headers: headers} do
+      assert get_local("/mcp/readiness", headers, remote).status == 200
+      init = post_json(initialize_request("remote-init"), headers, remote)
+      assert init.status == 200
+      [session] = get_resp_header(init, "mcp-session-id")
+      session_headers = [{"mcp-session-id", session} | headers]
+      response = post_json(tool_call_request("remote-read", "list_work_requests", %{}), session_headers, remote) |> json_response(200)
+      refute response["error"]
+      refute response["result"]["isError"]
+
+      for action <- ["attach", "heartbeat", "detach"] do
+        assert post_json(%{"client_id" => "remote-service-test", "action" => action}, headers, Keyword.put(remote, :path, "/mcp/client-lease")).status == 200
+      end
+
+      for path <- ["/api/v1/sympp/herdr/dashboard", "/api/v1/sympp/operator/dashboard"] do
+        assert get_local(path, headers, remote).status == 200
+      end
+
+      # Authentication is required on every follow-up, not just initialize.
+      assert post_json(tool_call_request("lost-token", "sympp.health", %{}), [{"mcp-session-id", session}], remote).status == 401
+      assert get_local("/mcp/readiness", [{"x-forwarded-for", "127.0.0.1"} | headers], remote).status == 403
+    end
+
+    test "service mode preserves the unauthenticated loopback boundary", %{headers: headers} do
+      assert get_local("/mcp/readiness").status == 200
+      assert get_local("/mcp/readiness", headers, host: "untrusted.example").status == 403
+      assert get_local("/mcp/readiness", [{"origin", "http://untrusted.example"}]).status == 403
+      assert get_local("/mcp/readiness", [{"x-forwarded-for", "100.64.0.2"}]).status == 403
+    end
+  end
+
   test "chief registration supersedes by domain and attributes only the current session's work" do
     first = [{"mcp-session-id", unbound_startup_handshake(1)}]
     native = %{"core_id" => "core-chief", "terminal_id" => "t9", "pid" => 321, "process_id" => 654, "client_id" => "chief-client"}
