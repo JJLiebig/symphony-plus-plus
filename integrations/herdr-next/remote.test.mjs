@@ -9,6 +9,15 @@ import { once } from 'node:events';
 import { remoteRequest } from './mods/sympp/transport.js';
 
 test('installed remote connection authenticates board, actions and leases and rejects another origin', async t => {
+  // Herdr's native fetch accepts only method, headers and body. Keep Node's
+  // broader fetch API from hiding an incompatible call to that host boundary.
+  const nativeFetch = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', (url, options = {}) => {
+    for (const key of Object.keys(options)) {
+      if (!['method', 'headers', 'body'].includes(key)) throw new TypeError('Unsupported native fetch option: ' + key);
+    }
+    return nativeFetch(url, options);
+  });
   const home = await mkdtemp(join(tmpdir(), 'sympp-remote-panel-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const result = spawnSync(process.execPath, ['integrations/herdr-next/install.mjs', '--server', 'http://127.0.0.1:19998', '--home', home], { encoding: 'utf8' });
