@@ -72,4 +72,25 @@ systemctl --user link "$SYMPP_SERVICE_CONFIG/$SYMPP_SERVICE_NAME.service"
 systemctl --user daemon-reload
 systemctl --user enable "$SYMPP_SERVICE_NAME.service"
 systemctl --user restart "$SYMPP_SERVICE_NAME.service"
+python3 - <<'READY'
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+url = 'http://127.0.0.1:' + os.environ['SYMPP_BACKEND_PORT'] + '/mcp/readiness'
+deadline = time.monotonic() + 60
+while time.monotonic() < deadline:
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            health = json.load(response)
+        if health.get('status') == 'ok' and health.get('ledger', {}).get('reachable') is True:
+            break
+    except (OSError, ValueError, urllib.error.URLError):
+        pass
+    time.sleep(0.2)
+else:
+    raise SystemExit('Service did not become ready. Inspect journalctl --user -u ' + os.environ['SYMPP_SERVICE_NAME'])
+READY
 printf 'service: %s\nendpoint: http://%s:%s\n' "$SYMPP_SERVICE_NAME" "$SYMPP_SERVICE_HOST" "$SYMPP_BACKEND_PORT"
