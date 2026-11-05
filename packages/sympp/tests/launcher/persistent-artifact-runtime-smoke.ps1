@@ -377,6 +377,7 @@ try {
       SYMPP_BACKEND_PORT = [string]$backendPort; SYMPP_DASHBOARD_PORT = [string]$backendPort; SYMPP_OPEN_DASHBOARD = "0"
       SYMPP_BACKEND_STARTUP_TIMEOUT_SEC = "120"; SYMPP_COLD_START_TIMEOUT_SEC = "180"
       HOME = Join-Path $tempRoot "profile"; USERPROFILE = Join-Path $tempRoot "profile"
+      CLAUDE_CONFIG_DIR = Join-Path $tempRoot 'profile/.claude'; HERDR_APP_HOME = Join-Path $tempRoot 'herdr'
       HOMEDRIVE = [IO.Path]::GetPathRoot($tempRoot).TrimEnd('\'); HOMEPATH = (Join-Path $tempRoot "profile").Substring(2)
       TEMP = Join-Path $tempRoot "tmp"; TMP = Join-Path $tempRoot "tmp"
     }
@@ -416,7 +417,7 @@ try {
       $unrelated = "model = `"example-model`"`n"
       $saved = $unrelated + (Get-Content -LiteralPath $configFile -Raw)
       [IO.File]::WriteAllText($configFile, $saved)
-      $claudeFile = Join-Path $tempRoot '.mcp.json'
+      $claudeFile = Join-Path $environment.CLAUDE_CONFIG_DIR '.claude.json'
       $savedClaude = Get-Content -LiteralPath $claudeFile -Raw
       $repeated = Read-IsolatedCommand $node @($setup, '--host', 'both') $environment
       if ($repeated.exit -ne 0 -or (Get-Content $configFile -Raw) -cne $saved -or
@@ -424,7 +425,7 @@ try {
       $listed = Read-IsolatedCommand $codex @("mcp", "list", "--json") $environment
       if ($listed.exit -ne 0) { throw 'Native Codex could not read setup registration.' }
       $registration = @(($listed.stdout | ConvertFrom-Json) | Where-Object name -eq 'sympp')[0]
-      $claude = (Get-Content (Join-Path $tempRoot '.mcp.json') -Raw | ConvertFrom-Json).mcpServers.sympp
+      $claude = (Get-Content $claudeFile -Raw | ConvertFrom-Json).mcpServers.sympp
       Write-Host ("Generated Codex registration: " + ($registration | ConvertTo-Json -Depth 10 -Compress))
       Write-Host ("Generated Claude registration: " + ($claude | ConvertTo-Json -Depth 10 -Compress))
       if ($registration.transport.command -cne $claude.command -or

@@ -80,7 +80,7 @@ function codexConfig(config, registration) {
 function main(args) {
   const install = JSON.parse(fs.readFileSync(path.join(root, fs.existsSync(path.join(root, ".sympp-install.json")) ? ".sympp-install.json" : "package.json"), "utf8"));
   if (args.length === 1 && ["--version", "-v", "-V"].includes(args[0])) { process.stdout.write(`${install.version}\n`); return; }
-  if (args.length === 1 && args[0] === "--help") { emit("usage", usage); emit("help", "Run from the project that will use sympp. Omit --host to register installed Codex and Claude Code. Local setup: Windows x64. Remote setup: Windows and Linux."); return; }
+  if (args.length === 1 && args[0] === "--help") { emit("usage", usage); emit("help", "Setup registers sympp for this user. Omit --host to register installed Codex and Claude Code. Local setup: Windows x64. Remote setup: Windows and Linux."); return; }
   let selection = "auto", server;
   for (let i = 0; i < args.length; i += 2) {
     if (args[i] === "--host" && ["auto", "codex", "claude", "both"].includes(args[i + 1])) selection = args[i + 1];
@@ -180,7 +180,7 @@ function main(args) {
   require("./sympp-command.js").saveConnection({ env, setup: { cwd: os.homedir(), homes: Object.fromEntries(['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'HERDR_APP_HOME'].map(key => [key, process.env[key] ? path.resolve(process.env[key]) : ''])), hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].map(key => [key, process.env[key] || ''])) } });
   emit("channel", server ? "remote" : env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);
-  emit("next", "Open fresh host sessions in this project and verify sympp tools before ledger work.");
+  emit("next", "Open fresh host sessions and verify sympp tools before ledger work.");
 }
 
 if (require.main === module) {

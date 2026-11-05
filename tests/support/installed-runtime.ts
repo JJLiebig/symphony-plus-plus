@@ -58,7 +58,9 @@ export class Installed {
 
   async install(agent: 'codex' | 'claude-code', source = resolve('.'), copy = false) {
     await this.skills(['add', source, '-g', '--agent', agent, '--skill', 'sympp', '--yes', ...(copy ? ['--copy'] : [])]);
-    return realpath(join(this.env.HOME!, agent === 'codex' ? '.agents' : '.claude', 'skills/sympp'));
+    return realpath(agent === 'codex'
+      ? join(this.env.HOME!, '.agents/skills/sympp')
+      : join(this.env.CLAUDE_CONFIG_DIR!, 'skills/sympp'));
   }
 
   setup(bundle: string, host = 'both') {
