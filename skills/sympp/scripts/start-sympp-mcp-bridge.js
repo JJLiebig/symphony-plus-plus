@@ -1170,6 +1170,7 @@ async function bridge(identity, state, runtimeFile) {
     if (replacementLease !== localLease) { try { fs.unlinkSync(localLease); } catch (_) { } }
     localLease = replacementLease;
     current = next;
+    sessionLocation.setFactoryOwned((await backendHealth(next.identity.backend))?.factoryOwned);
     updateHerdrBackend(next.identity.backend);
     cleanupScript = nextCleanupScript;
     attached = true;
@@ -1284,6 +1285,7 @@ async function bridge(identity, state, runtimeFile) {
       diagnostic(`sympp MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
 
     }
+    sessionLocation.setFactoryOwned((await backendHealth(current.identity.backend))?.factoryOwned);
     input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity, terminal: false });
     input.once("close", () => sessionLocation.close());
     for await (const line of input) {
@@ -1503,7 +1505,6 @@ async function main() {
   if (process.env.SYMPP_SERVER_URL) {
     // The remote factory is always on; this client never elects or owns its lifecycle.
     remoteConnection = require("./sympp-remote.js").remoteConnection(process.env.SYMPP_SERVER_URL, process.env.SYMPP_SERVER_TOKEN_FILE);
-    sessionLocation.setFactoryOwned((await backendHealth(remoteConnection.origin))?.factoryOwned);
     if (sessionLocation.native) await ensureLivenessProbe();
     await bridge({ backend: remoteConnection.origin }, { backend: { managed: false } }, null);
     return;

@@ -68,6 +68,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     refute FactoryRepos.matches?(checkout, ssh_remote)
     {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", ssh_remote])
     assert {:ok, ^checkout} = FactoryRepos.resolve(ssh_remote)
+    refute FactoryRepos.matches?(checkout, String.replace_suffix(ssh_remote, ".git", ""))
     refute FactoryRepos.matches?(checkout, "ssh://other-user@git.example/team/#{name}.git")
     assert FactoryRepos.matches?(checkout, "ssh://deploy@git.example:22/team/#{name}.git")
     refute FactoryRepos.matches?(checkout, "ssh://deploy@git.example:443/team/#{name}.git")

@@ -85,7 +85,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
     uri = URI.parse(value)
     name = Path.basename(uri.path || "") |> String.replace_suffix(".git", "")
 
-    if usable_authority?(uri) and usable_repo_path?(uri.path || "", name) do
+    if usable_authority?(uri) and name not in ["", ".", ".."] and not String.contains?(value, <<0>>) do
       {:ok, value, name}
     else
       {:error, :invalid_repo_remote}
@@ -100,17 +100,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   end
 
   defp usable_userinfo?(%URI{userinfo: nil}), do: true
-
-  defp usable_userinfo?(%URI{scheme: "ssh", userinfo: user}) do
-    user != "" and not String.contains?(URI.decode(user), [":", "@", "/", "\\"])
-  end
-
-  defp usable_userinfo?(%URI{userinfo: user}), do: user == "git"
-
-  defp usable_repo_path?(path, name) do
-    name not in ["", ".", ".."] and Regex.match?(~r/\A[A-Za-z0-9_.-]+\z/, name) and
-      not String.contains?(path, ["/../", "/./"])
-  end
+  defp usable_userinfo?(%URI{userinfo: user}), do: user != "" and not String.contains?(URI.decode(user), ":")
 
   defp identity(remote) do
     {uri, path} =
@@ -125,12 +115,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
       end
 
     host = String.downcase(uri.host)
-    path = path |> String.trim_trailing("/") |> String.replace_suffix(".git", "")
     default_port = %{"ssh" => 22, "https" => 443, "http" => 80, "git" => 9418}[uri.scheme]
     port = uri.port || default_port
 
     if host == "github.com" and port == default_port and uri.userinfo in [nil, "git"] do
-      {:github, path |> String.trim_leading("/") |> String.downcase()}
+      {:github, path |> String.trim("/") |> String.downcase() |> String.replace_suffix(".git", "")}
     else
       {uri.scheme, host, port, uri.userinfo, path}
     end
