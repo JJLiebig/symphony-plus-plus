@@ -73,28 +73,30 @@ function Read-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtabl
   $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
     $streams = @{
-      stdout = @{ reader = $process.StandardOutput; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
-      stderr = @{ reader = $process.StandardError; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
+      stdout = @{ reader = $process.StandardOutput; pending = $null; closed = $false; buffer = [char[]]::new(4096); chunks = [Collections.Generic.List[string]]::new() }
+      stderr = @{ reader = $process.StandardError; pending = $null; closed = $false; buffer = [char[]]::new(4096); chunks = [Collections.Generic.List[string]]::new() }
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     do {
       $readAny = $false
       foreach ($stream in $streams.Values) {
         if ($stream.closed) { continue }
-        if (-not $stream.pending) { $stream.pending = $stream.reader.ReadLineAsync() }
+        if (-not $stream.pending) { $stream.pending = $stream.reader.ReadAsync($stream.buffer, 0, $stream.buffer.Length) }
         if ($stream.pending.Wait(20)) {
-          if ($null -eq $stream.pending.Result) { $stream.closed = $true }
-          else { $stream.lines.Add($stream.pending.Result) }
+          $count = $stream.pending.Result
+          if ($count -eq 0) { $stream.closed = $true }
+          else { $stream.chunks.Add([string]::new($stream.buffer, 0, $count)) }
           $stream.pending = $null
           $readAny = $true
         }
       }
-      # Hosted process fixtures can leave pipe handles in a detached backend.
+      # Hosted backends can retain pipe handles after the command exits. Read
+      # chunks so an unterminated final error does not wait for that backend's EOF.
       if ($process.HasExited -and -not $readAny) { break }
       if ([DateTime]::UtcNow -gt $deadline) { $process.Kill($true); throw "Native command timed out: $FilePath" }
       if (-not $readAny) { Start-Sleep -Milliseconds 10 }
     } while ($true)
-    $result = @{ exit = $process.ExitCode; stdout = [string]::Join("`n", $streams.stdout.lines); stderr = [string]::Join("`n", $streams.stderr.lines) }
+    $result = @{ exit = $process.ExitCode; stdout = [string]::Join('', $streams.stdout.chunks); stderr = [string]::Join('', $streams.stderr.chunks) }
     Write-Host ($result | ConvertTo-Json -Compress)
     return $result
   } finally { $process.Dispose() }
@@ -499,9 +501,9 @@ const body=r=>new Promise(q=>{const c=[];r.on("data",x=>c.push(x));r.on("end",()
 const send=(r,s,v,h={})=>{const b=typeof v==="string"?v:JSON.stringify(v);r.writeHead(s,{"Content-Type":"application/json","Content-Length":Buffer.byteLength(b),...h});r.end(b);};
 const server=http.createServer(async(req,res)=>{
   if(req.url==="/shutdown"){send(res,200,{status:"stopping"});return server.close(()=>process.exit(0));}
-  if(req.url==="/mcp/readiness")return send(res,200,{status:"ok",ledger:{reachable:true,identity:{kind:"sqlite",display_path:process.env.SYMPP_DATABASE}},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});
+  if(req.url==="/mcp/readiness")return send(res,200,{status:"ok",factory_owned_worktrees:false,ledger:{reachable:true,identity:{kind:"sqlite",display_path:process.env.SYMPP_DATABASE}},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});
   if(req.url==="/sympp/board")return send(res,200,"<title>sympp Dashboard</title>",{"Content-Type":"text/html"});
-  if(req.url==="/mcp/client-lease"){await body(req);return send(res,200,{stale_after_ms:600000});}
+  if(req.url==="/mcp/client-lease"){await body(req);return send(res,200,{stale_after_ms:600000,factory_owned_worktrees:false});}
   if(req.url==="/mcp"){const p=JSON.parse(await body(req)),result=p.method==="initialize"?{protocolVersion:"2025-03-26",capabilities:{},serverInfo:{name:"artifact-fixture",version:"1"}}:p.method==="tools/list"?{tools:[{name:"fixture",description:"fixture",inputSchema:{type:"object"}}]}:null;return result?send(res,200,{jsonrpc:"2.0",id:p.id,result},{"Mcp-Session-Id":session}):send(res,404,{error:"missing"});}
   send(res,404,{error:"not found"});
 });

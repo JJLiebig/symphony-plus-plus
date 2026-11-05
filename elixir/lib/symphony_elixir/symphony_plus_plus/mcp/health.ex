@@ -1,6 +1,8 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{
     Config,
     HandleStateStore,
@@ -29,6 +31,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
       "version" => config.version,
       "source" => source_identity(config),
       "mode" => Atom.to_string(config.mode),
+      "factory_owned_worktrees" => FactoryRepos.enabled?(),
       "ledger" => ledger
     }
   end
@@ -41,6 +44,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
       "version" => config.version,
       "source" => source_identity(config),
       "mode" => Atom.to_string(config.mode),
+      "factory_owned_worktrees" => FactoryRepos.enabled?(),
       "ledger" => ledger
     }
   end
@@ -51,6 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
 
     %{
       "status" => health["status"],
+      "factory_owned_worktrees" => FactoryRepos.enabled?(),
       "source" => %{
         "revision" => get_in(health, ["source", "revision"]),
         "mcp_contract" => %{"fingerprint" => get_in(health, ["source", "mcp_contract", "fingerprint"])}
@@ -98,7 +103,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
         "tools" => %{}
       },
       "health_result_fields" => @mcp_contract_health_fields,
-      "client_lease_protocol" => 1,
+      "client_lease_protocol" => 2,
       "protocol_version" => @protocol_version,
       "resources" => resource_contract_material(),
       "schema_version" => @mcp_contract_schema_version,

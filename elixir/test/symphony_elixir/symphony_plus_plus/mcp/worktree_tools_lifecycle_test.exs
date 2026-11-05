@@ -9,6 +9,136 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
   @moduletag :ci_slow
 
+  test "factory clone preserves remote paths and uses factory authentication" do
+    alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+
+    fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-ssh")
+    root = Path.join(fixture.root, "factory")
+    name = Path.basename(fixture.repo_root)
+    peer = Path.join(fixture.root, "ssh-peer.js")
+    node = System.find_executable("node")
+
+    command = Enum.map_join([node, peer], " ", fn value -> "'" <> String.replace(value, "'", "'\"'\"'") <> "'" end)
+    keys = ["SYMPP_REPOS_ROOT", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_KEY_1", "GIT_CONFIG_VALUE_1"]
+    previous = Map.new(keys, &{&1, System.get_env(&1)})
+    on_exit(fn -> Enum.each(previous, fn {key, value} -> restore_env(key, value) end) end)
+    System.put_env("SYMPP_REPOS_ROOT", root)
+    System.put_env("GIT_SSH_COMMAND", command)
+    System.put_env("GIT_SSH_VARIANT", "ssh")
+
+    for suffix <- ["", "#literal", "?literal"] do
+      repo_name = name <> suffix
+      remote = "deploy@git.example:team/#{repo_name}.git"
+
+      File.write!(peer, """
+      const {spawnSync} = require("node:child_process");
+      if (process.argv.at(-1) !== #{Jason.encode!("git-upload-pack 'team/#{repo_name}.git'")}) process.exit(2);
+      const result = spawnSync("git", ["upload-pack", #{Jason.encode!(fixture.origin)}], {stdio: "inherit"});
+      process.exit(result.status ?? 1);
+      """)
+
+      assert {:ok, checkout} = FactoryRepos.resolve(remote)
+      assert checkout == Path.join(root, repo_name)
+      assert {origin, 0} = System.cmd("git", ["-C", checkout, "remote", "get-url", "origin"])
+      assert String.trim(origin) == remote
+      assert {:ok, ^checkout} = FactoryRepos.resolve(remote)
+    end
+
+    refute FactoryRepos.matches?(Path.join(root, name), "ssh://deploy@git.example/team/#{name}.git")
+
+    for {scheme, path, suffix} <- [{"https", "/team/ü", "http"}, {"https", "/team/%2e%2e", "http-encoded"}, {"HTTPS", "/team", "http-uppercase"}] do
+      remote = "#{scheme}://fixture-account-or-token@git.example#{path}/#{name}-#{suffix}.git"
+      clean_remote = String.replace(remote, "fixture-account-or-token@", "")
+      # Both URLs reach the disposable origin, so the regression never contacts
+      # a provider. Inspect Git's stored clone argument, not get-url's rewrite.
+      System.put_env("GIT_CONFIG_COUNT", "2")
+      System.put_env("GIT_CONFIG_KEY_0", "url.#{fixture.origin}.insteadOf")
+      System.put_env("GIT_CONFIG_VALUE_0", clean_remote)
+      System.put_env("GIT_CONFIG_KEY_1", "url.#{fixture.origin}.insteadOf")
+      System.put_env("GIT_CONFIG_VALUE_1", remote)
+      assert {:ok, checkout} = FactoryRepos.resolve(remote)
+      assert {stored_origin, 0} = System.cmd("git", ["-C", checkout, "config", "--get", "remote.origin.url"])
+      assert String.trim(stored_origin) == clean_remote
+    end
+  end
+
+  test "factory resolves by remote, refuses a different owner, and owns prepare, replay and cleanup", %{repo: repo} do
+    alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+    alias SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope
+    alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle
+
+    fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-repos")
+    repos_root = Path.dirname(fixture.repo_root)
+    remote = "https://github.com/factory/#{Path.basename(fixture.repo_root)}.git"
+    {_, 0} = System.cmd("git", ["-C", fixture.repo_root, "remote", "set-url", "origin", remote])
+    previous = System.get_env("SYMPP_REPOS_ROOT")
+    System.put_env("SYMPP_REPOS_ROOT", repos_root)
+
+    on_exit(fn ->
+      if previous, do: System.put_env("SYMPP_REPOS_ROOT", previous), else: System.delete_env("SYMPP_REPOS_ROOT")
+    end)
+
+    assert {:ok, checkout} = FactoryRepos.resolve(remote)
+    assert checkout == fixture.repo_root
+
+    name = Path.basename(checkout)
+    ssh_remote = "ssh://deploy@git.example/team/#{name}.git"
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", "deploy@git.example:team/#{name}.git"])
+    assert {:ok, ^checkout} = FactoryRepos.resolve("deploy@git.example:team/#{name}.git")
+    refute FactoryRepos.matches?(checkout, ssh_remote)
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", ssh_remote])
+    assert {:ok, ^checkout} = FactoryRepos.resolve(ssh_remote)
+    refute FactoryRepos.matches?(checkout, String.replace_suffix(ssh_remote, ".git", ""))
+    refute FactoryRepos.matches?(checkout, "ssh://other-user@git.example/team/#{name}.git")
+    assert FactoryRepos.matches?(checkout, "ssh://deploy@git.example:22/team/#{name}.git")
+    refute FactoryRepos.matches?(checkout, "ssh://deploy@git.example:443/team/#{name}.git")
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", "ssh://git@git.example/team/#{name}.git"])
+    refute FactoryRepos.matches?(checkout, "ssh://git.example/team/#{name}.git")
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", "git.example:team/#{name}.git"])
+    assert {:ok, ^checkout} = FactoryRepos.resolve("git.example:team/#{name}.git")
+    refute FactoryRepos.matches?(checkout, "git@git.example:team/#{name}.git")
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", ssh_remote])
+    assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("ssh://deploy:password@git.example/team/#{name}.git")
+
+    http_remote = "https://alice@git.example/team/#{name}.git"
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", http_remote])
+    assert FactoryRepos.matches?(checkout, "https://git.example/team/#{name}.git")
+    refute FactoryRepos.matches?(checkout, "https://git.example:444/team/#{name}.git")
+
+    for protocol <- ["http", "git"] do
+      network_remote = "#{protocol}://git.example/team/#{name}.git"
+      {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", network_remote])
+      assert {:ok, ^checkout} = FactoryRepos.resolve(network_remote)
+      refute FactoryRepos.matches?(checkout, "#{protocol}://git.example:443/team/#{name}.git")
+    end
+
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", remote])
+    refute FactoryRepos.matches?(checkout, String.replace(remote, "/factory/", "/other/"))
+    assert {:error, :target_repo_root_scope_mismatch} = FactoryRepos.resolve(String.replace(remote, "/factory/", "/other/"))
+    assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("C:\\Code\\client")
+    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(repo: remote, base_branch: "beta"))
+    config = Config.default(repo: repo)
+    assert {:ok, ^checkout} = WorktreeScope.target_repo_root_argument("C:\\Code\\client", package, config)
+
+    # Fetch from the disposable fixture without contacting a provider.
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", fixture.origin])
+    attrs = %{"target_repo_root" => checkout, "base_branch" => "beta", "branch" => "fix/login"}
+    assert {:ok, prepared} = WorktreeLifecycle.prepare(repo, package.id, attrs)
+    assert Path.dirname(prepared.worktree_path) == Path.join([repos_root, ".worktrees", Path.basename(checkout)])
+    assert Path.basename(prepared.worktree_path) =~ "fix-login-"
+    assert {:ok, replay} = WorktreeLifecycle.prepare(repo, package.id, attrs)
+    assert replay.worktree_path == prepared.worktree_path
+    assert {:ok, _} = WorktreeLifecycle.cleanup(repo, package.id, target_repo_root: checkout)
+    refute File.exists?(prepared.worktree_path)
+
+    long_branch = String.duplicate("component/", 40) <> "login"
+    assert {:ok, long_prepared} = WorktreeLifecycle.prepare(repo, package.id, Map.put(attrs, "branch", long_branch))
+    assert byte_size(Path.basename(long_prepared.worktree_path)) <= 255
+    assert {branch, 0} = System.cmd("git", ["-C", long_prepared.worktree_path, "branch", "--show-current"])
+    assert String.trim(branch) == long_branch
+    assert {:ok, _} = WorktreeLifecycle.cleanup(repo, package.id, target_repo_root: checkout)
+  end
+
   test "historical worktree roots and lease bindings preserve scoped cleanup and stored audit redaction", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("symphony-plus-plus/beta", prefix: "sympp-mcp-worktree")
     other_fixture = TestSupport.git_repo_fixture!("symphony-plus-plus/beta", prefix: "sympp-mcp-other-worktree")

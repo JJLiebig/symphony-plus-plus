@@ -851,7 +851,12 @@ function responseLines(response) {
 }
 
 async function mcpPost(url, body, sessionId, protocol, timeoutMs) {
-  body = await sessionLocation.attach(body);
+  try {
+    body = await sessionLocation.attach(body);
+  } catch (error) {
+    error.symppRequestMayHaveReachedBackend = false;
+    throw error;
+  }
   const headers = { Accept: "application/json, text/event-stream", "Content-Type": "application/json" };
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   if (protocol) headers["MCP-Protocol-Version"] = protocol;
@@ -888,12 +893,13 @@ async function backendHealth(origin) {
     const mcpUrl = `${trimOrigin(origin)}/mcp`;
     const response = await request(`${trimOrigin(origin)}/mcp/readiness`, "GET", null, { Accept: "application/json" }, HEALTH_PROBE_TIMEOUT_MS);
     if (response.status === 404) return legacyBackendHealth(mcpUrl);
+    if (response.status === 401) return { healthy: false, status: 401, retryable: false };
     if (response.status < 200 || response.status >= 300 || !response.body) return null;
     const readiness = JSON.parse(response.body);
     const contract = String((readiness.source && readiness.source.mcp_contract && readiness.source.mcp_contract.fingerprint) || "").toLowerCase();
     const ledgerIdentity = readiness.ledger?.identity;
     const healthy = readiness.status === "ok" && readiness.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity);
-    return { healthy, contract, ledgerIdentity, retryable: false };
+    return { healthy, contract, ledgerIdentity, factoryOwned: readiness.factory_owned_worktrees, retryable: false };
   } catch (error) {
     return { healthy: false, contract: "", retryable: /timed out/i.test(String(error && error.message)) };
   }
@@ -912,7 +918,14 @@ async function legacyBackendHealth(mcpUrl) {
   if (!structured) return null;
   const contract = String((structured.source && structured.source.mcp_contract && structured.source.mcp_contract.fingerprint) || (structured.mcp_contract && structured.mcp_contract.fingerprint) || "").toLowerCase();
   const ledgerIdentity = structured.ledger?.identity;
-  return { healthy: structured.status === "ok" && structured.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity), contract, ledgerIdentity };
+  return { healthy: structured.status === "ok" && structured.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity), contract, ledgerIdentity, factoryOwned: structured.factory_owned_worktrees };
+}
+
+async function factoryOwnership(origin) {
+  const health = await backendHealth(origin);
+  if (health?.status === 401) throw new Error("Remote sympp authentication failed (HTTP 401). Run setup --server again to refresh the token.");
+  if (typeof health?.factoryOwned !== "boolean") throw new Error("sympp could not determine repository ownership from the backend.");
+  return health.factoryOwned;
 }
 
 function healthCacheMatches(cache, state, identity) {
@@ -970,6 +983,9 @@ async function clientLease(mcpUrl, clientId, action, required) {
     const response = await request(`${trimOrigin(mcpUrl)}/client-lease`, "POST", JSON.stringify({ client_id: clientId, action }), { "Content-Type": "application/json" }, required ? HEALTH_PROBE_TIMEOUT_MS : 2000);
     if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
     const result = response.body ? JSON.parse(response.body) : {};
+    if (action === "attach" && required && typeof result.factory_owned_worktrees !== "boolean") {
+      throw new Error("sympp could not determine repository ownership from the backend.");
+    }
     if (action !== "heartbeat") trace(`client_lease_${action}_ok`, { active_clients: Number(result.active_client_count) || 0 });
     return result;
   } catch (error) {
@@ -1165,6 +1181,7 @@ async function bridge(identity, state, runtimeFile) {
     if (replacementLease !== localLease) { try { fs.unlinkSync(localLease); } catch (_) { } }
     localLease = replacementLease;
     current = next;
+    sessionLocation.setFactoryOwned(attachedResponse.factory_owned_worktrees);
     updateHerdrBackend(next.identity.backend);
     cleanupScript = nextCleanupScript;
     attached = true;
@@ -1205,6 +1222,7 @@ async function bridge(identity, state, runtimeFile) {
     return recoveryPromise;
   };
   const initializeSession = async () => {
+    if (remoteConnection) sessionLocation.setFactoryOwned(await factoryOwnership(remoteConnection.origin));
     const initialized = await mcpPost(current.mcpUrl, initializeBody(), null, null, timeoutMs);
     if (!initialized.ok) {
       const error = new Error(initialized.error || "sympp MCP session reinitialization failed.");
@@ -1273,6 +1291,7 @@ async function bridge(identity, state, runtimeFile) {
       if (!generationValidForAttachment(identity)) return false;
       closeGenerationWatchers();
       trace("generation_attach_handles_released");
+      sessionLocation.setFactoryOwned(attachedResponse.factory_owned_worktrees);
       scheduleHeartbeat(attachedResponse);
       trace("node_bridge_selected");
       diagnostic(`sympp MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
@@ -1352,7 +1371,10 @@ async function bridge(identity, state, runtimeFile) {
       if (requestProtocol) {
         protocol = protocolFrom(response.lines) || requestProtocol;
       }
-      for (const content of response.lines) process.stdout.write(`${content.replace(/\r?\n/g, "")}\n`);
+      for (const content of response.lines) {
+        const output = require("./sympp-session-location.js").remoteWorktreeResponse(content);
+        process.stdout.write(`${output.replace(/\r?\n/g, "")}\n`);
+      }
     }
     if (fatalRecoveryError) throw fatalRecoveryError;
     return true;
@@ -1494,6 +1516,7 @@ async function main() {
   if (process.env.SYMPP_SERVER_URL) {
     // The remote factory is always on; this client never elects or owns its lifecycle.
     remoteConnection = require("./sympp-remote.js").remoteConnection(process.env.SYMPP_SERVER_URL, process.env.SYMPP_SERVER_TOKEN_FILE);
+    sessionLocation.setFactoryOwned(await factoryOwnership(remoteConnection.origin));
     if (sessionLocation.native) await ensureLivenessProbe();
     await bridge({ backend: remoteConnection.origin }, { backend: { managed: false } }, null);
     return;

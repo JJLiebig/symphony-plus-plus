@@ -49,9 +49,91 @@ function withLocation(body, location) {
   } catch (_) { return body; }
 }
 
+function isRemoteEndpoint(env) {
+  if (!env.SYMPP_SERVER_URL) return false;
+  return !["localhost", "127.0.0.1", "[::1]"].includes(new URL(env.SYMPP_SERVER_URL).hostname);
+}
+
+async function remoteArguments(body, factoryOwned) {
+  if (!factoryOwned) return body;
+  const credentialFree = value => {
+    let remote;
+    try { remote = new URL(value); } catch (_) { return value; }
+    if (remote.password || /%3a/i.test(remote.username)) {
+      throw new Error("Repository origins must not include credentials. Use a credential-free remote and configure Git authentication on the factory.");
+    }
+    // HTTP userinfo can be either an account or a token. It is authentication,
+    // not repository identity; the factory uses its own Git credentials.
+    if (["http:", "https:"].includes(remote.protocol) && remote.username) {
+      const withoutUser = value.replace(/^(\s*https?:\/\/)[^/?#]*@/i, "$1");
+      if (withoutUser === value) throw new Error("Repository origin must use an absolute HTTP URL.");
+      return withoutUser;
+    }
+    return value;
+  };
+  const origin = cwd => new Promise((resolve, reject) => {
+    execFile("git", ["-C", cwd, "remote", "get-url", "origin"],
+      { timeout: 5000, maxBuffer: 8192, windowsHide: true }, (error, stdout) => {
+        if (error || !stdout.trim()) reject(new Error("Repository origin is unavailable. Supply a git remote URL or owner/name."));
+        else {
+          try { resolve(credentialFree(stdout.trim())); } catch (failure) { reject(failure); }
+        }
+      });
+  });
+  const repo = async value => {
+    const local = typeof value === "string" && (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || /^\.\.?([\\/]|$)/.test(value) ||
+      (fs.existsSync(value) && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)));
+    return local ? origin(value) : credentialFree(value);
+  };
+  const repoObject = async value => {
+    if (!value || typeof value !== "object" || Array.isArray(value) || !("repo" in value)) return value;
+    return { ...value, repo: await repo(value.repo) };
+  };
+  async function rewrite(payload) {
+    const params = payload?.params;
+    const input = params?.arguments;
+    if (payload?.method !== "tools/call" || !input || typeof input !== "object" || Array.isArray(input)) return payload;
+    let args = { ...input };
+    if (["create_work_request", "claim_local_architect_assignment", "solo_attach", "solo_list"].includes(params.name)) args = await repoObject(args);
+    if (params.name === "create_work_request") {
+      if (!Object.hasOwn(args, "repo")) args.repo = await origin(process.cwd());
+      if (Array.isArray(args.repo_scopes)) args.repo_scopes = await Promise.all(args.repo_scopes.map(repoObject));
+    }
+    if (params.name === "register_chief" && Array.isArray(args.repos)) args.repos = await Promise.all(args.repos.map(repo));
+    if (params.name === "slice_work_request" && Array.isArray(args.work_packages)) args.work_packages = await Promise.all(args.work_packages.map(repoObject));
+    if (params.name === "update_work_package") args.patch = await repoObject(args.patch);
+    if (["prepare_work_package_worktree", "cleanup_work_package_worktree"].includes(params.name)) delete args.target_repo_root;
+    return { ...payload, params: { ...params, arguments: args } };
+  }
+  const payload = JSON.parse(body);
+  if (Array.isArray(payload)) return body;
+  return JSON.stringify(await rewrite(payload));
+}
+
+function remoteWorktreeResponse(body, env = process.env) {
+  if (!isRemoteEndpoint(env)) return body;
+  try {
+    const qualify = payload => {
+      const result = payload?.result;
+      const worktree = result?.structuredContent?.worktree;
+      if (!result?.isError && ["prepared", "already_prepared"].includes(worktree?.status) && typeof worktree?.path === "string") {
+        const machine = env.SYMPP_SERVER_NAME || new URL(env.SYMPP_SERVER_URL).hostname;
+        const value = `${machine}:${worktree.path}`;
+        const encoded = /[\u0000-\u001f"\u007f]/.test(value) ? JSON.stringify(value) : value;
+        result.content = [{ type: "text", text: `worktree: ${encoded}` }];
+      }
+      return payload;
+    };
+    const payload = JSON.parse(body);
+    if (Array.isArray(payload)) return body;
+    return JSON.stringify(qualify(payload));
+  } catch (_) { return body; }
+}
+
 function createReporter(env = process.env, connect = selected => connectCore(undefined, "hc", [], selected)) {
   const clientId = randomUUID();
   let location = locationFromEnvironment(env, os.hostname(), clientId);
+  let factoryOwned = false;
   const native = Boolean(env.HC_TERMINAL_ID && env.HC_TERMINAL_SOCKET);
   const file = path.resolve(env.SYMPP_HOME || path.join(os.homedir(), ".agents", "splusplus"), "herdr-sessions", `${clientId}.json`);
   let refreshAt = 0;
@@ -89,6 +171,7 @@ function createReporter(env = process.env, connect = selected => connectCore(und
   return {
     clientId,
     native,
+    setFactoryOwned(value) { factoryOwned = value; },
     clear,
     close() { closed = true; clear(); },
     report(binding, probe) {
@@ -133,9 +216,9 @@ function createReporter(env = process.env, connect = selected => connectCore(und
         }).finally(() => { pending = null; });
       }
       if (pending) await pending;
-      return withLocation(body, location);
+      return withLocation(await remoteArguments(body, factoryOwned), location);
     },
   };
 }
 
-module.exports = { locationFromEnvironment, withSnapshot, withLocation, createReporter };
+module.exports = { locationFromEnvironment, withSnapshot, withLocation, createReporter, remoteArguments, remoteWorktreeResponse };

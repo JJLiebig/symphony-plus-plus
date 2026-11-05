@@ -6,7 +6,7 @@ const fs = require("fs");
 const http = require("http");
 const os = require("os");
 const path = require("path");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 const pluginRoot = path.resolve(__dirname, "../..");
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sympp-bridge-response-"));
@@ -19,6 +19,8 @@ const revision = "b".repeat(40);
 const contract = "c".repeat(64);
 let server;
 let bridge;
+const productRoot = path.join(temporaryRoot, "product");
+const productOrigin = "ssh://deploy@git.example/team/product.git";
 const deliveryRequests = new Map();
 const deliverySessions = new Map();
 const forwardSessions = [];
@@ -28,6 +30,8 @@ function sha256(value) {
 }
 
 async function main() {
+  assert.equal(spawnSync("git", ["init", "-q", productRoot]).status, 0);
+  assert.equal(spawnSync("git", ["-C", productRoot, "remote", "add", "origin", productOrigin]).status, 0);
   fs.mkdirSync(path.join(installedRoot, "scripts"), { recursive: true });
   fs.mkdirSync(path.join(sourcePluginRoot, "scripts"), { recursive: true });
   fs.cpSync(path.join(pluginRoot, "scripts"), path.join(installedRoot, "scripts"), { recursive: true });
@@ -37,6 +41,10 @@ async function main() {
   fs.writeFileSync(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"), JSON.stringify({ mcp_contract_fingerprint: contract }));
 
   server = http.createServer((request, response) => {
+    if (request.method === "GET" && request.url === "/mcp/readiness") {
+      return response.end(JSON.stringify({ status: "ok", factory_owned_worktrees: true,
+        source: { mcp_contract: { fingerprint: contract } }, ledger: { reachable: true, identity: { kind: "sqlite", default_home: true } } }));
+    }
     if (request.method === "GET" && request.url === "/sympp/board") return response.end("<title>sympp Dashboard</title>");
     if (request.method === "POST" && request.url === "/mcp/client-lease") {
       let body = "";
@@ -55,7 +63,7 @@ async function main() {
           assert.ok(local, "local identity must exist before HTTP attach");
           assert.equal(local.pid, bridge.pid);
         }
-        response.end(JSON.stringify({ stale_after_ms: 300000 }));
+        response.end(JSON.stringify({ stale_after_ms: 300000, factory_owned_worktrees: true }));
       });
       return;
     }
@@ -65,6 +73,11 @@ async function main() {
     request.on("end", () => {
       const body = Buffer.concat(chunks).toString("utf8");
       const message = JSON.parse(body);
+      if (["create_work_request", "prepare_work_package_worktree"].includes(message.params?.name)) {
+        response.writeHead(200, { "Content-Type": "application/json", "Mcp-Session-Id": "test-session" });
+        return response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id,
+          result: { content: [{ type: "text", text: "forwarded" }], structuredContent: message.params.arguments } }));
+      }
       const key = message.params && message.params.name === "record_work_package_delivery" && message.params.arguments.idempotency_key;
       if (message.params && message.params.name === "test.forward") forwardSessions.push(request.headers["mcp-session-id"]);
       if (key) {
@@ -124,9 +137,10 @@ async function main() {
   }));
 
   const environment = { ...process.env, SYMPP_HOME: symppHome, SYMPP_RUNTIME_FILE: runtimeFile, SYMPP_MCP_BRIDGE_MODE: "http" };
-  for (const name of ["SYMPP_REPO_ROOT", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT", "SYMPP_BACKEND_URL", "SYMPP_DASHBOARD_ORIGIN"]) delete environment[name];
+  for (const name of ["SYMPP_REPO_ROOT", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT", "SYMPP_BACKEND_URL", "SYMPP_DASHBOARD_ORIGIN", "SYMPP_SERVER_URL", "SYMPP_SERVER_TOKEN_FILE", "SYMPP_SERVER_NAME"]) delete environment[name];
   bridge = spawn(process.execPath, [path.join(installedRoot, "scripts", "start-sympp-mcp-bridge.js")], {
     env: environment,
+    cwd: productRoot,
     stdio: ["pipe", "pipe", "pipe"],
   });
   let stderr = "";
@@ -172,6 +186,15 @@ async function main() {
   bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "test.forward", arguments: {} } })}\n`);
   await responsePromise;
   assert.equal(forwardSessions.at(-1), "recovered-session");
+
+  // A local bridge without SYMPP_SERVER_URL still follows the backend's ownership capability.
+  responsePromise = readResponse(8);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "create_work_request", arguments: {} } })}\n`);
+  assert.equal((await responsePromise).result.structuredContent.repo, productOrigin);
+  responsePromise = readResponse(9);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "prepare_work_package_worktree", arguments: { work_package_id: "wp-local", target_repo_root: productRoot } } })}\n`);
+  assert.deepEqual((await responsePromise).result.structuredContent, { work_package_id: "wp-local" });
+
 
 }
 

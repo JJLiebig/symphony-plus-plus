@@ -149,7 +149,7 @@ function main(args) {
     const { serverConnection } = require("./sympp-remote.js");
     remote = serverConnection(server);
     const tokenFile = path.join(symppHome, `remote-client-${require("node:crypto").createHash("sha256").update(remote.endpoint).digest("hex").slice(0, 16)}.token`);
-    env = { SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: symppHome, SYMPP_SERVER_URL: remote.endpoint, SYMPP_SERVER_TOKEN_FILE: tokenFile };
+    env = { SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: symppHome, SYMPP_SERVER_URL: remote.endpoint, SYMPP_SERVER_NAME: server.startsWith("http://") ? new URL(server).hostname : server, SYMPP_SERVER_TOKEN_FILE: tokenFile };
   }
   const registration = { type: "stdio", command: fs.realpathSync.native(process.execPath), args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
   const globalClaude = (Boolean(server) || isGlobalInstall()) && hosts.includes("claude");
