@@ -38,8 +38,6 @@ try {
       return call;
     }));
     for (const operation of ["list_work_requests", "read_plan", "read_work_request", "board", "dispatch_work_package"]) {
-      // Concurrent dispatch is restored by the separate dispatch bug-fix PR.
-      if (concurrency > 1 && operation === "dispatch_work_package") continue;
       for (let round = 0; round < (concurrency === 1 ? 30 : 3); round++) {
         const results = await Promise.allSettled(clients.map(async (call) => {
           let metric;
@@ -73,7 +71,6 @@ try {
 const summary = [];
 for (const concurrency of [1, 10]) for (const operation of [...new Set(raw.map(x => x.operation))]) {
   const rows = raw.filter(x => x.concurrency === concurrency && x.operation === operation);
-  if (rows.length === 0) continue;
   const sorted = rows.map(x => x.ms).sort((a, b) => a - b);
   summary.push({ operation, concurrency, samples: rows.length, p50: sorted[Math.ceil(sorted.length * .5) - 1], p95: sorted[Math.ceil(sorted.length * .95) - 1], queries: Math.max(...rows.map(x => x.queries)), bytes: Math.max(...rows.map(x => x.bytes)) });
 }

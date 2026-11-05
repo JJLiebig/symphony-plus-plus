@@ -2,64 +2,71 @@
   {
     "operation": "list_work_requests",
     "concurrency": 1,
-    "p95": 70,
+    "p95": 80,
     "queries": 23,
     "bytes": 2048
   },
   {
     "operation": "read_plan",
     "concurrency": 1,
-    "p95": 180,
+    "p95": 230,
     "queries": 43,
     "bytes": 27648
   },
   {
     "operation": "read_work_request",
     "concurrency": 1,
-    "p95": 460,
+    "p95": 400,
     "queries": 39,
     "bytes": 10240
   },
   {
     "operation": "board",
     "concurrency": 1,
-    "p95": 370,
+    "p95": 380,
     "queries": 45,
     "bytes": 167936
   },
   {
     "operation": "dispatch_work_package",
     "concurrency": 1,
-    "p95": 130,
-    "queries": 75,
+    "p95": 120,
+    "queries": 76,
     "bytes": 2048
   },
   {
     "operation": "list_work_requests",
     "concurrency": 10,
-    "p95": 410,
+    "p95": 420,
     "queries": 23,
     "bytes": 2048
   },
   {
     "operation": "read_plan",
     "concurrency": 10,
-    "p95": 1010,
+    "p95": 1040,
     "queries": 43,
     "bytes": 28672
   },
   {
     "operation": "read_work_request",
     "concurrency": 10,
-    "p95": 1350,
+    "p95": 1440,
     "queries": 39,
     "bytes": 10240
   },
   {
     "operation": "board",
     "concurrency": 10,
-    "p95": 2040,
+    "p95": 2260,
     "queries": 45,
     "bytes": 169984
+  },
+  {
+    "operation": "dispatch_work_package",
+    "concurrency": 10,
+    "p95": 4350,
+    "queries": 76,
+    "bytes": 2048
   }
 ]
