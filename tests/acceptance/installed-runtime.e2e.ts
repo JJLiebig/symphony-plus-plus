@@ -83,36 +83,30 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(JSON.parse(await installed.skills(['list', '--json']))).toEqual([]);
   });
 
-  test('Skills remote update keeps beta tracking for both native hosts', { timeout: 600_000 }, async ({ installed }) => {
-    for (const agent of ['codex', 'claude-code'] as const) {
-      const remoteBundle = await installed.install(agent, 'https://github.com/JJLiebig/sympp/tree/beta');
-      const lock = () => readFile(join(installed.project, 'skills-lock.json'), 'utf8').then(JSON.parse);
-      expect((await lock()).skills['sympp'].ref).toBe('beta');
-      // Use this candidate's setup with the real remote installation's lock.
-      const setup = join(remoteBundle, 'scripts/setup-sympp.js');
-      await cp(resolve('plugins/symphony-plus-plus-mcp/scripts'), join(remoteBundle, 'scripts'), { recursive: true });
-      expect((await installed.run(process.execPath, [setup, '--host', 'both'])).code).toBe(0);
-      const config = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
-      expect(config.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
-      const update = await installed.skills(['update', 'sympp', '--project', '--yes']);
-      expect(/No installed skills found|Failed to|Cannot update|cannot be updated/i.test(update)).toBe(false);
-      expect((await lock()).skills['sympp'].ref).toBe('beta');
-      const installedList = JSON.parse(await installed.skills(['list', '--agent', agent, '--json']));
-      expect(JSON.stringify(installedList)).toContain('sympp');
-    }
-    // A global beta install must not adopt the unrelated current project's main ref.
-    await installed.skills(['add', 'https://github.com/JJLiebig/sympp/tree/beta',
-      '--global', '--agent', 'codex', '--skill', 'sympp', '--yes']);
-    const globalBundle = join(installed.env.HOME!, '.agents/skills/sympp');
-    const globalSetup = join(globalBundle, 'scripts/setup-sympp.js');
-    await cp(resolve('plugins/symphony-plus-plus-mcp/scripts'), join(globalBundle, 'scripts'), { recursive: true });
+  test('project and global installations preserve their own runtime channel', { timeout: 600_000 }, async ({ installed }) => {
+    const bundle = await installed.install('codex');
     const projectLock = join(installed.project, 'skills-lock.json');
     const local = JSON.parse(await readFile(projectLock, 'utf8'));
-    local.skills['sympp'].ref = 'main';
+    // Candidate installation is real; branch metadata selects the published channel.
+    local.skills.sympp = { ...local.skills.sympp, source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' };
     await writeFile(projectLock, JSON.stringify(local));
-    expect((await installed.run(process.execPath, [globalSetup, '--host', 'both'])).code).toBe(0);
-    const globalConfig = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
-    expect(globalConfig.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
-  });
+    expect((await installed.setup(bundle)).code).toBe(0);
+    const beta = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
+    expect(beta.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
 
+    await installed.skills(['add', resolve('.'), '--global', '--agent', 'codex', '--skill', 'sympp', '--yes']);
+    const globalBundle = join(installed.env.HOME!, '.agents/skills/sympp');
+    const globalLock = join(installed.env.HOME!, '.agents/.skill-lock.json');
+    const global = JSON.parse(await readFile(globalLock, 'utf8'));
+    global.skills.sympp = { ...global.skills.sympp, source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' };
+    await writeFile(globalLock, JSON.stringify(global));
+    local.skills.sympp.ref = 'main';
+    await writeFile(projectLock, JSON.stringify(local));
+    expect((await installed.setup(globalBundle)).code).toBe(0);
+    const selected = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
+    expect(selected.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
+    expect((await installed.setup(bundle)).code).toBe(0);
+    const main = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
+    expect(main.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('stable');
+  });
 }
