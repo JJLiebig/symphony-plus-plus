@@ -73,28 +73,30 @@ function Read-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtabl
   $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
     $streams = @{
-      stdout = @{ reader = $process.StandardOutput; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
-      stderr = @{ reader = $process.StandardError; pending = $null; closed = $false; lines = [Collections.Generic.List[string]]::new() }
+      stdout = @{ reader = $process.StandardOutput; pending = $null; closed = $false; buffer = [char[]]::new(4096); chunks = [Collections.Generic.List[string]]::new() }
+      stderr = @{ reader = $process.StandardError; pending = $null; closed = $false; buffer = [char[]]::new(4096); chunks = [Collections.Generic.List[string]]::new() }
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     do {
       $readAny = $false
       foreach ($stream in $streams.Values) {
         if ($stream.closed) { continue }
-        if (-not $stream.pending) { $stream.pending = $stream.reader.ReadLineAsync() }
+        if (-not $stream.pending) { $stream.pending = $stream.reader.ReadAsync($stream.buffer, 0, $stream.buffer.Length) }
         if ($stream.pending.Wait(20)) {
-          if ($null -eq $stream.pending.Result) { $stream.closed = $true }
-          else { $stream.lines.Add($stream.pending.Result) }
+          $count = $stream.pending.Result
+          if ($count -eq 0) { $stream.closed = $true }
+          else { $stream.chunks.Add([string]::new($stream.buffer, 0, $count)) }
           $stream.pending = $null
           $readAny = $true
         }
       }
-      # Hosted process fixtures can leave pipe handles in a detached backend.
+      # Hosted backends can retain pipe handles after the command exits. Read
+      # chunks so an unterminated final error does not wait for that backend's EOF.
       if ($process.HasExited -and -not $readAny) { break }
       if ([DateTime]::UtcNow -gt $deadline) { $process.Kill($true); throw "Native command timed out: $FilePath" }
       if (-not $readAny) { Start-Sleep -Milliseconds 10 }
     } while ($true)
-    $result = @{ exit = $process.ExitCode; stdout = [string]::Join("`n", $streams.stdout.lines); stderr = [string]::Join("`n", $streams.stderr.lines) }
+    $result = @{ exit = $process.ExitCode; stdout = [string]::Join('', $streams.stdout.chunks); stderr = [string]::Join('', $streams.stderr.chunks) }
     Write-Host ($result | ConvertTo-Json -Compress)
     return $result
   } finally { $process.Dispose() }
