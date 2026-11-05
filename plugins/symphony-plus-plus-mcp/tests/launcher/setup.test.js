@@ -17,13 +17,13 @@ test("global Claude setup owns only its user entry and project setup remains loc
   fs.writeFileSync(path.join(bin, "claude.cmd"), `@"${found.stdout.trim().split(/\r?\n/)[0]}" %*\r\n`);
   const global = path.join(home, ".agents", "skills", "sympp"), local = path.join(project, ".agents", "skills", "sympp");
   for (const root of [global, local]) {
-    fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+    fs.cpSync(path.resolve(__dirname, "../../../../skills/sympp"), root, { recursive: true });
     for (const name of ["setup-sympp.js", "sympp-command.js"]) fs.copyFileSync(path.resolve(__dirname, "../../scripts", name), path.join(root, "scripts", name));
     fs.writeFileSync(path.join(root, ".sympp-install.json"), JSON.stringify({ version: "test", payload_sha256: "test" }));
   }
   fs.writeFileSync(path.join(home, ".agents", ".skill-lock.json"), JSON.stringify({ skills: { "sympp": { sourceType: "local" } } }));
   fs.writeFileSync(path.join(project, "skills-lock.json"), JSON.stringify({ skills: { "sympp": { sourceType: "local" } } }));
-  const env = { ...process.env, ...isolatedPathEnv(tmp), USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: config, PATH: bin + path.delimiter + process.env.PATH, XDG_STATE_HOME: "" };
+  const env = { ...process.env, ...isolatedPathEnv(tmp), USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: config, PATH: bin + path.delimiter + process.env.PATH, XDG_STATE_HOME: "", HERDR_APP_HOME: path.join(tmp, "herdr"), SYMPP_HOME: path.join(tmp, "sympp") };
   const run = (root, cwd = project) => spawnSync(process.execPath, [path.join(root, "scripts", "setup-sympp.js"), "--host", "claude"], { cwd, env, encoding: "utf8" });
   const cfg = path.join(config, ".claude.json"), mcp = path.join(project, ".mcp.json");
   let result = run(global); assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -86,7 +86,7 @@ cp.spawnSync = (command, args, options) => command === 'powershell.exe' && args.
 test('remote setup registers a launchable bridge in selected Codex and user Claude homes', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-remote-setup-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const env = { ...process.env, ...isolatedPathEnv(root), HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'sympp') };
+  const env = { ...process.env, ...isolatedPathEnv(root), HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), HERDR_APP_HOME: path.join(root, 'herdr'), SYMPP_HOME: path.join(root, 'sympp') };
   fs.mkdirSync(env.SYMPP_HOME, { recursive: true });
   fs.writeFileSync(path.join(env.SYMPP_HOME, 'remote-token'), 'server-token-must-survive');
   const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/setup-sympp.js'), '--host', 'both', '--server', 'http://127.0.0.1:19998'], { env, cwd: root, encoding: 'utf8', windowsHide: true });
@@ -107,4 +107,53 @@ test('remote setup registers a launchable bridge in selected Codex and user Clau
   });
   assert.equal(second.status, 0, second.stdout + second.stderr);
   assert.equal(fs.readFileSync(claude.env.SYMPP_SERVER_TOKEN_FILE, 'utf8'), 'first-client-credential');
+});
+
+test('update reloads setup, repairs the selected registration, and stops before later steps on failure', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-update-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const log = path.join(root, 'calls.jsonl'), preload = path.join(root, 'update.cjs');
+  fs.writeFileSync(preload, `const cp = require('node:child_process'), fs = require('node:fs');
+const real = cp.spawnSync;
+cp.spawnSync = (command, args, options) => {
+  if (command === 'npx' || command === 'powershell.exe' && args.some(a => a.includes('skills update'))) {
+    fs.appendFileSync(process.env.UPDATE_LOG, 'skill\\n');
+    return { status: process.env.UPDATE_FAIL === 'skill' ? 1 : 0, stdout: ({ check: 'Failed to check skills from JJLiebig/sympp', skipped: '1 skill(s) cannot be checked automatically:', legacy: '1 project skill(s) cannot be updated automatically' })[process.env.UPDATE_FAIL] || '' };
+  }
+  if (command === 'powershell.exe' && args.some(a => a.includes('SYMPP_COMMAND_BIN'))) return { status: 0 };
+  if (command === 'ssh') {
+    if (args[0] === '-G') return { status: 0, stdout: 'hostname 100.64.1.2' };
+    if (args.at(-1).startsWith('cat ')) return { status: 0, stdout: 'fixture-token' };
+    fs.appendFileSync(process.env.UPDATE_LOG, 'factory\\n'); return { status: 0 };
+  }
+  return real(command, args, options);
+};`);
+  const env = { ...process.env, HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'factory'), HERDR_APP_HOME: path.join(root, 'herdr'), SYMPP_REMOTE_PORT: '21783', UPDATE_LOG: log, NODE_OPTIONS: '--require ' + JSON.stringify(preload) };
+  const script = path.resolve(__dirname, '../../scripts/sympp-command.js');
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { env, cwd: root, encoding: 'utf8', windowsHide: true });
+  assert.equal(run('--host', 'codex', '--server', 'factory-qa').status, 0);
+  const config = path.join(env.CODEX_HOME, 'config.toml');
+  fs.writeFileSync(config, '');
+  env.CODEX_HOME = path.join(root, 'other-codex');
+  env.HERDR_APP_HOME = path.join(root, 'other-herdr');
+  env.SYMPP_REMOTE_HOME = '/wrong-factory';
+  env.SYMPP_REMOTE_PORT = '21999';
+  env.SYMPP_BACKEND_PORT = '21998';
+  let result = run('update');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(fs.readFileSync(config, 'utf8'), /21783/);
+  const saved = JSON.parse(fs.readFileSync(path.join(root, '.local/share/sympp/connection.json'), 'utf8'));
+  const response = JSON.stringify({ result: { structuredContent: { worktree: { status: 'prepared', path: '/srv/repos/.worktrees/repo/fix' } }, content: [] } });
+  const annotated = require('../../scripts/sympp-session-location.js').remoteWorktreeResponse(response, saved.env);
+  assert.equal(JSON.parse(annotated).result.content[0].text, 'worktree: factory-qa:/srv/repos/.worktrees/repo/fix');
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\n');
+  fs.writeFileSync(config, 'untouched');
+  for (const failure of ['skill', 'check', 'skipped', 'legacy']) {
+    env.UPDATE_FAIL = failure;
+    result = run('update');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /skill failed/);
+    assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
+  }
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\nskill\nskill\nskill\nskill\n');
 });

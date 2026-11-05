@@ -3,6 +3,13 @@ set -euo pipefail
 
 [[ "$(uname -s)" == Linux ]] || { echo 'This installer requires Linux.' >&2; exit 1; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export SYMPP_SERVICE_SOURCE="$repo_root"
+service_revision="$(git -C "$repo_root" rev-parse HEAD)"
+service_ref="${SYMPP_SERVICE_REF:-$(git -C "$repo_root" symbolic-ref --short -q HEAD || true)}"
+if [[ -z "$service_ref" && "$(git -C "$repo_root" config --get sympp.serviceRevision || true)" == "$service_revision" ]]; then
+  service_ref="$(git -C "$repo_root" config --get sympp.serviceRef || true)"
+fi
+export SYMPP_SERVICE_REF="${service_ref:-$service_revision}"
 export SYMPP_HOME="${SYMPP_HOME:-$HOME/.agents/splusplus}"
 export SYMPP_REPOS_ROOT="${SYMPP_REPOS_ROOT:-$HOME/Code}"
 export SYMPP_DATABASE="${SYMPP_DATABASE:-$SYMPP_HOME/symphony_plus_plus.sqlite3}"
@@ -26,6 +33,9 @@ MIX_ENV=prod mise exec -- mix deps.get --only prod
 export SYMPP_SOURCE_REVISION="$(git -C "$repo_root" rev-parse HEAD)"
 MIX_ENV=prod mise exec -- mix release symphony_elixir --overwrite
 
+git -C "$repo_root" config sympp.serviceRef "$SYMPP_SERVICE_REF"
+git -C "$repo_root" config sympp.serviceRevision "$service_revision"
+
 release="$SYMPP_HOME/service/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 mkdir -p "$release" "$SYMPP_HOME/logs" "$SYMPP_SERVICE_CONFIG"
 cp -a _build/prod/rel/symphony_elixir/. "$release/"
@@ -44,6 +54,8 @@ env = {
     'HOME': os.environ['HOME'],
     'PATH': os.environ['PATH'],
     'SYMPP_HOME': home,
+    'SYMPP_SERVICE_SOURCE': os.environ['SYMPP_SERVICE_SOURCE'],
+    'SYMPP_SERVICE_REF': os.environ['SYMPP_SERVICE_REF'],
     'SYMPP_DATABASE': os.environ['SYMPP_DATABASE'],
     'SYMPP_REPOS_ROOT': os.environ['SYMPP_REPOS_ROOT'],
     'SYMPP_SOURCE_REVISION': os.environ['SYMPP_SOURCE_REVISION'],

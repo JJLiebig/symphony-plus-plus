@@ -30,6 +30,15 @@ Both entries capture the installed bridge and selected `SYMPP_*` settings.
 Claude local and project registrations take precedence over user registrations.
 Do not commit machine-specific MCP paths to a shared repository.
 
+Setup also installs or updates the Herdr panel when Herdr-app is on PATH, keeping
+backups of replaced panel files. On a personal desk it adds the panel button and
+agent badges; other layouts keep their own files and can open the view with
+`herdr-app do tab.new '{"name":"sympp","mod":"sympp"}'`.
+
+Run `sympp update` to update the skill, reconnect the selected hosts and panel,
+and rebuild/restart the remote factory over the saved SSH host. It stops at the
+first failed step. Open fresh agent sessions afterward.
+
 Repeated setup is a no-op and repairs owned registrations after relocation.
 Unrelated `sympp` entries in the selected host configuration are refused. Use a separate home/workspace,
 or explicitly disable/remove the old registration after closing its sessions.

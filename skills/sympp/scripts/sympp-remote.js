@@ -12,6 +12,10 @@ function origin(value) {
 }
 
 function serverConnection(host, run = spawnSync) {
+  const port = process.env.SYMPP_REMOTE_PORT || "19998";
+  const factoryHome = process.env.SYMPP_REMOTE_HOME;
+  if (!/^\d+$/.test(port) || +port < 1 || +port > 65535) throw new Error("Invalid remote factory port.");
+  if (factoryHome && !factoryHome.startsWith("/")) throw new Error("Remote factory home must be absolute.");
   if (!host || host.startsWith("-") || /[\s\0]/.test(host)) throw new Error("Provide an SSH host alias or an HTTP loopback origin.");
   if (host.startsWith("http://")) {
     const endpoint = origin(host);
@@ -22,10 +26,10 @@ function serverConnection(host, run = spawnSync) {
   const config = run("ssh", ["-G", host], options);
   const hostname = config.status === 0 && config.stdout.match(/^hostname\s+(.+)$/mi)?.[1].trim();
   if (!hostname) throw new Error("Could not resolve the SSH server hostname.");
-  const result = run("ssh", ["-o", "BatchMode=yes", host, "cat ~/.agents/splusplus/remote-token"], options);
+  const result = run("ssh", ["-o", "BatchMode=yes", host, factoryHome ? "cat " + "'" + (factoryHome + '/remote-token').replaceAll("'", "'\\''") + "'" : "cat ~/.agents/splusplus/remote-token"], options);
   if (result.error || result.status !== 0 || !result.stdout.trim()) throw new Error("Could not read the sympp token over SSH.");
   // Remote factories expose authenticated HTTP on the private tailnet by contract.
-  return { endpoint: origin(`http://${hostname.includes(":") ? `[${hostname}]` : hostname}:19998`), token: result.stdout.trim() };
+  return { endpoint: origin(`http://${hostname.includes(":") ? `[${hostname}]` : hostname}:${port}`), token: result.stdout.trim() };
 }
 
 function privateWrite(file, body) {

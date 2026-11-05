@@ -1,9 +1,11 @@
+import legacy from './desk-tabs.legacy.mjs';
 // sympp chrome 3 for the personal desk-tabs mod (cloned from Herdr's tabs 0.1.4): buttons for panels
 // mods register in shared("workspace.panel_buttons"), sympp's own included, beside Files and Changes,
 // with the same toggle; and marks mods register for tabs in shared("workspace.tab_marks"), such as the
 // sympp UI studio's glyph, tucked behind a tab's icon. Each edit's `find` must occur exactly once in the
 // mod; `replace` takes its place. The tab marks import what they use themselves.
 export default {
+  previous: [legacy],
   mark: 'sympp chrome 3',
   mod: 'desk-tabs',
   edits: [

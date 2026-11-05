@@ -60,9 +60,19 @@ After initial setup, use:
 ```sh
 sympp --server jjdev
 sympp status
+sympp update
 ```
 
-Setup retrieves the credential privately over SSH. Never print it.
+Setup retrieves the credential privately over SSH and installs the panel when
+Herdr-app is present. `sympp update` refreshes the skill and client registrations,
+then rebuilds and restarts the factory over that same SSH host, preserving its
+ledger, repository root, port, workflow and service name. Never print the credential.
+
+For a separate factory, set `SYMPP_REMOTE_HOME`, `SYMPP_REMOTE_PORT`, and
+`SYMPP_REMOTE_SERVICE` on the client before setup. Setup saves them for updates.
+Service installs record their checkout and ref for future updates. Older Skills
+service installs use the documented default checkout and beta ref; reinstall a
+custom checkout once with `just install` before updating it from a client.
 
 Clients send `Authorization: Bearer <token>` on every remote HTTP request,
 including MCP, readiness, leases and dashboard API calls. Missing or incorrect

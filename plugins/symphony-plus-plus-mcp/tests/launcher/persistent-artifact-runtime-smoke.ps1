@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ArtifactManifest, [string]$SkillsInstall, [switch]$HostedProcessCreation)
+param([string]$ArtifactManifest, [string]$SkillsInstall, [switch]$HostedProcessCreation, [switch]$CommandCaptureOnly)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../.."))
@@ -70,29 +70,55 @@ function Invoke-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashta
 }
 
 function Read-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment) {
+  if (-not ('Sympp.CommandPipe' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+namespace Sympp {
+  public static class CommandPipe {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool PeekNamedPipe(SafeFileHandle pipe, IntPtr buffer, uint size, IntPtr read, out uint available, IntPtr left);
+    public static int Available(FileStream pipe) {
+      uint available;
+      if (PeekNamedPipe(pipe.SafeFileHandle, IntPtr.Zero, 0, IntPtr.Zero, out available, IntPtr.Zero)) return checked((int)available);
+      int error = Marshal.GetLastWin32Error();
+      if (error == 109) return -1; // All writers closed the pipe.
+      throw new Win32Exception(error);
+    }
+  }
+}
+'@
+  }
   $process = Start-IsolatedProcess $FilePath $Arguments $Environment
   try {
     $streams = @{
-      stdout = @{ reader = $process.StandardOutput; pending = $null; closed = $false; buffer = [char[]]::new(4096); chunks = [Collections.Generic.List[string]]::new() }
-      stderr = @{ reader = $process.StandardError; pending = $null; closed = $false; buffer = [char[]]::new(4096); chunks = [Collections.Generic.List[string]]::new() }
+      stdout = @{ reader = $process.StandardOutput.BaseStream; decoder = [Text.Encoding]::UTF8.GetDecoder(); closed = $false; buffer = [byte[]]::new(4096); chars = [char[]]::new([Text.Encoding]::UTF8.GetMaxCharCount(4096)); chunks = [Collections.Generic.List[string]]::new() }
+      stderr = @{ reader = $process.StandardError.BaseStream; decoder = [Text.Encoding]::UTF8.GetDecoder(); closed = $false; buffer = [byte[]]::new(4096); chars = [char[]]::new([Text.Encoding]::UTF8.GetMaxCharCount(4096)); chunks = [Collections.Generic.List[string]]::new() }
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     do {
       $readAny = $false
       foreach ($stream in $streams.Values) {
         if ($stream.closed) { continue }
-        if (-not $stream.pending) { $stream.pending = $stream.reader.ReadAsync($stream.buffer, 0, $stream.buffer.Length) }
-        if ($stream.pending.Wait(20)) {
-          $count = $stream.pending.Result
-          if ($count -eq 0) { $stream.closed = $true }
-          else { $stream.chunks.Add([string]::new($stream.buffer, 0, $count)) }
-          $stream.pending = $null
+        $exited = $process.HasExited
+        $available = [Sympp.CommandPipe]::Available($stream.reader)
+        if ($available -gt 0) {
+          $count = $stream.reader.Read($stream.buffer, 0, [Math]::Min($available, $stream.buffer.Length))
+          $characters = $stream.decoder.GetChars($stream.buffer, 0, $count, $stream.chars, 0, $false)
+          if ($characters) { $stream.chunks.Add([string]::new($stream.chars, 0, $characters)) }
           $readAny = $true
+        } elseif ($available -lt 0 -or $exited) {
+          $characters = $stream.decoder.GetChars($stream.buffer, 0, 0, $stream.chars, 0, $true)
+          if ($characters) { $stream.chunks.Add([string]::new($stream.chars, 0, $characters)) }
+          $stream.closed = $true
         }
       }
-      # Hosted backends can retain pipe handles after the command exits. Read
-      # chunks so an unterminated final error does not wait for that backend's EOF.
-      if ($process.HasExited -and -not $readAny) { break }
+      # Read all kernel-buffered bytes after exit. Async read completion can lag
+      # process exit, and descendants can retain pipe handles without writing.
+      if ($process.HasExited -and $streams.stdout.closed -and $streams.stderr.closed) { break }
       if ([DateTime]::UtcNow -gt $deadline) { $process.Kill($true); throw "Native command timed out: $FilePath" }
       if (-not $readAny) { Start-Sleep -Milliseconds 10 }
     } while ($true)
@@ -100,6 +126,57 @@ function Read-IsolatedCommand([string]$FilePath, [string[]]$Arguments, [hashtabl
     Write-Host ($result | ConvertTo-Json -Compress)
     return $result
   } finally { $process.Dispose() }
+}
+
+function Test-IsolatedCommandCapture {
+  $powershell = (Get-Command pwsh -ErrorAction Stop).Source
+  $environment = @{ HOME = $tempRoot; USERPROFILE = $tempRoot; CODEX_HOME = Join-Path $tempRoot 'codex'; CLAUDE_CONFIG_DIR = Join-Path $tempRoot 'claude'; HERDR_APP_HOME = Join-Path $tempRoot 'herdr' }
+  $normal = Read-IsolatedCommand $powershell @('-NoProfile', '-Command', '[Console]::Out.Write("command stdout")') $environment
+  if ($normal.exit -ne 0 -or $normal.stdout -cne 'command stdout') { throw 'Command capture lost ordinary stdout.' }
+  $closed = Join-Path $tempRoot 'capture-closed.ps1'
+  [IO.File]::WriteAllText($closed, @'
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class OutputHandles { [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int kind); [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle); public static void Close() { CloseHandle(GetStdHandle(-11)); CloseHandle(GetStdHandle(-12)); } }'
+[OutputHandles]::Close()
+Start-Sleep -Milliseconds 500
+exit 7
+'@)
+  $afterClose = Read-IsolatedCommand $powershell @('-NoProfile', '-File', $closed) $environment
+  if ($afterClose.exit -ne 7) { throw 'Command capture did not wait for the exit status after output closed.' }
+  $child = Join-Path $tempRoot 'capture-child.ps1'
+  [IO.File]::WriteAllText($child, @'
+$psi = [Diagnostics.ProcessStartInfo]::new()
+$psi.FileName = (Get-Command pwsh).Source
+foreach ($arg in @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30')) { $psi.ArgumentList.Add($arg) }
+$psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+$held = [Diagnostics.Process]::Start($psi)
+@{ pid = $held.Id; ticks = [string]$held.StartTime.ToUniversalTime().Ticks } | ConvertTo-Json | Set-Content (Join-Path $PSScriptRoot 'capture-child.json')
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+[Console]::Error.Write(('x' * 4095) + '世界 previous runtime is serving again.')
+exit 1
+'@)
+  Add-Type -TypeDefinition 'using System.Threading; public static class CommandCaptureLoad { public static void Start() { ThreadPool.QueueUserWorkItem(_ => Thread.Sleep(2000)); } }'
+  $workerMax = 0; $ioMax = 0; [Threading.ThreadPool]::GetMaxThreads([ref]$workerMax, [ref]$ioMax)
+  $workerMin = 0; $ioMin = 0; [Threading.ThreadPool]::GetMinThreads([ref]$workerMin, [ref]$ioMin)
+  $held = $null
+  try {
+    [void][Threading.ThreadPool]::SetMinThreads(1, 1)
+    [void][Threading.ThreadPool]::SetMaxThreads(1, 1)
+    [CommandCaptureLoad]::Start()
+    $result = Read-IsolatedCommand $powershell @('-NoProfile', '-File', $child) $environment
+    $identity = Get-Content (Join-Path $tempRoot 'capture-child.json') -Raw | ConvertFrom-Json
+    $held = Get-Process -Id $identity.pid -ErrorAction SilentlyContinue
+    if (-not $held -or [string]$held.StartTime.ToUniversalTime().Ticks -ne $identity.ticks) { throw 'Command capture waited for a descendant to close the inherited pipe.' }
+    if ($result.exit -ne 1 -or $result.stderr -cne (('x' * 4095) + '世界 previous runtime is serving again.')) { throw 'Command capture lost an unterminated UTF-8 error under thread-pool contention.' }
+  } finally {
+    [void][Threading.ThreadPool]::SetMaxThreads($workerMax, $ioMax)
+    [void][Threading.ThreadPool]::SetMinThreads($workerMin, $ioMin)
+    if (-not $held -and (Test-Path (Join-Path $tempRoot 'capture-child.json'))) {
+      $identity = Get-Content (Join-Path $tempRoot 'capture-child.json') -Raw | ConvertFrom-Json
+      $held = Get-Process -Id $identity.pid -ErrorAction SilentlyContinue
+    }
+    if ($held -and [string]$held.StartTime.ToUniversalTime().Ticks -eq $identity.ticks) { Stop-Process -InputObject $held -Force }
+  }
+  Write-Host 'Command capture retained complete UTF-8 output under contention without waiting for inherited-pipe EOF.'
 }
 
 function Read-CodexMcpStatus([string]$Codex, [hashtable]$Environment) {
@@ -251,6 +328,8 @@ try {
       (Join-Path $tempRoot "xdg/cache"), (Join-Path $tempRoot "xdg/data")
     )) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
 
+  Test-IsolatedCommandCapture
+  if ($CommandCaptureOnly) { return }
   $backendPort = New-IsolatedPort @()
   $dashboardPort = New-IsolatedPort @($backendPort)
   if ($ArtifactManifest -or $SkillsInstall) {

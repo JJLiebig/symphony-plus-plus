@@ -11,4 +11,5 @@ else
   git -C "$source_root" fetch origin "$ref"
   git -C "$source_root" checkout --detach FETCH_HEAD
 fi
+export SYMPP_SERVICE_REF="$ref"
 exec bash "$source_root/scripts/install-sympp-checkout.sh"

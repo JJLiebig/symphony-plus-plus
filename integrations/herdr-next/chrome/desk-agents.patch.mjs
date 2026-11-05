@@ -1,8 +1,10 @@
+import legacy from './desk-agents.legacy.mjs';
 // sympp chrome 3 for the personal desk-agents mod (cloned from Herdr's agents 0.1.4): the sympp glyph
 // tucked behind an sympp agent's icon, with its package's stage from the sympp view's reads after the name.
 // Each edit's `find` must occur exactly once in the mod; `replace` takes its place. The injected code
 // imports what it uses itself; the only mod locals it touches (a, k) are in its own anchors.
 export default {
+  previous: [legacy],
   mark: 'sympp chrome 3',
   mod: 'desk-agents',
   edits: [
