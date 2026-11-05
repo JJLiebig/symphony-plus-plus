@@ -195,7 +195,9 @@ async function main() {
   const writes = files.filter(({ body, existing }) => !existing?.equals(body));
   if (chrome) {
     if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...chrome.writes], [...chrome.mods, 'sympp'])) return 1;
-  } else if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...connectionWrites], ['sympp'])) return 1;
+  } else if (values['auto-chrome']) {
+    if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...connectionWrites], ['sympp'])) return 1;
+  } else await write([...panelBackups, ...writes]);
   if (!values.lab) {
     await rm(join(home, 'tools', 'sympp-http.cjs'), { force: true });
     await rm(join(home, 'data', 'sympp-requests'), { recursive: true, force: true });
