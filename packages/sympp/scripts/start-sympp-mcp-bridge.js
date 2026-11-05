@@ -423,10 +423,8 @@ async function claimPortableLedger(runtimeFile) {
       if (fs.existsSync(receiptFile) && (!receipt || typeof receipt.runtime_file !== "string" || !Array.isArray(receipt.clients))) {
         throw new Error("The ledger ownership receipt is unreadable. Close all sympp clients and inspect the adjacent .sympp-owner.json file before retrying.");
       }
-      const clients = [];
-      for (const client of receipt?.clients || []) {
-        if (await livenessMatches(client.pid, client.pipe, client.token)) clients.push(client);
-      }
+      const clients = (await Promise.all((receipt?.clients || []).map(async client =>
+        await livenessMatches(client.pid, client.pipe, client.token) ? client : null))).filter(Boolean);
       if (receipt && path.resolve(receipt.runtime_file).toLowerCase() !== path.resolve(runtimeFile).toLowerCase()) {
         const state = readJson(receipt.runtime_file);
         const health = state?.backend?.managed && state.backend.url ? await backendHealth(state.backend.url) : null;
