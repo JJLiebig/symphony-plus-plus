@@ -7,6 +7,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog do
   @health_tool "sympp.health"
   @mcp_contract_schema_version "sympp-mcp-contract.v1"
   @mcp_contract_health_fields [
+    "factory_owned_worktrees",
     "ledger",
     "mode",
     "source.mcp_contract.fingerprint",

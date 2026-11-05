@@ -57,7 +57,7 @@ function startBackend() {
       if (req.method === "GET" && req.url === "/mcp/readiness") {
         return response(res, 200, { status: "ok", ledger: { reachable: true }, dashboard: { ready: true }, source: { mcp_contract: { fingerprint: contract } } });
       }
-      if (req.method === "POST" && req.url === "/mcp/client-lease") return response(res, 200, { stale_after_ms: 600000 });
+      if (req.method === "POST" && req.url === "/mcp/client-lease") return response(res, 200, { stale_after_ms: 600000, factory_owned_worktrees: false });
       if (req.method !== "POST" || req.url !== "/mcp") return response(res, 404, {});
 
       let raw = "";

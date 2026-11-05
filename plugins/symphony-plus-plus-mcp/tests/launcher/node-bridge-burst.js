@@ -65,7 +65,7 @@ async function handle(request, response) {
     return setTimeout(() => {
       if (backendStopped) return respond(response, 503, { status: "stopped" });
       readinessCompleted = true;
-      respond(response, 200, { status: "ok", ledger: { reachable: true, identity: { kind: "sqlite", default_home: true } }, dashboard: { ready: true }, source: { mcp_contract: { fingerprint: contract } } });
+      respond(response, 200, { status: "ok", factory_owned_worktrees: false, ledger: { reachable: true, identity: { kind: "sqlite", default_home: true } }, dashboard: { ready: true }, source: { mcp_contract: { fingerprint: contract } } });
     }, 250);
   }
   if (request.url === "/mcp/client-lease") {
@@ -79,7 +79,7 @@ async function handle(request, response) {
       counts.detach += 1;
       activeLeases.delete(payload.client_id);
     }
-    return respond(response, 200, { stale_after_ms: 600000 });
+    return respond(response, 200, { stale_after_ms: 600000, factory_owned_worktrees: false });
   }
   if (request.url === "/mcp") {
     const payload = JSON.parse(await readBody(request));

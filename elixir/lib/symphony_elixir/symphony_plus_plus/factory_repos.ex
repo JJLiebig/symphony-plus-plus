@@ -64,34 +64,32 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
       Regex.match?(~r/\A[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\z/, value) ->
         remote("https://github.com/" <> String.replace_suffix(value, ".git", "") <> ".git")
 
-      parts = Regex.run(@scp_remote, value) ->
-        [_match, user, host, path] = parts
-
-        authority = if user == "", do: host, else: user <> "@" <> host
-
-        case uri_remote("ssh://" <> authority <> "/" <> path) do
-          {:ok, _uri, name} -> {:ok, value, name}
-          error -> error
-        end
-
       true ->
-        uri_remote(value)
+        {uri, path} = parsed_remote(value)
+        name = Path.basename(path || "") |> String.replace_suffix(".git", "")
+
+        if usable_authority?(uri) and name not in ["", ".", ".."] and not String.contains?(value, <<0>>) do
+          {:ok, value, name}
+        else
+          {:error, :invalid_repo_remote}
+        end
     end
+  rescue
+    _ in [URI.Error, ArgumentError] -> {:error, :invalid_repo_remote}
   end
 
   defp remote(_), do: {:error, :invalid_repo_remote}
 
-  defp uri_remote(value) do
-    uri = URI.parse(value)
-    name = Path.basename(uri.path || "") |> String.replace_suffix(".git", "")
+  defp parsed_remote(value) do
+    case Regex.run(@scp_remote, value) do
+      [_match, user, host, path] ->
+        authority = if user == "", do: host, else: user <> "@" <> host
+        {URI.parse("ssh://" <> authority), path}
 
-    if usable_authority?(uri) and name not in ["", ".", ".."] and not String.contains?(value, <<0>>) do
-      {:ok, value, name}
-    else
-      {:error, :invalid_repo_remote}
+      nil ->
+        uri = URI.parse(value)
+        {uri, uri.path}
     end
-  rescue
-    _ in URI.Error -> {:error, :invalid_repo_remote}
   end
 
   defp usable_authority?(uri) do
@@ -103,25 +101,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   defp usable_userinfo?(%URI{userinfo: user}), do: user != "" and not String.contains?(URI.decode(user), ":")
 
   defp identity(remote) do
-    {uri, path} =
-      case Regex.run(@scp_remote, remote) do
-        [_match, user, host, path] ->
-          authority = if user == "", do: host, else: user <> "@" <> host
-          {URI.parse("ssh://" <> authority), path}
-
-        nil ->
-          uri = URI.parse(remote)
-          {uri, uri.path}
-      end
+    {uri, path} = parsed_remote(remote)
 
     host = String.downcase(uri.host)
     default_port = %{"ssh" => 22, "https" => 443, "http" => 80, "git" => 9418}[uri.scheme]
     port = uri.port || default_port
 
-    if host == "github.com" and port == default_port and uri.userinfo in [nil, "git"] do
+    user = if uri.scheme == "ssh", do: uri.userinfo
+
+    if host == "github.com" and port == default_port and user in [nil, "git"] do
       {:github, path |> String.trim("/") |> String.downcase() |> String.replace_suffix(".git", "")}
     else
-      {uri.scheme, host, port, uri.userinfo, path}
+      {uri.scheme, host, port, user, path}
     end
   end
 end

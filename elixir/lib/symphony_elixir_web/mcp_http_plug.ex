@@ -51,6 +51,7 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
          {:ok, result} <- ClientLeases.handle_payload(payload) do
       send_json(conn, 200, %{
         "status" => "ok",
+        "factory_owned_worktrees" => is_binary(SymphonyElixir.Config.factory_repos_root()),
         "active_client_count" => result.active_client_count,
         "stale_after_ms" => result.stale_after_ms
       })

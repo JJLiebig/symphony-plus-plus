@@ -15,16 +15,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-ssh")
     root = Path.join(fixture.root, "factory")
     name = Path.basename(fixture.repo_root)
-    remote = "deploy@git.example:team/#{name}.git"
     peer = Path.join(fixture.root, "ssh-peer.js")
     node = System.find_executable("node")
-
-    File.write!(peer, """
-    const {spawnSync} = require("node:child_process");
-    if (process.argv.at(-1) !== #{Jason.encode!("git-upload-pack 'team/#{name}.git'")}) process.exit(2);
-    const result = spawnSync("git", ["upload-pack", #{Jason.encode!(fixture.origin)}], {stdio: "inherit"});
-    process.exit(result.status ?? 1);
-    """)
 
     command = Enum.map_join([node, peer], " ", fn value -> "'" <> String.replace(value, "'", "'\"'\"'") <> "'" end)
     keys = ["SYMPP_REPOS_ROOT", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"]
@@ -34,12 +26,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     System.put_env("GIT_SSH_COMMAND", command)
     System.put_env("GIT_SSH_VARIANT", "ssh")
 
-    assert {:ok, checkout} = FactoryRepos.resolve(remote)
-    assert checkout == Path.join(root, name)
-    assert {origin, 0} = System.cmd("git", ["-C", checkout, "remote", "get-url", "origin"])
-    assert String.trim(origin) == remote
-    assert {:ok, ^checkout} = FactoryRepos.resolve(remote)
-    refute FactoryRepos.matches?(checkout, "ssh://deploy@git.example/team/#{name}.git")
+    for suffix <- ["", "#literal", "?literal"] do
+      repo_name = name <> suffix
+      remote = "deploy@git.example:team/#{repo_name}.git"
+
+      File.write!(peer, """
+      const {spawnSync} = require("node:child_process");
+      if (process.argv.at(-1) !== #{Jason.encode!("git-upload-pack 'team/#{repo_name}.git'")}) process.exit(2);
+      const result = spawnSync("git", ["upload-pack", #{Jason.encode!(fixture.origin)}], {stdio: "inherit"});
+      process.exit(result.status ?? 1);
+      """)
+
+      assert {:ok, checkout} = FactoryRepos.resolve(remote)
+      assert checkout == Path.join(root, repo_name)
+      assert {origin, 0} = System.cmd("git", ["-C", checkout, "remote", "get-url", "origin"])
+      assert String.trim(origin) == remote
+      assert {:ok, ^checkout} = FactoryRepos.resolve(remote)
+    end
+
+    refute FactoryRepos.matches?(Path.join(root, name), "ssh://deploy@git.example/team/#{name}.git")
   end
 
   test "factory resolves by remote, refuses a different owner, and owns prepare, replay and cleanup", %{repo: repo} do
@@ -79,6 +84,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     refute FactoryRepos.matches?(checkout, "git@git.example:team/#{name}.git")
     {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", ssh_remote])
     assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("ssh://deploy:password@git.example/team/#{name}.git")
+
+    http_remote = "https://alice@git.example/team/#{name}.git"
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", http_remote])
+    assert FactoryRepos.matches?(checkout, "https://git.example/team/#{name}.git")
+    refute FactoryRepos.matches?(checkout, "https://git.example:444/team/#{name}.git")
 
     for protocol <- ["http", "git"] do
       network_remote = "#{protocol}://git.example/team/#{name}.git"

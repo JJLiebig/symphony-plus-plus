@@ -54,10 +54,8 @@ function isRemoteEndpoint(env) {
   return !["localhost", "127.0.0.1", "[::1]"].includes(new URL(env.SYMPP_SERVER_URL).hostname);
 }
 
-async function remoteArguments(body, env, factoryOwned = isRemoteEndpoint(env)) {
+async function remoteArguments(body, factoryOwned) {
   if (!factoryOwned) return body;
-  const payload = JSON.parse(body);
-  if (payload.method !== "tools/call" || !payload.params?.arguments) return body;
   const origin = cwd => new Promise((resolve, reject) => {
     execFile("git", ["-C", cwd, "remote", "get-url", "origin"],
       { timeout: 5000, maxBuffer: 8192, windowsHide: true }, (error, stdout) => {
@@ -65,47 +63,56 @@ async function remoteArguments(body, env, factoryOwned = isRemoteEndpoint(env)) 
         else resolve(stdout.trim());
       });
   });
-  const repo = async value => {
-    if (typeof value !== "string") return value;
-    return path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) ? origin(value) : value;
+  const repo = async value => typeof value === "string" && (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value)) ? origin(value) : value;
+  const repoObject = async value => {
+    if (!value || typeof value !== "object" || Array.isArray(value) || !("repo" in value)) return value;
+    return { ...value, repo: await repo(value.repo) };
   };
-  async function rewrite(value) {
-    if (Array.isArray(value)) return Promise.all(value.map(rewrite));
-    if (!value || typeof value !== "object") return value;
-    const result = { ...value };
-    for (const [key, item] of Object.entries(result)) {
-      if (key === "repo") result[key] = await repo(item);
-      else if (key === "repos" && Array.isArray(item)) result[key] = await Promise.all(item.map(repo));
-      else if (item && typeof item === "object") result[key] = await rewrite(item);
+  async function rewrite(payload) {
+    const params = payload?.params;
+    const input = params?.arguments;
+    if (payload?.method !== "tools/call" || !input || typeof input !== "object" || Array.isArray(input)) return payload;
+    let args = { ...input };
+    if (["create_work_request", "claim_local_architect_assignment", "solo_attach", "solo_list"].includes(params.name)) args = await repoObject(args);
+    if (params.name === "create_work_request") {
+      if (!Object.hasOwn(args, "repo")) args.repo = await origin(process.cwd());
+      if (Array.isArray(args.repo_scopes)) args.repo_scopes = await Promise.all(args.repo_scopes.map(repoObject));
     }
-    return result;
+    if (params.name === "register_chief" && Array.isArray(args.repos)) args.repos = await Promise.all(args.repos.map(repo));
+    if (params.name === "slice_work_request" && Array.isArray(args.work_packages)) args.work_packages = await Promise.all(args.work_packages.map(repoObject));
+    if (params.name === "update_work_package") args.patch = await repoObject(args.patch);
+    if (["prepare_work_package_worktree", "cleanup_work_package_worktree"].includes(params.name)) delete args.target_repo_root;
+    return { ...payload, params: { ...params, arguments: args } };
   }
-  const args = await rewrite(payload.params.arguments);
-  if (payload.params.name === "create_work_request" && !args.repo) args.repo = await origin(process.cwd());
-  // Checkout overrides belong to the factory; older clients may still supply one.
-  if (["prepare_work_package_worktree", "cleanup_work_package_worktree"].includes(payload.params.name)) delete args.target_repo_root;
-  payload.params.arguments = args;
-  return JSON.stringify(payload);
+  const payload = JSON.parse(body);
+  if (Array.isArray(payload)) return body;
+  return JSON.stringify(await rewrite(payload));
 }
 
 function remoteWorktreeResponse(body, env = process.env) {
   if (!isRemoteEndpoint(env)) return body;
   try {
+    const qualify = payload => {
+      const result = payload?.result;
+      const worktree = result?.structuredContent?.worktree;
+      if (!result?.isError && ["prepared", "already_prepared"].includes(worktree?.status) && typeof worktree?.path === "string") {
+        const machine = env.SYMPP_SERVER_NAME || new URL(env.SYMPP_SERVER_URL).hostname;
+        const value = `${machine}:${worktree.path}`;
+        const encoded = /[\u0000-\u001f"\u007f]/.test(value) ? JSON.stringify(value) : value;
+        result.content = [{ type: "text", text: `worktree: ${encoded}` }];
+      }
+      return payload;
+    };
     const payload = JSON.parse(body);
-    const result = payload.result;
-    const worktree = result?.structuredContent?.worktree;
-    if (!result?.isError && ["prepared", "already_prepared"].includes(worktree?.status) && typeof worktree?.path === "string") {
-      const machine = env.SYMPP_SERVER_NAME || new URL(env.SYMPP_SERVER_URL).hostname;
-      result.content = [{ type: "text", text: `worktree: ${machine}:${worktree.path}` }];
-    }
-    return JSON.stringify(payload);
+    if (Array.isArray(payload)) return body;
+    return JSON.stringify(qualify(payload));
   } catch (_) { return body; }
 }
 
 function createReporter(env = process.env, connect = selected => connectCore(undefined, "hc", [], selected)) {
   const clientId = randomUUID();
   let location = locationFromEnvironment(env, os.hostname(), clientId);
-  let factoryOwned = isRemoteEndpoint(env);
+  let factoryOwned = false;
   const native = Boolean(env.HC_TERMINAL_ID && env.HC_TERMINAL_SOCKET);
   const file = path.resolve(env.SYMPP_HOME || path.join(os.homedir(), ".agents", "splusplus"), "herdr-sessions", `${clientId}.json`);
   let refreshAt = 0;
@@ -143,7 +150,7 @@ function createReporter(env = process.env, connect = selected => connectCore(und
   return {
     clientId,
     native,
-    setFactoryOwned(value) { if (typeof value === "boolean") factoryOwned = value; },
+    setFactoryOwned(value) { factoryOwned = value; },
     clear,
     close() { closed = true; clear(); },
     report(binding, probe) {
@@ -188,7 +195,7 @@ function createReporter(env = process.env, connect = selected => connectCore(und
         }).finally(() => { pending = null; });
       }
       if (pending) await pending;
-      return withLocation(await remoteArguments(body, env, factoryOwned), location);
+      return withLocation(await remoteArguments(body, factoryOwned), location);
     },
   };
 }

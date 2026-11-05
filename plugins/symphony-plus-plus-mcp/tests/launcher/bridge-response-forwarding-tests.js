@@ -63,7 +63,7 @@ async function main() {
           assert.ok(local, "local identity must exist before HTTP attach");
           assert.equal(local.pid, bridge.pid);
         }
-        response.end(JSON.stringify({ stale_after_ms: 300000 }));
+        response.end(JSON.stringify({ stale_after_ms: 300000, factory_owned_worktrees: true }));
       });
       return;
     }
