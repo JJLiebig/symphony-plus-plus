@@ -4,13 +4,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
   test "legacy recovered handoff architects read same repo/base without persisted repo scope", %{repo: repo} do
-    fixture = TestSupport.git_repo_with_origin_fixture!("https://github.com/JJLiebig/symphony-plus-plus.git", prefix: "legacy-handoff-scope")
+    fixture = TestSupport.git_repo_with_origin_fixture!("https://github.com/fixture-owner/handoff-fixture.git", prefix: "legacy-handoff-scope")
     config = Config.default(repo: repo, repo_root: fixture)
 
     handoff_work_request =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF",
-        repo: "sympp",
+        repo: "handoff-fixture",
         base_branch: "main",
         status: "ready_for_slicing"
       )
@@ -18,7 +18,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     equivalent_sibling =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF-SIBLING",
-        repo: "JJLiebig/sympp",
+        repo: "fixture-owner/handoff-fixture",
         base_branch: handoff_work_request.base_branch,
         status: "ready_for_slicing"
       )
@@ -26,7 +26,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     other_repo =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF-OTHER-REPO",
-        repo: "Elsewhere/symphony-plus-plus",
+        repo: "other-owner/handoff-fixture",
         base_branch: handoff_work_request.base_branch,
         status: "ready_for_slicing"
       )
