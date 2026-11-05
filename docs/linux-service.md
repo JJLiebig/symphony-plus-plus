@@ -36,6 +36,9 @@ isolated factory. `SYMPP_BACKEND_PORT` overrides the default port and
 `SYMPP_SERVICE_NAME` selects a separate unit. Set `SYMPP_WORKFLOW_FILE` if the
 factory needs workspace hooks from a workflow. Unix hooks run through `sh`.
 
+Clean up active worktrees before changing the configured worktree root. Existing
+recorded worktrees must remain under the root used to create them.
+
 Set `SYMPP_REPOS_ROOT` at installation to the server's checkout directory
 (default `$HOME/Code`; on jjdev `/srv/jjdev/Code`). Repositories are selected by
 remote URL or `owner/name`. The factory reuses a matching checkout or clones it

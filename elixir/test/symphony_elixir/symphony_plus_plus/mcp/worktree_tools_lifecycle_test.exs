@@ -44,6 +44,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     assert replay.worktree_path == prepared.worktree_path
     assert {:ok, _} = WorktreeLifecycle.cleanup(repo, package.id, target_repo_root: checkout)
     refute File.exists?(prepared.worktree_path)
+
+    long_branch = String.duplicate("component/", 40) <> "login"
+    assert {:ok, long_prepared} = WorktreeLifecycle.prepare(repo, package.id, Map.put(attrs, "branch", long_branch))
+    assert byte_size(Path.basename(long_prepared.worktree_path)) <= 255
+    assert {branch, 0} = System.cmd("git", ["-C", long_prepared.worktree_path, "branch", "--show-current"])
+    assert String.trim(branch) == long_branch
+    assert {:ok, _} = WorktreeLifecycle.cleanup(repo, package.id, target_repo_root: checkout)
   end
 
   test "historical worktree roots and lease bindings preserve scoped cleanup and stored audit redaction", %{repo: repo} do

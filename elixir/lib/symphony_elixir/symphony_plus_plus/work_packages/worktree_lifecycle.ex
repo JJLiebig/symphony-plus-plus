@@ -259,7 +259,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   defp factory_worktree_leaves(leaves, branch) do
     if is_binary(Config.factory_repos_root()) do
       {:ok, slug} = WorktreePath.safe_segment(branch)
-      Enum.map(leaves, fn {hash, length} -> {"#{slug}-#{hash}", length} end)
+      Enum.map(leaves, fn {hash, length} -> {"#{String.slice(slug, 0, 80)}-#{hash}", length} end)
     else
       leaves
     end

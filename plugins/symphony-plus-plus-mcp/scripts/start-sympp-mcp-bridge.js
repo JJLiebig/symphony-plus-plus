@@ -851,7 +851,12 @@ function responseLines(response) {
 }
 
 async function mcpPost(url, body, sessionId, protocol, timeoutMs) {
-  body = await sessionLocation.attach(body);
+  try {
+    body = await sessionLocation.attach(body);
+  } catch (error) {
+    error.symppRequestMayHaveReachedBackend = false;
+    throw error;
+  }
   const headers = { Accept: "application/json, text/event-stream", "Content-Type": "application/json" };
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   if (protocol) headers["MCP-Protocol-Version"] = protocol;

@@ -19,9 +19,14 @@ test("remote path requests become origin identities and qualified responses pres
   assert.equal(converted.repo, "https://github.com/example/service.git");
   assert.deepEqual(converted.repo_scopes, [{ repo: converted.repo }, { repo: "other/repo" }]);
   assert.equal(await remoteArguments(input, {}), input);
-  const response = JSON.stringify({ result: { isError: false, structuredContent: { worktree: { path: "/srv/Code/.worktrees/service/fix" }, worker_launch: { workspace_path: "/srv/Code/.worktrees/service/fix" } }, content: [] } });
+  const response = JSON.stringify({ result: { isError: false, structuredContent: { worktree: { status: "prepared", path: "/srv/Code/.worktrees/service/fix" }, worker_launch: { workspace_path: "/srv/Code/.worktrees/service/fix" } }, content: [] } });
   const output = JSON.parse(remoteWorktreeResponse(response, env)).result;
   assert.equal(output.content[0].text, "worktree: jjdev:/srv/Code/.worktrees/service/fix");
   assert.equal(output.structuredContent.worker_launch.workspace_path, "/srv/Code/.worktrees/service/fix");
   assert.equal(remoteWorktreeResponse(response, {}), response);
+});
+
+test("queued cleanup keeps its status and recovery action visible", () => {
+  const response = JSON.stringify({ result: { structuredContent: { worktree: { status: "cleanup_queued", path: "/srv/Code/.worktrees/service/fix" }, next_action: "retry" }, content: [{ type: "text", text: "status: cleanup_queued\nnext_action: retry" }] } });
+  assert.equal(remoteWorktreeResponse(response, { SYMPP_SERVER_URL: "http://100.123.207.19:19998", SYMPP_SERVER_NAME: "jjdev" }), response);
 });

@@ -89,7 +89,7 @@ function remoteWorktreeResponse(body, env = process.env) {
     const payload = JSON.parse(body);
     const result = payload.result;
     const worktree = result?.structuredContent?.worktree;
-    if (!result?.isError && typeof worktree?.path === "string") {
+    if (!result?.isError && ["prepared", "already_prepared"].includes(worktree?.status) && typeof worktree?.path === "string") {
       const machine = env.SYMPP_SERVER_NAME || new URL(env.SYMPP_SERVER_URL).hostname;
       result.content = [{ type: "text", text: `worktree: ${machine}:${worktree.path}` }];
     }
