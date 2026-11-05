@@ -81,6 +81,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
          :ok <- require_base_branch(work_package, base_branch),
          {:ok, branch} <- ref_name(attrs, "branch", :invalid_branch, target_repo_root, opts),
          {:ok, worktree_parent} <- worktree_parent(attrs, opts),
+         worktree_parent = factory_worktree_parent(worktree_parent, target_repo_root),
          {:ok, worktree_path} <- worktree_path(work_package, target_repo_root, branch, worktree_parent, opts),
          {:ok, worktree_path} <-
            validate_recorded_prepare_path(work_package, worktree_path, target_repo_root, branch, worktree_parent) do
@@ -148,10 +149,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
 
   @spec worktree_root(keyword()) :: {:ok, Path.t()} | {:error, error()}
   def worktree_root(opts \\ []) when is_list(opts) do
-    opts
-    |> codex_home()
-    |> then(&Path.join([&1, "worktrees", "spp_worktrees"]))
-    |> canonicalize()
+    root =
+      case Config.factory_repos_root() do
+        nil -> Path.join([codex_home(opts), "worktrees", "spp_worktrees"])
+        repos_root -> Path.join(repos_root, ".worktrees")
+      end
+
+    canonicalize(root)
+  end
+
+  defp factory_worktree_parent(parent, repo_root) do
+    if is_binary(Config.factory_repos_root()), do: Path.join(parent, Path.basename(repo_root)), else: parent
   end
 
   defp target_repo_root(attrs) do
@@ -238,12 +246,22 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
 
   defp worktree_leaf(%WorkPackage{} = work_package, repo_root, branch, worktree_parent, opts) do
     with {:ok, leaves} <- WorktreePath.collision_worktree_leaves(repo_root, work_package.id, branch) do
+      leaves = factory_worktree_leaves(leaves, branch)
       worktree_list = reserved_worktree_list(repo_root, opts)
 
       case Enum.find_value(leaves, &available_worktree_leaf(&1, work_package, worktree_parent, worktree_list)) do
         nil -> {:error, :worktree_path_exists}
         leaf -> {:ok, leaf}
       end
+    end
+  end
+
+  defp factory_worktree_leaves(leaves, branch) do
+    if is_binary(Config.factory_repos_root()) do
+      {:ok, slug} = WorktreePath.safe_segment(branch)
+      Enum.map(leaves, fn {hash, length} -> {"#{slug}-#{hash}", length} end)
+    else
+      leaves
     end
   end
 

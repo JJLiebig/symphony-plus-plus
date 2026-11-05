@@ -49,6 +49,54 @@ function withLocation(body, location) {
   } catch (_) { return body; }
 }
 
+async function remoteArguments(body, env) {
+  if (!env.SYMPP_SERVER_URL) return body;
+  const payload = JSON.parse(body);
+  if (payload.method !== "tools/call" || !payload.params?.arguments) return body;
+  const origin = cwd => new Promise((resolve, reject) => {
+    execFile("git", ["-C", cwd, "remote", "get-url", "origin"],
+      { timeout: 5000, maxBuffer: 8192, windowsHide: true }, (error, stdout) => {
+        if (error || !stdout.trim()) reject(new Error("Repository origin is unavailable. Supply a git remote URL or owner/name."));
+        else resolve(stdout.trim());
+      });
+  });
+  const repo = async value => {
+    if (typeof value !== "string") return value;
+    return path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) ? origin(value) : value;
+  };
+  async function rewrite(value) {
+    if (Array.isArray(value)) return Promise.all(value.map(rewrite));
+    if (!value || typeof value !== "object") return value;
+    const result = { ...value };
+    for (const [key, item] of Object.entries(result)) {
+      if (key === "repo") result[key] = await repo(item);
+      else if (key === "repos" && Array.isArray(item)) result[key] = await Promise.all(item.map(repo));
+      else if (item && typeof item === "object") result[key] = await rewrite(item);
+    }
+    return result;
+  }
+  const args = await rewrite(payload.params.arguments);
+  if (payload.params.name === "create_work_request" && !args.repo) args.repo = await origin(process.cwd());
+  // Checkout overrides belong to the factory; older clients may still supply one.
+  if (["prepare_work_package_worktree", "cleanup_work_package_worktree"].includes(payload.params.name)) delete args.target_repo_root;
+  payload.params.arguments = args;
+  return JSON.stringify(payload);
+}
+
+function remoteWorktreeResponse(body, env = process.env) {
+  if (!env.SYMPP_SERVER_URL) return body;
+  try {
+    const payload = JSON.parse(body);
+    const result = payload.result;
+    const worktree = result?.structuredContent?.worktree;
+    if (!result?.isError && typeof worktree?.path === "string") {
+      const machine = env.SYMPP_SERVER_NAME || new URL(env.SYMPP_SERVER_URL).hostname;
+      result.content = [{ type: "text", text: `worktree: ${machine}:${worktree.path}` }];
+    }
+    return JSON.stringify(payload);
+  } catch (_) { return body; }
+}
+
 function createReporter(env = process.env, connect = selected => connectCore(undefined, "hc", [], selected)) {
   const clientId = randomUUID();
   let location = locationFromEnvironment(env, os.hostname(), clientId);
@@ -133,9 +181,9 @@ function createReporter(env = process.env, connect = selected => connectCore(und
         }).finally(() => { pending = null; });
       }
       if (pending) await pending;
-      return withLocation(body, location);
+      return withLocation(await remoteArguments(body, env), location);
     },
   };
 }
 
-module.exports = { locationFromEnvironment, withSnapshot, withLocation, createReporter };
+module.exports = { locationFromEnvironment, withSnapshot, withLocation, createReporter, remoteArguments, remoteWorktreeResponse };

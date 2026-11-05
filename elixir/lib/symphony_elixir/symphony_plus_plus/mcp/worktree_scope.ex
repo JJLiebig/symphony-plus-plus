@@ -1,6 +1,7 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
   alias SymphonyElixir.PathSafety
   alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
@@ -51,7 +52,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
 
   @spec target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) :: target_repo_root_result()
   def target_repo_root_argument(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
-    resolve_target_repo_root(explicit_root, work_package, config)
+    if FactoryRepos.enabled?() do
+      FactoryRepos.resolve(work_package.repo)
+    else
+      resolve_target_repo_root(explicit_root, work_package, config)
+    end
   end
 
   @spec resolve_target_repo_root(String.t() | nil, WorkPackage.t(), Config.t()) :: target_repo_root_result()
@@ -66,16 +71,25 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   end
 
   def resolve_target_repo_root(nil, %WorkPackage{} = work_package, %Config{} = config) do
-    work_package
-    |> target_repo_root_candidates(config)
-    |> scoped_target_repo_root(work_package, config)
+    if FactoryRepos.enabled?() do
+      FactoryRepos.resolve(work_package.repo)
+    else
+      work_package
+      |> target_repo_root_candidates(config)
+      |> scoped_target_repo_root(work_package, config)
+    end
   end
 
   @spec require_target_repo_root_scope(String.t() | nil, WorkPackage.t(), Config.t()) :: scope_result()
   def require_target_repo_root_scope(target_repo_root, %WorkPackage{repo: expected_repo}, %Config{} = config) do
     with {:ok, target_repo_root} <- PathSafety.canonicalize(target_repo_root),
          true <- File.dir?(target_repo_root) do
-      if target_repo_root_matches_repo_scope?(target_repo_root, expected_repo, config) do
+      matches? =
+        if FactoryRepos.enabled?(),
+          do: FactoryRepos.matches?(target_repo_root, expected_repo),
+          else: target_repo_root_matches_repo_scope?(target_repo_root, expected_repo, config)
+
+      if matches? do
         :ok
       else
         {:tool_error, "target_repo_root_scope_mismatch"}

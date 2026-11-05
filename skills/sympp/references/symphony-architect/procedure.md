@@ -142,12 +142,15 @@ authoritative for that distinction.
 default. Use `detail: "full"` for every skipped row and nested delivery evidence.
 Update Skills and start fresh MCP sessions after upgrading this contract.
 
-Prepare/provide worktree scope before launch. Use
-`prepare_work_package_worktree(work_package_id)` and its returned
-`worker_launch.workspace_path` as cwd. Override `branch` only when needed;
-absent/templated patterns derive a package-unique branch. Supply non-secret
-runtime identity/validation context when required. On `target_repo_root_required`
-from prepare/cleanup, retry with the product checkout owning the recorded path.
+Name repositories by git remote URL or `owner/name`, never a client checkout path.
+Remote clients may omit `repo` at intake to infer the calling checkout's origin.
+The factory resolves/clones the repo and owns preparation and cleanup on its machine.
+Call `prepare_work_package_worktree(work_package_id)`; remote responses contain
+`worktree: <machine>:<path>` (for example `worktree: jjdev:/srv/jjdev/Code/.worktrees/sympp/fix-login-abc12345`).
+Launch the worker yourself with `hc run --bg --on <machine> --cwd <path> ...`;
+the factory does not launch it automatically. Never prepare worktrees on the client.
+Loopback clients use the returned `worker_launch.workspace_path` as cwd as before.
+Override `branch` only when needed; absent/templated patterns derive a unique branch.
 
 Worker prompts contain task-specific data only:
 

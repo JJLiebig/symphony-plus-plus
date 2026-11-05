@@ -32,6 +32,9 @@ defmodule SymphonyElixir.Config do
   @fallback_environment_names ["LINEAR_API_KEY", "LINEAR_ASSIGNEE"]
   @environment_reference_pattern ~r/^\$([A-Za-z_][A-Za-z0-9_]*)$/
 
+  @spec factory_repos_root() :: String.t() | nil
+  def factory_repos_root, do: System.get_env("SYMPP_REPOS_ROOT")
+
   @spec settings() :: {:ok, Schema.t()} | {:error, term()}
   def settings do
     case Workflow.current() do

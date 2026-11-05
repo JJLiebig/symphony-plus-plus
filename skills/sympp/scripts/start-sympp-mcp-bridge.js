@@ -1352,7 +1352,10 @@ async function bridge(identity, state, runtimeFile) {
       if (requestProtocol) {
         protocol = protocolFrom(response.lines) || requestProtocol;
       }
-      for (const content of response.lines) process.stdout.write(`${content.replace(/\r?\n/g, "")}\n`);
+      for (const content of response.lines) {
+        const output = require("./sympp-session-location.js").remoteWorktreeResponse(content);
+        process.stdout.write(`${output.replace(/\r?\n/g, "")}\n`);
+      }
     }
     if (fatalRecoveryError) throw fatalRecoveryError;
     return true;

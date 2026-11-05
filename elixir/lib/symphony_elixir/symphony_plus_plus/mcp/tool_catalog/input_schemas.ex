@@ -30,7 +30,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   def bootstrap_tool_input_schema("create_work_request") do
     schema(
       %{
-        "repo" => string_schema(),
+        "repo" => described_string_schema("Git remote URL or owner/name. Remote clients can omit it to infer their checkout origin."),
         "base_branch" => string_schema(),
         "title" => string_schema(),
         "description" => markdown_string_schema("WorkRequest human-facing description in Markdown."),
@@ -48,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         "created_via" => string_schema(),
         "session_description" => session_description_schema()
       },
-      ["repo", "base_branch", "title", "request_kind", "description"]
+      ["base_branch", "title", "request_kind", "description"]
     )
   end
 
@@ -638,7 +638,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_package_id" => string_schema(),
-        "target_repo_root" => described_string_schema("Optional target product repository root. Omit when the current MCP repo root or a standard local checkout matches the WorkPackage repo."),
+        "target_repo_root" => described_string_schema("Local factory checkout override. Omit for remote factories, which resolve the WorkPackage remote under their repos root."),
         "branch" =>
           described_string_schema("Optional branch override. Omit it to derive a package-unique branch from the WorkPackage id or branch_pattern template. Exact branch patterns are used unchanged.")
       },

@@ -9,6 +9,43 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
   @moduletag :ci_slow
 
+  test "factory resolves by remote, refuses a different owner, and owns prepare, replay and cleanup", %{repo: repo} do
+    alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+    alias SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope
+    alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle
+
+    fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-repos")
+    repos_root = Path.dirname(fixture.repo_root)
+    remote = "https://github.com/factory/#{Path.basename(fixture.repo_root)}.git"
+    {_, 0} = System.cmd("git", ["-C", fixture.repo_root, "remote", "set-url", "origin", remote])
+    previous = System.get_env("SYMPP_REPOS_ROOT")
+    System.put_env("SYMPP_REPOS_ROOT", repos_root)
+
+    on_exit(fn ->
+      if previous, do: System.put_env("SYMPP_REPOS_ROOT", previous), else: System.delete_env("SYMPP_REPOS_ROOT")
+    end)
+
+    assert {:ok, checkout} = FactoryRepos.resolve(remote)
+    assert checkout == fixture.repo_root
+    refute FactoryRepos.matches?(checkout, String.replace(remote, "/factory/", "/other/"))
+    assert {:error, :target_repo_root_scope_mismatch} = FactoryRepos.resolve(String.replace(remote, "/factory/", "/other/"))
+    assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("C:\\Code\\client")
+    assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(repo: remote, base_branch: "beta"))
+    config = Config.default(repo: repo)
+    assert {:ok, ^checkout} = WorktreeScope.target_repo_root_argument("C:\\Code\\client", package, config)
+
+    # Fetch from the disposable fixture without contacting a provider.
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", fixture.origin])
+    attrs = %{"target_repo_root" => checkout, "base_branch" => "beta", "branch" => "fix/login"}
+    assert {:ok, prepared} = WorktreeLifecycle.prepare(repo, package.id, attrs)
+    assert Path.dirname(prepared.worktree_path) == Path.join([repos_root, ".worktrees", Path.basename(checkout)])
+    assert Path.basename(prepared.worktree_path) =~ "fix-login-"
+    assert {:ok, replay} = WorktreeLifecycle.prepare(repo, package.id, attrs)
+    assert replay.worktree_path == prepared.worktree_path
+    assert {:ok, _} = WorktreeLifecycle.cleanup(repo, package.id, target_repo_root: checkout)
+    refute File.exists?(prepared.worktree_path)
+  end
+
   test "historical worktree roots and lease bindings preserve scoped cleanup and stored audit redaction", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("symphony-plus-plus/beta", prefix: "sympp-mcp-worktree")
     other_fixture = TestSupport.git_repo_fixture!("symphony-plus-plus/beta", prefix: "sympp-mcp-other-worktree")

@@ -36,6 +36,19 @@ isolated factory. `SYMPP_BACKEND_PORT` overrides the default port and
 `SYMPP_SERVICE_NAME` selects a separate unit. Set `SYMPP_WORKFLOW_FILE` if the
 factory needs workspace hooks from a workflow. Unix hooks run through `sh`.
 
+Set `SYMPP_REPOS_ROOT` at installation to the server's checkout directory
+(default `$HOME/Code`; on jjdev `/srv/jjdev/Code`). Repositories are selected by
+remote URL or `owner/name`. The factory reuses a matching checkout or clones it
+once, using the service user's Git credentials. A same-name checkout with a
+different remote is refused. Worktrees live under
+`<repos root>/.worktrees/<repo>/<branch slug>-<package hash>`.
+Clients never prepare local worktrees. The bridge resolves client paths to their
+origin and can infer the intake repo from its working checkout. Preparation
+returns `worktree: <server alias>:<path>`; the caller launches the worker with
+`hc run --bg --on <server alias> --cwd <path> ...`. The factory does not launch
+workers automatically. Same-machine factories without `SYMPP_REPOS_ROOT` retain
+the existing local checkout and worktree behavior.
+
 On first startup the service creates `remote-token` inside `SYMPP_HOME` with
 mode `0600` and preserves it on subsequent starts. On each client, install the
 skill with `npx skills add JJLiebig/sympp`, then ask the agent to set up sympp.

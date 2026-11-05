@@ -4,12 +4,13 @@ set -euo pipefail
 [[ "$(uname -s)" == Linux ]] || { echo 'This installer requires Linux.' >&2; exit 1; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export SYMPP_HOME="${SYMPP_HOME:-$HOME/.agents/splusplus}"
+export SYMPP_REPOS_ROOT="${SYMPP_REPOS_ROOT:-$HOME/Code}"
 export SYMPP_DATABASE="${SYMPP_DATABASE:-$SYMPP_HOME/symphony_plus_plus.sqlite3}"
 export SYMPP_SERVICE_HOST="${SYMPP_SERVICE_HOST:?Set SYMPP_SERVICE_HOST to the machine tailnet IPv4 address}"
 export SYMPP_BACKEND_PORT="${SYMPP_BACKEND_PORT:-19998}"
 export SYMPP_SERVICE_NAME="${SYMPP_SERVICE_NAME:-sympp}"
 export SYMPP_SERVICE_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-[[ "$SYMPP_HOME" == /* && "$SYMPP_DATABASE" == /* ]] || { echo 'Factory home and ledger paths must be absolute.' >&2; exit 1; }
+[[ "$SYMPP_HOME" == /* && "$SYMPP_DATABASE" == /* && "$SYMPP_REPOS_ROOT" == /* ]] || { echo 'Factory home, ledger and repos root paths must be absolute.' >&2; exit 1; }
 [[ "$SYMPP_SERVICE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid service name.' >&2; exit 1; }
 systemctl --user show-environment >/dev/null
 command -v ss >/dev/null
@@ -44,6 +45,7 @@ env = {
     'PATH': os.environ['PATH'],
     'SYMPP_HOME': home,
     'SYMPP_DATABASE': os.environ['SYMPP_DATABASE'],
+    'SYMPP_REPOS_ROOT': os.environ['SYMPP_REPOS_ROOT'],
     'SYMPP_SOURCE_REVISION': os.environ['SYMPP_SOURCE_REVISION'],
     'SYMPP_SERVICE_MODE': '1',
     'SYMPP_SERVICE_HOST': os.environ['SYMPP_SERVICE_HOST'],
