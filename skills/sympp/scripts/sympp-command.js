@@ -56,7 +56,7 @@ function update() {
   const env = { ...process.env, ...saved.env, ...saved.setup.remote, SYMPP_UPDATE_SCOPE: saved.setup.global ? '--global' : '--project' };
   const step = (label, command, args, options = {}) => {
     const result = spawnSync(command, args, { env, encoding: 'utf8', windowsHide: true, ...options });
-    if (result.error || result.status !== 0) throw new Error(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Inspect the factory service journal over SSH, then retry sympp update.'}`);
+    if (result.error || result.status !== 0) throw new Error(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Run the factory installer over SSH to inspect the build or service error, then retry sympp update.'}`);
     process.stdout.write(`${label}: updated\n`);
   };
   if (process.platform === 'win32') step('skill', 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '& npx.cmd skills update sympp $env:SYMPP_UPDATE_SCOPE; exit $LASTEXITCODE'], { cwd: saved.setup.skillCwd });

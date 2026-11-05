@@ -15,6 +15,8 @@ if not values.get('SYMPP_HOME') or not values.get('SYMPP_SERVICE_HOST'):
 allowed = ['PATH', 'SYMPP_HOME', 'SYMPP_DATABASE', 'SYMPP_BACKEND_PORT', 'SYMPP_SERVICE_HOST', 'SYMPP_WORKFLOW_FILE', 'ERL_FLAGS', 'SYMPP_SERVICE_SOURCE', 'SYMPP_SERVICE_REF']
 env = dict(os.environ, **{key: values[key] for key in allowed if key in values})
 env['SYMPP_SERVICE_NAME'] = sys.argv[1]
+fragment = subprocess.check_output(['systemctl', '--user', 'show', unit, '-p', 'FragmentPath', '--value'], text=True).strip()
+env['XDG_CONFIG_HOME'] = str(Path(fragment).resolve().parents[2])
 # Existing installations used this checkout and beta branch by default.
 source = Path(values.get('SYMPP_SERVICE_SOURCE', str(Path.home() / '.local/share/symphony-plus-plus/source')))
 ref = values.get('SYMPP_SERVICE_REF', 'beta')
