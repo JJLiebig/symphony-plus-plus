@@ -134,6 +134,7 @@ cp.spawnSync = (command, args, options) => {
   env.HERDR_APP_HOME = path.join(root, 'other-herdr');
   env.SYMPP_REMOTE_HOME = '/wrong-factory';
   env.SYMPP_REMOTE_PORT = '21999';
+  env.SYMPP_BACKEND_PORT = '21998';
   let result = run('update');
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(fs.readFileSync(config, 'utf8'), /21783/);

@@ -53,7 +53,9 @@ function update() {
   if (!fs.existsSync(file)) throw new Error('Run sympp setup first.');
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!saved.setup) throw new Error('Run sympp setup once to save the server and host selection, then retry sympp update.');
-  const env = { ...process.env, SYMPP_REMOTE_HOME: "", SYMPP_REMOTE_PORT: "", SYMPP_REMOTE_SERVICE: "", ...saved.env, ...saved.setup.homes, ...saved.setup.remote, SYMPP_UPDATE_SCOPE: saved.setup.global ? '--global' : '--project' };
+  const env = { ...process.env };
+  for (const key of ['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE', 'SYMPP_BACKEND_PORT', 'SYMPP_LOG_DIR', 'SYMPP_OPEN_DASHBOARD']) delete env[key];
+  Object.assign(env, saved.env, saved.setup.homes, saved.setup.remote, { SYMPP_UPDATE_SCOPE: saved.setup.global ? '--global' : '--project' });
   const step = (label, command, args, options = {}) => {
     const result = spawnSync(command, args, { env, encoding: 'utf8', windowsHide: true, ...options });
     if (result.error || result.status !== 0) throw new Error(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Run the factory installer over SSH to inspect the build or service error, then retry sympp update.'}`);

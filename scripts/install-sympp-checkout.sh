@@ -4,7 +4,7 @@ set -euo pipefail
 [[ "$(uname -s)" == Linux ]] || { echo 'This installer requires Linux.' >&2; exit 1; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export SYMPP_SERVICE_SOURCE="$repo_root"
-export SYMPP_SERVICE_REF="${SYMPP_SERVICE_REF:-$(git -C "$repo_root" symbolic-ref --short -q HEAD || echo beta)}"
+export SYMPP_SERVICE_REF="${SYMPP_SERVICE_REF:-$(git -C "$repo_root" symbolic-ref --short -q HEAD || git -C "$repo_root" config --get sympp.serviceRef || echo beta)}"
 export SYMPP_HOME="${SYMPP_HOME:-$HOME/.agents/splusplus}"
 export SYMPP_REPOS_ROOT="${SYMPP_REPOS_ROOT:-$HOME/Code}"
 export SYMPP_DATABASE="${SYMPP_DATABASE:-$SYMPP_HOME/symphony_plus_plus.sqlite3}"
@@ -27,6 +27,8 @@ mise exec -- mix local.rebar --force
 MIX_ENV=prod mise exec -- mix deps.get --only prod
 export SYMPP_SOURCE_REVISION="$(git -C "$repo_root" rev-parse HEAD)"
 MIX_ENV=prod mise exec -- mix release symphony_elixir --overwrite
+
+git -C "$repo_root" config sympp.serviceRef "$SYMPP_SERVICE_REF"
 
 release="$SYMPP_HOME/service/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 mkdir -p "$release" "$SYMPP_HOME/logs" "$SYMPP_SERVICE_CONFIG"
