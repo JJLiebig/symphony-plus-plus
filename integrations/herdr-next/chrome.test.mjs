@@ -179,17 +179,18 @@ test('a desk without desk-topics gets the rest of the chrome, and removing it le
 });
 
 test('an older desk-topics chrome upgrades in place and keeps later edits', async t => {
-  const home = await deskHome(t);
-  const file = join(home, 'mods', 'desk-topics', 'main.js');
-  const plain = await readFile(file, 'utf8');
-  const [chrome1] = deskTopics.previous;
-  await writeFile(file, applyPatch(plain, chrome1) + '// my later tweak\n');
-  const result = install(home, ...ENDPOINT, '--chrome');
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  const upgraded = await readFile(file, 'utf8');
-  assert.equal(upgraded, applyPatch(plain + '// my later tweak\n', deskTopics));
-  assert.doesNotMatch(upgraded, /sympp chrome 1/);
-  assert.equal(await readFile(join(home, 'data', 'sympp-chrome', 'desk-topics.main.js'), 'utf8'), plain + '// my later tweak\n');
+  for (const older of deskTopics.previous.filter((p) => p.mark.startsWith('sympp'))) {
+    const home = await deskHome(t);
+    const file = join(home, 'mods', 'desk-topics', 'main.js');
+    const plain = await readFile(file, 'utf8');
+    await writeFile(file, applyPatch(plain, older) + '// my later tweak\n');
+    const result = install(home, ...ENDPOINT, '--chrome');
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const upgraded = await readFile(file, 'utf8');
+    assert.equal(upgraded, applyPatch(plain + '// my later tweak\n', deskTopics), older.mark);
+    assert.doesNotMatch(upgraded, new RegExp(older.mark));
+    assert.equal(await readFile(join(home, 'data', 'sympp-chrome', 'desk-topics.main.js'), 'utf8'), plain + '// my later tweak\n');
+  }
 });
 
 test('--chrome refuses a home without the personal desk and changes nothing', async t => {

@@ -4,9 +4,10 @@
 // says when something newly needs the person. Intake and answers persist through sympp; terminal jumps
 // and "Live" both rest on a trusted execution helper's check, never on terminal labels or text. A
 // topic with a registered chief shows that chief's desk. A copy opened with props.studio is one UI
-// package's studio: its worker's terminal beside a preview, in a tab named after the package.
+// package's studio: its worker's terminal beside a preview, in a tab named after the package. A copy
+// opened with props.role "chief" is the Start chief dialog for props.topic.
 //
-// Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel", job?: "<work request id>",
+// Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel" | "chief", job?: "<work request id>",
 //   studio?: { job: "<work request id>", pkg: "<work package id>" },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session?, runtime? }, "machine": { node, helper, session? } } }
@@ -18,7 +19,8 @@
 // following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
 // transport.js (native HTTP), ui.js (shared look), overview.js and jobview.js (what each level
 // draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
-// list shows on sympp agents), studio.js and studioview.js (a UI package's studio).
+// list shows on sympp agents), studio.js and studioview.js (a UI package's studio), chief.js and
+// chiefview.js (Start chief).
 
 import { View } from "gpui-kit";
 import { v_flex, InputState, TextareaState } from "gpui-base";
@@ -36,6 +38,7 @@ import { button, message } from "./ui.js";
 import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
 import { studioView } from "./studioview.js";
+import { ChiefStart } from "./chiefview.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
@@ -83,6 +86,10 @@ export default class Lens extends View {
     const own = p ?? props() ?? {};
     const stored = own.endpoint ? null : shared(CONNECTION);
     const given = stored && typeof stored === "object" ? { ...stored, ...own } : own;
+    if (own.role === "chief") {
+      this.chief = new ChiefStart(own, given.endpoint, cx);
+      return;
+    }
     this.given = given;
     this.ownConnection = Boolean(own.endpoint);
     const studio = own.studio;
@@ -1005,6 +1012,7 @@ export default class Lens extends View {
   }
 
   render(cx) {
+    if (this.chief) return this.chief.render();
     this.compact = this.role === "panel" || this.companion || this.viewportWidth() < 1000;
     const t = theme();
     const now = Date.now();

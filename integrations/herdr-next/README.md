@@ -20,9 +20,9 @@ node integrations/herdr-next/install.mjs --endpoint $origin --open overview
 The view opens at the Factory: what needs you, ranked by how many packages
 wait on each answer, then one row per Herdr topic. A topic with a chief shows
 the chief's desk first: what it dispatched and where each item is now, recaps,
-and what waits on you; to make one, tell an agent it is that topic's chief. A
-topic shows its work by repository and its agents; a space shows the work on
-its repository. Click a
+and what waits on you; to make one, click the topic's sympp mark in the sidebar
+(below) or tell an agent it is that topic's chief. A topic shows its work by
+repository and its agents; a space shows the work on its repository. Click a
 row or the breadcrumb, or use ↑/↓ (j/k), Enter and Esc. Each copy remembers
 where it was. A toast appears when something newly needs you; click it to open
 the job's tab.
@@ -74,9 +74,13 @@ node integrations/herdr-next/install.mjs --endpoint $origin --chrome
   known. Stages arrive from an open sympp view's board reads, the panel included,
   once it has been shown.
 - A UI studio tab shows the sympp glyph in a small window tucked behind its icon.
-- With a personal `desk-topics` sidebar, a topic whose chief is registered shows a crown on its
-  header: click opens the chief (its pane, else a peek), right-click adds it to a composition. It
-  shows dimmed while the chief isn't running. A desk without `desk-topics` gets the rest.
+- With a personal `desk-topics` sidebar, each topic header shows the sympp mark. With a running
+  chief, click opens the chief (its pane, else a peek) and right-click adds it to a composition.
+  Without one (greyed, or dimmed while a registered chief isn't running), click opens **Start chief**:
+  pick an agent and a machine (the factory's by default), add anything for the chief to the line, and
+  press Enter. The agent starts as a normal tab in the topic's own "<topic> chief" space on that
+  machine, in the topic's checkout there (else its repos folder or home), told to register as the
+  topic's chief. Starting again reuses that space. A desk without `desk-topics` gets the rest.
 
 The installer backs up the layout and the desk mods under `data/sympp-chrome`, adds
 a `sympp` panel to the layout's `panel-body` stack, and patches the desk mods in
