@@ -65,8 +65,9 @@ async function remoteArguments(body, factoryOwned) {
     // HTTP userinfo can be either an account or a token. It is authentication,
     // not repository identity; the factory uses its own Git credentials.
     if (["http:", "https:"].includes(remote.protocol) && remote.username) {
-      remote.username = "";
-      return remote.href;
+      const withoutUser = value.replace(/^(\s*https?:\/\/)[^/?#]*@/i, "$1");
+      if (withoutUser === value) throw new Error("Repository origin must use an absolute HTTP URL.");
+      return withoutUser;
     }
     return value;
   };

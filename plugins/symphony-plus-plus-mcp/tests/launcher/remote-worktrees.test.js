@@ -42,11 +42,13 @@ test("remote path requests become origin identities and qualified responses pres
     await assert.rejects(remoteArguments(input, true), error => error.message === "Repository origins must not include credentials. Use a credential-free remote and configure Git authentication on the factory.");
     await assert.rejects(remoteArguments(call({ repo: remote }), true), /Repository origins must not include credentials/);
   }
-  for (const user of ["alice", "fixture-token"]) {
-    const remote = `https://${user}@example.org/team/repo.git`;
-    execFileSync("git", ["-C", root, "remote", "set-url", "origin", remote]);
-    assert.equal(JSON.parse(await remoteArguments(input, true)).params.arguments.repo, "https://example.org/team/repo.git");
-    assert.equal(JSON.parse(await remoteArguments(call({ repo: remote }), true)).params.arguments.repo, "https://example.org/team/repo.git");
+  for (const repoPath of ["/team/repo.git", "/team/ü/repo.git", "/team/%2e%2e/repo.git"]) {
+    for (const user of ["alice", "fixture-token"]) {
+      const remote = `https://${user}@example.org${repoPath}`;
+      execFileSync("git", ["-C", root, "remote", "set-url", "origin", remote]);
+      assert.equal(JSON.parse(await remoteArguments(input, true)).params.arguments.repo, `https://example.org${repoPath}`);
+      assert.equal(JSON.parse(await remoteArguments(call({ repo: remote }), true)).params.arguments.repo, `https://example.org${repoPath}`);
+    }
   }
   execFileSync("git", ["-C", root, "remote", "set-url", "origin", "ssh://deploy@example.org/team/repo.git"]);
   assert.equal(JSON.parse(await remoteArguments(input, true)).params.arguments.repo, "ssh://deploy@example.org/team/repo.git");
