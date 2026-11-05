@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { expect } from 'e2e';
+import { parseBoard } from '../../integrations/herdr-next/mods/sympp/model.js';
 import { Client, contract } from '../support/factory.js';
 import { test } from '../support/offline-copy.js';
 
@@ -45,10 +46,9 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
     const nativeBoard = await viewer.raw(null, {}, 'GET', '/api/v1/sympp/herdr/dashboard');
     expect(nativeBoard.status).toBe(200);
     expect(nativeBoard.body.runtime).toEqual({ offline: true });
-    const { generated_at: browserTime, ...browserProjection } = browserBoard;
-    const { generated_at: nativeTime, chiefs, ...nativeProjection } = nativeBoard.body;
-    expect(chiefs).toEqual([]);
-    expect(nativeProjection).toEqual(browserProjection);
+    expect(nativeBoard.body.chiefs).toEqual([]);
+    expect(parseBoard({ ...nativeBoard.body, generated_at: browserBoard.generated_at }))
+      .toEqual(parseBoard(browserBoard));
     const copiedRequest = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === request);
     expect(copiedRequest.work_packages.map((entry: any) => entry.id)).toContain(wp);
     const hydrated = JSON.stringify(browserBoard);
