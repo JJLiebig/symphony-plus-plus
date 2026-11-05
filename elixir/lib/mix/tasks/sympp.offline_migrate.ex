@@ -22,7 +22,7 @@ defmodule Mix.Tasks.Sympp.OfflineMigrate do
     try do
       case Repository.migrate(Repo) do
         :ok -> :ok
-        {:error, reason} -> Mix.raise("Beta snapshot migration failed: #{inspect(reason)}")
+        {:error, reason} -> Mix.raise("Offline snapshot migration failed: #{inspect(reason)}")
       end
     after
       GenServer.stop(repo)

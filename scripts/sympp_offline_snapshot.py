@@ -127,7 +127,7 @@ def main():
                 lambda stage: subprocess.run([*args.migrate, "--database", str(stage)], check=True),
             )
     except (OSError, ValueError, sqlite3.Error, subprocess.CalledProcessError) as error:
-        parser.exit(1, f"Beta snapshot refused: {error}\n")
+        parser.exit(1, f"Offline snapshot refused: {error}\n")
 
 
 if __name__ == "__main__":
