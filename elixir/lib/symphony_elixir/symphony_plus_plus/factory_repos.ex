@@ -35,12 +35,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   end
 
   defp checkout(remote, checkout) do
-    cond do
-      File.exists?(checkout) ->
-        if matches?(checkout, remote), do: {:ok, checkout}, else: {:error, :target_repo_root_scope_mismatch}
-
-      true ->
-        clone(remote, checkout)
+    if File.exists?(checkout) do
+      if matches?(checkout, remote), do: {:ok, checkout}, else: {:error, :target_repo_root_scope_mismatch}
+    else
+      clone(remote, checkout)
     end
   end
 
@@ -76,16 +74,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
     uri = URI.parse(value)
     name = Path.basename(uri.path || "") |> String.replace_suffix(".git", "")
 
-    if uri.scheme in ["https", "ssh"] and is_binary(uri.host) and uri.host != "" and
-         uri.userinfo in [nil, "git"] and is_nil(uri.query) and is_nil(uri.fragment) and
-         Regex.match?(~r/\A[A-Za-z0-9_-][A-Za-z0-9_.-]*\z/, name) and
-         not String.contains?(uri.path || "", ["/../", "/./"]) do
+    if usable_authority?(uri) and usable_repo_path?(uri.path || "", name) do
       {:ok, value, name}
     else
       {:error, :invalid_repo_remote}
     end
   rescue
     _ in URI.Error -> {:error, :invalid_repo_remote}
+  end
+
+  defp usable_authority?(uri) do
+    uri.scheme in ["https", "ssh"] and is_binary(uri.host) and uri.host != "" and
+      uri.userinfo in [nil, "git"] and is_nil(uri.query) and is_nil(uri.fragment)
+  end
+
+  defp usable_repo_path?(path, name) do
+    name not in ["", ".", ".."] and Regex.match?(~r/\A[A-Za-z0-9_.-]+\z/, name) and
+      not String.contains?(path, ["/../", "/./"])
   end
 
   defp identity(remote) do

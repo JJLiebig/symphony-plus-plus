@@ -1,9 +1,9 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   @moduledoc false
 
-  alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
   alias SymphonyElixir.PathSafety
   alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
+  alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
