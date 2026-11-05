@@ -473,7 +473,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
          "resources" => %{}
        },
        "serverInfo" => %{
-         "name" => "symphony-plus-plus",
+         "name" => "sympp",
          "version" => config.version
        }
      }}
@@ -1331,7 +1331,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
      %{
        "tool" => tool,
        "reason" => "missing_repo_root",
-       "message" => "No Symphony++ helper root was provided or discoverable; pass symphony_repo_root or configure --repo-root to the Symphony++ repo containing the worker secret helper script."
+       "message" => "No sympp helper root was provided or discoverable; pass symphony_repo_root or configure --repo-root to the sympp repo containing the worker secret helper script."
      }}
   end
 
@@ -1340,8 +1340,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
      %{
        "tool" => tool,
        "reason" => "invalid_repo_root",
-       "message" =>
-         "symphony_repo_root must point to the Symphony++ helper/namespace repo root containing the worker secret helper script under scripts/; it is not the target product repository root."
+       "message" => "symphony_repo_root must point to the sympp helper/namespace repo root containing the worker secret helper script under scripts/; it is not the target product repository root."
      }}
   end
 

@@ -1061,11 +1061,11 @@ defmodule SymphonyElixir.Orchestrator do
   defp revalidate_issue_for_dispatch(issue, _issue_fetcher, _terminal_states), do: {:ok, issue}
 
   defp workflow_config_error_message({:invalid_symphony_plus_plus_dispatch_filter, field, values}) do
-    "Invalid WORKFLOW.md config: invalid Symphony++ dispatch filter #{field}: #{inspect(values)}"
+    "Invalid WORKFLOW.md config: invalid sympp dispatch filter #{field}: #{inspect(values)}"
   end
 
   defp workflow_config_error_message({:unsupported_symphony_plus_plus_work_kinds, work_kinds}) do
-    "Invalid WORKFLOW.md config: unsupported Symphony++ work kinds: #{inspect(work_kinds)}"
+    "Invalid WORKFLOW.md config: unsupported sympp work kinds: #{inspect(work_kinds)}"
   end
 
   defp workflow_config_error_message(_reason), do: nil

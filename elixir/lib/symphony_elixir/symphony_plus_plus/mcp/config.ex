@@ -142,7 +142,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Config do
   defp surface_profile!(profile) do
     case parse_surface_profile(profile) do
       {:ok, profile} -> profile
-      {:error, _usage} -> raise ArgumentError, "invalid Symphony++ MCP surface profile"
+      {:error, _usage} -> raise ArgumentError, "invalid sympp MCP surface profile"
     end
   end
 

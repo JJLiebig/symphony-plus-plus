@@ -1,6 +1,6 @@
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { expect } from 'e2e';
 import { test } from '../support/installed-runtime.js';
 
@@ -9,7 +9,7 @@ import { test } from '../support/installed-runtime.js';
 if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
   test('Skills installation, refresh and relocated copy preserve usable native registration and unrelated ownership', { timeout: 600_000 }, async ({ installed }) => {
     expect(process.platform).toBe('win32');
-    expect(await installed.skills(['add', resolve('.'), '--list'])).toContain('symphony-plus-plus');
+    expect(await installed.skills(['add', resolve('.'), '--list'])).toContain('sympp');
     const bundle = await installed.install('codex');
     installed.env.SYMPP_BACKEND_PORT = '21345';
     const claudeFile = join(installed.project, '.mcp.json');
@@ -30,7 +30,7 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect((await installed.setup(bundle)).code).toBe(0);
     expect(await readFile(configFile, 'utf8')).toBe(config);
     expect(await readFile(claudeFile, 'utf8')).toBe(claude);
-    const registration = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
+    const registration = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
     expect(registration.transport.env.SYMPP_DATABASE).toBe(installed.env.SYMPP_DATABASE);
     expect(registration.transport.env.SYMPP_HOME).toBe(installed.env.SYMPP_HOME);
     expect(registration.transport.env.SYMPP_RUNTIME_FILE).toBe(installed.env.SYMPP_RUNTIME_FILE);
@@ -46,19 +46,19 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect((await installed.setup(bundle)).code).toBe(0);
     const copied = await installed.install('claude-code', saved, true);
     expect((await installed.setup(copied)).code).toBe(0);
-    const moved = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
+    const moved = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
     expect(moved.transport.args).toContain(join(copied, 'scripts/start-sympp-mcp-bridge.js'));
     expect((await readFile(configFile, 'utf8')).startsWith(unrelated)).toBe(true);
     expect((await installed.setup(bundle)).code).toBe(0);
-    const restored = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
+    const restored = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
     expect(restored.transport.args).toContain(join(bundle, 'scripts/start-sympp-mcp-bridge.js'));
 
-    const foreignConfig = '[mcp_servers.symphony_plus_plus]\ncommand = "unrelated-owner.exe"\n';
+    const foreignConfig = '[mcp_servers.sympp]\ncommand = "unrelated-owner.exe"\n';
     await writeFile(configFile, foreignConfig);
     const beforeClaude = await readFile(claudeFile, 'utf8');
     const refused = await installed.setup(copied);
     expect(refused.code).toBe(1);
-    expect(refused.stdout).toContain('unmanaged MCP registration');
+    expect(refused.stdout).toContain('unmanaged sympp MCP registration');
     expect(await readFile(configFile, 'utf8')).toBe(foreignConfig);
     expect(await readFile(claudeFile, 'utf8')).toBe(beforeClaude);
 
@@ -71,102 +71,43 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(await readFile(claudeFile, 'utf8')).toBe(beforeClaude);
 
     await writeFile(configFile, config);
-    const foreignClaude = JSON.stringify({ mcpServers: { symphony_plus_plus: { command: 'unrelated-owner.exe' } } });
+    const foreignClaude = JSON.stringify({ mcpServers: { sympp: { command: 'unrelated-owner.exe' } } });
     await writeFile(claudeFile, foreignClaude);
     expect((await installed.setup(copied)).code).toBe(1);
     expect(await readFile(configFile, 'utf8')).toBe(config);
     expect(await readFile(claudeFile, 'utf8')).toBe(foreignClaude);
     expect(existsSync(installed.env.SYMPP_DATABASE!)).toBe(false);
     for (const agent of ['codex', 'claude-code']) {
-      await installed.skills(['remove', 'symphony-plus-plus', '--agent', agent, '--yes']);
+      await installed.skills(['remove', 'sympp', '--agent', agent, '--yes']);
     }
     expect(JSON.parse(await installed.skills(['list', '--json']))).toEqual([]);
   });
 
-  test('Skills remote update keeps beta tracking for both native hosts', { timeout: 600_000 }, async ({ installed }) => {
-    for (const agent of ['codex', 'claude-code'] as const) {
-      const remoteBundle = await installed.install(agent, 'https://github.com/JJLiebig/symphony-plus-plus/tree/beta');
-      const lock = () => readFile(join(installed.project, 'skills-lock.json'), 'utf8').then(JSON.parse);
-      expect((await lock()).skills['symphony-plus-plus'].ref).toBe('beta');
-      // Use this candidate's setup with the real remote installation's lock.
-      const setup = join(remoteBundle, 'scripts/setup-sympp.js');
-      await cp(resolve('plugins/symphony-plus-plus-mcp/scripts/setup-sympp.js'), setup);
-      expect((await installed.run(process.execPath, [setup, '--host', 'both'])).code).toBe(0);
-      const config = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
-      expect(config.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
-      const update = await installed.skills(['update', 'symphony-plus-plus', '--project', '--yes']);
-      expect(/No installed skills found|Failed to|Cannot update|cannot be updated/i.test(update)).toBe(false);
-      expect((await lock()).skills['symphony-plus-plus'].ref).toBe('beta');
-      const installedList = JSON.parse(await installed.skills(['list', '--agent', agent, '--json']));
-      expect(JSON.stringify(installedList)).toContain('symphony-plus-plus');
-    }
-    // A global beta install must not adopt the unrelated current project's main ref.
-    await installed.skills(['add', 'https://github.com/JJLiebig/symphony-plus-plus/tree/beta',
-      '--global', '--agent', 'codex', '--skill', 'symphony-plus-plus', '--yes']);
-    const globalBundle = join(installed.env.HOME!, '.agents/skills/symphony-plus-plus');
-    const globalSetup = join(globalBundle, 'scripts/setup-sympp.js');
-    await cp(resolve('plugins/symphony-plus-plus-mcp/scripts/setup-sympp.js'), globalSetup);
+  test('project and global installations preserve their own runtime channel', { timeout: 600_000 }, async ({ installed }) => {
+    const bundle = await installed.install('codex');
     const projectLock = join(installed.project, 'skills-lock.json');
     const local = JSON.parse(await readFile(projectLock, 'utf8'));
-    local.skills['symphony-plus-plus'].ref = 'main';
+    // Candidate installation is real; branch metadata selects the published channel.
+    local.skills.sympp = { ...local.skills.sympp, source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' };
     await writeFile(projectLock, JSON.stringify(local));
-    expect((await installed.run(process.execPath, [globalSetup, '--host', 'both'])).code).toBe(0);
-    const globalConfig = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'symphony_plus_plus', '--json']));
-    expect(globalConfig.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
-  });
+    expect((await installed.setup(bundle)).code).toBe(0);
+    const beta = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
+    expect(beta.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
 
-  test('native marketplace install and upgrade preserve the alternative route and refuse mixed Skills ownership', { timeout: 600_000 }, async ({ installed }) => {
-    await mkdir(installed.env.CODEX_HOME!, { recursive: true });
-    // The job requires this fetchable head's tree to equal the combined CI tree.
-    await installed.ok('codex.exe', ['plugin', 'marketplace', 'add', 'https://github.com/JJLiebig/symphony-plus-plus', '--ref', process.env.ACCEPTANCE_HEAD_SHA!]);
-    let upgrade = await installed.run('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
-    for (let attempt = 1; attempt < 3 && /git clone marketplace source timed out/.test(upgrade.stderr); attempt++) {
-      upgrade = await installed.run('codex.exe', ['plugin', 'marketplace', 'upgrade', 'symphony-plus-plus']);
-    }
-    expect(upgrade.code, `codex marketplace upgrade: ${upgrade.stdout}\n${upgrade.stderr}`).toBe(0);
-    expect((await installed.ok('git', ['-C', join(installed.env.CODEX_HOME!, '.tmp/marketplaces/symphony-plus-plus'), 'rev-parse', 'HEAD'])).trim()).toBe(process.env.ACCEPTANCE_HEAD_SHA);
-    await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus@symphony-plus-plus']);
-    const companion = JSON.parse(await installed.ok('codex.exe', ['plugin', 'add', 'symphony-plus-plus-mcp@symphony-plus-plus', '--json']));
-    // Native install consumes this exact candidate tree; only the hosted artifact
-    // transport is supplied explicitly because production follows named branches.
-    const manifestPath = process.env.SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST!;
-    const candidate = JSON.parse(await readFile(manifestPath, 'utf8'));
-    candidate.artifact.relative_path = resolve(dirname(manifestPath), candidate.artifact.file);
-    const manifestFile = join(installed.root, 'candidate-runtime.json');
-    await writeFile(manifestFile, JSON.stringify(candidate));
-    const provenance = join(installed.env.CODEX_HOME!, '.tmp/marketplaces/symphony-plus-plus/.codex-marketplace-install.json');
-    const metadata = JSON.parse(await readFile(provenance, 'utf8'));
-    for (const ref of ['main', 'beta']) {
-      await writeFile(provenance, JSON.stringify({ ...metadata, ref_name: ref }));
-      const selected = ref === 'beta' ? 'beta' : 'stable';
-      const other = ref === 'beta' ? 'stable' : 'beta';
-      await writeFile(join(companion.installedPath, '.sympp-runtime-artifacts.json'), JSON.stringify({
-        schema_version: 1, channels: {
-          [selected]: { manifest: { path: manifestFile } },
-          [other]: { manifest: { path: join(installed.root, 'wrong-channel-must-not-be-read.json') } },
-        },
-      }));
-      const launchable = await installed.ok('pwsh.exe', ['-NoProfile', '-File',
-        join(companion.installedPath, 'scripts/start-sympp-mcp.ps1'), '-ValidateOnly']);
-      expect(launchable).toContain('runtimeMode: artifact');
-    }
-    const listed = JSON.parse(await installed.ok('codex.exe', ['plugin', 'list', '--marketplace', 'symphony-plus-plus', '--json']));
-    expect(listed.installed.some((plugin: any) => plugin.name === 'symphony-plus-plus-mcp' && plugin.enabled)).toBe(true);
-    const bundle = await installed.install('codex');
-    const configFile = join(installed.env.CODEX_HOME!, 'config.toml');
-    const before = await readFile(configFile, 'utf8');
-    const refused = await installed.setup(bundle, 'codex');
-    expect(refused.code).toBe(1);
-    expect(/unmanaged MCP registration|marketplace plugin/.test(refused.stdout)).toBe(true);
-    expect(await readFile(configFile, 'utf8')).toBe(before);
-    expect(existsSync(installed.env.SYMPP_DATABASE!)).toBe(false);
-    // Disable the real installed companion through the host's documented TOML
-    // setting, then let native discovery decide whether Skills may own MCP.
-    const disabled = before.replace(/(\[plugins\."symphony-plus-plus-mcp@symphony-plus-plus"\][\s\S]*?enabled = )true/, '$1false');
-    expect(disabled).not.toBe(before);
-    await writeFile(configFile, disabled);
-    const afterDisable = JSON.parse(await installed.ok('codex.exe', ['plugin', 'list', '--marketplace', 'symphony-plus-plus', '--json']));
-    expect(afterDisable.installed.some((plugin: { name: string; enabled: boolean }) => plugin.name === 'symphony-plus-plus-mcp' && !plugin.enabled)).toBe(true);
-    expect((await installed.setup(bundle, 'codex')).code).toBe(0);
+    await installed.skills(['add', resolve('.'), '--global', '--agent', 'codex', '--skill', 'sympp', '--yes']);
+    const globalBundle = join(installed.env.HOME!, '.agents/skills/sympp');
+    const globalLock = join(installed.env.HOME!, '.agents/.skill-lock.json');
+    // A local-source global Skills install has no remote lock; supply tracked-branch metadata for this fixture.
+    const global = { skills: { sympp: { source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' } } };
+    global.skills.sympp = { ...global.skills.sympp, source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' };
+    await writeFile(globalLock, JSON.stringify(global));
+    local.skills.sympp.ref = 'main';
+    await writeFile(projectLock, JSON.stringify(local));
+    expect((await installed.setup(globalBundle)).code).toBe(0);
+    const selected = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
+    expect(selected.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
+    expect((await installed.setup(bundle)).code).toBe(0);
+    const main = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
+    expect(main.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('stable');
   });
 }

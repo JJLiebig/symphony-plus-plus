@@ -1,5 +1,5 @@
-// The S++ chrome for a personal Herdr desk: patches its desk-tabs and desk-agents mods (and desk-topics
-// when the desk has it) and adds the S++ panel to the active layout's panel-body stack. Planning only
+// The sympp chrome for a personal Herdr desk: patches its desk-tabs and desk-agents mods (and desk-topics
+// when the desk has it) and adds the sympp panel to the active layout's panel-body stack. Planning only
 // reads; install.mjs writes the plan and checks the mods it names.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import deskTopics from './chrome/desk-topics.patch.mjs';
 
 const PATCHES = [deskTabs, deskAgents, deskTopics];
 // Every chrome version marks what it adds; each patch names its own version.
-const MARK = 'S++ chrome';
+const MARK = 'sympp chrome';
 const PANEL = 'sympp';
 const DESK = { 'desk-tabs': 'tabs', 'desk-agents': 'agents' };
 
@@ -85,7 +85,7 @@ async function readDesk(home) {
 
 const serialize = (layout, before) => JSON.stringify(layout, null, 2) + (before.endsWith('\n') ? '\n' : '');
 
-// Writes that install the chrome with the S++ panel's block props, or what is missing.
+// Writes that install the chrome with the sympp panel's block props, or what is missing.
 export async function planInstall(home, props, selectedSession) {
   const desk = await readDesk(home);
   const backups = join(home, 'data', 'sympp-chrome');
@@ -100,13 +100,13 @@ export async function planInstall(home, props, selectedSession) {
     if (current === null) { missing.push(`mods/${patch.mod}/main.js is missing`); continue; }
     mods.push(patch.mod);
     if (current.includes(MARK)) {
-      // Edits made since outside the S++ lines are kept; the backup follows them. An older version
+      // Edits made since outside the sympp lines are kept; the backup follows them. An older version
       // this patch knows is replaced by it.
       const installed = installedVersion(current, patch);
       const original = installed ? revertPatch(current, installed) : null;
       const body = installed && installed !== patch && original !== null ? applyPatch(original, patch) : null;
-      if (!installed) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
-      else if (original === null) missing.push(`The S++ lines in ${patch.mod} were edited`);
+      if (!installed) missing.push(`${patch.mod} has another version of the sympp chrome; remove it with the installer that added it`);
+      else if (original === null) missing.push(`The sympp lines in ${patch.mod} were edited`);
       else if (installed !== patch && body === null) missing.push(`${patch.mod} differs from the version this patch was written for`);
       else {
         if (original !== await contents(backup)) writes.push({ to: backup, body: original });
@@ -137,7 +137,7 @@ export async function planInstall(home, props, selectedSession) {
   return { layout: desk.name, backups, writes, mods };
 }
 
-// Writes that remove the chrome: the S++ lines out of each desk mod and the S++ panel out of the
+// Writes that remove the chrome: the sympp lines out of each desk mod and the sympp panel out of the
 // layout. Both keep every other change made since; the layout's backup stays in place.
 export async function planRemoval(home) {
   const desk = await readDesk(home);
@@ -153,8 +153,8 @@ export async function planRemoval(home) {
     if (!current?.includes(MARK)) continue;
     const installed = installedVersion(current, patch);
     const original = installed ? revertPatch(current, installed) : null;
-    if (!installed) missing.push(`${patch.mod} has another version of the S++ chrome; remove it with the installer that added it`);
-    else if (original === null) missing.push(`The S++ lines in ${patch.mod} were edited; its original before the S++ chrome is ${backup}`);
+    if (!installed) missing.push(`${patch.mod} has another version of the sympp chrome; remove it with the installer that added it`);
+    else if (original === null) missing.push(`The sympp lines in ${patch.mod} were edited; its original before the sympp chrome is ${backup}`);
     else writes.push({ to: file, body: original });
   }
   if (missing.length) return { missing };

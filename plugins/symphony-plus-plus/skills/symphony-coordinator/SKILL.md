@@ -1,9 +1,9 @@
 ---
 name: symphony-coordinator
-description: Use when acting as a parent Codex agent coordinating ordinary repo work without required Symphony++ persistence across one or more subagents, including scouting, slicing, worker dispatch, review convergence, and PR/evidence integration.
+description: Use when acting as a parent Codex agent coordinating ordinary repo work without required sympp persistence across one or more subagents, including scouting, slicing, worker dispatch, review convergence, and PR/evidence integration.
 ---
 
-# Symphony++ Coordinator
+# sympp Coordinator
 
 Use for ordinary repository coordination. For WorkRequests, WorkPackages,
 ledger-backed claims, scoped grants, delivery boards, or MCP merge gates, use
@@ -16,7 +16,7 @@ unresolved product decisions require it, not because of request type or model.
 
 - Optionally attach a coordinator-owned `symphony-plus-plus:symphony-solo-session`
   for parent planning through configured MCP tools. Do not share that session
-  with workers. Persistence is optional: ordinary delegation needs no Symphony++
+  with workers. Persistence is optional: ordinary delegation needs no sympp
   backend when no ledger state is requested. Required ledger work needs MCP;
   report missing tools and recover the connection instead of substituting CLI
   business commands or private state files.
@@ -35,7 +35,7 @@ unresolved product decisions require it, not because of request type or model.
   PR/evidence.
 - Honor assigned budgets; otherwise keep one cohesive outcome and escalate
   material scope growth or reviewability risk. Numerical budgets are optional.
-- For S++ WorkPackages, provide the full scoped assignment and local worktree
+- For sympp WorkPackages, provide the full scoped assignment and local worktree
   scope, including relevant prior findings/decisions. The parent owns dispatch
   authority; workers need no ledger claim or status calls.
 - Use explorers for reconnaissance only.
@@ -49,7 +49,7 @@ Worker prompts should include:
   worker contract.
 - For manual worktrees, use `C:\Code\.worktrees\<repo>\<feature>`. After
   delivery or abandonment, remove only your clean worktree and run
-  `git worktree prune`. S++-managed worktrees use their own lifecycle.
+  `git worktree prune`. sympp-managed worktrees use their own lifecycle.
 
 ## Supervise
 

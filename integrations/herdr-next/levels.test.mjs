@@ -127,7 +127,7 @@ test('the panel follows a job\'s terminal or tab, else the space while it has wo
   const terms = [{ address: 't1', labels: { 'sympp.work_package_id': 'x-web', 'sympp.session_work_request_id': '' } }, { address: 't2', labels: {} }];
   const panes = [{ pane: 'p1', terminal: 't1' }, { pane: 'p2', terminal: 't2' }, { pane: 'p3', terminal: null, mod: 'sympp' }];
   const follow = (f, tabs = {}) => L.followPath(L.focusTarget(f, terms, tabs, panes), jobs, desk, place);
-  assert.deepEqual(follow(focus()), { topic: 't-herdr', space: 's-web', job: 'wr-cross' }, 'an S++ terminal names its job, found by package');
+  assert.deepEqual(follow(focus()), { topic: 't-herdr', space: 's-web', job: 'wr-cross' }, 'an sympp terminal names its job, found by package');
   assert.deepEqual(follow(focus({ pane: 'p3', terminal: null }), { 'tab-web': 'wr-pr' }), { topic: 't-herdr', space: 's-web', job: 'wr-pr' }, 'a job tab names its job');
   assert.equal(follow(focus({ pane: 'p3', terminal: null })), null, 'focusing the panel itself keeps what it shows');
   assert.deepEqual(follow(focus({ pane: 'p2', terminal: 't2' })), { topic: 't-herdr', space: 's-web', job: null }, 'a space with work');

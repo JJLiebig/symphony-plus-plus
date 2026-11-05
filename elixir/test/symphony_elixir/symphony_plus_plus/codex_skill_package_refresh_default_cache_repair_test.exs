@@ -39,7 +39,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
       File.write!(
         incompatible_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "pwsh",
             "args" => ["-NoProfile"],
@@ -55,7 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
       File.write!(
         malformed_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "pwsh",
             "args" => ["-NoProfile"],
@@ -70,7 +70,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
       File.write!(
         missing_manifest_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "pwsh",
             "args" => ["-NoProfile"],
@@ -110,7 +110,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
           )
 
         assert status == 0, output
-        assert output =~ "Repaired incompatible default Symphony++ plugin cache"
+        assert output =~ "Repaired incompatible default sympp plugin cache"
 
         versioned_manifest =
           published_plugin_cache_path(temp_codex_home, [@plugin_version, ".codex-plugin", "plugin.json"])

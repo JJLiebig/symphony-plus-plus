@@ -1,8 +1,8 @@
-# Symphony++ Repository Conventions
+# sympp Repository Conventions
 
 ## Work Package PRs
 
-- Use one Symphony++ work package per PR unless the overseeing architecture agent explicitly splits or combines scope.
+- Use one sympp work package per PR unless the overseeing architecture agent explicitly splits or combines scope.
 - Keep each worker branch scoped to its assigned package and ignore sibling worktrees or branches.
 - Use PR titles in the form `[SYMPP-...] <title>`.
 - Fill `.github/pull_request_template.md` concretely, including acceptance evidence, tests run, and any blocked validation.
@@ -39,25 +39,15 @@
 ## Runtime Boundary
 
 - Preserve upstream Symphony and Linear behavior unless the assigned package explicitly changes it.
-- Do not replace `elixir/WORKFLOW.md` with the Symphony++ draft workflow template.
-- Do not wire unfinished Symphony++ config into runtime defaults.
+- Do not replace `elixir/WORKFLOW.md` with the sympp draft workflow template.
+- Do not wire unfinished sympp config into runtime defaults.
 - Do not create live Linear state unless the assigned package and operator explicitly require it.
-- For production-like Symphony++ MCP cutovers, the running plugin runtime must
-  resolve from the installed plugin/marketplace cache, not from the local source
-  checkout, worktree, or `.sympp-source-root` hint. Normal Codex plugin use is
-  `codex plugin marketplace upgrade` plus a fresh session. Use `SYMPP_REPO_ROOT`
-  only for explicit developer validation, never as the installed-agent runtime
-  path.
-- Do not refresh, pin, or validate the installed Symphony++ MCP plugin cache
-  from `C:\Code\symphony-plus-plus` for an agent-ready runtime. That checkout is
-  a developer workspace and can diverge from the marketplace source clone under
-  `C:\Users\jonat\.codex\.tmp\marketplaces\symphony-plus-plus`. A mixed cache can
-  make fresh Codex sessions fail MCP startup with a closed `initialize` response,
-  for example when `.sympp-source-revision` in the installed cache says one commit
-  but the marketplace clone reports another. For installed-cache repair/cutover,
-  run the marketplace-backed upgrade/cutover/refresh path from the marketplace
-  source clone, or explicitly document that the session is checkout-backed debug
-  only.
+- For installed sympp MCP operation, runtime scripts must resolve from the
+  installed `sympp` skill, not from a developer checkout or source-root hint.
+  Update with `npx skills update sympp`, rerun setup and open a fresh session.
+  Use `SYMPP_REPO_ROOT` only for explicit developer validation, never as the
+  installed-agent runtime path. Never repair an installed bundle by mixing
+  checkout files with another installed revision.
 
 ## Security
 

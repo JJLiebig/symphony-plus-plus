@@ -5,7 +5,7 @@ set -euo pipefail
 source_root="${SYMPP_SERVICE_SOURCE:-${XDG_DATA_HOME:-$HOME/.local/share}/symphony-plus-plus/source}"
 ref="${SYMPP_SERVICE_REF:-beta}"
 if [[ ! -d "$source_root/.git" ]]; then
-  git clone --depth 1 --branch "$ref" https://github.com/JJLiebig/symphony-plus-plus.git "$source_root"
+  git clone --depth 1 --branch "$ref" https://github.com/JJLiebig/sympp.git "$source_root"
 else
   [[ -z "$(git -C "$source_root" status --porcelain)" ]] || { echo 'Service source checkout has local changes.' >&2; exit 1; }
   git -C "$source_root" fetch origin "$ref"

@@ -57,8 +57,8 @@ export class Installed {
   }
 
   async install(agent: 'codex' | 'claude-code', source = resolve('.'), copy = false) {
-    await this.skills(['add', source, '--agent', agent, '--skill', 'symphony-plus-plus', '--yes', ...(copy ? ['--copy'] : [])]);
-    return realpath(join(this.project, agent === 'codex' ? '.agents' : '.claude', 'skills/symphony-plus-plus'));
+    await this.skills(['add', source, '--agent', agent, '--skill', 'sympp', '--yes', ...(copy ? ['--copy'] : [])]);
+    return realpath(join(this.project, agent === 'codex' ? '.agents' : '.claude', 'skills/sympp'));
   }
 
   setup(bundle: string, host = 'both') {

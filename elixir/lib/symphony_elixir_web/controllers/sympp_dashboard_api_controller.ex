@@ -1,6 +1,6 @@
 defmodule SymphonyElixirWeb.SymppDashboardApiController do
   @moduledoc """
-  Read-oriented JSON API for Symphony++ dashboard state.
+  Read-oriented JSON API for sympp dashboard state.
   """
 
   use Phoenix.Controller, formats: [:json]

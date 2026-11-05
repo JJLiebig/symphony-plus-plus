@@ -1,24 +1,24 @@
-// S++ chrome 3 for the personal desk-agents mod (cloned from Herdr's agents 0.1.4): the S++ glyph
-// tucked behind an S++ agent's icon, with its package's stage from the S++ view's reads after the name.
+// sympp chrome 3 for the personal desk-agents mod (cloned from Herdr's agents 0.1.4): the sympp glyph
+// tucked behind an sympp agent's icon, with its package's stage from the sympp view's reads after the name.
 // Each edit's `find` must occur exactly once in the mod; `replace` takes its place. The injected code
 // imports what it uses itself; the only mod locals it touches (a, k) are in its own anchors.
 export default {
-  mark: 'S++ chrome 3',
+  mark: 'sympp chrome 3',
   mod: 'desk-agents',
   edits: [
     {
       find: `export default class Agents extends View {
 `,
-      replace: `// S++ chrome 3: an S++ agent (its terminal carries S++ launch or session labels) shows the S++ glyph
+      replace: `// sympp chrome 3: an sympp agent (its terminal carries sympp launch or session labels) shows the sympp glyph
 // behind the right of its icon; the glyph has the icon's ring cut out, so the row shows through it.
-// The S++ view's reads (shared("sympp.agents"), by terminal address) add its package's stage, the
+// The sympp view's reads (shared("sympp.agents"), by terminal address) add its package's stage, the
 // review round (from the third in the working color) and an orange dot when it needs you. A read
 // older than two minutes shows dimmed, as last known.
 import { div as symppDiv, image as symppImage, svg as symppSvg } from "gpui-kit";
 import { h_flex as symppRow } from "gpui-base";
 import { shared as symppShared, terminals as symppTerminals, theme as symppTheme } from "herdr";
 const SYMPP_STAGES = { build: "Build", checks: "Checks", review: "Review", merge: "Ready to merge", landed: "Landed" };
-// The S++ read for an S++ agent's terminal ({} before any), or null for any other terminal.
+// The sympp read for an sympp agent's terminal ({} before any), or null for any other terminal.
 function symppAgent(address) {
   const l = symppTerminals().find((k) => k.address === address)?.labels ?? {};
   const launched = l["sympp.launch_id"] && (l["sympp.work_package_id"] || l["sympp.work_request_id"]);
@@ -46,7 +46,7 @@ function symppStage(address, now) {
   const tone = round >= 3 ? t.working : stage === "landed" ? t.done : t.muted;
   const said = [stage && SYMPP_STAGES[stage] + (round ? \` · round \${round}\` : ""), d.needs && "Needs you"].filter(Boolean).join(" · ");
   return [symppRow().id(\`sympp-\${address}\`).flex_none().gap(3).items_center().when(old, el => el.opacity(0.45))
-    .tooltip(\`S++ · \${old ? "last known: " : ""}\${said}\`)
+    .tooltip(\`sympp · \${old ? "last known: " : ""}\${said}\`)
     .when(Boolean(stage), el => el.child(symppSvg(\`mods/sympp/stage-\${stage}.svg\`).size(12).flex_none().text_color(tone)))
     .when(Boolean(round), el => el.child(symppDiv().text_size(10).text_color(tone).child(String(round))))
     .when(Boolean(d.needs), el => el.child(symppImage("mods/sympp/needs.svg").size(7).flex_none()))];

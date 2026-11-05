@@ -27,21 +27,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
   end
 
   test "architect repo read scope accepts trusted repo identity aliases without widening writes" do
-    actor = architect([Scope.work_request("wr-1"), Scope.repo("symphony-plus-plus", "main")])
+    actor = architect([Scope.work_request("wr-1"), Scope.repo("sympp", "main")])
 
     trusted_alias_target =
       Target.work_request("wr-2",
-        repo: "JJLiebig/symphony-plus-plus",
+        repo: "JJLiebig/sympp",
         base_branch: "main",
-        metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/symphony-plus-plus.git"]}
+        metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/sympp.git"]}
       )
 
     trusted_alias_repo_target =
-      Target.repo("JJLiebig/symphony-plus-plus", "main", metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/symphony-plus-plus.git"]})
+      Target.repo("JJLiebig/sympp", "main", metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/sympp.git"]})
 
     untrusted_alias_target =
       Target.work_request("wr-2",
-        repo: "JJLiebig/symphony-plus-plus",
+        repo: "JJLiebig/sympp",
         base_branch: "main"
       )
 
@@ -49,14 +49,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
       Target.work_request("wr-3",
         repo: "Elsewhere/symphony-plus-plus",
         base_branch: "main",
-        metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/symphony-plus-plus.git"]}
+        metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/sympp.git"]}
       )
 
     other_base_target =
       Target.work_request("wr-4",
-        repo: "JJLiebig/symphony-plus-plus",
+        repo: "JJLiebig/sympp",
         base_branch: "release/wr-read",
-        metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/symphony-plus-plus.git"]}
+        metadata: %{repo_scope_trusted_remotes: ["https://github.com/JJLiebig/sympp.git"]}
       )
 
     assert %Decision{allowed?: true, matched_scope: %Scope{type: :repo}} =

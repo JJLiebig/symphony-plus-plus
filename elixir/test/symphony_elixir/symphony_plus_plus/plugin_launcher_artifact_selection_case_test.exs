@@ -48,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
           File.write!(
             Path.join(cache_root, ".mcp.json"),
             Jason.encode!(%{
-              "symphony_plus_plus" => %{
+              "sympp" => %{
                 "type" => "stdio",
                 "command" => "cmd.exe",
                 "args" => ["/d", "/s", "/c", "scripts/start-sympp-mcp.cmd"],

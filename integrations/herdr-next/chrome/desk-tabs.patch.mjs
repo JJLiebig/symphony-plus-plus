@@ -1,10 +1,10 @@
-// S++ chrome 3 for the personal desk-tabs mod (cloned from Herdr's tabs 0.1.4): buttons for panels
-// mods register in shared("workspace.panel_buttons"), S++'s own included, beside Files and Changes,
+// sympp chrome 3 for the personal desk-tabs mod (cloned from Herdr's tabs 0.1.4): buttons for panels
+// mods register in shared("workspace.panel_buttons"), sympp's own included, beside Files and Changes,
 // with the same toggle; and marks mods register for tabs in shared("workspace.tab_marks"), such as the
-// S++ UI studio's glyph, tucked behind a tab's icon. Each edit's `find` must occur exactly once in the
+// sympp UI studio's glyph, tucked behind a tab's icon. Each edit's `find` must occur exactly once in the
 // mod; `replace` takes its place. The tab marks import what they use themselves.
 export default {
-  mark: 'S++ chrome 3',
+  mark: 'sympp chrome 3',
   mod: 'desk-tabs',
   edits: [
     {
@@ -16,7 +16,7 @@ export default {
     {
       find: `export default class Tabs extends View {
 `,
-      replace: `// S++ chrome 3: marks other mods register for a tab in shared("workspace.tab_marks") as { tab, icon,
+      replace: `// sympp chrome 3: marks other mods register for a tab in shared("workspace.tab_marks") as { tab, icon,
 // iconDark?, label }. A tab's first mark sits behind the right of its icon, iconDark on a dark theme,
 // with its label as the tooltip; a mark drawn for this slot has that icon's ring cut out of it.
 import { div as symppDiv, image as symppImage } from "gpui-kit";
@@ -39,12 +39,12 @@ export default class Tabs extends View {
 `,
       replace: `  init(_props, cx) {
     this.pressed = null;
-    // S++ chrome 3: the S++ panel's button, registered here because this bar is always shown and
-    // Herdr starts the S++ panel only once it is.
+    // sympp chrome 3: the sympp panel's button, registered here because this bar is always shown and
+    // Herdr starts the sympp panel only once it is.
     cx.spawn(async () => {
       const list = shared("workspace.panel_buttons");
       const others = Array.isArray(list) ? list.filter(b => b?.id !== "sympp") : [];
-      const sympp = { id: "sympp", label: "S++", icon: "mods/sympp/mark.png", iconDark: "mods/sympp/mark-dark.png" };
+      const sympp = { id: "sympp", label: "sympp", icon: "mods/sympp/mark.png", iconDark: "mods/sympp/mark-dark.png" };
       if (JSON.stringify(Array.isArray(list) ? list.find(b => b?.id === "sympp") : null) !== JSON.stringify(sympp)) setShared("workspace.panel_buttons", [...others, sympp]);
     });
   }
@@ -63,7 +63,7 @@ export default class Tabs extends View {
       find: `    const enabled = shared("workspace.panels") ?? ["files", "changes"];
 `,
       replace: `    const enabled = shared("workspace.panels") ?? ["files", "changes"];
-    // S++ chrome 3: panels other mods register in shared("workspace.panel_buttons") as { id, label, icon,
+    // sympp chrome 3: panels other mods register in shared("workspace.panel_buttons") as { id, label, icon,
     // iconDark? }; each shows beside Files and Changes while panel-body holds a child with that id. An SVG
     // icon is tinted like Files and Changes; a picture shows as it is, iconDark on a dark theme.
     const registered = shared("workspace.panel_buttons");

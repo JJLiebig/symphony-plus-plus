@@ -1,5 +1,5 @@
 // Pure Job level: one job's phase, package detail, participating agents and decisions, from canonical
-// S++ state and Herdr's own terminal reports. No GPUI or Herdr imports, so it is tested on its own.
+// sympp state and Herdr's own terminal reports. No GPUI or Herdr imports, so it is tested on its own.
 
 import { POLL, ago, shortRepo, stageText, evidenceOf, bindingsFor } from "./model.js";
 
@@ -73,7 +73,7 @@ export function reportFor(bindings, terminalList, now) {
   return reports.map((term) => agentReport(term, now)).find(Boolean) ?? null;
 }
 
-// Live only after a recent helper check of this exact binding passed; otherwise S++'s last sighting,
+// Live only after a recent helper check of this exact binding passed; otherwise sympp's last sighting,
 // otherwise unknown. Terminal labels and text alone never make an agent live.
 export function liveness(bindings, checks, place, lastSeenAt, now) {
   const live = bindings.find((b) => {
@@ -93,7 +93,7 @@ export function jobBindings(job, bindings) {
   return found.filter((b, i) => found.findIndex((other) => other.address === b.address && other.pkgId === b.pkgId) === i);
 }
 
-// Everyone S++ or a verified binding says takes part. S++ records no reviewer identity or claim
+// Everyone sympp or a verified binding says takes part. sympp records no reviewer identity or claim
 // history, so the review provider is named by its type and mode only.
 export function participants(job, bindings, checks, now) {
   const own = (pkgId) => bindingsFor(bindings, job.id, pkgId);
@@ -128,7 +128,7 @@ export function participants(job, bindings, checks, now) {
 // ---------- Decisions ----------
 
 export function decisionsOf(payload) {
-  if (!payload || typeof payload !== "object" || !Array.isArray(payload.decision_logs)) throw new Error("S++ answered with something other than this job's details.");
+  if (!payload || typeof payload !== "object" || !Array.isArray(payload.decision_logs)) throw new Error("sympp answered with something other than this job's details.");
   return payload.decision_logs.filter((d) => d?.id && d.decision).map((d) => ({
     id: d.id, seq: Number(d.sequence) || 0, text: d.decision, rationale: d.rationale || null,
     impact: d.scope_impact || null, by: d.created_by || null, at: ms(d.created_at ?? d.inserted_at),

@@ -34,7 +34,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageEnableMissingDefaultC
         assert status == 0, json_output
         readiness = json_output |> Jason.decode!() |> Map.fetch!("readiness")
         create_config = Enum.find(readiness["next_actions"], &(&1["code"] == "create_codex_config"))
-        assert create_config["message"] =~ "Choose a dedicated Symphony++ MCP Codex home"
+        assert create_config["message"] =~ "Choose a dedicated sympp MCP Codex home"
         refute create_config["message"] =~ "enable command below"
         assert Enum.any?(readiness["next_actions"], &(&1["code"] == "choose_dedicated_codex_home"))
         refute Enum.any?(readiness["next_actions"], &(&1["code"] == "enable_mcp_companion"))

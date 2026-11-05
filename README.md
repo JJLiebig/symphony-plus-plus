@@ -1,13 +1,13 @@
-# Symphony++
+# sympp
 
-Symphony++ is a local planning and delivery cockpit for coding agents. Its
+sympp is a local planning and delivery cockpit for coding agents. Its
 ledger, MCP tools, and dashboard connect WorkRequests, bounded WorkPackages,
 decisions, blockers, and GitHub delivery evidence.
 
 A human and agent can explore a problem before creating a WorkRequest. An
 architect then slices and oversees tracked delivery. Ordinary workers and
 coordinators also work without a backend; optional Solo Sessions provide
-lightweight planning memory through MCP. Symphony++ does not own model
+lightweight planning memory through MCP. sympp does not own model
 accounts or terminal sessions.
 
 Ordinary workers receive an assignment, implement it, run required native checks
@@ -19,18 +19,24 @@ duplicate status/review reporting are optional.
 
 For an always-on Linux factory shared across devices, see [Linux service](docs/linux-service.md).
 
-Windows installation and connection for Codex or Claude Code:
+Install the skill, then tell Codex or Claude "set up sympp":
 
-Follow [Portable skills](docs/portable-skills.md) for the default global install
-and setup, or a project install. Main is the normal branch; beta is an isolated
-preview. Close clients, update, run setup and open fresh sessions to adopt the
-latest published build. See [Install and run](docs/runtime.md) for runtime details.
-
-Existing Codex marketplace installations can update with:
-
-```powershell
-codex plugin marketplace upgrade symphony-plus-plus
+```sh
+npx skills add JJLiebig/sympp
 ```
+
+The agent asks whether to use this machine or a server and runs setup. Setup
+installs the `sympp` command and connects the installed hosts. Open a fresh agent
+session afterward.
+
+```sh
+sympp --server jjdev
+sympp status
+```
+
+Run `sympp` alone for a local Windows x64 factory. Remote clients also support
+Linux and macOS. See [Portable skills](docs/portable-skills.md) for manual setup
+and [Install and run](docs/runtime.md) for runtime details.
 
 ## Documentation
 

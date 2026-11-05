@@ -104,7 +104,7 @@ export function detailPayload() {
 }
 
 // Herdr's own grouping for the board above: the web space under Herdr, a remote api space under
-// Personal Tools, an empty topic, and unsorted spaces with and without S++ work.
+// Personal Tools, an empty topic, and unsorted spaces with and without sympp work.
 export function deskFixture() {
   const space = (id, name, folder, machine = null, extra = {}) => ({ id, index: 1, name, named: false, folder, machine, branch: null, active: false, status: null, tabs: [], ...extra });
   return {

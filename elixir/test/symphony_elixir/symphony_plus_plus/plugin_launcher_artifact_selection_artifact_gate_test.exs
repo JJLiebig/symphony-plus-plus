@@ -72,8 +72,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionArtifac
           )
 
         assert status != 0
-        assert output =~ "SYMPP_REPO_ROOT does not look like a Symphony++ checkout"
-        refute output =~ "Symphony++ MCP launcher validation passed."
+        assert output =~ "SYMPP_REPO_ROOT does not look like a sympp checkout"
+        refute output =~ "sympp MCP launcher validation passed."
       after
         File.rm_rf!(temp_codex_home)
       end

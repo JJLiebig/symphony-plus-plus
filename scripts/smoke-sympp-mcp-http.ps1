@@ -763,7 +763,7 @@ function Invoke-HealthSmoke([string]$SessionId, [string]$ExpectedRevision) {
     if ([string]::IsNullOrWhiteSpace($actualRevision)) {
       return [pscustomobject]@{
         ok = $false
-        result = New-SmokeResult "stale_or_unverified_daemon" "MCP daemon did not report a source revision. Restart the local Symphony++ cockpit from the current checkout and rerun smoke." @{
+        result = New-SmokeResult "stale_or_unverified_daemon" "MCP daemon did not report a source revision. Restart the local sympp cockpit from the current checkout and rerun smoke." @{
           expectedSourceRevision = $ExpectedRevision
         }
       }
@@ -772,7 +772,7 @@ function Invoke-HealthSmoke([string]$SessionId, [string]$ExpectedRevision) {
     if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($actualRevision, $ExpectedRevision)) {
       return [pscustomobject]@{
         ok = $false
-        result = New-SmokeResult "stale_daemon_source_revision_mismatch" "MCP daemon source revision does not match the expected checkout. Restart the local Symphony++ cockpit and rerun smoke." @{
+        result = New-SmokeResult "stale_daemon_source_revision_mismatch" "MCP daemon source revision does not match the expected checkout. Restart the local sympp cockpit and rerun smoke." @{
           expectedSourceRevision = $ExpectedRevision
           daemonSourceRevision = $actualRevision
         }
@@ -1129,7 +1129,7 @@ function Invoke-McpSmoke {
   }
 
   if ($SkipUnboundTools) {
-    return New-SmokeResult "ok" "Local Symphony++ HTTP MCP daemon is initialized and passed health/source checks." @{
+    return New-SmokeResult "ok" "Local sympp HTTP MCP daemon is initialized and passed health/source checks." @{
       mode = "unbound_health"
       sessionId = $session.sessionId
       daemonSourceRevision = $session.sourceRevision
@@ -1152,7 +1152,7 @@ function Invoke-McpSmoke {
     return $preClaimGate.result
   }
 
-  return New-SmokeResult "ok" "Local Symphony++ HTTP MCP daemon is initialized and exposes the expected unbound tools." @{
+  return New-SmokeResult "ok" "Local sympp HTTP MCP daemon is initialized and exposes the expected unbound tools." @{
     sessionId = $session.sessionId
     daemonSourceRevision = $session.sourceRevision
     expectedSourceRevision = $session.expectedRevision
@@ -1327,7 +1327,7 @@ function Invoke-BoundMcpSmoke($Config) {
     $data["preClaimGatedTools"] = $preClaimGatedTools
   }
 
-  return New-SmokeResult "ok" "Local Symphony++ HTTP MCP daemon claimed the WorkPackage and exposes the expected bound worker tools/resources." $data
+  return New-SmokeResult "ok" "Local sympp HTTP MCP daemon claimed the WorkPackage and exposes the expected bound worker tools/resources." $data
 }
 
 function Invoke-SelfTest {
@@ -1553,7 +1553,7 @@ function Invoke-SelfTest {
 
 function Invoke-StaticSmokeValidation {
   [void](Invoke-SelfTest)
-  return New-SmokeResult "ok" "Static Symphony++ MCP contract, source revision, redaction, and bound argument validation passed; live server probe skipped."
+  return New-SmokeResult "ok" "Static sympp MCP contract, source revision, redaction, and bound argument validation passed; live server probe skipped."
 }
 
 try {

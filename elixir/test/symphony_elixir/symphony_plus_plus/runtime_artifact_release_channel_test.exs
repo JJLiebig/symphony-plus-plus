@@ -14,7 +14,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
       output_path = Path.join(temp_root, "sympp-runtime-artifacts-stable.json")
       revision = String.duplicate("c", 40)
       dashboard_fingerprint = String.duplicate("d", 64)
-      base_url = "https://github.com/JJLiebig/symphony-plus-plus/releases/download/test-runtime"
+      base_url = "https://github.com/JJLiebig/sympp/releases/download/test-runtime"
 
       try do
         File.mkdir_p!(temp_root)
@@ -37,7 +37,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
               "-ReleaseTag",
               "test-runtime",
               "-Repository",
-              "JJLiebig/symphony-plus-plus",
+              "JJLiebig/sympp",
               "-Channel",
               "stable",
               "-ManifestVersion",
@@ -102,7 +102,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
               "-ManifestDir",
               temp_root,
               "-PublishedBaseUrl",
-              "https://github.com/JJLiebig/symphony-plus-plus/releases/download/test-runtime",
+              "https://github.com/JJLiebig/sympp/releases/download/test-runtime",
               "-ReleaseTag",
               "test-runtime"
             ],
@@ -129,10 +129,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
       "schema_version" => 1,
       "status" => "built",
       "plugin" => %{
-        "marketplace" => "symphony-plus-plus",
+        "marketplace" => "sympp",
         "name" => "symphony-plus-plus-mcp",
         "version" => plugin_version(),
-        "packages" => ["symphony-plus-plus", "symphony-plus-plus-mcp"]
+        "packages" => ["sympp", "symphony-plus-plus-mcp"]
       },
       "source_revision" => revision,
       "mcp_contract_fingerprint" => expected_mcp_contract_fingerprint(),

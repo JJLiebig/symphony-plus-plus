@@ -10,11 +10,11 @@ The primary user is the human overseer coordinating local agent work. They need 
 
 ## Product Purpose
 
-Symphony++ is a local planning and orchestration cockpit for real software delivery. It gives agents structured tools and gives the human operator a shared visual source of truth. Success means the operator can quickly answer what is happening, what can proceed, what is waiting, and what needs attention.
+sympp is a local planning and orchestration cockpit for real software delivery. It gives agents structured tools and gives the human operator a shared visual source of truth. Success means the operator can quickly answer what is happening, what can proceed, what is waiting, and what needs attention.
 
-For delivery-tracked work, Symphony++ typically begins after the human and an agent have explored the problem and refined it into a sufficiently concrete goal, spec, or direction. That handoff becomes a WorkRequest, after which an architect can slice the work, dispatch bounded execution, and oversee delivery end to end. Solo Sessions remain available for lightweight planning before or outside that lifecycle.
+For delivery-tracked work, sympp typically begins after the human and an agent have explored the problem and refined it into a sufficiently concrete goal, spec, or direction. That handoff becomes a WorkRequest, after which an architect can slice the work, dispatch bounded execution, and oversee delivery end to end. Solo Sessions remain available for lightweight planning before or outside that lifecycle.
 
-Symphony++ coordinates delivery work through its ledger; it does not own terminal sessions, model accounts, or the human's interactive coding environment.
+sympp coordinates delivery work through its ledger; it does not own terminal sessions, model accounts, or the human's interactive coding environment.
 
 ## Positioning
 
@@ -36,14 +36,14 @@ does not qualify the installed marketplace runtime or other operating systems.
 
 ## Herdr-next Integration Target
 
-S++ continues to work standalone with full orchestration and its normal web UI.
+sympp continues to work standalone with full orchestration and its normal web UI.
 The optional native integration into herdr-core + herdr-app should elevate that
 same workflow with topic/repository/job views, human attention handling, native
 agent navigation and cross-provider execution through herdr-core. One shared
-S++ ledger serves both interfaces. Direct Herdr work needs no S++ ceremony;
+sympp ledger serves both interfaces. Direct Herdr work needs no sympp ceremony;
 lightweight tracking and visualization remain optional.
 
-The [S++ × Herdr-next contract](docs/design/herdr-next-integration.md) records
+The [sympp × Herdr-next contract](docs/design/herdr-next-integration.md) records
 the target, current delivery evidence and remaining boundaries. Xeneon hardware
 is a later opportunity, outside this delivery.
 

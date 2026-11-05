@@ -1,8 +1,8 @@
 id = "symphony-plus-plus.execution-inspector"
-name = "Symphony++ Execution Inspector"
+name = "sympp Execution Inspector"
 version = "0.1.0"
 min_herdr_version = "0.7.5"
-description = "A compact Symphony++ execution view beside bound architect and coordinator panes."
+description = "A compact sympp execution view beside bound architect and coordinator panes."
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
@@ -38,6 +38,6 @@ command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
 
 [[panes]]
 id = "execution-inspector"
-title = "Symphony++"
+title = "sympp"
 placement = "split"
 command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]

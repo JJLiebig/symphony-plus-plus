@@ -1,6 +1,6 @@
 # Portable Skills Installation
 
-On Windows x64, install Symphony++ for Claude Code, Codex, or both with the
+On Windows x64, install sympp for Claude Code, Codex, or both with the
 [Skills CLI](https://github.com/vercel-labs/skills). You need Git, Node.js 22.20+
 with npm/npx, PowerShell 7, and the selected host on PATH. No Elixir toolchain,
 Codex marketplace, developer checkout, or Codex cache is required. Native
@@ -11,15 +11,15 @@ Linux, macOS and Windows ARM host setup is not supported by this route.
 Install globally for both hosts, then connect them from any project:
 
 ```powershell
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main -g --agent codex claude-code --skill symphony-plus-plus --yes
-node $HOME/.agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/sympp/tree/main -g --agent codex claude-code --skill sympp --yes
+node $HOME/.agents/skills/sympp/scripts/setup-sympp.js
 ```
 
 Alternatively, install in one project:
 
 ```powershell
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent codex claude-code --skill symphony-plus-plus --yes
-node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/sympp/tree/main --agent codex claude-code --skill sympp --yes
+node .agents/skills/sympp/scripts/setup-sympp.js
 ```
 
 Omitting `--host` registers installed hosts; `--host both` requires both.
@@ -31,13 +31,12 @@ Claude local and project registrations take precedence over user registrations.
 Do not commit machine-specific MCP paths to a shared repository.
 
 Repeated setup is a no-op and repairs owned registrations after relocation.
-Unrelated `symphony_plus_plus` entries and enabled Symphony++ MCP marketplace
-plugins in the selected Codex home are refused. Use a separate home/workspace,
+Unrelated `sympp` entries in the selected host configuration are refused. Use a separate home/workspace,
 or explicitly disable/remove the old registration after closing its sessions.
 Setup does not disable plugins or stop runtimes.
 
 Open **fresh host sessions** in this project, follow host approval prompts,
-and verify `symphony_plus_plus` tools before ledger work. Setup cannot add tools
+and verify `sympp` tools before ledger work. Setup cannot add tools
 to an already-open model session. An agent following the installed skill may
 run setup when MCP is missing, then report that a fresh session is required.
 
@@ -57,8 +56,8 @@ $env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'empty.sqlite3'
 $env:SYMPP_RUNTIME_FILE = Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json'
 $env:SYMPP_BACKEND_PORT = '21345'
 $env:SYMPP_OPEN_DASHBOARD = '0'
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent codex claude-code --skill symphony-plus-plus --yes
-node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host both
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/sympp/tree/main --agent codex claude-code --skill sympp --yes
+node .agents/skills/sympp/scripts/setup-sympp.js --host both
 codex
 ```
 
@@ -93,8 +92,8 @@ From the project containing the installed skill, set the actual source path
 explicitly. The source may stay open in its existing runtime:
 
 ```powershell
-$offlineHelper = '.agents/skills/symphony-plus-plus/scripts/sympp-offline.ps1'
-# Claude-only installs use .claude/skills/symphony-plus-plus/scripts/sympp-offline.ps1.
+$offlineHelper = '.agents/skills/sympp/scripts/sympp-offline.ps1'
+# Claude-only installs use .claude/skills/sympp/scripts/sympp-offline.ps1.
 $sourceDatabase = 'C:\path\to\recorded-factory-ledger.sqlite3' # Replace with its recorded identity.
 $offlineHome = Join-Path $env:USERPROFILE 'sympp-offline-view'
 pwsh -NoProfile -File $offlineHelper -Action Snapshot -SourceDatabase $sourceDatabase -SymppHome $offlineHome
@@ -144,7 +143,7 @@ archive bytes when unchanged. Healthy attached clients keep their actual current
 backend until the last client closes. Source installation can precede publication;
 check actual runtime provenance before assuming a new feature is available.
 
-Both hosts must share the same Symphony++ home, runtime file and ledger to
+Both hosts must share the same sympp home, runtime file and ledger to
 share a managed runtime. Startup locks serialize startup and client leases
 keep it alive until the last client closes. Portable startup records live
 ownership beside the ledger and refuses a different live home even on another
@@ -161,13 +160,13 @@ installations retain their marketplace upgrade path.
 ## Update, rollback, and removal
 
 Close clients using this installation and retain selected host profiles. For a
-global install, back up `$HOME/.agents/skills/symphony-plus-plus` and
+global install, back up `$HOME/.agents/skills/sympp` and
 `$HOME/.agents/.skill-lock.json` (or `$env:XDG_STATE_HOME/skills/.skill-lock.json`
 when set), then run:
 
 ```powershell
-npx --yes skills@1.7.0 update symphony-plus-plus -g --yes
-node $HOME/.agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+npx --yes skills@1.7.0 update sympp -g --yes
+node $HOME/.agents/skills/sympp/scripts/setup-sympp.js
 ```
 
 To roll back the global bundle, restore the saved skill and its matching lock
@@ -177,10 +176,10 @@ save the current installed bundle outside the workspace before updating:
 ```powershell
 $previousBundle = Join-Path $env:USERPROFILE 'sympp-previous-install'
 New-Item -ItemType Directory -Path $previousBundle -ErrorAction Stop | Out-Null
-# For Claude-only, use .claude/skills/symphony-plus-plus as the source.
-Copy-Item -LiteralPath .agents/skills/symphony-plus-plus -Destination $previousBundle -Recurse
+# For Claude-only, use .claude/skills/sympp as the source.
+Copy-Item -LiteralPath .agents/skills/sympp -Destination $previousBundle -Recurse
 Copy-Item -LiteralPath skills-lock.json -Destination $previousBundle
-npx --yes skills@1.7.0 update symphony-plus-plus --project --yes
+npx --yes skills@1.7.0 update sympp --project --yes
 ```
 
 Run setup again, then open fresh sessions. The project skill path keeps registration valid.
@@ -196,7 +195,7 @@ Restore a stopped ledger backup when migrations or retention require it. Keep th
 original marketplace installation and paired backup for the first distribution
 change. Skills locks record branch/content hash rather than a resolved Git SHA.
 
-Before `npx --yes skills@1.7.0 remove symphony-plus-plus -g --yes` (omit `-g`
+Before `npx --yes skills@1.7.0 remove sympp -g --yes` (omit `-g`
 for a project install), close clients and
 remove its MCP registration from each host. Removing skill files does not
 remove host configuration.
@@ -226,3 +225,13 @@ old-schema WAL ledger: unchanged source bytes and records, staged conversion,
 the offline marker, populated board data, denied MCP/dispatch/focus, untouched
 external-command sentinels, Ctrl+C shutdown, stopped refresh and refusal of
 ordinary startup. This uses the selected branch artifact, not a local source build.
+
+Setup installs `sympp` in `~/.local/bin` and adds it to the user PATH. Open a
+fresh terminal from the Windows Start menu, or a Unix login shell, then use `sympp --server <ssh-host>`, `sympp` for local setup,
+or `sympp status` to see the selected factory and whether it answers. Re-running
+setup migrates its old managed MCP registration to `sympp`.
+
+If setup prints `activate` on Linux/macOS, run the printed export in the shell
+where you will type `sympp`; opening a tab in an existing terminal may retain
+its previous PATH. `sympp status` succeeds when the factory answers with a
+reachable ledger.

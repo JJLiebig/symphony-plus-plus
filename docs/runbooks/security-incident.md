@@ -4,7 +4,7 @@
 
 1. Stop the affected agent or runtime path without disrupting unrelated healthy
    sessions.
-2. Revoke exposed credentials and affected Symphony++ grants.
+2. Revoke exposed credentials and affected sympp grants.
 3. Preserve non-secret timestamps, identifiers, and logs needed to reconstruct
    the event.
 4. Do not copy the exposed value into an issue, WorkRequest, pull request,

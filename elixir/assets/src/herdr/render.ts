@@ -30,7 +30,7 @@ type GraphRow = { ids: string[]; continues: boolean };
 export function renderInspector(state: InspectorState, columns = 80, rows = 24) {
   const width = Math.max(1, columns);
   const detail = state.detail;
-  if (!detail) return frame([state.error ? `Symphony++ · ${state.error}` : "Symphony++ · Loading"], width);
+  if (!detail) return frame([state.error ? `sympp · ${state.error}` : "sympp · Loading"], width);
 
   const projection = executionFrontierProjection(
     detail.execution_graph,

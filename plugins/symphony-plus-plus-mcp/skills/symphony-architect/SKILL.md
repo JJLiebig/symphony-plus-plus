@@ -1,9 +1,9 @@
 ---
 name: symphony-architect
-description: Use when assigned a Symphony++ WorkRequest, product-tree planning lane, architect WorkPackage, phase, or feature orchestration lane.
+description: Use when assigned a sympp WorkRequest, product-tree planning lane, architect WorkPackage, phase, or feature orchestration lane.
 ---
 
-# Symphony++ Architect
+# sympp Architect
 
 When the user selects Herdr-next execution, use the [optional execution helper](../symphony-worker/references/herdr-execution.md)
 to launch the existing bounded worker bootstrap. Keep dispatch and reconciliation
@@ -30,7 +30,7 @@ attributes this session's new requests and dispatches; it grants no claim or
 dispatch authority. Ordinary work needs no registration. If this session registers
 several domains, attribution uses its most recent still-current registration.
 
-1. Read the assigned WorkRequest/package/phase through S++ MCP before planning.
+1. Read the assigned WorkRequest/package/phase through sympp MCP before planning.
    Trusted local architect calls automatically claim the WorkRequest. Supply
    `work_request_id` on the first scoped call; reconnects retain known scope.
    An active claim held by another architect means leave that work with its
@@ -184,7 +184,7 @@ answer without duplicate worker receipts. Questions and ordinary waits do not de
 escalations or blockers. No report cadence or extra checklist is required.
 
 - Answer worker questions in the conversation when recorded intent decides them.
-  Do not require a duplicate Symphony++ question record. Ordinary waits are not blockers.
+  Do not require a duplicate sympp question record. Ordinary waits are not blockers.
 - Only the architect (or coordinating parent for direct work) explicitly declares
   and clears work blockers after resolving or escalating the issue. Scope each
   blocker to affected work; do not automatically block the whole WorkRequest.

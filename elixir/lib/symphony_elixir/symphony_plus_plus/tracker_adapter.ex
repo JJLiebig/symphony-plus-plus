@@ -1,6 +1,6 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapter do
   @moduledoc """
-  Tracker adapter exposing Symphony++ WorkPackages as normalized issues.
+  Tracker adapter exposing sympp WorkPackages as normalized issues.
   """
 
   @behaviour SymphonyElixir.Tracker

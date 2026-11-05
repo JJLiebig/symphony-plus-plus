@@ -125,7 +125,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
 
       defp command_mcp_config do
         %{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "cmd.exe",
             "args" => [

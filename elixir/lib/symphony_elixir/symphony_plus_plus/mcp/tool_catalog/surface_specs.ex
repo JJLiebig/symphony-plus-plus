@@ -102,7 +102,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
   defp health_tool_spec do
     %{
       "name" => ToolCatalog.health_tool(),
-      "title" => "Symphony++ health",
+      "title" => "sympp health",
       "description" => "Returns server version, ledger reachability, and safe ledger identity without exposing package data.",
       "inputSchema" => %{"type" => "object", "additionalProperties" => false, "properties" => %{}}
     }
@@ -120,7 +120,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
   defp worker_tool_description("read_work_package_document"),
     do: "Read a scoped WorkPackage document. Large progress pages summarize recent events; use detail: full with the same document/before_sequence for complete evidence."
 
-  defp worker_tool_description(name), do: "Symphony++ worker tool #{name}."
+  defp worker_tool_description(name), do: "sympp worker tool #{name}."
 
   defp unbound_worker_tool_spec(name) do
     %{
@@ -155,7 +155,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     do: "Register this trusted local session as the current chief for a domain. Records attribution and location only; grants no claim or dispatch authority."
 
   defp bootstrap_tool_description("create_work_request"),
-    do: "Create a local Symphony++ WorkRequest with creator provenance and return a redacted architect handoff."
+    do: "Create a local sympp WorkRequest with creator provenance and return a redacted architect handoff."
 
   defp local_architect_assignment_claim_tool_spec do
     name = ToolCatalog.local_architect_assignment_claim_tool()
@@ -219,7 +219,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     |> String.replace("claimed current WorkRequest", "explicit WorkRequest")
   end
 
-  defp lean_tool_spec(%{"name" => name, "description" => "Symphony++ worker tool " <> name_and_period} = spec) do
+  defp lean_tool_spec(%{"name" => name, "description" => "sympp worker tool " <> name_and_period} = spec) do
     if name_and_period == name <> ".", do: Map.drop(spec, ["title", "description"]), else: Map.delete(spec, "title")
   end
 

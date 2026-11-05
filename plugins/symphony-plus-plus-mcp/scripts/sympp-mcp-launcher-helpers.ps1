@@ -134,12 +134,12 @@ function Read-SymppPortableInstall([string]$PluginRoot) {
   $path = Join-Path $PluginRoot ".sympp-install.json"
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
   try { $install = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } catch {
-    throw "Invalid Symphony++ skill install. Re-add the skill and run setup again."
+    throw "Invalid sympp skill install. Re-add the skill and run setup again."
   }
   if ($install.schema_version -ne 1 -or $install.distribution -ne "skills" -or
       $install.contract_fingerprint -notmatch "^[0-9a-f]{64}$" -or
       $install.payload_sha256 -notmatch "^[0-9a-f]{64}$") {
-    throw "Invalid Symphony++ skill install. Re-add the skill and run setup again."
+    throw "Invalid sympp skill install. Re-add the skill and run setup again."
   }
   return $install
 }
@@ -156,7 +156,7 @@ function Assert-SymppPortableLedgerAvailable([string]$PluginRoot) {
     $probe = [IO.File]::Open($database, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
     $probe.Dispose()
   } catch [IO.IOException] {
-    throw "This ledger is already in use. Close all clients of the previous Symphony++ install before moving it, or choose a separate SYMPP_DATABASE for beta."
+    throw "This ledger is already in use. Close all clients of the previous sympp install before moving it, or choose a separate SYMPP_DATABASE for beta."
   }
 }
 
@@ -167,7 +167,7 @@ function Resolve-SymppInstalledIdentity([string]$PluginRoot, [switch]$ReadOnly) 
   # Portable content identifies the install; only a verified artifact identifies runtime source.
   $probe = Resolve-SymppPreparedArtifactRuntime $root $null $portable.contract_fingerprint -ValidateOnly
   if ($probe.detail -eq 'contract_mismatch') {
-    throw 'The Skills bundle and runtime channel have different MCP contracts. Run scripts/install-sympp-beta.ps1 for beta, or update Skills with npx skills update symphony-plus-plus --project --yes, then open fresh MCP client sessions.'
+    throw 'The Skills bundle and runtime channel have different MCP contracts. Run scripts/install-sympp-beta.ps1 for beta, or update Skills with npx skills update sympp --project --yes, then open fresh MCP client sessions.'
   }
   $revision = Normalize-SymppMarketplaceSourceRevision ([string]$probe.runtime.source_revision)
   if (-not $revision) { throw "The selected runtime has no valid source revision." }
@@ -292,7 +292,7 @@ function Resolve-RepoRootFromPluginRoot([string]$PluginRoot) {
     return $marketplaceRoot
   }
 
-  throw "Cannot infer the Symphony++ runtime source. Run codex plugin marketplace upgrade, or set SYMPP_REPO_ROOT only for explicit developer validation."
+  throw "Cannot infer the sympp runtime source. Run codex plugin marketplace upgrade, or set SYMPP_REPO_ROOT only for explicit developer validation."
 }
 
 function Resolve-RepoRoot {
@@ -302,7 +302,7 @@ function Resolve-RepoRoot {
       return $configuredRoot
     }
 
-    throw "SYMPP_REPO_ROOT does not look like a Symphony++ checkout with elixir/mix.exs: $configuredRoot"
+    throw "SYMPP_REPO_ROOT does not look like a sympp checkout with elixir/mix.exs: $configuredRoot"
   }
 
   $pluginRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -506,7 +506,7 @@ function Enter-FileLock([string]$LockPath, [int]$TimeoutSec) {
     Start-Sleep -Milliseconds 200
   }
 
-  throw "Timed out waiting for Symphony++ launcher startup lock: $LockPath"
+  throw "Timed out waiting for sympp launcher startup lock: $LockPath"
 }
 
 function Start-SymppColdStartDeadline([int]$TimeoutSec) {
@@ -520,7 +520,7 @@ function Get-SymppRemainingTimeoutSec([int]$RequestedTimeoutSec, [string]$Phase)
 
   $remaining = [int][Math]::Floor(($script:SymppColdStartDeadlineUtc - [DateTime]::UtcNow).TotalSeconds)
   if ($remaining -le 0) {
-    throw "cold_start_timeout: Symphony++ cold startup exhausted its overall budget before $Phase."
+    throw "cold_start_timeout: sympp cold startup exhausted its overall budget before $Phase."
   }
   return [Math]::Min($RequestedTimeoutSec, [Math]::Max(1, $remaining))
 }
@@ -826,5 +826,5 @@ function Format-PortOwners([object[]]$Owners) {
 
 function New-BackendPortOccupiedMessage([int]$Port, [object[]]$Owners) {
   $ownerSummary = Format-PortOwners $Owners
-  return "backend_port_occupied: configured Symphony++ backend port http://127.0.0.1:$Port is occupied by $ownerSummary. Wait for stale listeners to exit, stop the owning process, set SYMPP_BACKEND_PORT=0 or another explicit port, or set SYMPP_BACKEND_URL to a healthy backend."
+  return "backend_port_occupied: configured sympp backend port http://127.0.0.1:$Port is occupied by $ownerSummary. Wait for stale listeners to exit, stop the owning process, set SYMPP_BACKEND_PORT=0 or another explicit port, or set SYMPP_BACKEND_URL to a healthy backend."
 }

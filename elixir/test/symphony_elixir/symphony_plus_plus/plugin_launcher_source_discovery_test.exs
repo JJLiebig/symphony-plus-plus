@@ -123,7 +123,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
         File.write!(Path.join(mcp_cache_root, ".sympp-source-root"), "#{stale_source_root}\n")
 
         launchers = [
-          {write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path), "Symphony++ MCP launcher validation passed."}
+          {write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path), "sympp MCP launcher validation passed."}
         ]
 
         for {script_path, expected} <- launchers do
@@ -165,7 +165,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
 
       try do
         launchers = [
-          {write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path), "Symphony++ MCP launcher validation passed."}
+          {write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path), "sympp MCP launcher validation passed."}
         ]
 
         for {script_path, expected} <- launchers do
@@ -218,7 +218,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
           )
 
         assert status == 0, output
-        assert output =~ "Symphony++ MCP launcher validation passed."
+        assert output =~ "sympp MCP launcher validation passed."
         assert output =~ "Mix 1.99.0 test"
         assert output =~ "launcher: direct"
         assert normalize_path_fragment(output) =~ "mixbuildroot: #{normalize_path_fragment(sympp_home)}"
@@ -259,7 +259,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
           )
 
         assert status == 0, output
-        assert output =~ "Symphony++ MCP launcher validation passed."
+        assert output =~ "sympp MCP launcher validation passed."
         assert output =~ "Mix 1.99.0 test"
         assert output =~ "launcher: direct"
         assert normalize_path_fragment(output) =~ "mixbuildroot: #{normalize_path_fragment(sympp_home)}"
@@ -311,7 +311,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
         assert status == 0, output
 
         assert normalize_path_fragment(output) =~
-                 "ensuring symphony++ elixir dependencies are available in #{normalize_path_fragment(Path.join(marketplace_root, "elixir"))}."
+                 "ensuring sympp elixir dependencies are available in #{normalize_path_fragment(Path.join(marketplace_root, "elixir"))}."
 
         fake_mix_calls =
           fake_mix_log
@@ -367,7 +367,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       File.write!(
         Path.join(cache_root, ".mcp.json"),
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "cmd.exe",
             "args" => ["/d", "/s", "/c", "scripts/start-sympp-mcp.cmd"],

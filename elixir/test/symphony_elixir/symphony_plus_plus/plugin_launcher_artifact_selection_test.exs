@@ -34,7 +34,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionTest do
           )
 
         assert status == 0, output
-        assert output =~ "Symphony++ MCP launcher validation passed."
+        assert output =~ "sympp MCP launcher validation passed."
         assert normalize_path_fragment(output) =~ "reporoot: #{normalize_path_fragment(marketplace_root)}"
         assert output =~ "runtimeMode: source"
         assert output =~ "artifactStatus: artifact_missing"
@@ -81,7 +81,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionTest do
           )
 
         assert status == 0, output
-        assert output =~ "Symphony++ MCP launcher validation passed."
+        assert output =~ "sympp MCP launcher validation passed."
         assert normalize_path_fragment(output) =~ "reporoot: #{normalize_path_fragment(marketplace_root)}"
         assert output =~ "runtimeMode: source"
       after
@@ -112,7 +112,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionTest do
 
         assert status != 0
         assert normalize_prose(output) =~ "expected MCP contract fingerprint could not be resolved"
-        refute output =~ "Symphony++ MCP launcher validation passed."
+        refute output =~ "sympp MCP launcher validation passed."
       after
         File.rm_rf!(temp_codex_home)
       end

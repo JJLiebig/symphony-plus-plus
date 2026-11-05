@@ -248,7 +248,7 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
     try do
       File.mkdir_p!(database_path)
 
-      assert_raise Mix.Error, ~r/Symphony\+\+ cockpit WorkRequest ledger (open|migration) failed:/, fn ->
+      assert_raise Mix.Error, ~r/sympp cockpit WorkRequest ledger (open|migration) failed:/, fn ->
         CockpitTask.run_cockpit_for_test(opts, fn ->
           assert is_integer(wait_for_bound_port())
         end)
@@ -392,7 +392,7 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
     assert {:ok, request} =
              WorkRequestRepository.create(Repo, %{
                title: "Finished request",
-               repo: "symphony-plus-plus",
+               repo: "sympp",
                base_branch: "main",
                work_type: "feature",
                human_description: "Already done.",

@@ -77,7 +77,7 @@ test('the preview pane shows a published web preview first, then a native previe
   for (const native of ['idle', 'unchanged', 'none']) assert.equal(S.previewKind({ url: null, native }), 'none', native);
   assert.deepEqual(S.buildOutcome({ code: 0, stdout: '{"state":"built"}', stderr: '' }), { state: 'ready' });
   assert.deepEqual(S.buildOutcome({ code: 3, stdout: '{"state":"unchanged"}', stderr: '' }), { state: 'unchanged' });
-  assert.deepEqual(S.buildOutcome({ code: 1, stdout: '', stderr: "Error: Cannot find module 'C:\\w\\integrations\\herdr-next\\preview.mjs'" }), { state: 'none' }, 'not an S++ worktree');
+  assert.deepEqual(S.buildOutcome({ code: 1, stdout: '', stderr: "Error: Cannot find module 'C:\\w\\integrations\\herdr-next\\preview.mjs'" }), { state: 'none' }, 'not an sympp worktree');
   assert.deepEqual(S.buildOutcome({ code: 1, stdout: '', stderr: '\nSyntaxError: Unexpected token\n    at x' }), { state: 'error', error: 'SyntaxError: Unexpected token' });
   assert.equal(S.buildOutcome({ code: 1, stdout: '', stderr: "Error: ENOENT: no such file or directory, open 'C:\\w\\integrations\\herdr-next\\fixture.mjs'" }).state, 'error',
     'a missing input is a build error the next save can fix');
@@ -109,7 +109,7 @@ test('the builder makes a sample-data copy of the view, changing only what chang
   const main = await readFile(join(to, 'main.js'), 'utf8');
   assert.match(main, /import Lens from "\.\/lens\.js"/);
   assert.match(main, /this\.request = async \(\) => \{ throw SAMPLE; \}/, 'no request leaves the preview');
-  assert.match(main, /tick\(\) \{\}/, 'it never reads S++');
+  assert.match(main, /tick\(\) \{\}/, 'it never reads sympp');
   const lens = await readFile(join(to, 'lens.js'), 'utf8');
   assert.equal(lens, (await readFile(join(here, 'mods', 'sympp', 'main.js'), 'utf8')).replaceAll('mods/sympp/', 'mods/sympp-dev-wp/'));
   assert.doesNotMatch(await readFile(join(to, 'studioview.js'), 'utf8'), /mods\/sympp\//, 'its pictures come from the copy');

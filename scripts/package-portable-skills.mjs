@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = resolve(repo, 'plugins/symphony-plus-plus-mcp/skills');
-const bundle = resolve(repo, 'skills/symphony-plus-plus');
+const bundle = resolve(repo, 'skills/sympp');
 const check = process.argv.includes('--check');
 const portablePath = path => path.split(sep).join('/');
 const procedures = await readdir(source);

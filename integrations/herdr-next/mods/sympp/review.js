@@ -1,5 +1,5 @@
 // Pure review drill-down: one package's review in plain words, from the review signal the provider
-// reports through S++. Nothing is inferred: unrecorded findings, times, steps and rounds say so.
+// reports through sympp. Nothing is inferred: unrecorded findings, times, steps and rounds say so.
 
 import { span, reviewBumps } from "./model.js";
 
@@ -19,7 +19,7 @@ const STAGE = {
   stale: ["Out of date: the code changed after this review", "bad"],
   done: ["Done", "good"],
 };
-// S++'s summary, when the provider reported no stage of its own.
+// sympp's summary, when the provider reported no stage of its own.
 const STATUS = { in_progress: ["In progress", "active"], passed: ["Passed", "good"], failed: ["Failed", "bad"], pending: ["Not started", "quiet"] };
 const OUTCOME = { findings: "Findings", clean: "Clean", blocked: "Blocked" };
 const LANES = { "review-followup": "Follow-up", "review-github": "GitHub review", "review-deslop": "Simplification", "review-recovery": "Recovery" };

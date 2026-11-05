@@ -1,6 +1,6 @@
 defmodule Mix.Tasks.Sympp.DemoLedger do
   @moduledoc """
-  Creates a deterministic local Symphony++ operator demo ledger.
+  Creates a deterministic local sympp operator demo ledger.
 
       mix sympp.demo_ledger --database <sqlite-path> [--scenario <name>] [--force]
   """
@@ -34,7 +34,7 @@ defmodule Mix.Tasks.Sympp.DemoLedger do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
   alias SymphonyElixir.Workflow
 
-  @shortdoc "Creates a deterministic local Symphony++ operator demo ledger"
+  @shortdoc "Creates a deterministic local sympp operator demo ledger"
   @board_path "/sympp/board"
   @demo_repo "nextide/demo-operator"
   @demo_base_branch "main"
@@ -1085,11 +1085,11 @@ defmodule Mix.Tasks.Sympp.DemoLedger do
 
   defp error_message(:unsupported_database), do: "mix sympp.demo_ledger requires --database to be a durable local SQLite filesystem path."
   defp error_message({:database_exists, path}), do: "Demo ledger already exists at #{path}. Pass --force to overwrite it."
-  defp error_message({:repo_start_failed, reason}), do: "Failed to start Symphony++ demo ledger repository: #{inspect(reason)}"
-  defp error_message({:ecto_start_failed, reason}), do: "Failed to start Ecto for Symphony++ demo ledger: #{inspect(reason)}"
-  defp error_message({:constraint_failed, constraint}), do: "Failed to seed Symphony++ demo ledger due to constraint #{constraint}."
-  defp error_message({:storage_failed, message}), do: "Failed to seed Symphony++ demo ledger: #{message}"
-  defp error_message(reason), do: "Failed to seed Symphony++ demo ledger: #{inspect(reason)}"
+  defp error_message({:repo_start_failed, reason}), do: "Failed to start sympp demo ledger repository: #{inspect(reason)}"
+  defp error_message({:ecto_start_failed, reason}), do: "Failed to start Ecto for sympp demo ledger: #{inspect(reason)}"
+  defp error_message({:constraint_failed, constraint}), do: "Failed to seed sympp demo ledger due to constraint #{constraint}."
+  defp error_message({:storage_failed, message}), do: "Failed to seed sympp demo ledger: #{message}"
+  defp error_message(reason), do: "Failed to seed sympp demo ledger: #{inspect(reason)}"
 
   defp has_blank_option?(opts, keys) do
     Enum.any?(keys, &(Keyword.has_key?(opts, &1) and blank?(Keyword.get(opts, &1))))

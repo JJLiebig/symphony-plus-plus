@@ -400,14 +400,14 @@ plugins."symphony-plus-plus-mcp@other-market".enabled = true
 note = """
 enabled = false
 [plugins."not-a-real-section@jonat-local"]
-[mcp_servers.symphony_plus_plus]
+[mcp_servers.sympp]
 """
 '@
       Status = "added_enabled"
       Changed = $true
       Backup = $true
       CompanionSection = $true
-      Contains = @('[plugins."not-a-real-section@jonat-local"]', '[mcp_servers.symphony_plus_plus]')
+      Contains = @('[plugins."not-a-real-section@jonat-local"]', '[mcp_servers.sympp]')
     },
     @{
       Name = "already_enabled"

@@ -491,7 +491,7 @@ function Resolve-SymppArtifactSelection($Manifest, [string]$Platform, [string]$E
     return [pscustomobject]@{ artifact = $matches[0]; detail = $detail }
   }
   if ($matches.Count -gt 1) {
-    throw "artifact_manifest_invalid: Symphony++ runtime artifact manifest contains multiple matching artifacts for platform $Platform."
+    throw "artifact_manifest_invalid: sympp runtime artifact manifest contains multiple matching artifacts for platform $Platform."
   }
 
   return [pscustomobject]@{ artifact = $null; detail = "matching_artifact_missing" }
@@ -507,11 +507,11 @@ function Select-SymppArtifact($Manifest, [string]$Platform, [string]$ExpectedSou
 
 function Assert-SymppRelativeArtifactPath([string]$Path, [string]$Label) {
   if ([string]::IsNullOrWhiteSpace($Path)) {
-    throw "$Label must be present in the Symphony++ runtime artifact manifest."
+    throw "$Label must be present in the sympp runtime artifact manifest."
   }
 
   if ([System.IO.Path]::IsPathRooted($Path) -or $Path.Contains("..")) {
-    throw "$Label must be a relative path inside the extracted Symphony++ runtime artifact."
+    throw "$Label must be a relative path inside the extracted sympp runtime artifact."
   }
 }
 
@@ -542,7 +542,7 @@ function Assert-SymppSingleArtifactSourceLocation($Artifact) {
   }
 
   if ($declared.Count -gt 1) {
-    throw "artifact_manifest_invalid: selected Symphony++ runtime artifact declares multiple archive locations: $($declared -join ', ')."
+    throw "artifact_manifest_invalid: selected sympp runtime artifact declares multiple archive locations: $($declared -join ', ')."
   }
 }
 
@@ -566,7 +566,7 @@ function Resolve-SymppArtifactSourceUri($Artifact, [string]$ManifestPath) {
       @("artifact", "relative_path")
     ))
   if ([string]::IsNullOrWhiteSpace($value)) {
-    throw "artifact_missing: selected Symphony++ runtime artifact does not declare url, download_url, uri, or path."
+    throw "artifact_missing: selected sympp runtime artifact does not declare url, download_url, uri, or path."
   }
 
   if ([System.Uri]::IsWellFormedUriString($value, [System.UriKind]::Absolute)) {
@@ -585,18 +585,18 @@ function Assert-SymppArtifactSourceUsable([string]$SourceUri) {
     $uri = [System.Uri]$SourceUri
     if ($uri.Scheme -eq "file") {
       if (-not (Test-Path -LiteralPath $uri.LocalPath -PathType Leaf)) {
-        throw "artifact_missing: selected Symphony++ runtime artifact file does not exist: $($uri.LocalPath)"
+        throw "artifact_missing: selected sympp runtime artifact file does not exist: $($uri.LocalPath)"
       }
       return
     }
     if ($uri.Scheme -eq "https" -or ($uri.Scheme -eq "http" -and $uri.IsLoopback)) {
       return
     }
-    throw "artifact_download_blocked: Symphony++ runtime artifacts must use https, file, or loopback http URLs."
+    throw "artifact_download_blocked: sympp runtime artifacts must use https, file, or loopback http URLs."
   }
 
   if (-not (Test-Path -LiteralPath $SourceUri -PathType Leaf)) {
-    throw "artifact_missing: selected Symphony++ runtime artifact file does not exist: $SourceUri"
+    throw "artifact_missing: selected sympp runtime artifact file does not exist: $SourceUri"
   }
 }
 

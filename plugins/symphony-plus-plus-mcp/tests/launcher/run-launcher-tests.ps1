@@ -659,16 +659,16 @@ try {
   $env:SYMPP_HOME = Join-Path $marketplaceRoot "sympp"
 
   $installedIdentity = Resolve-SymppInstalledMarketplaceIdentity $installedRoot
-  Assert-True ($installedIdentity.revision -eq $revision) "Stock marketplace install must resolve without an S++ source revision marker"
+  Assert-True ($installedIdentity.revision -eq $revision) "Stock marketplace install must resolve without an sympp source revision marker"
   Assert-True (-not (Test-Path -LiteralPath (Join-Path $installedRoot ".sympp-source-revision"))) "Marketplace identity test must not synthesize a source revision marker"
 
   Set-Content -LiteralPath (Join-Path $installedRoot "payload.txt") -Value "modified" -NoNewline
   $modifiedIdentity = Resolve-SymppInstalledMarketplaceIdentity $installedRoot
-  Assert-True ($modifiedIdentity.revision -eq $revision) "S++ must trust Codex-owned plugin cache installation instead of re-hashing the payload"
+  Assert-True ($modifiedIdentity.revision -eq $revision) "sympp must trust Codex-owned plugin cache installation instead of re-hashing the payload"
 
   Set-Content -LiteralPath (Join-Path $sourceRoot ".codex-marketplace-install.json") -Value "{}" -NoNewline
   Set-Content -LiteralPath (Join-Path $sourceRoot ".sympp-source-revision") -Value $revision -NoNewline
-  Assert-True (-not (Get-SymppMarketplaceSourceRevision $sourceRoot)) "Private S++ markers must not substitute for missing Codex marketplace metadata"
+  Assert-True (-not (Get-SymppMarketplaceSourceRevision $sourceRoot)) "Private sympp markers must not substitute for missing Codex marketplace metadata"
 } finally {
   $env:SYMPP_HOME = $previousSymppHome
   Remove-Item -LiteralPath $marketplaceRoot -Recurse -Force -ErrorAction SilentlyContinue

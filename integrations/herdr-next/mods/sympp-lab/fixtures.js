@@ -2,7 +2,7 @@
 // changes only the packages it names. The last event is "now".
 
 export const JOB = {
-  title: "Ship the native S++ Lens",
+  title: "Ship the native sympp Lens",
   repo: "symphony-plus-plus",
   startClock: 9 * 60 + 10,
 };

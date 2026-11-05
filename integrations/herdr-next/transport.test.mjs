@@ -74,6 +74,6 @@ test('unreadable errors keep their HTTP status and an uncertain write is not ret
   assert.equal(response.status, 503);
   assert.equal(response.ok, false);
   await assert.rejects(response.json());
-  await assert.rejects(postAction(origin, '/api/v1/sympp/herdr/work-requests', { title: 'Scratch' }, request), /Couldn't reach S\+\+/);
+  await assert.rejects(postAction(origin, '/api/v1/sympp/herdr/work-requests', { title: 'Scratch' }, request), /Couldn't reach sympp/);
   assert.equal(writes, 1);
 });

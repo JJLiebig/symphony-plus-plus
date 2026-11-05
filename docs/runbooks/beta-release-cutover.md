@@ -48,14 +48,14 @@ offline beta home is not an upgrade source or destination.
    or `-journal` sidecars together to a new private backup directory. Do not
    discard a WAL file. Copy the factory's entire `SYMPP_HOME` (runtime artifacts,
    launcher metadata, configuration and logs), the marketplace source clone,
-   installed Symphony++ plugin cache and Codex `config.toml`. Also preserve the
+   installed sympp plugin cache and Codex `config.toml`. Also preserve the
    workflow, operator config or runtime state if outside those homes, and each
    Claude project's MCP registration. Record the original paths with the backup.
    Do not upload this backup; it can contain private ledger data and credentials.
 
 For example, after assigning the recorded absolute paths to `$factoryDatabase`,
 `$factorySymppHome`, `$factoryCodexHome` and a new `$factoryBackup` outside all
-three, the stopped-ledger copy is:
+three, and `$factorySkill` to the installed sympp skill directory, the stopped-ledger copy is:
 
 ```powershell
 New-Item -ItemType Directory -Path $factoryBackup -ErrorAction Stop | Out-Null
@@ -72,10 +72,7 @@ foreach ($suffix in @('', '-wal', '-shm', '-journal')) {
   } elseif ($suffix -eq '') { throw 'Recorded factory ledger is missing.' }
 }
 Copy-Item -LiteralPath $factorySymppHome -Destination (Join-Path $factoryBackup 'sympp-home') -Recurse
-$marketplaceSource = Join-Path $factoryCodexHome '.tmp/marketplaces/symphony-plus-plus'
-$installedCache = Join-Path $factoryCodexHome 'plugins/cache/symphony-plus-plus'
-Copy-Item -LiteralPath $marketplaceSource -Destination (Join-Path $factoryBackup 'marketplace') -Recurse
-Copy-Item -LiteralPath $installedCache -Destination (Join-Path $factoryBackup 'plugin-cache') -Recurse
+Copy-Item -LiteralPath $factorySkill -Destination (Join-Path $factoryBackup 'skill') -Recurse
 Copy-Item -LiteralPath (Join-Path $factoryCodexHome 'config.toml') -Destination $factoryBackup
 ```
 
@@ -94,9 +91,9 @@ After the stopped-ledger backup above and an approved cutover window:
 
 1. Retain the original marketplace registration/configuration and artifacts for
    rollback. In the selected replacement Codex home, explicitly disable/remove
-   its old Symphony++ MCP plugin or manual entry. In the project being converted,
+   its old sympp MCP plugin or manual entry. In the project being converted,
    remove its old Claude local entry with
-   `claude mcp remove --scope local symphony_plus_plus`; local entries take
+   `claude mcp remove --scope local sympp`; local entries take
    precedence over the project file and setup cannot detect them. Setup refuses
    conflicting project entries.
 2. In the intended project, select the recorded `SYMPP_HOME`, `SYMPP_DATABASE`
@@ -114,7 +111,7 @@ After the stopped-ledger backup above and an approved cutover window:
 
 For future Skills upgrades, close clients, back up the installed skill directory
 and `skills-lock.json` using the [portable guide](../portable-skills.md), run
-`npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`, and reopen
+`npx --yes skills@1.7.0 update sympp --project --yes`, and reopen
 sessions. Repeat setup after updating to capture the recorded branch and repair its owned entry.
 Source rollback alone does not pin a floating runtime. Preserve the previous build's
 manifest and archive alongside its installed bundle and recorded actual SHA. A
@@ -125,53 +122,6 @@ SHA before reopening. Remove this local override only when returning to branch
 updates. Restore the stopped ledger and sidecars when migrations or retention
 require it; the original marketplace/configuration/artifact backup remains the
 rollback for a first distribution change.
-
-## Marketplace alternative: upgrade and reconnect
-
-Use the same factory environment in every replacement host. Clear developer-only
-`SYMPP_REPO_ROOT`, source-root hints and artifact overrides from that environment.
-Do not change the ledger path or reuse a sandbox marker. The marketplace source
-clone is under `$factoryCodexHome/.tmp/marketplaces/symphony-plus-plus`; normal
-runtime execution must come from the installed cache and downloaded artifact.
-
-The following uses the existing Codex marketplace commands. Switching an existing
-marketplace between main and beta requires removing its old source registration
-before adding the intended ref (`main` normally, `beta` for an isolated preview). Run outside the marketplace directory because
-replacement renames/removes that directory:
-
-```powershell
-$env:CODEX_HOME = $factoryCodexHome
-$env:SYMPP_HOME = $factorySymppHome
-$env:SYMPP_DATABASE = $factoryDatabase
-Set-Location -LiteralPath $env:USERPROFILE
-codex plugin marketplace remove symphony-plus-plus
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
-codex plugin marketplace upgrade symphony-plus-plus
-codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
-codex plugin list --marketplace symphony-plus-plus --json
-```
-
-Stop on any nonzero exit. If marketplace configuration is managed by a higher
-configuration layer, change the source in that layer instead of bypassing its
-refusal. Reinstall the skill-only `symphony-plus-plus` plugin too if it was
-previously installed. Confirm the selected branch and actual runtime match the inspected manifest,
-the clone contains the shared channel configuration and no checkout-backed source hint was
-introduced. Do not run a refresh/pin helper from a developer checkout.
-
-For a subsequent upgrade on the selected branch, the supported helper is
-`scripts/upgrade-spp.ps1` **from this marketplace source clone**, with no custom
-flags (`-WhatIf` previews). It stops, upgrades and immediately prepares/restarts
-the installed runtime. It is not a backup step. Do not use
-`sympp-mcp-cutover.ps1` for this packaged migration: its missing-runtime fallback
-can set up and launch a source runtime.
-
-Update Claude's project-local bridge registration to the new installed version
-using the [MCP connection procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/references/mcp_wiring.md).
-Open one fresh dedicated Codex session first. Verify it before reopening other
-hosts. Restart all architect and worker model sessions for the new tool schemas;
-transport reconnection in an old session does not reload its tool inventory.
-Reclaim the same assignment and read its canonical history before retrying an
-uncertain write, following the owning packaged skill.
 
 ## Verify before resuming work
 

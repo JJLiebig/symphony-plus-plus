@@ -61,7 +61,7 @@ function body(v, t, s) {
   if (s.landed) return message(t, "Landed", null);
   if (s.worker.state !== "live") {
     return message(t, s.worker.state === "checking" ? "Checking the worker…" : "Waiting for the worker",
-      s.worker.state === "checking" ? null : "The studio places the worker here once S++ confirms it is running.");
+      s.worker.state === "checking" ? null : "The studio places the worker here once sympp confirms it is running.");
   }
   if (s.kind === "web") return webPreview(v, t, s.url);
   if (s.kind === "native") {

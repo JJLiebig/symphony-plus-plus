@@ -226,11 +226,11 @@ function Test-DiagnosticRuntimeArtifactContractMatches($Artifact, [string]$Expec
 
 function Assert-DiagnosticRelativeArtifactPath([string]$Path, [string]$Label) {
   if ([string]::IsNullOrWhiteSpace($Path)) {
-    throw "$Label must be present in the Symphony++ runtime artifact manifest."
+    throw "$Label must be present in the sympp runtime artifact manifest."
   }
 
   if ([System.IO.Path]::IsPathRooted($Path) -or $Path.Contains("..")) {
-    throw "$Label must be a relative path inside the extracted Symphony++ runtime artifact."
+    throw "$Label must be a relative path inside the extracted sympp runtime artifact."
   }
 }
 
@@ -258,7 +258,7 @@ function Resolve-DiagnosticRuntimeArtifactEntrypoint($Artifact) {
 function Resolve-DiagnosticRuntimeArtifactSourceUri($Artifact, [string]$ManifestPath) {
   $value = [string](Get-DiagnosticJsonPropertyValue $Artifact @("url", "download_url", "uri", "path"))
   if ([string]::IsNullOrWhiteSpace($value)) {
-    throw "artifact_missing: selected Symphony++ runtime artifact does not declare url, download_url, uri, or path."
+    throw "artifact_missing: selected sympp runtime artifact does not declare url, download_url, uri, or path."
   }
 
   if ([System.Uri]::IsWellFormedUriString($value, [System.UriKind]::Absolute)) {
@@ -274,18 +274,18 @@ function Assert-DiagnosticRuntimeArtifactSourceUsable([string]$SourceUri) {
     $uri = [System.Uri]$SourceUri
     if ($uri.Scheme -eq "file") {
       if (-not (Test-Path -LiteralPath $uri.LocalPath -PathType Leaf)) {
-        throw "artifact_missing: selected Symphony++ runtime artifact file does not exist: $($uri.LocalPath)"
+        throw "artifact_missing: selected sympp runtime artifact file does not exist: $($uri.LocalPath)"
       }
       return
     }
     if ($uri.Scheme -eq "https" -or ($uri.Scheme -eq "http" -and $uri.IsLoopback)) {
       return
     }
-    throw "artifact_download_blocked: Symphony++ runtime artifacts must use https, file, or loopback http URLs."
+    throw "artifact_download_blocked: sympp runtime artifacts must use https, file, or loopback http URLs."
   }
 
   if (-not (Test-Path -LiteralPath $SourceUri -PathType Leaf)) {
-    throw "artifact_missing: selected Symphony++ runtime artifact file does not exist: $SourceUri"
+    throw "artifact_missing: selected sympp runtime artifact file does not exist: $SourceUri"
   }
 }
 
@@ -464,7 +464,7 @@ function Get-DiagnosticExpectedMcpContractFingerprint([string]$Root) {
   if (-not [string]::IsNullOrWhiteSpace($env:SYMPP_REPO_ROOT)) {
     $explicitRepoRoot = [System.IO.Path]::GetFullPath($env:SYMPP_REPO_ROOT)
     if (-not (Test-SourceCheckoutRoot $explicitRepoRoot)) {
-      throw "SYMPP_REPO_ROOT does not look like a Symphony++ checkout: $explicitRepoRoot"
+      throw "SYMPP_REPO_ROOT does not look like a sympp checkout: $explicitRepoRoot"
     }
 
     $contractPath = Join-Path $explicitRepoRoot "elixir/priv/symphony_plus_plus/mcp_contract.json"
@@ -473,7 +473,7 @@ function Get-DiagnosticExpectedMcpContractFingerprint([string]$Root) {
       return $fingerprint
     }
 
-    throw "Symphony++ diagnostic expected MCP contract fingerprint could not be resolved from explicit SYMPP_REPO_ROOT contract JSON: $contractPath"
+    throw "sympp diagnostic expected MCP contract fingerprint could not be resolved from explicit SYMPP_REPO_ROOT contract JSON: $contractPath"
   }
 
   $candidateRoots = New-Object System.Collections.Generic.List[string]

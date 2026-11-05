@@ -75,7 +75,7 @@ function Invoke-Initialize([string]$Url) {
     $content.Dispose()
   }
   if (-not $response.IsSuccessStatusCode -or $payload.result.serverInfo.name -ne "symphony-plus-plus") {
-    throw "MCP initialize did not return a valid Symphony++ response."
+    throw "MCP initialize did not return a valid sympp response."
   }
 }
 

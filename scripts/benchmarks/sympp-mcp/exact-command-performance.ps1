@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Measures the shipped Symphony++ MCP command against a disposable marketplace install.
+Measures the shipped sympp MCP command against a disposable marketplace install.
 #>
 [CmdletBinding()]
 param(
@@ -203,7 +203,7 @@ function Prepare-ExactArtifact([hashtable]$Environment) {
 
 function Start-ExactClient([hashtable]$Environment, $Barrier = $null) {
   $config = Get-Content -LiteralPath (Join-Path $pluginRoot ".mcp.json") -Raw | ConvertFrom-Json
-  $server = $config.symphony_plus_plus
+  $server = $config.sympp
   $info = [System.Diagnostics.ProcessStartInfo]::new()
   if ($Barrier) {
     $readyFile = Join-Path $Barrier.ready_dir "$([guid]::NewGuid().ToString('N')).ready"

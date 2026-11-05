@@ -16,7 +16,7 @@ function Get-SymppRuntimeChannel([string]$PluginRoot) {
   $install = Get-Content -LiteralPath (Join-Path $sourceRoot ".codex-marketplace-install.json") -Raw | ConvertFrom-Json
   if ($install.ref_name -eq "beta") { return "beta" }
   if ([string]::IsNullOrWhiteSpace([string]$install.ref_name) -or $install.ref_name -eq "main") { return "stable" }
-  throw "Install Symphony++ from the main or beta branch."
+  throw "Install sympp from the main or beta branch."
 }
 
 function Invoke-SymppBoundedDownload([string]$SourceUri, [string]$OutFile, [int]$TimeoutSec, [string]$Phase) {
@@ -64,12 +64,12 @@ function Read-SymppManifestReferenceContent([string]$SourceUri, [string]$Expecte
         Write-SymppLauncherTrace "manifest_fetch_end"
         $readPath = $tempPath
       } else {
-        throw "artifact_download_blocked: Symphony++ runtime artifact manifests must use https, file, or loopback http URLs."
+        throw "artifact_download_blocked: sympp runtime artifact manifests must use https, file, or loopback http URLs."
       }
     }
 
     if (-not (Test-Path -LiteralPath $readPath -PathType Leaf)) {
-      throw "artifact_missing: referenced Symphony++ runtime artifact manifest does not exist: $readPath"
+      throw "artifact_missing: referenced sympp runtime artifact manifest does not exist: $readPath"
     }
     if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256)) {
       $actual = Get-FileSha256 $readPath

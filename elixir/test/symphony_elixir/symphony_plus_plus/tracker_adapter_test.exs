@@ -60,7 +60,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     :ok
   end
 
-  test "Symphony++ tracker config does not inherit Linear environment secrets" do
+  test "sympp tracker config does not inherit Linear environment secrets" do
     original_linear_api_key = System.get_env("LINEAR_API_KEY")
     original_linear_assignee = System.get_env("LINEAR_ASSIGNEE")
 
@@ -113,7 +113,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     assert settings.tracker.assignee == nil
   end
 
-  test "Symphony++ tracker config rejects Linear environment placeholders" do
+  test "sympp tracker config rejects Linear environment placeholders" do
     write_workflow_file!(Workflow.workflow_file_path(),
       tracker_kind: "Symphony_pp",
       tracker_api_token: "$LINEAR_API_KEY",
@@ -127,7 +127,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
              Config.validate!()
   end
 
-  test "Symphony++ Repo database identity keys canonicalize equivalent Windows paths" do
+  test "sympp Repo database identity keys canonicalize equivalent Windows paths" do
     database_path = Path.join(System.tmp_dir!(), "Sympp-Case-Key.sqlite3")
     relative_uri = "file:tmp/sympp-uri-key.sqlite3?mode=rwc&cache=shared"
     expanded_uri = "file:#{Path.expand("tmp/sympp-uri-key.sqlite3")}?cache=shared&mode=rwc"
@@ -532,7 +532,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     end
   end
 
-  test "explicit empty Symphony++ tracker state lists are honored", %{repo: repo} do
+  test "explicit empty sympp tracker state lists are honored", %{repo: repo} do
     write_workflow_file!(Workflow.workflow_file_path(),
       tracker_kind: "Symphony_pp",
       tracker_api_token: nil,
@@ -1271,7 +1271,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.TrackerAdapterTest do
     assert ambiguous_updated.status == "created"
   end
 
-  test "orchestrator treats active Symphony++ packages as dispatchable issues", %{repo: repo} do
+  test "orchestrator treats active sympp packages as dispatchable issues", %{repo: repo} do
     assert {:ok, work_package} =
              Repository.create(repo, WorkPackageFactory.attrs(id: "SYMPP-DISPATCH", kind: "adapter", status: "ready_for_worker"))
 

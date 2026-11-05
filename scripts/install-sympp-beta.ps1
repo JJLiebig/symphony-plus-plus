@@ -3,7 +3,7 @@ param(
   [Parameter(Mandatory)][string]$SymppHome,
   [Parameter(Mandatory)][string]$HerdrAppHome,
   [switch]$LocalCheckout,
-  [string]$ArtifactManifest = 'https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-runtime-beta/sympp-runtime-artifacts-beta.json'
+  [string]$ArtifactManifest = 'https://github.com/JJLiebig/sympp/releases/download/sympp-runtime-beta/sympp-runtime-artifacts-beta.json'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -143,9 +143,9 @@ if (-not $LocalCheckout) {
   for ($directory = $pluginRoot; $directory; $directory = Split-Path -Parent $directory) {
     $lockFile = Join-Path $directory 'skills-lock.json'
     if (-not (Test-Path -LiteralPath $lockFile)) { continue }
-    $entry = (Get-Content -LiteralPath $lockFile -Raw | ConvertFrom-Json).skills.'symphony-plus-plus'
+    $entry = (Get-Content -LiteralPath $lockFile -Raw | ConvertFrom-Json).skills.sympp
     if (-not $entry) { continue }
-    if ($entry.source -ne 'JJLiebig/symphony-plus-plus' -or $entry.ref -ne 'beta') {
+    if ($entry.source -ne 'JJLiebig/sympp' -or $entry.ref -ne 'beta') {
       throw 'The selected factory must belong to a beta Skills installation.'
     }
     $workspace = Assert-InstallPath $directory
@@ -153,8 +153,8 @@ if (-not $LocalCheckout) {
   }
   if (-not $workspace -or $workspace -ieq $profileHome -or
       [IO.Path]::GetRelativePath($workspace, $pluginRoot).Replace('\', '/') -notin @(
-        '.agents/skills/symphony-plus-plus', '.claude/skills/symphony-plus-plus', '.codex/skills/symphony-plus-plus')) {
-    throw 'Select the beta workspace project-local Symphony++ Skills bundle.'
+        '.agents/skills/sympp', '.claude/skills/sympp', '.codex/skills/sympp')) {
+    throw 'Select the beta workspace project-local sympp Skills bundle.'
   }
   Assert-InHome $SymppHome $workspace
 }
@@ -167,7 +167,7 @@ $originalContract = [string]$original.backend.contract_fingerprint
 if ($originalContract -ne $originalInstall.contract_fingerprint) {
   throw 'A previous Skills update is incomplete. Close all beta clients and reopen them before installing again.'
 }
-$bundleSource = Join-Path $repoRoot 'skills/symphony-plus-plus'
+$bundleSource = Join-Path $repoRoot 'skills/sympp'
 $install = Read-SymppPortableInstall $bundleSource
 & node (Join-Path $repoRoot 'scripts/package-portable-skills.mjs') --check | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Regenerate the checkout portable Skills bundle before installing.' }
@@ -198,7 +198,7 @@ if (Test-Path -LiteralPath $installedMark) {
   }
 }
 $tabs = Join-Path $HerdrAppHome 'mods/desk-tabs/main.js'
-if ((Test-Path -LiteralPath $tabs) -and (Get-Content -LiteralPath $tabs -Raw).Contains('S++ chrome')) { $nativeArgs += '--chrome' }
+if ((Test-Path -LiteralPath $tabs) -and (Get-Content -LiteralPath $tabs -Raw).Contains('sympp chrome')) { $nativeArgs += '--chrome' }
 $stage = Join-Path $SymppHome ('runtime/beta-install-' + [guid]::NewGuid().ToString('N'))
 $candidateBundle = Join-Path $stage 'bundle'
 $bundleBackup = Join-Path $stage 'previous-skills'

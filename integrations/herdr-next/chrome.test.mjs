@@ -1,4 +1,4 @@
-// The S++ chrome: what the S++ view shares for the patched desk agents list, and the installer's
+// The sympp chrome: what the sympp view shares for the patched desk agents list, and the installer's
 // --chrome / --remove-chrome on a personal desk home.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +25,7 @@ const app = process.env.HERDR_APP || 'herdr-app';
 const probe = spawnSync(app, ['--version'], { encoding: 'utf8', windowsHide: true });
 const native = { skip: (probe.error || probe.status !== 0) && 'herdr-app is not installed' };
 
-test('each S++ terminal on the board gets its stage, review round and need; others get nothing', () => {
+test('each sympp terminal on the board gets its stage, review round and need; others get nothing', () => {
   const board = parseBoard(boardPayload());
   const terminal = (address, labels) => ({ address, labels, state: 'live' });
   const map = decorations(board, [
@@ -101,7 +101,7 @@ async function snapshot(dir) {
   return out;
 }
 
-test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chrome undoes only that', async t => {
+test('--chrome patches the desk mods, adds the sympp panel once, and --remove-chrome undoes only that', async t => {
   const home = await deskHome(t);
   const original = await snapshot(join(home, 'mods'));
   const result = install(home, ...ENDPOINT, '--chrome');
@@ -149,7 +149,7 @@ test('--chrome patches the desk mods, adds the S++ panel once, and --remove-chro
   }
   assert.deepEqual(await snapshot(home), installed, 'switching back to A restores the full installed state');
 
-  // The person resizes the panel and opens S++ in it before removing the chrome.
+  // The person resizes the panel and opens sympp in it before removing the chrome.
   layout.children[2].size = { px: 500 };
   body.active = 'sympp';
   await writeFile(join(home, 'layouts', 'desk.json'), JSON.stringify(layout, null, 2));
@@ -171,7 +171,7 @@ test('a desk without desk-topics gets the rest of the chrome, and removing it le
   await rm(join(home, 'mods', 'desk-topics'), { recursive: true });
   const result = install(home, ...ENDPOINT, '--chrome');
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(await readFile(join(home, 'mods', 'desk-tabs', 'main.js'), 'utf8'), /S\+\+ chrome/);
+  assert.match(await readFile(join(home, 'mods', 'desk-tabs', 'main.js'), 'utf8'), /sympp chrome/);
   const removed = install(home, '--remove-chrome');
   assert.equal(removed.status, 0, removed.stdout + removed.stderr);
   assert.equal((await readdir(join(home, 'mods'))).includes('desk-topics'), false);
@@ -187,7 +187,7 @@ test('an older desk-topics chrome upgrades in place and keeps later edits', asyn
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const upgraded = await readFile(file, 'utf8');
   assert.equal(upgraded, applyPatch(plain + '// my later tweak\n', deskTopics));
-  assert.doesNotMatch(upgraded, /S\+\+ chrome 1/);
+  assert.doesNotMatch(upgraded, /sympp chrome 1/);
   assert.equal(await readFile(join(home, 'data', 'sympp-chrome', 'desk-topics.main.js'), 'utf8'), plain + '// my later tweak\n');
 });
 
@@ -215,7 +215,7 @@ test('--chrome refuses a home without the personal desk and changes nothing', as
   assert.deepEqual(await snapshot(home), before);
 });
 
-test('edits made after installing are kept by installing and removing; edited S++ lines are refused', async t => {
+test('edits made after installing are kept by installing and removing; edited sympp lines are refused', async t => {
   const home = await deskHome(t);
   const file = join(home, 'mods', 'desk-tabs', 'main.js');
   const plain = await readFile(file, 'utf8');
@@ -227,7 +227,7 @@ test('edits made after installing are kept by installing and removing; edited S+
   assert.equal(await readFile(file, 'utf8'), tweaked, 'the patched mod keeps the later edit');
   const removed = install(home, '--remove-chrome');
   assert.equal(removed.status, 0, removed.stdout + removed.stderr);
-  assert.equal(await readFile(file, 'utf8'), plain + '// my later tweak\r\n', 'removal takes out only the S++ lines');
+  assert.equal(await readFile(file, 'utf8'), plain + '// my later tweak\r\n', 'removal takes out only the sympp lines');
 
   assert.equal(install(home, ...ENDPOINT, '--chrome').status, 0);
   const agents = join(home, 'mods', 'desk-agents', 'main.js');
@@ -236,7 +236,7 @@ test('edits made after installing are kept by installing and removing; edited S+
   for (const args of [[...ENDPOINT, '--chrome'], ['--remove-chrome']]) {
     const result = install(home, ...args);
     assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(result.stdout, /The S\+\+ lines in desk-agents were edited/);
+    assert.match(result.stdout, /The sympp lines in desk-agents were edited/);
     assert.deepEqual(await snapshot(home), before);
   }
 });
@@ -245,12 +245,12 @@ test('another installed chrome version is neither patched again nor removed', as
   const home = await deskHome(t);
   assert.equal(install(home, ...ENDPOINT, '--chrome').status, 0);
   const file = join(home, 'mods', 'desk-agents', 'main.js');
-  await writeFile(file, (await readFile(file, 'utf8')).replaceAll(deskAgents.mark, 'S++ chrome 0'));
+  await writeFile(file, (await readFile(file, 'utf8')).replaceAll(deskAgents.mark, 'sympp chrome 0'));
   const before = await snapshot(home);
   for (const args of [[...ENDPOINT, '--chrome'], ['--remove-chrome']]) {
     const result = install(home, ...args);
     assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(result.stdout, /desk-agents has another version of the S\+\+ chrome/);
+    assert.match(result.stdout, /desk-agents has another version of the sympp chrome/);
     assert.deepEqual(await snapshot(home), before);
   }
 });
@@ -269,7 +269,7 @@ test('a broken patch restores all previous files and removes newly installed fil
     const home = await deskHome(t);
     if (replace) {
       assert.equal(install(home, ...ENDPOINT).status, 0);
-      await writeFile(join(home, 'mods', 'sympp', 'main.js'), '// personal S++ version\n');
+      await writeFile(join(home, 'mods', 'sympp', 'main.js'), '// personal sympp version\n');
       await mkdir(join(home, 'data', 'sympp-chrome'), { recursive: true });
       await writeFile(join(home, 'data', 'sympp-chrome', 'desk-tabs.main.js'), 'previous backup');
     }
@@ -312,7 +312,7 @@ test('current desk fixtures render after chrome install and restore byte-for-byt
   const home = await deskHome(t);
   // A saved registration reaches the extra-panel filter on the first render.
   await writeFile(join(home, 'shared.json'), JSON.stringify({ layout: 'desk',
-    'workspace.panel_buttons': [{ id: 'sympp', label: 'S++', icon: 'mods/sympp/mark.png' }] }));
+    'workspace.panel_buttons': [{ id: 'sympp', label: 'sympp', icon: 'mods/sympp/mark.png' }] }));
   const originals = await snapshot(join(home, 'mods'));
   const layout = await readFile(join(home, 'layouts', 'desk.json'));
   const run = (...args) => spawnSync(process.execPath, [join(here, 'install.mjs'), '--home', home, '--app', app, ...args],

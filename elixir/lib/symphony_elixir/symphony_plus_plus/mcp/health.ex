@@ -603,7 +603,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
     [
       %{
         "uri" => @version_resource,
-        "name" => "Symphony++ version",
+        "name" => "sympp version",
         "mimeType" => "application/json"
       }
     ]
@@ -613,7 +613,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
     [
       %{
         "uri" => @assignment_resource,
-        "name" => "Current Symphony++ assignment",
+        "name" => "Current sympp assignment",
         "mimeType" => "application/json"
       }
     ]

@@ -40,7 +40,7 @@ export function levelBar(v, t, trail, { now, needs, slim = false }) {
   if (v.compact) {
     const actions = h_flex().gap(2).items_center().flex_none()
       .child(iconButton(t, "new-job", "plus", "New job", (cx) => v.openIntake(cx)))
-      .when(Boolean(v.dashboard), (el) => el.child(iconButton(t, "dashboard", "monitor", "Open the S++ dashboard (O)", (cx) => v.openDashboard(cx))))
+      .when(Boolean(v.dashboard), (el) => el.child(iconButton(t, "dashboard", "monitor", "Open the sympp dashboard (O)", (cx) => v.openDashboard(cx))))
       .when(Boolean(pin), (el) => el.child(pin));
     return v_flex().flex_none().px(12).py(6).gap(4).border_b(1).border_color(t.border)
       .child(h_flex().gap(6).items_center().child(path).child(status(v, t, now)).child(actions))
@@ -48,17 +48,17 @@ export function levelBar(v, t, trail, { now, needs, slim = false }) {
   }
   const actions = h_flex().gap(4).items_center().flex_none()
     .child(button(t, "new-job", "New job", (cx) => v.openIntake(cx), { strong: true }))
-    .when(Boolean(v.dashboard), (el) => el.child(button(t, "dashboard", "Dashboard", (cx) => v.openDashboard(cx), { tip: "Open the S++ dashboard (O)" })))
+    .when(Boolean(v.dashboard), (el) => el.child(button(t, "dashboard", "Dashboard", (cx) => v.openDashboard(cx), { tip: "Open the sympp dashboard (O)" })))
     .when(Boolean(pin), (el) => el.child(pin));
   return h_flex().flex_none().py(9).px(20).gap(16).items_center().border_b(1).border_color(t.border)
     .child(path).when(Boolean(needed), (el) => el.child(needed)).child(status(v, t, now)).child(actions);
 }
 
-// Where the read stands, in one 14 px slot so nothing around it moves: a spinner while S++ is read or
+// Where the read stands, in one 14 px slot so nothing around it moves: a spinner while sympp is read or
 // started, a red dot (its tip says why; a click reads again) once reads keep failing, else nothing.
 export function status(v, t, now) {
   const slot = div().id("read-status").size(14).flex_none().flex().items_center().justify_center();
-  if (v.reading || v.starting) return slot.tooltip(v.starting ? "Starting S++…" : "Reading S++…").child(svg(icon("spinner")).size(12).text_color(t.dim).spin(900));
+  if (v.reading || v.starting) return slot.tooltip(v.starting ? "Starting sympp…" : "Reading sympp…").child(svg(icon("spinner")).size(12).text_color(t.dim).spin(900));
   if (!M.isStale(v.net, now)) return slot;
   const tip = v.net.error ? `${v.net.error} Showing the read from ${M.ago(v.net.receivedAt, now)}. Click to retry (R).` : `Last read ${M.ago(v.net.receivedAt, now)}. Click to retry (R).`;
   return slot.cursor_pointer().tooltip(tip).accessibility_label(tip)
@@ -218,7 +218,7 @@ function agentRow(v, t, a, now) {
 function agentList(v, t, agents, now) {
   return v_flex().id("level-agents").gap(1)
     .child(section(t, "Agents", agents.length || null))
-    .when(!agents.length, (el) => el.child(div().px(4).text_size(12).text_color(t.muted).child("No S++ agents seen here.")))
+    .when(!agents.length, (el) => el.child(div().px(4).text_size(12).text_color(t.muted).child("No sympp agents seen here.")))
     .children(agents.map((a) => agentRow(v, t, a, now)));
 }
 
@@ -358,7 +358,7 @@ export function topicLevel(v, t, topic, groups, agents, desks, names, now) {
     main.push(...planned(v, t, `${topic.id}:${g.key}`, g.planned, now));
   }
   const total = groups.reduce((n, g) => n + g.away, 0);
-  if (!groups.length) main.push(div().pt(24).px(4).text_size(12.5).text_color(t.muted).child("No spaces or S++ work in this topic."));
+  if (!groups.length) main.push(div().pt(24).px(4).text_size(12.5).text_color(t.muted).child("No spaces or sympp work in this topic."));
   main.push(away(t, total));
   return columns(v, "topic", main, [agentList(v, t, agents, now)], 300);
 }
@@ -378,7 +378,7 @@ export function spaceLevel(v, t, found, work, agents, now) {
   };
   const main = [div().id("space-facts").pt(14).px(4).text_size(11.5).font_family(MONO).text_color(t.muted).child(facts)];
   if (!work.jobs.length && !work.planned.length) {
-    main.push(div().id("space-empty").pt(18).px(4).text_size(13).text_color(t.muted).child("No S++ work here. Ordinary Herdr work stays ordinary."));
+    main.push(div().id("space-empty").pt(18).px(4).text_size(13).text_color(t.muted).child("No sympp work here. Ordinary Herdr work stays ordinary."));
   } else {
     main.push(section(t, "Work", work.jobs.length || null));
     main.push(...work.jobs.map((job) => jobRow(v, t, job, now, note(job))));

@@ -1,12 +1,12 @@
 {
   "name": "symphony-plus-plus",
   "version": "0.2.0",
-  "description": "MCP-free Symphony++ Solo Session planning plus baseline worker/coordinator playbooks for Codex.",
+  "description": "MCP-free sympp Solo Session planning plus baseline worker/coordinator playbooks for Codex.",
   "skills": "./skills/",
   "interface": {
-    "displayName": "Symphony++",
-    "shortDescription": "MCP-free Symphony++ planning for Codex",
-    "longDescription": "Use Symphony++ for lightweight local Solo Session planning plus baseline worker/coordinator playbooks without starting MCP. Dedicated WorkPackage and architect orchestration should use the opt-in Symphony++ MCP plugin or explicit MCP startup config.",
+    "displayName": "sympp",
+    "shortDescription": "MCP-free sympp planning for Codex",
+    "longDescription": "Use sympp for lightweight local Solo Session planning plus baseline worker/coordinator playbooks without starting MCP. Dedicated WorkPackage and architect orchestration should use the opt-in sympp MCP plugin or explicit MCP startup config.",
     "developerName": "Jonathan",
     "category": "Developer Tools",
     "capabilities": ["Read", "Write"],

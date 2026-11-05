@@ -31,7 +31,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTreeTest do
       %{
         id: "WR-#{System.unique_integer([:positive])}",
         title: "Canonical product tree",
-        repo: "symphony-plus-plus",
+        repo: "sympp",
         base_branch: "main",
         work_type: "feature",
         human_description: "Project canonical WorkPackages.",

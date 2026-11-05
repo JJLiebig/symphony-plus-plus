@@ -44,8 +44,8 @@ export function BoardMenu({ settings, onSaved }: { settings: Settings; onSaved: 
 
   return (
     <span ref={root} className="relative">
-      <button aria-expanded={open} aria-label="S++ settings" className={`group -ml-1.5 flex items-center gap-1 rounded px-1.5 py-1 text-sm font-semibold tracking-tight hover:bg-line ${open ? "bg-line" : ""}`} title="Settings" type="button" onClick={() => setOpen(!open)}>
-        S++
+      <button aria-expanded={open} aria-label="sympp settings" className={`group -ml-1.5 flex items-center gap-1 rounded px-1.5 py-1 text-sm font-semibold tracking-tight hover:bg-line ${open ? "bg-line" : ""}`} title="Settings" type="button" onClick={() => setOpen(!open)}>
+        sympp
         <ChevronDown className={`size-3 transition-colors group-hover:text-ink ${open ? "text-ink" : "text-faint"}`} />
       </button>
       {open ? <Panel settings={settings} onSaved={onSaved} /> : null}

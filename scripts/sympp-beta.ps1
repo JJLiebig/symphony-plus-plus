@@ -127,7 +127,7 @@ function Resolve-BetaConfiguration(
   $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
   $liveDatabase = [System.IO.Path]::GetFullPath((Join-Path $profile ".agents/splusplus/symphony_plus_plus.sqlite3"))
   if (Test-PathInside $homePath (Split-Path -Parent $liveDatabase)) {
-    throw "Beta home must be separate from the live Symphony++ home."
+    throw "Beta home must be separate from the live sympp home."
   }
   if ([string]::IsNullOrWhiteSpace($DatabasePath)) {
     $DatabasePath = if ($UseLiveLedger) { $liveDatabase } else { Join-Path $homePath "ledger/beta.sqlite3" }
@@ -352,7 +352,7 @@ function Get-BetaCodexArguments($Config, [string]$SessionId) {
     "SYMPP_HOME", "SYMPP_RUNTIME_FILE", "SYMPP_LOG_DIR", "MIX_BUILD_ROOT",
     "SYMPP_REPO_ROOT", "SYMPP_DATABASE", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT"
   ) | ForEach-Object { "$_=$($environment[$_] | ConvertTo-Json -Compress)" }
-  $mcpOverride = 'mcp_servers.symphony_plus_plus={command="cmd.exe",args=["/d","/s","/c","scripts\\start-sympp-mcp.cmd"],cwd="' + $pluginRoot + '",env={' + ($mcpEnvironment -join ",") + '},startup_timeout_sec=360,tool_timeout_sec=300}'
+  $mcpOverride = 'mcp_servers.sympp={command="cmd.exe",args=["/d","/s","/c","scripts\\start-sympp-mcp.cmd"],cwd="' + $pluginRoot + '",env={' + ($mcpEnvironment -join ",") + '},startup_timeout_sec=360,tool_timeout_sec=300}'
   $arguments = @("-c", $mcpOverride, "-C", $Config.worktree)
   if (-not [string]::IsNullOrWhiteSpace($SessionId)) { $arguments += @("resume", $SessionId) }
   return $arguments

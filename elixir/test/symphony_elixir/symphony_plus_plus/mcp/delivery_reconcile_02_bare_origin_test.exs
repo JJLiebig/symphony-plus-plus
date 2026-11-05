@@ -9,7 +9,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02BareOriginTest 
     fixture =
       "symphony-plus-plus/beta"
       |> TestSupport.git_repo_fixture!(prefix: "sympp-mcp-bare-origin-worktree")
-      |> set_relative_owner_origin!("JJLiebig/symphony-plus-plus")
+      |> set_relative_owner_origin!("JJLiebig/sympp")
 
     codex_home = Path.join(fixture.root, "codex-home")
     config = Config.default(repo: repo, repo_root: fixture.repo_root)
@@ -19,7 +19,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02BareOriginTest 
         repo,
         "SYMPP-ARCHITECT-WORKTREE-BARE-ORIGIN",
         ["dispatch:work_request"],
-        repo: "symphony-plus-plus"
+        repo: "sympp"
       )
 
     work_request =

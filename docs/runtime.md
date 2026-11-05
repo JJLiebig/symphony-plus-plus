@@ -1,6 +1,6 @@
 # Install And Run
 
-Symphony++ `0.2.0` supports native Codex and Claude Code connections on Windows x64.
+sympp `0.2.0` supports native Codex and Claude Code connections on Windows x64.
 Use [Skills installation](portable-skills.md) for the normal host-neutral route.
 Install main for normal work; `/tree/beta` selects an isolated preview.
 
@@ -50,12 +50,6 @@ selection, dashboard type/lint checks and Vitest, plus Skills mirror validation.
 It excludes backend ExUnit, native acceptance and release qualification; run those
 when changing their surfaces. `just install` also compiles the backend release.
 
-## Existing Marketplace Installations
-
-Existing Codex marketplace installations can run `codex plugin marketplace upgrade
-symphony-plus-plus` and open a fresh session. For new installations use the
-[global Skills route](portable-skills.md).
-
 ## Open The Board
 
 The packaged backend serves the dashboard; no separate frontend is needed.
@@ -75,7 +69,7 @@ URL. See [Operations](operations.md) for the Work board and starting a request.
 
 ### Reload an existing Windows beta factory
 
-From an S++ checkout on your logged-in Windows desktop, use explicit absolute
+From an sympp checkout on your logged-in Windows desktop, use explicit absolute
 factory and Herdr-app homes:
 
 ```powershell
@@ -118,7 +112,7 @@ next install command selects a newer publication.
 
 If startup reports that the Skills bundle and runtime channel have different MCP
 contracts, run the beta install command above or update the project Skills with
-`npx skills update symphony-plus-plus --project --yes`, then open fresh MCP client
+`npx skills update sympp --project --yes`, then open fresh MCP client
 sessions. A channel publication can move ahead of the installed bundle while the
 factory is stopped.
 
@@ -152,7 +146,7 @@ For an upgrade, close clients using this beta runtime, retain the beta
 environment variables, and run:
 
 ```powershell
-codex plugin marketplace upgrade symphony-plus-plus
+npx skills update sympp
 ```
 
 Open fresh sessions. If the package version changes, update Claude's bridge

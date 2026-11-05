@@ -167,7 +167,7 @@ function Assert-StaticContract {
   $configPath = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp/.mcp.json"
   $cutoverPath = Join-Path $repoRoot "scripts/sympp-mcp-cutover.ps1"
   $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-  $server = $config.symphony_plus_plus
+  $server = $config.sympp
 
   $expectedEnvVars = @(
     "CODEX_HOME", "SYMPP_HOME", "SYMPP_DATABASE", "SYMPP_BACKEND_PORT",
@@ -194,7 +194,7 @@ function Assert-StaticContract {
   }
 
   $cutover = Get-Content -LiteralPath $cutoverPath -Raw
-  foreach ($required in @("Assert-InstalledCommandMcpConfig", "Existing S++ Processes (Preserved)", "external_loopback")) {
+  foreach ($required in @("Assert-InstalledCommandMcpConfig", "Existing sympp Processes (Preserved)", "external_loopback")) {
     if (-not $cutover.Contains($required)) {
       throw "cutover is missing '$required'"
     }

@@ -1,5 +1,5 @@
-// What S++ shares for the patched desk agents list once the S++ chrome is installed (install.mjs
-// --chrome): per-agent decorations. The patched mod only reads them; S++ writes them outside render,
+// What sympp shares for the patched desk agents list once the sympp chrome is installed (install.mjs
+// --chrome): per-agent decorations. The patched mod only reads them; sympp writes them outside render,
 // and only when something differs.
 
 import { discoverBindings } from "./model.js";
@@ -11,7 +11,7 @@ export const RESTAMP = 45e3;
 
 const STAGES = { build: "build", checks: "checks", review: "review", merge: "merge" };
 
-// One entry per S++ terminal on this endpoint's board, keyed by its Herdr terminal address (a remote
+// One entry per sympp terminal on this endpoint's board, keyed by its Herdr terminal address (a remote
 // one carries its machine, `vps/t7`): the package's stage, its review round, and whether the person
 // is needed.
 export function decorations(board, terminalList, endpoint, at) {
@@ -36,7 +36,7 @@ export function decorations(board, terminalList, endpoint, at) {
 const same = (a, b) => a.stage === b.stage && a.round === b.round && a.needs === b.needs && a.endpoint === b.endpoint;
 
 // The map to share, or null when nothing changed. An unchanged entry keeps its stamp until it is
-// RESTAMP old; this endpoint's terminals no longer on its board drop out. Entries from other S++
+// RESTAMP old; this endpoint's terminals no longer on its board drop out. Entries from other sympp
 // endpoints stay as they are.
 export function nextDecorations(before, fresh, endpoint, now) {
   const prior = before && typeof before === "object" ? before : {};

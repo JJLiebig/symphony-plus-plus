@@ -1,4 +1,4 @@
-// S++ Lab: a job as a factory floor, on sample data. Packages stand in rooms, walk the corridor
+// sympp Lab: a job as a factory floor, on sample data. Packages stand in rooms, walk the corridor
 // between them and circle the review track once per round; a replay steps through the job.
 
 import { View, div, svg } from "gpui-kit";

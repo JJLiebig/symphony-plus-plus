@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Runs the isolated Symphony++ MCP high-concurrency performance gate.
+Runs the isolated sympp MCP high-concurrency performance gate.
 .EXAMPLE
 pwsh -NoProfile -File scripts/benchmarks/sympp-mcp/run-performance-gate.ps1
 .EXAMPLE
@@ -127,7 +127,7 @@ function Write-Result($Metrics, [string[]]$Failures, $Cleanup) {
   $bin = [System.IO.Path]::GetFullPath($PSCommandPath)
   if ($HOME -and $bin.StartsWith($HOME, [System.StringComparison]::OrdinalIgnoreCase)) { $bin = "~" + $bin.Substring($HOME.Length) }
   [Console]::Out.WriteLine("bin: $(Quote-Toon $bin)")
-  [Console]::Out.WriteLine("description: Run isolated Symphony++ MCP cold, warm, direct HTTP, state, SQLite, and payload performance gates")
+  [Console]::Out.WriteLine("description: Run isolated sympp MCP cold, warm, direct HTTP, state, SQLite, and payload performance gates")
   [Console]::Out.WriteLine("status: $(if ($Failures.Count -eq 0) { 'pass' } else { 'fail' })")
   [Console]::Out.WriteLine("revision: $(Quote-Toon $Metrics.revision)")
   [Console]::Out.WriteLine("clients: $($Metrics.warm.clients)")

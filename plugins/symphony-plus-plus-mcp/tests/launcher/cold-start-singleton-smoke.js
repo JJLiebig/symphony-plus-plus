@@ -99,7 +99,7 @@ function backendFixture() {
     'const server=http.createServer(async(req,res)=>{',
     ' if(req.url==="/shutdown"){send(res,200,{status:"stopping"});server.close(()=>process.exit(0));return;}',
     ' if(req.url==="/mcp/readiness"){if(release&&!fs.existsSync(release))return send(res,503,{status:"starting"});return send(res,200,{status:"ok",ledger:{reachable:true,identity:{kind:"sqlite",default_home:true}},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});}',
-    ' if(req.url==="/sympp/board")return send(res,200,"<title>Symphony++ Dashboard</title>",{"Content-Type":"text/html"});',
+    ' if(req.url==="/sympp/board")return send(res,200,"<title>sympp Dashboard</title>",{"Content-Type":"text/html"});',
     ' if(req.url==="/mcp/client-lease"){const p=JSON.parse(await body(req));if(p.action==="attach")state.attach++;if(p.action==="attach"||p.action==="heartbeat")leases.add(p.client_id);if(p.action==="heartbeat"&&failAfterProbe&&fs.existsSync(failAfterProbe)){fs.unlinkSync(failAfterProbe);failAfterProbeArmed=true;}if(p.action==="detach"){state.detach++;leases.delete(p.client_id);}state.lease_peak=Math.max(state.lease_peak,leases.size);save();return send(res,200,{stale_after_ms:600000});}',
     ' if(req.url==="/mcp"){const p=JSON.parse(await body(req));let result,session=req.headers["mcp-session-id"];if(p.method==="initialize"){state.initialize++;session=crypto.randomUUID();sessions.add(session);result={protocolVersion:"2025-03-26",capabilities:{},serverInfo:{name:"cold-fixture",version:"1"}};}else if(!sessions.has(session))return send(res,404,{error:"missing session"});else if(p.method==="tools/list"){state.tools_list++;if(failRead&&fs.existsSync(failRead)){fs.unlinkSync(failRead);save();res.writeHead(200,{"Content-Type":"application/json"});res.write("{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":");return setTimeout(()=>{server.close();server.closeAllConnections?.();setTimeout(()=>process.exit(0),10);},25);}result={tools:tools.map(name=>({name,description:"fixture",inputSchema:{type:"object"}}))};}else if(p.method==="tools/call"&&p.params.name==="fixture.mutate"){state.mutations++;save();res.writeHead(200,{"Content-Type":"application/json"});res.write("{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":");return setTimeout(()=>{res.destroy();setTimeout(()=>process.exit(0),10);},25);}else return send(res,404,{error:"missing"});save();return send(res,200,{jsonrpc:"2.0",id:p.id,result},{"Mcp-Session-Id":session});}',
     ' send(res,404,{error:"not found"});',
@@ -118,7 +118,7 @@ function createArchive(root, shell, backendPort, backendState, releaseFile, bind
   fs.mkdirSync(path.join(source, "dashboard"), { recursive: true });
   fs.writeFileSync(path.join(source, "backend.js"), backendFixture());
   fs.writeFileSync(path.join(source, "start-runtime.cmd"), '@echo off\r\nnode "%~dp0backend.js" %*\r\n');
-  fs.writeFileSync(path.join(source, "dashboard", "index.html"), "<title>Symphony++ Dashboard</title>");
+  fs.writeFileSync(path.join(source, "dashboard", "index.html"), "<title>sympp Dashboard</title>");
   const runtimeArgs = ["--port", "{port}", "--state", backendState, "--release", releaseFile, "--bind-release", bindReleaseFile, "--fail-after-probe", failAfterProbeFile, "--fail-read", failReadFile, "--contract", contract, "--revision", revision, "--ledger", ledgerFile, "--tools", Buffer.from(JSON.stringify(expectedTools)).toString("base64"), "start-runtime.ps1"];
   if (prepared) {
     fs.mkdirSync(path.join(source, "runtime", "bin"), { recursive: true });

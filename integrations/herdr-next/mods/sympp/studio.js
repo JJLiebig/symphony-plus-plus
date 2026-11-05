@@ -6,9 +6,9 @@ import { jobSpace } from "./job.js";
 
 // Open studios by Herdr tab: { [tab id]: { job, pkg, dev } }. `dev` names the package's preview copy.
 export const STUDIOS = "sympp.studios";
-// The tab marks the patched desk-tabs bar shows (S++ chrome 2): [{ tab, icon, iconDark?, label }].
+// The tab marks the patched desk-tabs bar shows (sympp chrome 2): [{ tab, icon, iconDark?, label }].
 export const TAB_MARKS = "workspace.tab_marks";
-export const MARK = { icon: "mods/sympp/glyph-ui.svg", iconDark: "mods/sympp/glyph-ui-dark.svg", label: "S++ UI studio" };
+export const MARK = { icon: "mods/sympp/glyph-ui.svg", iconDark: "mods/sympp/glyph-ui-dark.svg", label: "sympp UI studio" };
 // Preview copies of a worker's in-progress view are mods named like this, never "sympp" itself.
 export const DEV_PREFIX = "sympp-dev-";
 
@@ -87,7 +87,7 @@ export function workerBindings(bindings) {
   return [...bindings].sort((a, b) => (a.kind === "launch" ? 0 : 1) - (b.kind === "launch" ? 0 : 1));
 }
 
-// What the preview pane shows. A published web preview wins; an S++ worktree whose Herdr view the
+// What the preview pane shows. A published web preview wins; an sympp worktree whose Herdr view the
 // package changes runs that view on sample data; otherwise it waits for the agent.
 export function previewKind({ url, native }) {
   if (url) return "web";
@@ -95,7 +95,7 @@ export function previewKind({ url, native }) {
 }
 
 // The preview builder's verdict from its exit: built, nothing of the Herdr view changed yet, no
-// builder in this worktree (not an S++ checkout), or a build error worth showing.
+// builder in this worktree (not an sympp checkout), or a build error worth showing.
 export function buildOutcome(result) {
   if (result?.code === 0) return { state: "ready" };
   if (result?.code === 3) return { state: "unchanged" };

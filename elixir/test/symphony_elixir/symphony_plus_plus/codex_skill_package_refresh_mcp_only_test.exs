@@ -21,7 +21,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshMcpOnlyTest do
           Jason.encode!(%{"name" => "symphony-plus-plus", "version" => "0.1.1", "mcpServers" => "./.mcp.json"})
         )
 
-        File.write!(stale_mcp_path, Jason.encode!(%{"symphony_plus_plus" => %{"type" => "stdio", "command" => "pwsh", "args" => ["-NoProfile"], "cwd" => "."}}))
+        File.write!(stale_mcp_path, Jason.encode!(%{"sympp" => %{"type" => "stdio", "command" => "pwsh", "args" => ["-NoProfile"], "cwd" => "."}}))
         File.write!(stale_hint_path, "C:/sympp/generated\n")
 
         {output, status} =
@@ -42,7 +42,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshMcpOnlyTest do
           )
 
         assert status == 0, output
-        assert output =~ "Repaired incompatible default Symphony++ plugin cache"
+        assert output =~ "Repaired incompatible default sympp plugin cache"
 
         repaired_manifest = stale_manifest_path |> File.read!() |> Jason.decode!()
         refute Map.has_key?(repaired_manifest, "mcpServers")

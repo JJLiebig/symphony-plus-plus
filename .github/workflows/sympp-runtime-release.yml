@@ -309,14 +309,14 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" \
               --target "${{ steps.source.outputs.revision }}" \
-              --title "Symphony++ runtime artifacts $RELEASE_TAG" \
-              --notes "Prebuilt Symphony++ runtime artifacts for ${{ steps.source.outputs.revision }}." \
+              --title "sympp runtime artifacts $RELEASE_TAG" \
+              --notes "Prebuilt sympp runtime artifacts for ${{ steps.source.outputs.revision }}." \
               "${edit_prerelease_args[@]}"
           else
             gh release create "$RELEASE_TAG" \
               --target "${{ steps.source.outputs.revision }}" \
-              --title "Symphony++ runtime artifacts $RELEASE_TAG" \
-              --notes "Prebuilt Symphony++ runtime artifacts for ${{ steps.source.outputs.revision }}." \
+              --title "sympp runtime artifacts $RELEASE_TAG" \
+              --notes "Prebuilt sympp runtime artifacts for ${{ steps.source.outputs.revision }}." \
               "${create_prerelease_args[@]}"
           fi
 

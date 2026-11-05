@@ -349,7 +349,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     conn = post_json(initialize_request("init"))
 
-    assert %{"jsonrpc" => "2.0", "id" => "init", "result" => %{"serverInfo" => %{"name" => "symphony-plus-plus"}}} =
+    assert %{"jsonrpc" => "2.0", "id" => "init", "result" => %{"serverInfo" => %{"name" => "sympp"}}} =
              json_response(conn, 200)
 
     assert [_session_id] = get_resp_header(conn, "mcp-session-id")
@@ -364,7 +364,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
       conn = post_json(initialize_request("restart"))
 
-      assert %{"jsonrpc" => "2.0", "id" => "restart", "result" => %{"serverInfo" => %{"name" => "symphony-plus-plus"}}} =
+      assert %{"jsonrpc" => "2.0", "id" => "restart", "result" => %{"serverInfo" => %{"name" => "sympp"}}} =
                json_response(conn, 200)
 
       assert [_session_id] = get_resp_header(conn, "mcp-session-id")
@@ -1133,7 +1133,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       health = post_json(tool_call_request("health", "sympp.health", %{}), [{"mcp-session-id", session_id}])
       repo_backed = post_json(tool_call_request("repo-backed", "solo_list", %{}), [{"mcp-session-id", session_id}])
 
-      assert get_in(json_response(init, 200), ["result", "serverInfo", "name"]) == "symphony-plus-plus"
+      assert get_in(json_response(init, 200), ["result", "serverInfo", "name"]) == "sympp"
       assert "sympp.health" in tool_names(json_response(tools, 200))
       assert get_in(json_response(health, 200), ["result", "structuredContent", "mode"]) == "http"
       assert json_response(repo_backed, 503) == json_rpc_error("repo-backed", -32_000, "Server error", "ledger_unavailable")
@@ -1318,7 +1318,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   defp unbound_startup_handshake(index) do
     init = post_json(initialize_request("init-#{index}"))
 
-    assert %{"result" => %{"serverInfo" => %{"name" => "symphony-plus-plus"}}} = json_response(init, 200)
+    assert %{"result" => %{"serverInfo" => %{"name" => "sympp"}}} = json_response(init, 200)
     assert [session_id] = get_resp_header(init, "mcp-session-id")
     assert session_id =~ ~r/^[!-~]+$/
 

@@ -110,7 +110,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheRepair
 
         File.write!(
           companion_local_mcp_path,
-          Jason.encode!(%{"symphony_plus_plus" => %{"url" => "http://example.invalid/mcp"}})
+          Jason.encode!(%{"sympp" => %{"url" => "http://example.invalid/mcp"}})
         )
 
         File.mkdir_p!(Path.dirname(companion_old_version_manifest_path))

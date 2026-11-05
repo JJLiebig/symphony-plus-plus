@@ -47,7 +47,7 @@ export function Asks({ at, onPick, views }: { at: number; onPick: (goalId: strin
 // Readable from a background tab: the count in the title, and a small orange dot on the icon while needed.
 export function useTabSignal(needed: number) {
   useEffect(() => {
-    document.title = needed > 0 ? `(${needed}) Symphony++` : "Symphony++";
+    document.title = needed > 0 ? `(${needed}) sympp` : "sympp";
     const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (icon) icon.href = asset(needed > 0 ? iconNeeded : iconQuiet);
   }, [needed]);

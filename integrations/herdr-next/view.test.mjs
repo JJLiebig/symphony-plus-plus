@@ -102,7 +102,7 @@ test('missing, empty and stale jobs say so', skip, async (t) => {
   assert.ok(missing.text("This job isn't here"));
   const shaping = await render(t, { props: { job: 'wr-shaping' }, width: 1400 });
   assert.ok(shaping.text('Shaping') && shaping.text('Not sliced into packages yet.'));
-  const stale = await render(t, { props: { job: 'wr-pr' }, width: 1400, error: "Can't reach S++ at 127.0.0.1:4000. Check the connection and retry." });
+  const stale = await render(t, { props: { job: 'wr-pr' }, width: 1400, error: "Can't reach sympp at 127.0.0.1:4000. Check the connection and retry." });
   assert.ok(stale.has('rails'), 'the last good rails stay on screen');
   assert.ok(stale.has('read-status') && !stale.out.includes('Connection lost'), 'a failed read is a status mark, not a banner');
 });
@@ -122,7 +122,7 @@ test('the factory ranks what needs you and gives one row per Herdr topic', skip,
   assert.ok(narrow.has('factory') && narrow.has('pin') && !narrow.has('factory-aside'), 'the panel stacks and can be pinned');
 });
 
-test('a topic shows its work by repository, references and agents; a space says when it has no S++ work', skip, async (t) => {
+test('a topic shows its work by repository, references and agents; a space says when it has no sympp work', skip, async (t) => {
   const topic = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr' } });
   for (const id of ['crumb-factory', 'crumb-topic', 'topic-main', 'repo-web', 'space-s-web', 'job-wr-pr', 'ref-web-wr-cross', 'planned-t-herdr:web', 'level-agents'])
     assert.ok(topic.has(id), id);
@@ -132,7 +132,7 @@ test('a topic shows its work by repository, references and agents; a space says 
   assert.ok(space.has('crumb-space') && space.has('space-facts') && space.has('job-wr-cross') && space.text('also in api · moved 2h 00m ago'));
   assert.ok(space.text('web · this machine · main'));
   const empty = await render(t, { props: {}, width: 1400, path: { topic: 'unsorted', space: 's-home' } });
-  assert.ok(empty.has('space-empty') && empty.text('No S++ work here. Ordinary Herdr work stays ordinary.'));
+  assert.ok(empty.has('space-empty') && empty.text('No sympp work here. Ordinary Herdr work stays ordinary.'));
 });
 
 test('the Job level sits under the breadcrumb, with its own tab action and no second way back', skip, async (t) => {

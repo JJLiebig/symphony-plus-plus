@@ -42,7 +42,7 @@ be archived in one go. None of these stops a running worker or merges a pull
 request. The board rereads the ledger when it changes and once a minute; if a
 read fails it keeps what it last showed and says the connection is lost.
 
-The `S++` mark opens the settings: after how many days finished and
+The `sympp` mark opens the settings: after how many days finished and
 never-started goals are archived, when archived goals are deleted for good, and
 two switches for this machine. Nothing changes until it is saved; a shorter
 limit then applies at once.
@@ -78,10 +78,10 @@ schemas; an existing session does not acquire the new detail options automatical
 Install the optional Herdr plugin from the repository root:
 
 ```powershell
-herdr plugin install JJLiebig/symphony-plus-plus --ref beta --yes
+herdr plugin install JJLiebig/sympp --ref beta --yes
 ```
 
-When a Herdr tab contains a bound Symphony++ architect or coordinator, one
+When a Herdr tab contains a bound sympp architect or coordinator, one
 execution inspector opens to its right. It follows that tab's focused bound
 agent and stays compact for a trivial WorkRequest. Larger or branching work
 shows its execution frontier.
@@ -107,13 +107,13 @@ runtime freshness. Unknown timing and observations remain explicit.
 
 | Need | Entry point |
 |---|---|
-| Persistent single-agent planning | `symphony-plus-plus-mcp:symphony-solo-session` |
-| Implement one assigned package | `symphony-plus-plus-mcp:symphony-worker` and `symphony-plus-plus-mcp:symphony-work-package` |
-| Clarify and slice a WorkRequest | `symphony-plus-plus-mcp:symphony-architect` |
-| Coordinate ordinary repository work without required persistence | `symphony-plus-plus:symphony-coordinator` |
+| Persistent single-agent planning | [sympp Solo Session](../skills/sympp/references/symphony-solo-session/procedure.md) |
+| Implement one assigned package | [sympp worker](../skills/sympp/references/symphony-worker/procedure.md) |
+| Clarify and slice a WorkRequest | [sympp architect](../skills/sympp/references/symphony-architect/procedure.md) |
+| Coordinate ordinary repository work without required persistence | [sympp coordinator](../skills/sympp/references/symphony-coordinator/procedure.md) |
 | Inspect human progress | Work board and Herdr execution inspector |
 
-All agent-facing Symphony++ ledger reads and writes use configured MCP tools.
+All agent-facing sympp ledger reads and writes use configured MCP tools.
 Workers and coordinators may operate without a backend when persistence is not
 requested. Shell commands remain for installation, startup, diagnosis, upgrade,
 and recovery; recover MCP before continuing required ledger work.
