@@ -103,7 +103,8 @@ test('upstream reload keeps the last valid workflow and applies new prompts with
   expect(first.cwd).not.toBe(third.cwd);
   expect((await u.state()).counts.running).toBe(2);
   await u.configure({}, '{{ unknown_contract_variable }}');
-  p.issues = [issue('BAD-PROMPT-1')];
+  for (const row of p.issues) row.state.name = 'Review';
+  p.issues.push(issue('BAD-PROMPT-1'));
   await expect.poll(async () => (await u.state()).retrying.some((r) => r.issue_identifier === 'BAD-PROMPT-1'), { timeout: 20000 }).toBe(true);
   expect(p.worker('BAD-PROMPT-1')?.turns.length ?? 0).toBe(0);
 });
