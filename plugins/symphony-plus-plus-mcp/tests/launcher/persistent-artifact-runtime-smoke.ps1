@@ -118,7 +118,7 @@ namespace Sympp {
       }
       # Read all kernel-buffered bytes after exit. Async read completion can lag
       # process exit, and descendants can retain pipe handles without writing.
-      if ($streams.stdout.closed -and $streams.stderr.closed) { break }
+      if ($process.HasExited -and $streams.stdout.closed -and $streams.stderr.closed) { break }
       if ([DateTime]::UtcNow -gt $deadline) { $process.Kill($true); throw "Native command timed out: $FilePath" }
       if (-not $readAny) { Start-Sleep -Milliseconds 10 }
     } while ($true)
@@ -133,6 +133,15 @@ function Test-IsolatedCommandCapture {
   $environment = @{ HOME = $tempRoot; USERPROFILE = $tempRoot; CODEX_HOME = Join-Path $tempRoot 'codex'; CLAUDE_CONFIG_DIR = Join-Path $tempRoot 'claude'; HERDR_APP_HOME = Join-Path $tempRoot 'herdr' }
   $normal = Read-IsolatedCommand $powershell @('-NoProfile', '-Command', '[Console]::Out.Write("command stdout")') $environment
   if ($normal.exit -ne 0 -or $normal.stdout -cne 'command stdout') { throw 'Command capture lost ordinary stdout.' }
+  $closed = Join-Path $tempRoot 'capture-closed.ps1'
+  [IO.File]::WriteAllText($closed, @'
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class OutputHandles { [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int kind); [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle); public static void Close() { CloseHandle(GetStdHandle(-11)); CloseHandle(GetStdHandle(-12)); } }'
+[OutputHandles]::Close()
+Start-Sleep -Milliseconds 500
+exit 7
+'@)
+  $afterClose = Read-IsolatedCommand $powershell @('-NoProfile', '-File', $closed) $environment
+  if ($afterClose.exit -ne 7) { throw 'Command capture did not wait for the exit status after output closed.' }
   $child = Join-Path $tempRoot 'capture-child.ps1'
   [IO.File]::WriteAllText($child, @'
 $psi = [Diagnostics.ProcessStartInfo]::new()
