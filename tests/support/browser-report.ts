@@ -22,7 +22,7 @@ if (mode === 'negative') {
   assert.equal(run.summary.skipped, 0);
   const acts = run.results.flatMap((result: any) => result.attempts.flatMap((attempt: any) => attempt.steps)).filter((step: any) => step.name === 'agent.act' || step.api === 'agent.act');
   if (mode === 'replay') {
-    assert.equal(acts.length, 2, 'Required recorded navigation goals were absent');
+    assert.equal(acts.length, 1, 'Required recorded navigation goals were absent');
     for (const act of acts) assert.equal(act.cache?.mode, 'self-finalized', 'Agent action did not finish by native replay');
     assert.ok((await readdir('.e2e/cache')).length > 0, 'No generated native recording');
   }

@@ -18,15 +18,49 @@ function hostInstalled(host) {
 const begin = "# BEGIN sympp Skills MCP";
 const end = "# END sympp Skills MCP";
 
+// Hide multiline string bodies without changing offsets or quoted TOML keys.
+function tomlSyntax(source) {
+  const result = source.split("");
+  let quote = null, multiline = false, comment = false;
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i];
+    if (comment) { if (char === "\n") comment = false; continue; }
+    if (multiline) {
+      if (char !== "\n" && char !== "\r") result[i] = " ";
+      if (quote === '"' && char === "\\") {
+        if (source[i + 1] && !["\n", "\r"].includes(source[i + 1])) result[++i] = " ";
+      } else if (source.slice(i, i + 3) === quote.repeat(3)) {
+        result[i] = result[i + 1] = result[i + 2] = " "; i += 2; quote = null; multiline = false;
+      }
+      continue;
+    }
+    if (quote) {
+      if (quote === '"' && char === "\\") i++;
+      else if (char === quote) quote = null;
+    } else if (char === "#") comment = true;
+    else if (char === '"' || char === "'") {
+      quote = char;
+      if (source.slice(i, i + 3) === char.repeat(3)) {
+        multiline = true; result[i] = result[i + 1] = result[i + 2] = " "; i += 2;
+      }
+    }
+  }
+  return result.join("");
+}
+
 function codexConfig(config, registration) {
   const owned = /^# BEGIN (?:Symphony\+\+|sympp) Skills MCP\r?\n[\s\S]*?^# END (?:Symphony\+\+|sympp) Skills MCP\r?\n?/gm;
-  const remaining = config.replace(owned, "");
-  if (/^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|\])/m.test(remaining) ||
-      /^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|=)/m.test(remaining) ||
-      /^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\][^\n]*\n(?:(?!^\s*\[)[\s\S])*?^\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|=)/m.test(remaining)) {
+  let remaining = config;
+  for (const match of [...tomlSyntax(config).matchAll(owned)].reverse()) {
+    remaining = remaining.slice(0, match.index) + remaining.slice(match.index + match[0].length);
+  }
+  const syntax = tomlSyntax(remaining);
+  if (/^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|\])/m.test(syntax) ||
+      /^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|=)/m.test(syntax) ||
+      /^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\][^\n]*\n(?:(?!^\s*\[)[\s\S])*?^\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|=)/m.test(syntax)) {
     throw new Error("Codex already has an unmanaged sympp MCP registration. Remove it explicitly before setup.");
   }
-  if (/^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*=/m.test(remaining)) throw new Error("This Codex configuration uses an inline MCP table that setup cannot safely extend. Use a separate CODEX_HOME with standard server tables.");
+  if (/^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*=/m.test(syntax)) throw new Error("This Codex configuration uses an inline MCP table that setup cannot safely extend. Use a separate CODEX_HOME with standard server tables.");
   const lines = [begin, `[mcp_servers.${name}]`, `command = ${JSON.stringify(registration.command)}`,
     `args = ${JSON.stringify(registration.args)}`, "startup_timeout_sec = 360", "tool_timeout_sec = 300", "",
     `[mcp_servers.${name}.env]`, ...Object.entries(registration.env).map(([key, value]) => `${key} = ${JSON.stringify(value)}`), end, ""];
@@ -127,11 +161,22 @@ function main(args) {
     claudeCommand = found.stdout.trim().split(/\r?\n/).find(file => process.platform !== "win32" || /\.(?:exe|cmd|bat)$/i.test(file));
     if (found.status !== 0 || !claudeCommand) throw new Error("Claude executable not found. Install Claude Code and retry setup.");
   }
-  const plans = hosts.filter(host => host !== "claude" || !globalClaude).map(host => {
+  const plans = [];
+  if (globalClaude) {
+    const file = path.join(process.cwd(), ".mcp.json");
+    if (fs.existsSync(file)) {
+      const before = fs.readFileSync(file, "utf8"), value = JSON.parse(before);
+      if (value.mcpServers?.[oldName]?.env?.SYMPP_SKILLS_MANAGED === "1") {
+        delete value.mcpServers[oldName];
+        plans.push({ host: "claude_project", file, before, after: JSON.stringify(value, null, 2) + "\n" });
+      }
+    }
+  }
+  plans.push(...hosts.filter(host => host !== "claude" || !globalClaude).map(host => {
     const file = host === "codex" ? path.join(path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")), "config.toml") : path.join(process.cwd(), ".mcp.json");
     const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
     return { host, file, before, after: host === "codex" ? codexConfig(before, registration) : claudeConfig(before, registration) };
-  });
+  }));
   if (remote) require("./sympp-remote.js").privateWrite(env.SYMPP_SERVER_TOKEN_FILE, remote.token);
   for (const plan of plans) {
     if (plan.before !== plan.after) {

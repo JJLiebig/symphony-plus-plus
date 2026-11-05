@@ -26,3 +26,12 @@ test("migration replaces owned blocks while preserving unrelated registrations a
   assert.equal(unowned.mcpServers.symphony_plus_plus.command, "other");
   assert.throws(() => claudeConfig(JSON.stringify({ mcpServers: { sympp: { command: "other" } } }), registration), /already has/);
 });
+
+test("TOML instruction examples are inert and preserved during managed migration", () => {
+  for (const delimiter of ['"""', "'".repeat(3)]) {
+    const instruction = `instructions = ${delimiter}\n[mcp_servers.sympp]\n# BEGIN sympp Skills MCP\nexample\n# END sympp Skills MCP\n${delimiter}\n`;
+    const result = codexConfig(instruction, registration);
+    assert.ok(result.startsWith(instruction));
+    assert.equal(codexConfig(result, registration), result);
+  }
+});

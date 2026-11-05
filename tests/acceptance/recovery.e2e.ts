@@ -187,7 +187,7 @@ test('STDIO initialization refuses unbound protected calls and cannot impersonat
   const before = await candidate.rawRequest('tools/call', { name: 'read_context', arguments: {} });
   expect(before.error.data.reason).toBe('server_not_initialized');
   const initialized = await candidate.request('initialize', initialize);
-  expect(initialized.serverInfo.name).toBe('symphony-plus-plus');
+  expect(initialized.serverInfo.name).toBe('sympp');
   expect(initialized.serverInfo.version).toBeTruthy();
   expect(initialized.capabilities.tools).toEqual({});
   expect(initialized.capabilities.resources).toEqual({});

@@ -249,7 +249,7 @@ jobs:
           npm install --global @anthropic-ai/claude-code@2.1.292
           if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
       - name: Prove setup ownership and remote registration
-        run: node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup-global.test.js plugins/symphony-plus-plus-mcp/tests/launcher/setup-remote.test.js
+        run: node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup.test.js
       - name: Build the current candidate Windows runtime
         shell: pwsh
         run: |
