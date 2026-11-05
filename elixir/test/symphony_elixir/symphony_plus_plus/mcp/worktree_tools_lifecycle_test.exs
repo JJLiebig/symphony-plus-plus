@@ -46,8 +46,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
     refute FactoryRepos.matches?(Path.join(root, name), "ssh://deploy@git.example/team/#{name}.git")
 
-    for {path, suffix} <- [{"/team/ü", "http"}, {"/team/%2e%2e", "http-encoded"}] do
-      remote = "https://fixture-account-or-token@git.example#{path}/#{name}-#{suffix}.git"
+    for {scheme, path, suffix} <- [{"https", "/team/ü", "http"}, {"https", "/team/%2e%2e", "http-encoded"}, {"HTTPS", "/team", "http-uppercase"}] do
+      remote = "#{scheme}://fixture-account-or-token@git.example#{path}/#{name}-#{suffix}.git"
       clean_remote = String.replace(remote, "fixture-account-or-token@", "")
       # Both URLs reach the disposable origin, so the regression never contacts
       # a provider. Inspect Git's stored clone argument, not get-url's rewrite.

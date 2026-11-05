@@ -81,7 +81,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   defp remote(_), do: {:error, :invalid_repo_remote}
 
   defp clone_remote(value, %URI{scheme: scheme}) when scheme in ["http", "https"] do
-    String.replace(value, ~r{\A(https?://)[^/?#]*@}, "\\1", global: false)
+    String.replace(value, ~r{\A(https?://)[^/?#]*@}i, "\\1", global: false)
   end
 
   defp clone_remote(value, _uri), do: value

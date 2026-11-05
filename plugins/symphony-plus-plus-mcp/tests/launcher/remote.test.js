@@ -91,6 +91,14 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
   assert.equal(received.find(r => r.body?.params?.name === "create_work_request").body.params.arguments.repo, "https://example.org/team/repo.git");
   await run("fixture-token", "create_work_request", true, { repo: "." });
   assert.equal(received.at(-1).body.params.arguments.repo, "https://example.org/team/repo.git");
+  const checkout = path.join(root, "checkout");
+  execFileSync("git", ["init", checkout]);
+  execFileSync("git", ["-C", checkout, "remote", "add", "origin", "https://example.org/other/checkout.git"]);
+  await run("fixture-token", "create_work_request", true, { repo: "checkout" });
+  assert.equal(received.at(-1).body.params.arguments.repo, "https://example.org/other/checkout.git");
+  fs.mkdirSync(path.join(root, "explicit-owner", "explicit-repo"), { recursive: true });
+  await run("fixture-token", "create_work_request", true, { repo: "explicit-owner/explicit-repo" });
+  assert.equal(received.at(-1).body.params.arguments.repo, "explicit-owner/explicit-repo");
   const postsBeforeDenial = received.filter(r => r.url === "/mcp").length;
   const denied = await run("wrong-token", "list_work_requests", false);
   assert.match(denied.stderr, /authentication failed.*401/);

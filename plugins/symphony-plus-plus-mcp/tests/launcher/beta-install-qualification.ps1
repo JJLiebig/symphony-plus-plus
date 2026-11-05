@@ -183,7 +183,11 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   [IO.File]::WriteAllText($blockedHome, 'A file cannot be a native app directory.')
   $upgrade = @{ pid = 0 }
   $manifest = $Published
-  $old = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId -OnAttached {
+  # The historical bridge predates basename lookup protection. Pin its trusted
+  # process seam; candidate waves still exercise the project-local shadow.
+  $oldEnvironment = $Environment.Clone()
+  $oldEnvironment.SYMPP_POWERSHELL = $prepareHost
+  $old = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $oldEnvironment -MarkerSessionId $MarkerSessionId -OnAttached {
     param($activeState, $sessionId)
     $failed = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME,
       '-HerdrAppHome', $blockedHome, '-ArtifactManifest', $channelFile) $Environment
@@ -248,7 +252,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $prepared = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
   if ($prepared.exit -ne 0) { throw "Could not prepare the stopped factory: $($prepared.stderr)" }
   $manifest = $Published
-  $stopped = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId
+  $stopped = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $oldEnvironment -MarkerSessionId $MarkerSessionId
   Wait-ManagedRuntimeStopped $stopped.backend_pid $stopped.backend_port
   $publication | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
   $mismatch = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
