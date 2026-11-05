@@ -615,6 +615,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
     invalid_params_error("dispatch_work_package", {:branch_pattern, branch_pattern, reason})
   end
 
+  defp dispatch_work_package_error(:database_busy) do
+    {:error, -32_000, "Ledger busy",
+     %{
+       "tool" => "dispatch_work_package",
+       "reason" => "database_busy",
+       "remediation" => "Another ledger writer prevented dispatch. Read the WorkPackage status before dispatching again."
+     }}
+  end
+
   defp dispatch_work_package_error(reason), do: architect_error(reason, "dispatch_work_package")
 
   defp append_worktree_lifecycle_audit(repo, %Session{} = session, work_package_id, source_tool, result) do

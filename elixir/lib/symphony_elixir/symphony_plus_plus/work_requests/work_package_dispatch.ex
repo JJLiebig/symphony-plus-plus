@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
   alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.CreateWork
   alias SymphonyElixir.SymphonyPlusPlus.DashboardPubSub
+  alias SymphonyElixir.SymphonyPlusPlus.MCP.{Config, LedgerNamespace}
   alias SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestPayloads
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
@@ -29,6 +30,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
           {:ok, dispatch_result()} | {:error, term()}
   def dispatch(repo, work_request_id, work_package_id, opts \\ [])
       when is_atom(repo) and is_binary(work_request_id) and is_binary(work_package_id) do
+    # SQLite permits only one writer per ledger. Queue dispatches before checking
+    # out connections, rather than making competing BEGIN IMMEDIATE calls wait
+    # inside SQLite while the current dispatch still needs to execute queries.
+    lock = {{__MODULE__, LedgerNamespace.key(Config.default(repo: repo))}, self()}
+
+    :global.trans(lock, fn -> dispatch_locked(repo, work_request_id, work_package_id, opts) end, [node()])
+  end
+
+  defp dispatch_locked(repo, work_request_id, work_package_id, opts) do
     repo.transaction(
       fn ->
         case dispatch_transaction(repo, work_request_id, work_package_id, opts) do
@@ -43,6 +53,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
       {:error, reason} -> {:error, reason}
     end
     |> DashboardPubSub.broadcast_changed_on_success()
+  rescue
+    error in Exqlite.Error ->
+      if String.downcase(error.message) in ["database is locked", "database is busy"] do
+        {:error, :database_busy}
+      else
+        reraise error, __STACKTRACE__
+      end
   end
 
   defp dispatch_transaction(repo, work_request_id, work_package_id, opts) do
