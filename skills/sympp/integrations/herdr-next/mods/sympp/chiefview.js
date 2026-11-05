@@ -129,10 +129,10 @@ export class ChiefStart {
         let folder = "";
         for (const candidate of chiefFolders(mine, all, machine)) {
           // The folder is there when a program can start in it.
-          if (await exec("git", ["--version"], { cwd: candidate, on: machine }).then(() => true, () => false)) { folder = candidate; break; }
+          if (await exec("git", ["--version"], { cwd: candidate, on: machine }).then((r) => r.code === 0, () => false)) { folder = candidate; break; }
         }
         // Else the machine's home, said outright: left out, Herdr would start in the focused pane's folder.
-        if (!folder) folder = machine ? (await exec("pwd", [], { on: machine })).stdout.trim() : home();
+        if (!folder) folder = machine ? await exec("pwd", [], { on: machine }).then((r) => (r.code === 0 ? r.stdout.trim() : ""), () => "") : home();
         const argv = chiefArgv(agent, chiefBrief(this.name, text));
         const own = mine.find((s) => s.name === chiefSpaceName(this.name) && (s.machine ?? null) === machine);
         const made = own
