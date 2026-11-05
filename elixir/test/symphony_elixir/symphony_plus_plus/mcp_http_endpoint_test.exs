@@ -295,8 +295,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert current_location["role"] == "chief"
     assert current_location["description"] == "Terminal: new chief"
     refute Map.has_key?(current_location, "live")
-    card = Enum.find(board["work_requests"]["work_requests"], &(&1["id"] == request_id))
-    assert card["dispatched_by"] == attribution
+    board_request = Enum.find(board["work_request_details"], &(&1["work_request"]["id"] == request_id))
+    assert board_request["work_request"]["dispatched_by"] == attribution
 
     detail = get_local("/api/v1/sympp/herdr/work-requests/#{request_id}") |> json_response(200)
     assert detail["work_request"]["dispatched_by"] == attribution
