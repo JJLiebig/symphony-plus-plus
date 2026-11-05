@@ -6,6 +6,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
 
+  @scp_remote ~r/\A([^@:\/\s]+)@([^:]+):(.+)\z/
+
   @spec enabled?() :: boolean()
   def enabled?, do: is_binary(Config.factory_repos_root())
 
@@ -59,9 +61,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
       Regex.match?(~r/\A[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\z/, value) ->
         remote("https://github.com/" <> String.replace_suffix(value, ".git", "") <> ".git")
 
-      parts = Regex.run(~r/\A([^@:\/\s]+)@([^:]+):(.+)\z/, value) ->
+      parts = Regex.run(@scp_remote, value) ->
         [_match, user, host, path] = parts
-        remote("ssh://" <> user <> "@" <> host <> "/" <> path)
+
+        case uri_remote("ssh://" <> user <> "@" <> host <> "/" <> path) do
+          {:ok, _uri, name} -> {:ok, value, name}
+          error -> error
+        end
 
       true ->
         uri_remote(value)
@@ -102,10 +108,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   end
 
   defp identity(remote) do
-    uri = URI.parse(remote)
+    {uri, path} =
+      case Regex.run(@scp_remote, remote) do
+        [_match, user, host, path] ->
+          {URI.parse("ssh://" <> user <> "@" <> host), path}
+
+        nil ->
+          uri = URI.parse(remote)
+          {uri, uri.path}
+      end
+
     host = String.downcase(uri.host)
-    path = uri.path |> String.trim_trailing("/") |> String.replace_suffix(".git", "")
-    path = if host == "github.com", do: String.downcase(path), else: path
+    path = path |> String.trim_trailing("/") |> String.replace_suffix(".git", "")
+    path = if host == "github.com", do: path |> String.trim_leading("/") |> String.downcase(), else: path
     user = if uri.scheme == "ssh" and uri.userinfo not in [nil, "git"], do: uri.userinfo
     {host, if(uri.port in [22, 443], do: nil, else: uri.port), user, path}
   end
