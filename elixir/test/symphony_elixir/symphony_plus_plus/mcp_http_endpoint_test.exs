@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   import Phoenix.ConnTest
   import Plug.Conn, only: [get_resp_header: 2, put_req_header: 3]
 
+  alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
   alias SymphonyElixir.SymphonyPlusPlus.Chiefs.Registration
@@ -119,7 +120,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       |> Keyword.merge(server: false, secret_key_base: String.duplicate("s", 64), sympp_repo: Repo)
     )
 
-    repo_opts = [database: database_path, pool_size: 1, queue_target: 30_000, queue_interval: 30_000, timeout: 30_000]
+    repo_opts = [database: database_path, pool_size: 5, queue_target: 30_000, queue_interval: 30_000, timeout: 30_000]
     start_supervised!({Repo, repo_opts})
     if Process.whereis(Endpoint) == nil, do: start_supervised!({Endpoint, []})
 
@@ -335,6 +336,105 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     end
 
     assert Repo.aggregate(ClaimLease, :count) == claims_before
+  end
+
+  test "ten architect sessions dispatch distinct packages concurrently and duplicate dispatch returns an MCP error" do
+    init = post_json(initialize_request("dispatch-init"))
+    headers = [{"mcp-session-id", hd(get_resp_header(init, "mcp-session-id"))}]
+
+    created =
+      chief_call(headers, "create_work_request", %{
+        "repo" => "nextide/example",
+        "base_branch" => "main",
+        "title" => "Concurrent dispatch",
+        "request_kind" => "docs",
+        "description" => "Dispatch independent packages together",
+        "workflow_mode" => "single_package",
+        "status" => "ready_for_slicing"
+      })
+
+    request_id = get_in(created, ["result", "structuredContent", "work_request", "id"])
+    assert is_binary(request_id), inspect(created)
+
+    sliced =
+      chief_call(headers, "slice_work_request", %{
+        "work_request_id" => request_id,
+        "work_packages" =>
+          Enum.map(1..11, fn n ->
+            WorkPackageFactory.attrs(goal: "Deliver package #{n}", allowed_file_globs: ["docs/**"], validation_steps: [], stop_conditions: [])
+          end)
+      })
+
+    [blocked_id | package_ids] = get_in(sliced, ["result", "structuredContent", "work_package_ids"])
+    assert length(package_ids) == 10
+
+    initial_claim = chief_call(headers, "claim_local_architect_assignment", %{"work_request_id" => request_id})
+    owner = get_in(initial_claim, ["result", "structuredContent", "local_claim", "claimed_by"])
+    assert is_binary(owner), inspect(initial_claim)
+
+    clients =
+      Enum.map(package_ids, fn package_id ->
+        conn = post_json(initialize_request(Ecto.UUID.generate()))
+        client = [{"mcp-session-id", hd(get_resp_header(conn, "mcp-session-id"))}]
+        claim = chief_call(client, "claim_local_architect_assignment", %{"work_request_id" => request_id, "claimed_by" => owner})
+        assert claim["result"], inspect(claim)
+        {client, package_id}
+      end)
+
+    tasks =
+      Enum.map(clients, fn {client, package_id} ->
+        Task.async(fn ->
+          receive do: (:dispatch -> :ok)
+          result = chief_call(client, "dispatch_work_package", %{"work_request_id" => request_id, "work_package_id" => package_id})
+          assert result["result"], inspect(result)
+          refute result["result"]["isError"], inspect(result)
+        end)
+      end)
+
+    Enum.each(tasks, &send(&1.pid, :dispatch))
+    Enum.each(tasks, &Task.await(&1, 30_000))
+
+    for package_id <- package_ids do
+      assert Repo.get!(WorkPackage, package_id).status == "ready_for_worker"
+
+      worker_grants =
+        from(grant in AccessGrant,
+          where: grant.work_package_id == ^package_id,
+          where: grant.grant_role == "worker"
+        )
+
+      assert Repo.aggregate(worker_grants, :count) == 1
+    end
+
+    {client, package_id} = hd(clients)
+    duplicate = chief_call(client, "dispatch_work_package", %{"work_request_id" => request_id, "work_package_id" => package_id})
+    assert duplicate["error"]["data"]["reason"] == "invalid_work_package_status"
+
+    parent = self()
+
+    writer =
+      Task.async(fn ->
+        Repo.transaction(
+          fn ->
+            send(parent, :writer_locked)
+            receive do: (:release_writer -> :ok)
+          end,
+          mode: :immediate
+        )
+      end)
+
+    assert_receive :writer_locked
+
+    try do
+      busy = chief_call(client, "dispatch_work_package", %{"work_request_id" => request_id, "work_package_id" => blocked_id})
+      assert busy["error"]["data"]["reason"] == "database_busy"
+      assert busy["error"]["data"]["remediation"] =~ "Read the WorkPackage status"
+    after
+      send(writer.pid, :release_writer)
+      Task.await(writer)
+    end
+
+    assert Repo.get!(WorkPackage, blocked_id).status == "planned"
   end
 
   defp chief_call(headers, name, arguments) do
