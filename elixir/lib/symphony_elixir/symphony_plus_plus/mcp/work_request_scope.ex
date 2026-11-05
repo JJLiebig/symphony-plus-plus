@@ -172,9 +172,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestScope do
   end
 
   defp require_architect_phase_anchor_with_grant(repo, session, %AccessGrant{} = grant) do
-    with {:ok, anchor} <- architect_anchor_work_package(repo, session) do
-      require_architect_anchor_scope(anchor, grant, grant.phase_id)
-    else
+    case architect_anchor_work_package(repo, session) do
+      {:ok, anchor} -> require_architect_anchor_scope(anchor, grant, grant.phase_id)
       {:error, :not_found} -> {:error, :phase_scope_not_available}
       {:error, reason} -> {:error, reason}
     end
