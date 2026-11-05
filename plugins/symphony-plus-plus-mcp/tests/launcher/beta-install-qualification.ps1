@@ -67,7 +67,7 @@ function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $Cand
   $lockFile = $null
   for ($directory = [string]$state.plugin_root; $directory; $directory = Split-Path -Parent $directory) {
     $path = Join-Path $directory 'skills-lock.json'
-    if ((Test-Path -LiteralPath $path) -and (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).skills.'symphony-plus-plus') {
+    if ((Test-Path -LiteralPath $path) -and (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).skills.sympp) {
       $lockFile = $path
       break
     }
@@ -76,7 +76,7 @@ function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $Cand
   $lockText = Get-Content -LiteralPath $lockFile -Raw
   try {
     $mainLock = $lockText | ConvertFrom-Json
-    $mainLock.skills.'symphony-plus-plus' = [pscustomobject]@{ source = 'JJLiebig/sympp'; sourceType = 'github'; ref = 'main' }
+    $mainLock.skills.sympp = [pscustomobject]@{ source = 'JJLiebig/sympp'; sourceType = 'github'; ref = 'main' }
     $mainLock | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $lockFile
     $stable = Read-IsolatedCommand $pwsh $arguments $Environment
     if ($stable.exit -eq 0 -or $stable.stderr -notmatch 'beta Skills installation') { throw 'A main Skills factory was accepted.' }

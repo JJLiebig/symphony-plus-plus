@@ -7,7 +7,6 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 test("global Claude setup owns only its user entry and project setup remains local", { skip: process.platform !== "win32" }, t => {
-  preserveUserPath(t);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sympp-setup-"));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const home = path.join(tmp, "home & test"), config = path.join(tmp, "claude"), project = path.join(tmp, "project"), bin = path.join(tmp, "bin");
@@ -24,7 +23,7 @@ test("global Claude setup owns only its user entry and project setup remains loc
   }
   fs.writeFileSync(path.join(home, ".agents", ".skill-lock.json"), JSON.stringify({ skills: { "sympp": { sourceType: "local" } } }));
   fs.writeFileSync(path.join(project, "skills-lock.json"), JSON.stringify({ skills: { "sympp": { sourceType: "local" } } }));
-  const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: config, PATH: bin + path.delimiter + process.env.PATH, XDG_STATE_HOME: "" };
+  const env = { ...process.env, ...isolatedPathEnv(tmp), USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: config, PATH: bin + path.delimiter + process.env.PATH, XDG_STATE_HOME: "" };
   const run = (root, cwd = project) => spawnSync(process.execPath, [path.join(root, "scripts", "setup-sympp.js"), "--host", "claude"], { cwd, env, encoding: "utf8" });
   const cfg = path.join(config, ".claude.json"), mcp = path.join(project, ".mcp.json");
   let result = run(global); assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -71,22 +70,23 @@ test("global Claude setup owns only its user entry and project setup remains loc
 
 
 
-function preserveUserPath(t) {
-  if (process.platform !== "win32") return;
-  const command = "powershell.exe";
-  const before = spawnSync(command, ["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path','User')"], { encoding: "utf8", windowsHide: true });
-  assert.equal(before.status, 0);
-  t.after(() => {
-    const restored = spawnSync(command, ["-NoProfile", "-Command", "[Environment]::SetEnvironmentVariable('Path',$env:SYMPP_RESTORE_PATH,'User')"], { env: { ...process.env, SYMPP_RESTORE_PATH: before.stdout.trimEnd() }, windowsHide: true });
-    assert.equal(restored.status, 0);
-  });
+// Unit/integration setup tests use real hosts but stub the persistent registry
+// write. Separate disposable live qualification covers actual PATH installation.
+function isolatedPathEnv(root) {
+  if (process.platform !== "win32") return {};
+  const preload = path.join(root, "isolate-user-path.cjs");
+  fs.writeFileSync(preload, `const cp = require('node:child_process');
+const real = cp.spawnSync;
+cp.spawnSync = (command, args, options) => command === 'powershell.exe' && args.some(arg => arg.includes('SYMPP_COMMAND_BIN'))
+  ? { status: 0, stdout: '', stderr: '' } : real(command, args, options);
+`);
+  return { NODE_OPTIONS: `--require ${JSON.stringify(preload)}` };
 }
 
 test('remote setup registers a launchable bridge in selected Codex and user Claude homes', t => {
-  preserveUserPath(t);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-remote-setup-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const env = { ...process.env, HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'sympp') };
+  const env = { ...process.env, ...isolatedPathEnv(root), HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'sympp') };
   fs.mkdirSync(env.SYMPP_HOME, { recursive: true });
   fs.writeFileSync(path.join(env.SYMPP_HOME, 'remote-token'), 'server-token-must-survive');
   const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/setup-sympp.js'), '--host', 'both', '--server', 'http://127.0.0.1:19998'], { env, cwd: root, encoding: 'utf8', windowsHide: true });
