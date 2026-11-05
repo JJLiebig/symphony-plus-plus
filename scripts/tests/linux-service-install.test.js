@@ -21,7 +21,7 @@ test("Skills service setup selects divergent branches and older tags, preserving
   git("config", "user.name", "Fixture");
   git("config", "user.email", "fixture@example.test");
   fs.mkdirSync(path.join(upstream, "scripts"));
-  fs.writeFileSync(path.join(upstream, "scripts/install-sympp-checkout.sh"), '#!/bin/sh\ncd "$(dirname "$0")/.."\ngit rev-parse HEAD > "$INSTALLED_REVISION"\n');
+  fs.writeFileSync(path.join(upstream, "scripts/install-sympp-checkout.sh"), '#!/bin/sh\ncd "$(dirname "$0")/.."\ngit rev-parse HEAD > "$INSTALLED_REVISION"\nprintf "%s" "$SYMPP_SERVICE_REF" > "$INSTALLED_REF"\n');
   git("add", "."); git("commit", "-m", "old"); git("tag", "old");
   const old = git("rev-parse", "HEAD");
   fs.writeFileSync(path.join(upstream, "version"), "beta");
@@ -33,16 +33,50 @@ test("Skills service setup selects divergent branches and older tags, preserving
   run("git", ["clone", "--branch", "beta", upstream, checkout]);
   const installer = path.resolve(__dirname, "../../plugins/symphony-plus-plus-mcp/scripts/setup-sympp-service.sh");
   const receipt = path.join(root, "revision");
-  const env = { ...process.env, SYMPP_SERVICE_SOURCE: checkout, INSTALLED_REVISION: receipt };
+  const refReceipt = path.join(root, 'selected-ref');
+  const env = { ...process.env, SYMPP_SERVICE_SOURCE: checkout, INSTALLED_REVISION: receipt, INSTALLED_REF: refReceipt };
   for (const [ref, expected] of [["feature", feature], ["old", old]]) {
     run("bash", [installer], root, { ...env, SYMPP_SERVICE_REF: ref });
     assert.equal(fs.readFileSync(receipt, "utf8").trim(), expected);
+    assert.equal(fs.readFileSync(refReceipt, 'utf8'), ref);
   }
+  run('bash', [installer], root, env);
+  assert.equal(fs.readFileSync(refReceipt, 'utf8'), process.env.SYMPP_SERVICE_REF || 'beta');
+  const beforeDirty = fs.readFileSync(receipt, 'utf8').trim();
   fs.writeFileSync(path.join(checkout, "local-work"), "keep");
   const refused = spawnSync("bash", [installer], { cwd: root, env: { ...env, SYMPP_SERVICE_REF: "beta" }, encoding: "utf8" });
   assert.notEqual(refused.status, 0);
   assert.equal(fs.readFileSync(path.join(checkout, "local-work"), "utf8"), "keep");
-  assert.equal(fs.readFileSync(receipt, "utf8").trim(), old);
+  assert.equal(fs.readFileSync(receipt, "utf8").trim(), beforeDirty);
+});
+
+test('detached checkout installs pin the selected revision and only reuse matching ref metadata', { skip: process.platform !== 'linux' }, t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-detached-install-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repo = path.join(root, 'repo'), bin = path.join(root, 'bin'), receipt = path.join(root, 'ref');
+  fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true }); fs.mkdirSync(path.join(repo, 'elixir'));
+  fs.mkdirSync(bin);
+  fs.copyFileSync(path.resolve(__dirname, '../install-sympp-checkout.sh'), path.join(repo, 'scripts/install-sympp-checkout.sh'));
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr); return result.stdout.trim();
+  };
+  git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.test');
+  git('add', '.'); git('commit', '-m', 'selected revision'); git('tag', 'v1'); git('checkout', '--detach', 'v1');
+  const revision = git('rev-parse', 'HEAD');
+  for (const command of ['systemctl', 'ss']) fs.writeFileSync(path.join(bin, command), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'mise'), '#!/bin/sh\nprintf "%s" "$SYMPP_SERVICE_REF" > "$REF_RECEIPT"\nexit 42\n', { mode: 0o755 });
+  const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, SYMPP_HOME: path.join(root, 'factory'), SYMPP_DATABASE: path.join(root, 'ledger.sqlite3'), SYMPP_REPOS_ROOT: path.join(root, 'repos'), SYMPP_SERVICE_REF: '', SYMPP_SERVICE_HOST: '127.0.0.1', REF_RECEIPT: receipt };
+  const selected = () => {
+    const result = spawnSync('bash', [path.join(repo, 'scripts/install-sympp-checkout.sh')], { env, cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 42, result.stderr); // Stop at the build boundary, before any service changes.
+    return fs.readFileSync(receipt, 'utf8');
+  };
+  assert.equal(selected(), revision);
+  git('config', 'sympp.serviceRef', 'main'); git('config', 'sympp.serviceRevision', revision);
+  assert.equal(selected(), 'main');
+  fs.writeFileSync(path.join(repo, 'new-version'), 'v2'); git('add', '.'); git('commit', '-m', 'operator selects another revision');
+  assert.equal(selected(), git('rev-parse', 'HEAD'));
 });
 
 test('client update rebuilds the saved checkout with its factory repository root', { skip: process.platform !== 'linux' }, t => {

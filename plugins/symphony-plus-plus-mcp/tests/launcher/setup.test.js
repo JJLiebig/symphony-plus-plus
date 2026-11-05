@@ -118,7 +118,7 @@ const real = cp.spawnSync;
 cp.spawnSync = (command, args, options) => {
   if (command === 'npx' || command === 'powershell.exe' && args.some(a => a.includes('skills update'))) {
     fs.appendFileSync(process.env.UPDATE_LOG, 'skill\\n');
-    return { status: process.env.UPDATE_FAIL === 'skill' ? 1 : 0 };
+    return { status: process.env.UPDATE_FAIL === 'skill' ? 1 : 0, stdout: ({ check: 'Failed to check skills from JJLiebig/sympp', skipped: '1 skill(s) cannot be checked automatically:', legacy: '1 project skill(s) cannot be updated automatically' })[process.env.UPDATE_FAIL] || '' };
   }
   if (command === 'powershell.exe' && args.some(a => a.includes('SYMPP_COMMAND_BIN'))) return { status: 0 };
   if (command === 'ssh') {
@@ -148,10 +148,12 @@ cp.spawnSync = (command, args, options) => {
   assert.equal(JSON.parse(annotated).result.content[0].text, 'worktree: factory-qa:/srv/repos/.worktrees/repo/fix');
   assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\n');
   fs.writeFileSync(config, 'untouched');
-  env.UPDATE_FAIL = 'skill';
-  result = run('update');
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /skill failed/);
-  assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
-  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\nskill\n');
+  for (const failure of ['skill', 'check', 'skipped', 'legacy']) {
+    env.UPDATE_FAIL = failure;
+    result = run('update');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /skill failed/);
+    assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
+  }
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\nskill\nskill\nskill\nskill\n');
 });
