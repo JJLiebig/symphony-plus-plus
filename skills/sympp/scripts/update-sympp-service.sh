@@ -12,7 +12,7 @@ raw = subprocess.check_output(['systemctl', '--user', 'show', unit, '-p', 'Envir
 values = dict(item.split('=', 1) for item in shlex.split(raw) if '=' in item)
 if not values.get('SYMPP_HOME') or not values.get('SYMPP_SERVICE_HOST'):
     raise SystemExit('Factory service is not installed. Run its installer first.')
-allowed = ['PATH', 'SYMPP_HOME', 'SYMPP_DATABASE', 'SYMPP_BACKEND_PORT', 'SYMPP_SERVICE_HOST', 'SYMPP_WORKFLOW_FILE', 'ERL_FLAGS', 'SYMPP_SERVICE_SOURCE', 'SYMPP_SERVICE_REF']
+allowed = ['PATH', 'SYMPP_HOME', 'SYMPP_DATABASE', 'SYMPP_REPOS_ROOT', 'SYMPP_BACKEND_PORT', 'SYMPP_SERVICE_HOST', 'SYMPP_WORKFLOW_FILE', 'ERL_FLAGS', 'SYMPP_SERVICE_SOURCE', 'SYMPP_SERVICE_REF']
 env = dict(os.environ, **{key: values[key] for key in allowed if key in values})
 env['SYMPP_SERVICE_NAME'] = sys.argv[1]
 fragment = subprocess.check_output(['systemctl', '--user', 'show', unit, '-p', 'FragmentPath', '--value'], text=True).strip()

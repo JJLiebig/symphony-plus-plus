@@ -121,13 +121,17 @@ cp.spawnSync = (command, args, options) => {
     return { status: process.env.UPDATE_FAIL === 'skill' ? 1 : 0 };
   }
   if (command === 'powershell.exe' && args.some(a => a.includes('SYMPP_COMMAND_BIN'))) return { status: 0 };
-  if (command === 'ssh') { fs.appendFileSync(process.env.UPDATE_LOG, 'factory\\n'); return { status: 0 }; }
+  if (command === 'ssh') {
+    if (args[0] === '-G') return { status: 0, stdout: 'hostname 100.64.1.2' };
+    if (args.at(-1).startsWith('cat ')) return { status: 0, stdout: 'fixture-token' };
+    fs.appendFileSync(process.env.UPDATE_LOG, 'factory\\n'); return { status: 0 };
+  }
   return real(command, args, options);
 };`);
-  const env = { ...process.env, HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'factory'), HERDR_APP_HOME: path.join(root, 'herdr'), UPDATE_LOG: log, NODE_OPTIONS: '--require ' + JSON.stringify(preload) };
+  const env = { ...process.env, HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'factory'), HERDR_APP_HOME: path.join(root, 'herdr'), SYMPP_REMOTE_PORT: '21783', UPDATE_LOG: log, NODE_OPTIONS: '--require ' + JSON.stringify(preload) };
   const script = path.resolve(__dirname, '../../scripts/sympp-command.js');
   const run = (...args) => spawnSync(process.execPath, [script, ...args], { env, cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.equal(run('--host', 'codex', '--server', 'http://127.0.0.1:21783').status, 0);
+  assert.equal(run('--host', 'codex', '--server', 'factory-qa').status, 0);
   const config = path.join(env.CODEX_HOME, 'config.toml');
   fs.writeFileSync(config, '');
   env.CODEX_HOME = path.join(root, 'other-codex');
@@ -138,12 +142,16 @@ cp.spawnSync = (command, args, options) => {
   let result = run('update');
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(fs.readFileSync(config, 'utf8'), /21783/);
-  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\n');
+  const saved = JSON.parse(fs.readFileSync(path.join(root, '.local/share/sympp/connection.json'), 'utf8'));
+  const response = JSON.stringify({ result: { structuredContent: { worktree: { status: 'prepared', path: '/srv/repos/.worktrees/repo/fix' } }, content: [] } });
+  const annotated = require('../../scripts/sympp-session-location.js').remoteWorktreeResponse(response, saved.env);
+  assert.equal(JSON.parse(annotated).result.content[0].text, 'worktree: factory-qa:/srv/repos/.worktrees/repo/fix');
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\n');
   fs.writeFileSync(config, 'untouched');
   env.UPDATE_FAIL = 'skill';
   result = run('update');
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /skill failed/);
   assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
-  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nskill\n');
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\nskill\n');
 });

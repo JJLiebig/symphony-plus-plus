@@ -44,3 +44,34 @@ test("Skills service setup selects divergent branches and older tags, preserving
   assert.equal(fs.readFileSync(path.join(checkout, "local-work"), "utf8"), "keep");
   assert.equal(fs.readFileSync(receipt, "utf8").trim(), old);
 });
+
+test('client update rebuilds the saved checkout with its factory repository root', { skip: process.platform !== 'linux' }, t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-service-update-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const upstream = path.join(root, 'origin'), checkout = path.join(root, 'source'), bin = path.join(root, 'bin');
+  fs.mkdirSync(path.join(upstream, 'scripts'), { recursive: true });
+  fs.mkdirSync(bin);
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: upstream, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  git('init', '-b', 'beta'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.test');
+  fs.writeFileSync(path.join(upstream, 'scripts/install-sympp-checkout.sh'), '#!/bin/sh\nprintf "%s\\n" "$SYMPP_REPOS_ROOT" > "$RECEIPT"\n');
+  git('add', '.'); git('commit', '-m', 'installer'); git('clone', upstream, checkout);
+  fs.writeFileSync(path.join(upstream, 'version'), 'updated');
+  git('add', '.'); git('commit', '-m', 'update');
+  const expectedHead = git('rev-parse', 'HEAD');
+  const reposRoot = path.join(root, 'factory repos'), receipt = path.join(root, 'receipt');
+  const environment = path.join(root, 'environment'), fragment = path.join(root, 'config/systemd/user/qa.service');
+  fs.mkdirSync(path.dirname(fragment), { recursive: true }); fs.writeFileSync(fragment, '');
+  const values = { SYMPP_HOME: path.join(root, 'factory'), SYMPP_DATABASE: path.join(root, 'factory/ledger.sqlite3'), SYMPP_SERVICE_HOST: '127.0.0.1', SYMPP_REPOS_ROOT: reposRoot, SYMPP_SERVICE_SOURCE: checkout, SYMPP_SERVICE_REF: 'beta' };
+  fs.writeFileSync(environment, Object.entries(values).map(([key, value]) => JSON.stringify(key + '=' + value)).join(' '));
+  fs.writeFileSync(path.join(bin, 'systemctl'), '#!/bin/sh\ncase "$*" in *Environment*) cat "$ENVIRONMENT_FILE";; *FragmentPath*) printf "%s\\n" "$FRAGMENT_FILE";; *) exit 1;; esac\n', { mode: 0o755 });
+  const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, ENVIRONMENT_FILE: environment, FRAGMENT_FILE: fragment, RECEIPT: receipt, SYMPP_REPOS_ROOT: path.join(root, 'wrong shell root') };
+  const updater = path.resolve(__dirname, '../../plugins/symphony-plus-plus-mcp/scripts/update-sympp-service.sh');
+  const result = spawnSync('bash', [updater, 'qa'], { cwd: root, env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(fs.readFileSync(receipt, 'utf8').trim(), reposRoot);
+  assert.equal(git('-C', checkout, 'rev-parse', 'HEAD'), expectedHead);
+});
