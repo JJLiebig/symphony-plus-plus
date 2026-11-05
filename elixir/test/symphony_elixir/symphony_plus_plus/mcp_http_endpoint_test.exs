@@ -6,6 +6,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   import Phoenix.ConnTest
   import Plug.Conn, only: [get_resp_header: 2, put_req_header: 3]
 
+  alias Phoenix.Endpoint.RenderErrors
+
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
@@ -147,6 +149,31 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     Repo.delete_all(Registration)
     FailedCall.reset()
     :ok
+  end
+
+  test "unexpected endpoint errors return safe JSON regardless of accepted format" do
+    for path <- ["/mcp", "/api/v1/state"],
+        accept <- [nil, "*/*", "application/json, text/event-stream", "text/html"] do
+      conn = Plug.Test.conn(:post, path)
+      conn = if accept, do: put_req_header(conn, "accept", accept), else: conn
+
+      {500, headers, body} =
+        assert_error_sent(500, fn ->
+          RenderErrors.__catch__(
+            conn,
+            :error,
+            RuntimeError.exception("private exception detail"),
+            [],
+            Endpoint.config(:render_errors)
+          )
+        end)
+
+      assert {"content-type", "application/json; charset=utf-8"} in headers
+
+      assert Jason.decode!(body) == %{
+               "error" => %{"code" => "request_failed", "message" => "Internal Server Error"}
+             }
+    end
   end
 
   describe "factory service token access" do

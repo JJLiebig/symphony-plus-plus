@@ -7,7 +7,7 @@ config :symphony_elixir, SymphonyElixirWeb.Endpoint,
   adapter: Bandit.PhoenixAdapter,
   url: [host: "localhost"],
   render_errors: [
-    formats: [html: SymphonyElixirWeb.ErrorHTML, json: SymphonyElixirWeb.ErrorJSON],
+    formats: [json: SymphonyElixirWeb.ErrorJSON],
     layout: false
   ],
   pubsub_server: SymphonyElixir.PubSub,
