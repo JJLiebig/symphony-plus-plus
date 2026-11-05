@@ -179,6 +179,13 @@ export default class Lens extends View {
     cx.spawn(async (cx) => {
       let outcome;
       try {
+        if (!this.given.remote && this.hosts?.local?.runtime) {
+          try {
+            const runtime = JSON.parse(await fs.readFile(this.hosts.local.runtime, 'utf8'));
+            const endpoint = M.normalizeEndpoint(runtime.backend?.url);
+            if (endpoint) { this.endpoint = endpoint; this.dashboard = M.dashboardUrl(endpoint, this.given.dashboardUrl); }
+          } catch { /* The factory may not have published its runtime yet. */ }
+        }
         const response = await this.request(M.boardUrl(this.endpoint));
         if (!response.ok) outcome = { error: M.httpError(response.status) };
         else {

@@ -108,3 +108,37 @@ test('remote setup registers a launchable bridge in selected Codex and user Clau
   assert.equal(second.status, 0, second.stdout + second.stderr);
   assert.equal(fs.readFileSync(claude.env.SYMPP_SERVER_TOKEN_FILE, 'utf8'), 'first-client-credential');
 });
+
+test('update reloads setup, repairs the selected registration, and stops before later steps on failure', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-update-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const log = path.join(root, 'calls.jsonl'), preload = path.join(root, 'update.cjs');
+  fs.writeFileSync(preload, `const cp = require('node:child_process'), fs = require('node:fs');
+const real = cp.spawnSync;
+cp.spawnSync = (command, args, options) => {
+  if (command === 'npx' || command === 'powershell.exe' && args.some(a => a.includes('skills update'))) {
+    fs.appendFileSync(process.env.UPDATE_LOG, 'skill\\n');
+    return { status: process.env.UPDATE_FAIL === 'skill' ? 1 : 0 };
+  }
+  if (command === 'powershell.exe' && args.some(a => a.includes('SYMPP_COMMAND_BIN'))) return { status: 0 };
+  if (command === 'ssh') { fs.appendFileSync(process.env.UPDATE_LOG, 'factory\\n'); return { status: 0 }; }
+  return real(command, args, options);
+};`);
+  const env = { ...process.env, HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'factory'), HERDR_APP_HOME: path.join(root, 'herdr'), UPDATE_LOG: log, NODE_OPTIONS: '--require ' + JSON.stringify(preload) };
+  const script = path.resolve(__dirname, '../../scripts/sympp-command.js');
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { env, cwd: root, encoding: 'utf8', windowsHide: true });
+  assert.equal(run('--host', 'codex', '--server', 'http://127.0.0.1:21783').status, 0);
+  const config = path.join(env.CODEX_HOME, 'config.toml');
+  fs.writeFileSync(config, '');
+  let result = run('update');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(fs.readFileSync(config, 'utf8'), /21783/);
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\n');
+  fs.writeFileSync(config, 'untouched');
+  env.UPDATE_FAIL = 'skill';
+  result = run('update');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /skill failed/);
+  assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nskill\n');
+});

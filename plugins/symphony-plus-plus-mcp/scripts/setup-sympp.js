@@ -216,13 +216,17 @@ function main(args) {
   const herdrHome = path.resolve(process.env.HERDR_APP_HOME || path.join(os.homedir(), '.config', 'herdr-app'));
   const probe = spawnSync('herdr-app', ['--version'], { env: { ...process.env, HERDR_APP_HOME: herdrHome }, encoding: 'utf8', windowsHide: true });
   if (!probe.error && probe.status === 0) {
-    const endpoint = remote?.endpoint || `http://127.0.0.1:${env.SYMPP_BACKEND_PORT || '19998'}`;
+    const runtime = fs.existsSync(env.SYMPP_RUNTIME_FILE || '') ? JSON.parse(fs.readFileSync(env.SYMPP_RUNTIME_FILE, 'utf8')) : null;
+    const endpoint = remote?.endpoint || runtime?.backend?.url || `http://127.0.0.1:${Number(env.SYMPP_BACKEND_PORT) || '19998'}`;
     const result = spawnSync(process.execPath, [panel, '--endpoint', endpoint, '--home', herdrHome, '--replace', '--auto-chrome',
       ...(remote ? ['--token-file', env.SYMPP_SERVER_TOKEN_FILE] : ['--factory', env.SYMPP_RUNTIME_FILE])], { encoding: 'utf8', windowsHide: true });
     if (result.error || result.status !== 0) throw new Error('Herdr panel setup failed. Run the installed integrations/herdr-next/install.mjs with --chrome to inspect the desk, then retry sympp setup. ' + (result.stdout || '').trim());
     emit('herdr', 'configured');
   }
-  require("./sympp-command.js").saveConnection({ env, setup: { hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].filter(key => process.env[key]).map(key => [key, process.env[key]])) } });
+  let skillCwd = root;
+  while (!fs.existsSync(path.join(skillCwd, 'skills-lock.json')) && path.dirname(skillCwd) !== skillCwd) skillCwd = path.dirname(skillCwd);
+  if (!fs.existsSync(path.join(skillCwd, 'skills-lock.json'))) skillCwd = process.cwd();
+  require("./sympp-command.js").saveConnection({ env, setup: { cwd: process.cwd(), skillCwd, global: isGlobalInstall(), hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].filter(key => process.env[key]).map(key => [key, process.env[key]])) } });
   emit("channel", server ? "remote" : env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);
   if (hosts.includes("claude") && !globalClaude) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its sympp entry before opening a fresh session here.");

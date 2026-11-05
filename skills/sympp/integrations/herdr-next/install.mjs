@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,6 +12,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const scripts = resolve(here, '../../scripts');
 const helperScripts = (await contents(join(scripts, 'sympp-herdr.js'))) ? scripts : resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts');
 
+const bundled = existsSync(resolve(here, '../../.sympp-install.json'));
 const help = `Install the optional native sympp view into Herdr-app.
 Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [options]
        node integrations/herdr-next/install.mjs --lab [options]
@@ -28,7 +30,7 @@ Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [o
                          desk-agents list and chief crowns to your desk-topics (backed up first)
   --remove-chrome        Restore the desk mods and remove the sympp panel
   --help                 Show this help
-The sympp backend and your existing layouts, topics and terminals are unchanged.`;
+The sympp backend and your existing layouts, topics and terminals are unchanged.`.split('\n').filter(line => !bundled || !/--lab|--mark/.test(line)).join('\n');
 
 function emit(fields) {
   for (const [key, value] of Object.entries(fields)) {
@@ -106,6 +108,10 @@ async function main() {
     return 2;
   }
   if (values.help) { process.stdout.write(`${help}\n`); return 0; }
+  if (bundled && (values.lab || values.mark && values.mark !== 'a')) {
+    emit({ error: 'This skill carries the default sympp panel. Use the repository installer for the lab or alternate marks.' });
+    return 2;
+  }
   if (values.mark !== undefined && (!['a', 'b', 'c', 'd'].includes(values.mark) || values.lab)) {
     emit({ error: values.lab ? '--mark selects the sympp view, not the lab' : '--mark must be a, b, c or d', help });
     return 2;

@@ -53,17 +53,17 @@ function update() {
   if (!fs.existsSync(file)) throw new Error('Run sympp setup first.');
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!saved.setup) throw new Error('Run sympp setup once to save the server and host selection, then retry sympp update.');
-  const env = { ...process.env, ...saved.env, ...saved.setup.remote };
+  const env = { ...process.env, ...saved.env, ...saved.setup.remote, SYMPP_UPDATE_SCOPE: saved.setup.global ? '--global' : '--project' };
   const step = (label, command, args, options = {}) => {
     const result = spawnSync(command, args, { env, encoding: 'utf8', windowsHide: true, ...options });
     if (result.error || result.status !== 0) throw new Error(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Inspect the factory service journal over SSH, then retry sympp update.'}`);
     process.stdout.write(`${label}: updated\n`);
   };
-  if (process.platform === 'win32') step('skill', 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '& npx.cmd skills update sympp; exit $LASTEXITCODE']);
-  else step('skill', 'npx', ['skills', 'update', 'sympp']);
+  if (process.platform === 'win32') step('skill', 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '& npx.cmd skills update sympp $env:SYMPP_UPDATE_SCOPE; exit $LASTEXITCODE'], { cwd: saved.setup.skillCwd });
+  else step('skill', 'npx', ['skills', 'update', 'sympp', saved.setup.global ? '--global' : '--project'], { cwd: saved.setup.skillCwd });
   // Spawn after the skill update so setup comes from the newly installed bundle.
   step('setup', process.execPath, [path.join(__dirname, 'setup-sympp.js'), '--host', saved.setup.hosts,
-    ...(saved.setup.server ? ['--server', saved.setup.server] : [])]);
+    ...(saved.setup.server ? ['--server', saved.setup.server] : [])], { cwd: saved.setup.cwd });
   if (saved.setup.server && !saved.setup.server.startsWith('http://')) {
     const script = fs.readFileSync(path.join(__dirname, 'update-sympp-service.sh'), 'utf8');
     const service = saved.setup.remote?.SYMPP_REMOTE_SERVICE || 'sympp';
