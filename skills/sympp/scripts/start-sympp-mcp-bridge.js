@@ -893,6 +893,7 @@ async function backendHealth(origin) {
     const mcpUrl = `${trimOrigin(origin)}/mcp`;
     const response = await request(`${trimOrigin(origin)}/mcp/readiness`, "GET", null, { Accept: "application/json" }, HEALTH_PROBE_TIMEOUT_MS);
     if (response.status === 404) return legacyBackendHealth(mcpUrl);
+    if (response.status === 401) return { healthy: false, status: 401, retryable: false };
     if (response.status < 200 || response.status >= 300 || !response.body) return null;
     const readiness = JSON.parse(response.body);
     const contract = String((readiness.source && readiness.source.mcp_contract && readiness.source.mcp_contract.fingerprint) || "").toLowerCase();
@@ -922,6 +923,7 @@ async function legacyBackendHealth(mcpUrl) {
 
 async function factoryOwnership(origin) {
   const health = await backendHealth(origin);
+  if (health?.status === 401) throw new Error("Remote sympp authentication failed (HTTP 401). Run setup --server again to refresh the token.");
   if (typeof health?.factoryOwned !== "boolean") throw new Error("sympp could not determine repository ownership from the backend.");
   return health.factoryOwned;
 }
