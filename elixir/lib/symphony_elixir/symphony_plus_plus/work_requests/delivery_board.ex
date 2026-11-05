@@ -347,7 +347,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
        activity_contexts: activity_contexts,
        metadata_contexts: preloaded_metadata_contexts,
        review_observations: ReviewObservation.cached(Map.values(work_packages)),
-       guidance_requests: guidance_requests_by_work_package_id(repo, work_package_ids),
+       guidance_requests: guidance_context(repo, work_package_ids, opts),
        hidden_work_package_ids: hidden_work_package_ids
      }}
   rescue
@@ -519,7 +519,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
     end
   end
 
-  defp guidance_requests_by_work_package_id(repo, work_package_ids) do
+  defp guidance_context(repo, work_package_ids, opts) do
+    case Keyword.fetch(opts, :guidance_requests_by_work_package_id) do
+      {:ok, guidance} ->
+        missing = Enum.reject(work_package_ids, &Map.has_key?(guidance, &1))
+        Map.merge(guidance, guidance_requests_by_work_package_id(repo, missing))
+
+      :error ->
+        guidance_requests_by_work_package_id(repo, work_package_ids)
+    end
+  end
+
+  @spec guidance_requests_by_work_package_id(repo(), [String.t()]) :: map()
+  def guidance_requests_by_work_package_id(repo, work_package_ids) do
     work_package_ids
     |> context_lookup_chunks()
     |> Enum.flat_map(fn ids ->
@@ -531,6 +543,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
       )
     end)
     |> Enum.group_by(& &1.work_package_id)
+    |> then(&Map.merge(Map.new(work_package_ids, fn id -> {id, []} end), &1))
   end
 
   defp operational_slice(%WorkPackage{} = work_package, delivery, operational_state, context) do

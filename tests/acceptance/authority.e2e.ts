@@ -1,4 +1,5 @@
 import { expect } from 'e2e';
+import { parseBoard } from '../../integrations/herdr-next/mods/sympp/model.js';
 import { Client, contract } from '../support/factory.js';
 import { initialize, packages, test, tool, worker } from '../support/authority.js';
 import { close, head, pr, prUrl, row, test as deliveryTest } from '../support/delivery.js';
@@ -59,12 +60,11 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   const browserBoard = await fresh.inspect('/api/v1/sympp/operator/dashboard/hydrated');
   const nativeBoard = await native.raw(null, {}, 'GET', nativePath);
   expect(nativeBoard.status).toBe(200);
-  const { generated_at: browserTime, ...browserProjection } = browserBoard;
-  const { generated_at: nativeTime, chiefs, ...nativeProjection } = nativeBoard.body;
-  expect(chiefs).toEqual([]);
-  expect(nativeProjection).toEqual(browserProjection);
+  expect(nativeBoard.body.chiefs).toEqual([]);
+  expect(parseBoard({ ...nativeBoard.body, generated_at: browserBoard.generated_at }))
+    .toEqual(parseBoard(browserBoard));
   const detail = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === id);
-  expect(detail.product_tree.root_work_package_ids).toContain(nativePackage);
+  expect(browserBoard.work_request_details.find((entry: any) => entry.work_request.id === id).product_tree.root_work_package_ids).toContain(nativePackage);
   expect(detail.work_packages.find((entry: any) => entry.id === nativePackage).board_state.stage).toBe('build');
   for (const headers of [
     { host: 'example.invalid' }, { forwarded: 'for=127.0.0.1' },
@@ -102,7 +102,8 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
     }
   }
   const unchangedBoard = await native.raw(null, {}, 'GET', nativePath);
-  expect(unchangedBoard.body.work_requests.total_count).toBe(browserBoard.work_requests.total_count);
+  expect(parseBoard({ ...unchangedBoard.body, generated_at: nativeBoard.body.generated_at }))
+    .toEqual(parseBoard(nativeBoard.body));
   expect((await native.raw({}, {}, 'POST', nativeActions[0])).status).toBe(422);
   const createdNative = await native.raw(intake, { 'content-type': 'application/json; charset=utf-8' }, 'POST', nativeActions[0]);
   expect(createdNative.status).toBe(201);

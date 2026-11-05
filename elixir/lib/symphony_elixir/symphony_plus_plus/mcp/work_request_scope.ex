@@ -35,12 +35,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestScope do
 
   @spec scoped_work_request_filters(repo(), term(), keyword()) :: term()
   def scoped_work_request_filters(repo, %Session{} = session, opts \\ []) do
+    with {:ok, filters, scope, _policy_session} <- scoped_work_request_context(repo, session, opts) do
+      {:ok, filters, scope}
+    end
+  end
+
+  @spec scoped_work_request_context(repo(), Session.t(), keyword()) :: term()
+  def scoped_work_request_context(repo, %Session{} = session, opts) do
     with {:ok, grant} <- architect_grant(repo, session),
          {:ok, handoff_phase?} <- ArchitectHandoff.handoff_phase_grant?(repo, grant),
          {:ok, filters} <- work_request_filters_for_architect_grant(repo, session, grant, handoff_phase?),
          {:ok, scope} <- work_request_scope_payload(filters),
          {:ok, scope} <- maybe_put_handoff_phase_scope(scope, grant, handoff_phase?, opts) do
-      {:ok, work_request_filters_from_scope(scope), scope}
+      policy_session =
+        if handoff_phase? do
+          put_assignment_scope(session, Scope.repo(scope["repo"], scope["base_branch"], metadata: %{source: :work_request_read_scope}))
+        else
+          session
+        end
+
+      {:ok, work_request_filters_from_scope(scope), scope, policy_session}
     else
       {:error, :forbidden} -> {:error, :phase_scope_not_available}
       {:error, reason} -> {:error, reason}
@@ -151,9 +165,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestScope do
 
   defp require_work_request_anchor_scope(repo, %Session{} = session, %AccessGrant{} = grant) do
     if architect_explicit_phase_grant?(grant) do
-      require_architect_phase_anchor(repo, session, grant.phase_id)
+      require_architect_phase_anchor_with_grant(repo, session, grant)
     else
       {:error, :phase_scope_not_available}
+    end
+  end
+
+  defp require_architect_phase_anchor_with_grant(repo, session, %AccessGrant{} = grant) do
+    case architect_anchor_work_package(repo, session) do
+      {:ok, anchor} -> require_architect_anchor_scope(anchor, grant, grant.phase_id)
+      {:error, :not_found} -> {:error, :phase_scope_not_available}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -272,9 +294,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestScope do
   defp authorized_architect_work_request_scope(repo, %Session{} = session, work_request_id, action, tool, opts) do
     repo_scope_opts = if repo_scope_read_action?(action), do: opts, else: []
 
-    with {:ok, filters, scope} <-
-           scoped_work_request_filters(repo, session, handoff_phase_scope?: not repo_scope_read_action?(action)),
-         policy_session = read_scoped_work_request_session(repo, session, scope, action),
+    with {:ok, filters, scope, read_session} <-
+           scoped_work_request_context(repo, session, handoff_phase_scope?: not repo_scope_read_action?(action)),
+         policy_session = if(repo_scope_read_action?(action), do: read_session, else: session),
          {:ok, repo_scopes} <- WorkRequestRepository.list_repo_scopes(repo, work_request_id),
          :ok <-
            authorize_scoped_work_request_policy(

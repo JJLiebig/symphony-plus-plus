@@ -144,9 +144,95 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec herdr_dashboard_payload(module()) :: {:ok, map()} | {:error, term()}
   def herdr_dashboard_payload(repo) do
-    with {:ok, payload} <- operator_dashboard_hydrated_payload(repo) do
-      {:ok, Map.put(payload, :chiefs, Chiefs.public_current(repo, OperatorConfig.load()))}
+    operator_config = OperatorConfig.load()
+
+    case repo.transaction(fn -> native_dashboard_payload(repo, operator_config) end) do
+      {:ok, {:ok, payload}} -> {:ok, payload |> DeploymentObservation.enrich(operator_config) |> native_projection()}
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp native_dashboard_payload(repo, operator_config) do
+    with {:ok, work_requests} <- WorkRequestRepository.list(repo),
+         {:ok, context} <- operator_execution_context(repo, work_requests),
+         context = Map.put(context, :operator_config, operator_config),
+         {:ok, projection_context} <- operator_projection_context(repo, work_requests, context),
+         {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
+      {:ok,
+       active
+       |> Map.take([:generated_at, :work_request_details, :guidance_requests])
+       |> Map.put(:work_packages, Enum.map(active.work_packages, &Map.take(&1, [:id, :active_agent_run])))
+       |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?()})
+       |> Map.put(:chiefs, Chiefs.public_current(repo, operator_config))}
+    end
+  end
+
+  # Keep this projection aligned with parseBoard/buildJob/buildPackage in Herdr's model.js.
+  # The web inspector continues to receive the complete detail projection.
+  defp native_projection(payload) do
+    Map.update!(payload, :work_request_details, &Enum.map(&1, fn detail -> native_detail(detail) end))
+  end
+
+  defp native_detail(detail) do
+    detail
+    |> Map.take([:work_request, :work_packages, :clarification_questions, :product_tree])
+    |> Map.update!(
+      :work_request,
+      &Map.take(&1, [
+        :id,
+        :title,
+        :status,
+        :execution_status,
+        :repo,
+        :repo_display,
+        :area_path,
+        :base_branch,
+        :default_branch,
+        :inserted_at,
+        :completed_at,
+        :operator_report,
+        :architect_session_location,
+        :dispatched_by,
+        :deployments
+      ])
+    )
+    |> Map.update!(:work_packages, fn packages ->
+      Enum.map(
+        packages,
+        &Map.take(&1, [
+          :id,
+          :work_package_id,
+          :title,
+          :repo,
+          :repo_display,
+          :sequence,
+          :product_tree_node_id,
+          :status,
+          :raw_status,
+          :dispatched_at,
+          :inserted_at,
+          :dispatched_by,
+          :delivery,
+          :board_state,
+          :pr_signal,
+          :review_signal,
+          :review,
+          :activity_signal,
+          :operational_state,
+          :dependency_signal,
+          :session_location
+        ])
+      )
+    end)
+    |> Map.update!(:product_tree, &native_product_tree/1)
+  end
+
+  defp native_product_tree(tree) do
+    tree
+    |> Map.take([:nodes, :execution_graph])
+    |> Map.update!(:nodes, fn nodes -> Enum.map(nodes, &Map.take(&1, [:id, :title])) end)
+    |> Map.update!(:execution_graph, &Map.take(&1, [:effective_edges]))
   end
 
   defp put_area_path(work_request, context) do

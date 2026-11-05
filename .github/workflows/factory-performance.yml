@@ -1,0 +1,57 @@
+name: factory performance
+
+# Measure serial operations and ten-client reads/dispatch. Concurrent dispatch
+# is restored after #808's ledger-scoped admission fix landed on main.
+# Weekly release builds avoid packaging every server PR; PR runs qualify changes
+# to this measurement check itself.
+# Budgets use three fresh jjdev Linux ledgers: max p95 x3 rounded to 10 ms,
+# max query count +2, and max bytes x1.1 rounded to KiB.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/factory-performance.yml"
+      - "scripts/perf/**"
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: prod
+      PERF_OUTPUT: ${{ github.workspace }}/.perf
+      PERF_BUDGETS: ${{ github.workspace }}/scripts/perf/budgets.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - name: Verify failed measurements retain evidence
+        run: node --test scripts/perf/factory.test.mjs
+      - name: Build isolated packaged server
+        working-directory: elixir
+        run: |
+          mkdir -p ../.perf
+          export MIX_HOME="$RUNNER_TEMP/factory-perf-mix"
+          export MIX_ARCHIVES="$MIX_HOME/archives"
+          echo "MIX_HOME=$MIX_HOME" >> "$GITHUB_ENV"
+          echo "MIX_ARCHIVES=$MIX_ARCHIVES" >> "$GITHUB_ENV"
+          set -o pipefail
+          { mix local.hex --force && mix local.rebar --force && mix deps.get --check-locked && mix release --overwrite; } 2>&1 | tee ../.perf/build.log
+      - name: Measure three fresh ledgers
+        run: python3 scripts/perf/run-factory.py
+      - name: Preserve raw measurements and bootstrap logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: factory-performance-${{ github.sha }}
+          path: .perf/
+          include-hidden-files: true

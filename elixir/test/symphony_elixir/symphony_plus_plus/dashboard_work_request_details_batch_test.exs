@@ -122,6 +122,44 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
     end)
   end
 
+  test "native board does not load progress for unrelated package history", %{repo: repo} do
+    request = create_work_request!(repo, status: "sliced")
+    visible = eligibility_package!(repo, request, "VISIBLE", "planned")
+    assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: visible.id, summary: "Visible activity"})
+
+    {initial, initial_rows} = capture_queries(&native_dashboard_payload/0, &progress_rows/1)
+    assert Enum.sum(initial_rows) > 0
+
+    for index <- 1..24 do
+      assert {:ok, package} =
+               WorkPackageRepository.create(repo, work_package_attrs(id: "HISTORY-#{request.id}-#{index}", repo: "example/history", status: "planned"))
+
+      assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Unrelated history"})
+    end
+
+    {with_history, history_rows} = capture_queries(&native_dashboard_payload/0, &progress_rows/1)
+    assert Enum.sum(history_rows) == Enum.sum(initial_rows)
+    assert [detail] = initial["work_request_details"]
+    assert Enum.map(detail["work_packages"], & &1["id"]) == [visible.id]
+    assert with_history["work_request_details"] == initial["work_request_details"]
+  end
+
+  defp progress_rows(%{query: query, result: {:ok, %{num_rows: rows}}}) when is_integer(rows) do
+    if String.contains?(query, "sympp_progress_events"), do: rows, else: 0
+  end
+
+  defp progress_rows(_metadata), do: 0
+
+  defp native_dashboard_payload do
+    with_local_operator_endpoint(fn ->
+      build_conn()
+      |> Map.put(:host, "localhost")
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> get("/api/v1/sympp/herdr/dashboard")
+      |> json_response(200)
+    end)
+  end
+
   defp eligibility_package!(repo, request, suffix, status) do
     assert {:ok, package} = CanonicalWorkPackageFixtures.add_work_package(repo, request.id, work_package_attrs(id: "#{request.id}-#{suffix}", status: status))
     package
@@ -163,9 +201,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardWorkRequestDetailsBatchTest d
              })
   end
 
-  defp capture_queries(fun) do
+  defp capture_queries(fun, projection \\ fn metadata -> metadata.query end) do
     handler_id = {__MODULE__, self(), make_ref()}
-    :ok = :telemetry.attach(handler_id, Repo.config()[:telemetry_prefix] ++ [:query], fn _event, _measurements, metadata, test_pid -> send(test_pid, {handler_id, metadata.query}) end, self())
+    :ok = :telemetry.attach(handler_id, Repo.config()[:telemetry_prefix] ++ [:query], fn _event, _measurements, metadata, test_pid -> send(test_pid, {handler_id, projection.(metadata)}) end, self())
 
     try do
       {fun.(), drain_queries(handler_id, [])}

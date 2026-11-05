@@ -1446,7 +1446,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
       work_package(slice, work_package_contexts,
         include_dispatch_details?: include_dispatch_details?,
         comment_context: comment_context,
-        delivery_work_package: Map.get(delivery_work_packages_by_id, slice.id)
+        delivery_work_package: Map.get(delivery_work_packages_by_id, slice.id),
+        compact?: Keyword.get(opts, :compact?, false)
       )
     end)
   end
@@ -1463,20 +1464,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
       repo: redacted_text(work_package.repo),
       base_branch: work_package.base_branch,
       branch_pattern: redacted_text(work_package.branch_pattern),
-      allowed_file_globs: Enum.map(work_package.allowed_file_globs || [], &redacted_text/1),
-      forbidden_file_globs: Enum.map(work_package.forbidden_file_globs || [], &redacted_text/1),
-      acceptance_criteria: Enum.map(work_package.acceptance_criteria || [], &redacted_text/1),
-      validation_steps: Enum.map(work_package.validation_steps || [], &redacted_text/1),
       review: redacted_json(work_package.review_requirement),
-      stop_conditions: Enum.map(work_package.stop_conditions || [], &redacted_text/1),
       status: work_package.status,
       inserted_at: timestamp(work_package.inserted_at),
       updated_at: timestamp(work_package.updated_at)
     }
+    |> put_package_detail_fields(work_package, opts)
     |> Chiefs.put_attribution(:dispatched_by, work_package.dispatched_by)
     |> CommentProjection.put_counts(CommentProjection.counts_for(Keyword.get(opts, :comment_context), "work_package", work_package.id))
-    |> Map.put(:comments, CommentProjection.comments_for(Keyword.get(opts, :comment_context), "work_package", work_package.id))
     |> maybe_put_dispatch_details(work_package, work_package_statuses, opts)
+  end
+
+  defp put_package_detail_fields(payload, work_package, opts) do
+    if Keyword.get(opts, :compact?, false) do
+      payload
+    else
+      Enum.reduce([:allowed_file_globs, :forbidden_file_globs, :acceptance_criteria, :validation_steps, :stop_conditions], payload, fn key, acc ->
+        Map.put(acc, key, Enum.map(Map.get(work_package, key) || [], &redacted_text/1))
+      end)
+      |> Map.put(:comments, CommentProjection.comments_for(Keyword.get(opts, :comment_context), "work_package", work_package.id))
+    end
   end
 
   @doc false
