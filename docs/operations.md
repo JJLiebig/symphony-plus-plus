@@ -107,10 +107,10 @@ runtime freshness. Unknown timing and observations remain explicit.
 
 | Need | Entry point |
 |---|---|
-| Persistent single-agent planning | `symphony-plus-plus-mcp:symphony-solo-session` |
-| Implement one assigned package | `symphony-plus-plus-mcp:symphony-worker` and `symphony-plus-plus-mcp:symphony-work-package` |
-| Clarify and slice a WorkRequest | `symphony-plus-plus-mcp:symphony-architect` |
-| Coordinate ordinary repository work without required persistence | `symphony-plus-plus:symphony-coordinator` |
+| Persistent single-agent planning | [sympp Solo Session](../skills/sympp/references/symphony-solo-session/procedure.md) |
+| Implement one assigned package | [sympp worker](../skills/sympp/references/symphony-worker/procedure.md) |
+| Clarify and slice a WorkRequest | [sympp architect](../skills/sympp/references/symphony-architect/procedure.md) |
+| Coordinate ordinary repository work without required persistence | [sympp coordinator](../skills/sympp/references/symphony-coordinator/procedure.md) |
 | Inspect human progress | Work board and Herdr execution inspector |
 
 All agent-facing sympp ledger reads and writes use configured MCP tools.
