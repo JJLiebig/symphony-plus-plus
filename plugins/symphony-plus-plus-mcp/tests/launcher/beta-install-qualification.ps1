@@ -152,6 +152,14 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $oldInstall = Get-Content -LiteralPath $markerFile -Raw | ConvertFrom-Json
   $oldInstall.contract_fingerprint = $Published.launcher_contract.mcp_contract_fingerprint
   $oldInstall | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $markerFile
+  # This fixture represents the pre-rename installed bundle, including its
+  # dashboard identity check. The upgrade must replace it with the candidate.
+  $launcher = Join-Path $root 'scripts/start-sympp-mcp.ps1'
+  $candidateLauncher = [IO.File]::ReadAllText($launcher)
+  $oldLauncher = $candidateLauncher.Replace('<title>sympp( Dashboard)?</title>', '<title>Symphony\+\+( Dashboard)?</title>')
+  if ($oldLauncher -ceq $candidateLauncher) { throw 'The pre-rename launcher fixture was not applied.' }
+  [IO.File]::WriteAllText($launcher, $oldLauncher)
+  $oldLauncherHash = (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash
   $helper = Join-Path $root 'scripts/sympp-herdr.js'
   [IO.File]::AppendAllText($helper, "`n// fixture: installed helper changed without updating the package marker.`n")
   $oldHelper = Get-FileHash -LiteralPath $helper -Algorithm SHA256
@@ -179,7 +187,8 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
     $health = Invoke-RestMethod ($restored.backend.url + '/mcp/readiness')
     if ($health.source.mcp_contract.fingerprint -ne $oldInstall.contract_fingerprint -or
         (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $oldHelper.Hash -or
-        (Get-FileHash -LiteralPath $markerFile -Algorithm SHA256).Hash -ne $oldMarker.Hash) {
+        (Get-FileHash -LiteralPath $markerFile -Algorithm SHA256).Hash -ne $oldMarker.Hash -or
+        (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash -ne $oldLauncherHash) {
       throw 'Rollback did not restore the previous Skills bytes, marker and live contract.'
     }
     [void](Send-BridgeRequest $process @{ jsonrpc = '2.0'; id = 90; method = 'tools/list'; params = @{} })
@@ -190,6 +199,8 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
     $upgrade.pid = [int]$updated.backend.pid
     $desired = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/sympp/scripts/sympp-herdr.js') -Algorithm SHA256
     if ((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $desired.Hash) { throw 'The installed helper drift was not replaced.' }
+    $desiredLauncher = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/sympp/scripts/start-sympp-mcp.ps1') -Algorithm SHA256
+    if ((Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash -ne $desiredLauncher.Hash) { throw 'The pre-rename launcher was not replaced.' }
   }
   $beforeDrift = $upgrade.pid
   [IO.File]::AppendAllText($helper, "`n// fixture: same-contract drift with an unchanged package marker.`n")
@@ -215,6 +226,14 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
 
   # Reproduce a channel advancing past the installed bundle while no client is open.
   $oldInstall | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $markerFile
+  # This fixture represents the pre-rename installed bundle, including its
+  # dashboard identity check. The upgrade must replace it with the candidate.
+  $launcher = Join-Path $root 'scripts/start-sympp-mcp.ps1'
+  $candidateLauncher = [IO.File]::ReadAllText($launcher)
+  $oldLauncher = $candidateLauncher.Replace('<title>sympp( Dashboard)?</title>', '<title>Symphony\+\+( Dashboard)?</title>')
+  if ($oldLauncher -ceq $candidateLauncher) { throw 'The pre-rename launcher fixture was not applied.' }
+  [IO.File]::WriteAllText($launcher, $oldLauncher)
+  $oldLauncherHash = (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash
   [IO.File]::AppendAllText($helper, "`n// fixture: stopped factory with an older Skills bundle.`n")
   $Published | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
   $prepared = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
