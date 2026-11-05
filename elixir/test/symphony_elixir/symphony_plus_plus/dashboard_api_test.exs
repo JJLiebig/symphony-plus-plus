@@ -2173,7 +2173,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  reason: "Herdr graph fixture"
                })
 
-      assert {:ok, _active_run} =
+      assert {:ok, active_run} =
                AgentRunRepository.start_run(repo, %{
                  work_package_id: active.id,
                  status: "running",
@@ -2265,7 +2265,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  detail = Enum.find(board["work_request_details"], &(&1["work_request"]["id"] == work_request.id))
                  assert Enum.any?(detail["product_tree"]["nodes"], &(&1["id"] == group.id))
                  signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
-                 assert signal["active_blocker_count"] == 1
+                 assert signal["active_agent_run"]["id"] == active_run.id
                  assert board["runtime"] == %{"offline" => false}
 
                  native_detail =

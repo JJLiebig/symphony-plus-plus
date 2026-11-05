@@ -111,7 +111,8 @@ export function parseBoard(payload) {
   }
   const now = ms(payload.generated_at) ?? Date.now();
   const guidance = payload.guidance_requests?.guidance_requests ?? [];
-  // The execution cards carry each package's active run; the request details do not.
+  // The native endpoint projects execution cards to id and active_agent_run;
+  // request details carry the package signals and locations.
   const runs = new Map((Array.isArray(payload.work_packages) ? payload.work_packages : [])
     .filter((card) => card?.id && card.active_agent_run).map((card) => [card.id, card.active_agent_run]));
   const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now, guidance, runs));

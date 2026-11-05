@@ -1,0 +1,42 @@
+name: factory performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: prod
+      PERF_OUTPUT: ${{ github.workspace }}/.perf
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+      - name: Build isolated packaged server
+        working-directory: elixir
+        run: |
+          mkdir -p ../.perf
+          export MIX_HOME="$RUNNER_TEMP/factory-perf-mix"
+          export MIX_ARCHIVES="$MIX_HOME/archives"
+          echo "MIX_HOME=$MIX_HOME" >> "$GITHUB_ENV"
+          echo "MIX_ARCHIVES=$MIX_ARCHIVES" >> "$GITHUB_ENV"
+          set -o pipefail
+          { mix local.hex --force && mix local.rebar --force && mix deps.get --check-locked && mix release --overwrite; } 2>&1 | tee ../.perf/build.log
+      - name: Measure three fresh ledgers
+        run: python3 scripts/perf/run-factory.py
+      - name: Preserve raw measurements and bootstrap logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: factory-performance-${{ github.sha }}
+          path: .perf/

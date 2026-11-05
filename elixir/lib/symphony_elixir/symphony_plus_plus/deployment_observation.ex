@@ -36,10 +36,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DeploymentObservation do
 
     payload
     |> Map.put(:work_request_details, details)
-    |> update_in([:work_requests, :work_requests], fn cards ->
+    |> put_card_observations(observations)
+  end
+
+  defp put_card_observations(%{work_requests: %{work_requests: _cards}} = payload, observations) do
+    update_in(payload, [:work_requests, :work_requests], fn cards ->
       Enum.map(cards, &Map.merge(&1, Map.get(observations, &1.id, %{})))
     end)
   end
+
+  defp put_card_observations(payload, _observations), do: payload
 
   defp enrich_detail(detail, config, state) do
     request = detail.work_request

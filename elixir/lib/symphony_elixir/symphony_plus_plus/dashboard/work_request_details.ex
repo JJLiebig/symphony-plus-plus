@@ -177,6 +177,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
          },
          opts
        ) do
+    guidance = DeliveryBoard.guidance_requests_by_work_package_id(repo, Map.keys(work_package_contexts))
+    opts = Keyword.put(opts, :guidance_requests_by_work_package_id, guidance)
+
     work_requests
     |> Enum.group_by(&{&1.repo, &1.base_branch})
     |> Enum.reduce_while({:ok, %{}}, fn {_scope, scoped_work_requests}, {:ok, acc} ->
@@ -248,7 +251,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
         request_work_package_contexts,
         true,
         work_request_comment_context,
-        delivery_board: delivery_board
+        delivery_board: delivery_board,
+        compact?: true
       )
       |> Enum.map(&Dashboard.compact_work_package/1)
       |> put_delivery_signals(delivery_board)
@@ -429,7 +433,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestDetails do
   end
 
   defp preloaded_delivery_board_opts(work_packages, opts) do
-    product_tree_opts = Keyword.take(opts, [:product_trees_by_request])
+    product_tree_opts = Keyword.take(opts, [:product_trees_by_request, :guidance_requests_by_work_package_id])
 
     delivery_opts =
       case Keyword.fetch(opts, :deliveries_by_slice_id) do

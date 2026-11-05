@@ -214,12 +214,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
         |> get("/api/v1/sympp/herdr/dashboard")
         |> json_response(200)
 
-      assert Map.drop(payload, ["generated_at", "chiefs"]) == Map.delete(browser_payload, "generated_at")
+      assert Enum.map(payload["work_request_details"], & &1["work_request"]["id"]) ==
+               Enum.map(browser_payload["work_request_details"], & &1["work_request"]["id"])
+      assert payload["guidance_requests"] == browser_payload["guidance_requests"]
+
+      assert payload["work_packages"] ==
+               Enum.map(browser_payload["work_packages"], &Map.take(&1, ["id", "active_agent_run"]))
+
+      refute Map.has_key?(payload, "work_requests")
+      refute Map.has_key?(payload, "active_blocking_edges")
       refute Map.has_key?(browser_payload, "chiefs")
       detail = work_request_detail(payload, request.id)
       architect = detail["work_request"]["architect_session_location"]
       worker = Enum.find(detail["work_packages"], &(&1["id"] == package.id))["session_location"]
-      card = Enum.find(payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
+      card = Enum.find(browser_payload["work_requests"]["work_requests"], &(&1["id"] == request.id))
       assert architect["role"] == "architect"
       assert card["architect_session_location"] == architect
       assert worker["role"] == "worker"

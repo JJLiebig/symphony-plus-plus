@@ -154,18 +154,35 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Planning.Redactor do
   end
 
   defp sensitive_key?(key) do
-    normalized =
-      key
-      |> camel_to_snake()
-      |> String.downcase()
-      |> String.replace(~r/[^a-z0-9]+/, "_")
-      |> String.trim("_")
+    normalized = normalize_sensitive_key(key)
 
     MapSet.member?(@sensitive_keys, normalized) or String.ends_with?(normalized, "_secret") or
       String.ends_with?(normalized, "_token") or String.ends_with?(normalized, "_password") or
       String.ends_with?(normalized, "_authorization") or String.ends_with?(normalized, "_api_key") or
       String.ends_with?(normalized, "_apikey")
   end
+
+  defp normalize_sensitive_key(key) do
+    if canonical_key?(key, false) do
+      key
+    else
+      key
+      |> camel_to_snake()
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "_")
+      |> String.trim("_")
+    end
+  end
+
+  defp canonical_key?(<<>>, _segment?), do: true
+
+  defp canonical_key?(<<char, rest::binary>>, _segment?) when char in ?a..?z or char in ?0..?9,
+    do: canonical_key?(rest, true)
+
+  defp canonical_key?(<<?_, next, rest::binary>>, true) when next in ?a..?z or next in ?0..?9,
+    do: canonical_key?(rest, true)
+
+  defp canonical_key?(_key, _segment?), do: false
 
   defp redact_text_values(%{} = value) do
     Enum.reduce(value, %{}, fn {key, field_value}, redacted ->

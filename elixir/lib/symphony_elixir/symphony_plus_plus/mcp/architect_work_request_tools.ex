@@ -122,9 +122,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          :ok <- authorize_list_work_requests_role(session, repo_scope_opts),
          {:ok, status} <- optional_work_request_status(arguments),
          {:ok, pagination} <- list_pagination(arguments),
-         {:ok, filters, scope} <-
-           WorkRequestScope.scoped_work_request_filters(config.repo, session, handoff_phase_scope?: false),
-         policy_session = WorkRequestScope.read_scoped_work_request_session(config.repo, session, scope, :work_request_read),
+         {:ok, filters, scope, policy_session} <-
+           WorkRequestScope.scoped_work_request_context(config.repo, session, handoff_phase_scope?: false),
          :ok <- WorkRequestScope.authorize_work_request_list_policy(policy_session, scope, "list_work_requests", repo_scope_opts),
          filters = WorkRequestScope.work_request_list_filters(filters, status),
          {:ok, work_requests, next_cursor} <-
