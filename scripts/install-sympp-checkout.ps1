@@ -31,4 +31,4 @@ $manifest = @{
 $manifestFile = Join-Path $output 'checkout.json'
 $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifestFile
 $herdrHome = if ($env:HERDR_APP_HOME) { $env:HERDR_APP_HOME } else { Join-Path $env:USERPROFILE '.config/herdr-app' }
-& (Join-Path $PSScriptRoot 'install-sympp-beta.ps1') -LocalCheckout -SymppHome $SymppHome -HerdrAppHome $herdrHome -ArtifactManifest $manifestFile
+& (Join-Path $PSScriptRoot 'install-sympp-checkout-runtime.ps1') -SymppHome $SymppHome -HerdrAppHome $herdrHome -ArtifactManifest $manifestFile

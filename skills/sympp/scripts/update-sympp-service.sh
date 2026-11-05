@@ -17,9 +17,9 @@ env = dict(os.environ, **{key: values[key] for key in allowed if key in values})
 env['SYMPP_SERVICE_NAME'] = sys.argv[1]
 fragment = subprocess.check_output(['systemctl', '--user', 'show', unit, '-p', 'FragmentPath', '--value'], text=True).strip()
 env['XDG_CONFIG_HOME'] = str(Path(fragment).resolve().parents[2])
-# Existing installations used this checkout and beta branch by default.
+# Use the saved factory source and ref.
 source = Path(values.get('SYMPP_SERVICE_SOURCE', str(Path.home() / '.local/share/symphony-plus-plus/source')))
-ref = values.get('SYMPP_SERVICE_REF', 'beta')
+ref = values.get('SYMPP_SERVICE_REF', 'main')
 if subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain'], text=True).strip():
     raise SystemExit('Factory checkout has local changes. Commit or remove them before updating.')
 subprocess.run(['git', '-C', str(source), 'fetch', 'origin', ref], check=True)

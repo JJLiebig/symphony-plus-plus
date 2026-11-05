@@ -374,14 +374,6 @@ hostnames on different machines cannot be distinguished by this best-effort id.
 Herdr session selectors, socket paths, native session identities and client
 identifiers are private persistence fields and never appear in this response.
 
-Both backend and client bridge must contain this change. Merging into `beta`
-alone does not upgrade installed artifacts or already running bridges. After a
-build containing the change is published, use the normal marketplace-backed
-plugin upgrade and start a fresh MCP connection/session. Do not refresh an
-installed cache from a developer checkout. Existing agents begin reporting on
-their next successful scoped call through the updated bridge; historical
-addresses cannot be reconstructed. No release or cache upgrade is part of this PR.
-
 ## Focus an agent session
 
 `POST /api/v1/sympp/operator/work-packages/:id/focus` focuses the package's worker.
@@ -431,6 +423,6 @@ checked again before reporting success, but this cannot undo a focus that raced
 with an occupant change.
 
 Focusing sends no input and does not register a location, refresh its timestamp,
-write ledger/audit state, or publish a dashboard invalidation. The offline beta
+write ledger/audit state, or publish a dashboard invalidation. The offline
 sandbox returns HTTP 403 before any ledger read or Herdr probe. Authorization
 failures retain the operator API's HTTP 401 response.

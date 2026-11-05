@@ -65,7 +65,7 @@ if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 
-plugin_manifest_path="$repo_root/plugins/symphony-plus-plus-mcp/.codex-plugin/plugin.json"
+plugin_manifest_path="$repo_root/packages/sympp/package.json"
 [[ -f "$plugin_manifest_path" ]] || { echo "MCP plugin manifest is missing: $plugin_manifest_path" >&2; exit 1; }
 plugin_name="$(grep -E '"name"[[:space:]]*:[[:space:]]*"[^"]+"' "$plugin_manifest_path" | head -n 1 | sed -E 's/.*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
 plugin_version="$(grep -E '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "$plugin_manifest_path" | head -n 1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
@@ -317,7 +317,6 @@ now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00",
 payload = {
     "schema_version": 1,
     "plugin": {
-        "marketplace": "symphony-plus-plus",
         "name": plugin_name,
         "version": plugin_version,
         "packages": ["symphony-plus-plus", "symphony-plus-plus-mcp"],

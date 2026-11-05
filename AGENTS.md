@@ -17,7 +17,7 @@
 - Treat `docs/` as the current human-facing product and operator guide.
 - Keep approved beta target contracts under `docs/design/`, clearly labeled
   and linked from the index. Do not present target behavior as implemented.
-- Treat packaged `plugins/**/skills/**/SKILL.md` files as the authoritative
+- Treat packaged `packages/sympp/skills/**/SKILL.md` files as the authoritative
   agent procedures. Link to them instead of copying their workflows into docs.
 - Use the WorkPackage ledger, MCP resources, and package-specific assignment
   text as the source of truth for worker scope, acceptance, validation, and
@@ -44,7 +44,7 @@
 - Do not create live Linear state unless the assigned package and operator explicitly require it.
 - For installed sympp MCP operation, runtime scripts must resolve from the
   installed `sympp` skill, not from a developer checkout or source-root hint.
-  Update with `npx skills update sympp`, rerun setup and open a fresh session.
+  Update with `npx skills update sympp -g`, rerun setup and open a fresh session.
   Use `SYMPP_REPO_ROOT` only for explicit developer validation, never as the
   installed-agent runtime path. Never repair an installed bundle by mixing
   checkout files with another installed revision.

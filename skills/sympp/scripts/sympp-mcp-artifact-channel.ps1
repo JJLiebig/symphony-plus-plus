@@ -1,22 +1,10 @@
 $ErrorActionPreference = "Stop"
 
 function Get-SymppRuntimeChannel([string]$PluginRoot) {
-  if (Read-SymppPortableInstall $PluginRoot) {
-    $channel = $env:SYMPP_RUNTIME_CHANNEL
-    if ([string]::IsNullOrWhiteSpace($channel)) {
-      # Standalone offline viewing uses the same owning lock as host setup.
-      $channel = & node -e "process.stdout.write(require(process.argv[1]).runtimeChannel())" (Join-Path $PluginRoot "scripts/setup-sympp.js")
-      if ($LASTEXITCODE -ne 0) { throw "Run Skills setup again to select this installation's runtime channel." }
-    }
-    if ($channel -notin @("stable", "beta")) { throw "Select the stable or beta runtime channel." }
-    return $channel
+  if ($env:SYMPP_RUNTIME_CHANNEL -and $env:SYMPP_RUNTIME_CHANNEL -ne 'stable') {
+    throw 'The local runtime channel is stable.'
   }
-  $sourceRoot = Resolve-RepoRootFromMarketplaceCache $PluginRoot
-  if (-not $sourceRoot) { return "stable" }
-  $install = Get-Content -LiteralPath (Join-Path $sourceRoot ".codex-marketplace-install.json") -Raw | ConvertFrom-Json
-  if ($install.ref_name -eq "beta") { return "beta" }
-  if ([string]::IsNullOrWhiteSpace([string]$install.ref_name) -or $install.ref_name -eq "main") { return "stable" }
-  throw "Install sympp from the main or beta branch."
+  return 'stable'
 }
 
 function Invoke-SymppBoundedDownload([string]$SourceUri, [string]$OutFile, [int]$TimeoutSec, [string]$Phase) {

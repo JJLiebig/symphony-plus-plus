@@ -22,7 +22,7 @@ For an always-on Linux factory shared across devices, see [Linux service](docs/l
 Install the skill, then tell Codex or Claude "set up sympp":
 
 ```sh
-npx skills add JJLiebig/sympp
+npx skills add JJLiebig/sympp -g
 ```
 
 The agent asks whether to use this machine or a server and runs setup. Setup
@@ -44,8 +44,7 @@ and [Install and run](docs/runtime.md) for runtime details.
 
 - [Documentation index](docs/README.md): current system, operations, security,
   development, and recovery.
-- [Default plugin](plugins/symphony-plus-plus/README.md) and
-  [MCP companion](plugins/symphony-plus-plus-mcp/README.md): package boundaries.
+- [Portable runtime source](packages/sympp/README.md): package boundaries.
 - [Product](PRODUCT.md) and [Design](DESIGN.md): purpose and interface principles.
 - [Factory workflow](docs/design/factory-workflow.md): approved beta contract
   and editable human diagram.

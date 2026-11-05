@@ -12,32 +12,32 @@ command = ["npm", "--prefix", "elixir/assets", "ci"]
 command = ["npm", "--prefix", "elixir/assets", "run", "build:herdr"]
 
 [[startup]]
-command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
+command = ["node", "packages/sympp/herdr/dist/sympp-herdr.mjs"]
 
 [[actions]]
 id = "sync"
 title = "Sync execution inspector"
 contexts = ["global"]
-command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
+command = ["node", "packages/sympp/herdr/dist/sympp-herdr.mjs"]
 
 [[events]]
 on = "pane.focused"
-command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
+command = ["node", "packages/sympp/herdr/dist/sympp-herdr.mjs"]
 
 [[events]]
 on = "pane.closed"
-command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
+command = ["node", "packages/sympp/herdr/dist/sympp-herdr.mjs"]
 
 [[events]]
 on = "pane.exited"
-command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
+command = ["node", "packages/sympp/herdr/dist/sympp-herdr.mjs"]
 
 [[events]]
 on = "tab.closed"
-command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
+command = ["node", "packages/sympp/herdr/dist/sympp-herdr.mjs"]
 
 [[panes]]
 id = "execution-inspector"
 title = "sympp"
 placement = "split"
-command = ["node", "plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs"]
+command = ["node", "packages/sympp/herdr/dist/sympp-herdr.mjs"]

@@ -253,7 +253,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPClientLeasesTest do
   end
 
   defp start_bridge(directory, client_id, mode \\ "live") do
-    fixture = Path.expand("../../../../plugins/symphony-plus-plus-mcp/tests/launcher/client-lease-owner.js", __DIR__)
+    fixture = Path.expand("../../../../packages/sympp/tests/launcher/client-lease-owner.js", __DIR__)
     node = System.find_executable("node") || flunk("Node is required for Windows bridge lease checks")
     port = Port.open({:spawn_executable, node}, [:binary, :exit_status, :hide, args: [fixture, directory, client_id, mode]])
     on_exit(fn -> if Port.info(port), do: Port.close(port) end)
@@ -270,7 +270,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPClientLeasesTest do
     opts =
       [
         name: :"#{__MODULE__}.#{name}",
-        bridge_probe: Path.expand("../../../../plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp-bridge.js", __DIR__),
+        bridge_probe: Path.expand("../../../../packages/sympp/scripts/start-sympp-mcp-bridge.js", __DIR__),
         ttl_ms: 5,
         sweep_ms: 60_000
       ]

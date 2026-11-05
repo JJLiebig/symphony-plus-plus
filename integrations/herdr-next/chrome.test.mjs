@@ -261,9 +261,9 @@ test('a broken patch restores all previous files and removes newly installed fil
   t.after(() => rm(root, { recursive: true, force: true }));
   const candidate = join(root, 'integrations', 'herdr-next');
   await cp(here, candidate, { recursive: true });
-  const helper = join(root, 'plugins', 'symphony-plus-plus-mcp', 'scripts', 'sympp-herdr.js');
+  const helper = join(root, 'packages', 'sympp', 'scripts', 'sympp-herdr.js');
   await mkdir(dirname(helper), { recursive: true });
-  await copyFile(join(here, '..', '..', 'plugins', 'symphony-plus-plus-mcp', 'scripts', 'sympp-herdr.js'), helper);
+  await copyFile(join(here, '..', '..', 'packages', 'sympp', 'scripts', 'sympp-herdr.js'), helper);
   const patch = join(candidate, 'chrome', 'desk-tabs.patch.mjs');
   await writeFile(patch, (await readFile(patch, 'utf8')).replace('const registered = shared("workspace.panel_buttons");', 'const registered = ;'));
   for (const replace of [false, true]) {

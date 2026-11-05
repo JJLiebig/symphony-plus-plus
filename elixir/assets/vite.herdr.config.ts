@@ -10,7 +10,7 @@ export default defineConfig({
   build: {
     ssr: "src/herdr/main.ts",
     target: "node20",
-    outDir: "../../plugins/symphony-plus-plus-mcp/herdr/dist",
+    outDir: "../../packages/sympp/herdr/dist",
     emptyOutDir: true,
     rollupOptions: {
       output: {

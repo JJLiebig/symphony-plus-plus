@@ -55,15 +55,15 @@ function update() {
   if (!saved.setup) throw new Error('Run sympp setup once to save the server and host selection, then retry sympp update.');
   const env = { ...process.env };
   for (const key of ['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE', 'SYMPP_BACKEND_PORT', 'SYMPP_LOG_DIR', 'SYMPP_OPEN_DASHBOARD']) delete env[key];
-  Object.assign(env, saved.env, saved.setup.homes, saved.setup.remote, { SYMPP_UPDATE_SCOPE: saved.setup.global ? '--global' : '--project' });
+  Object.assign(env, saved.env, saved.setup.homes, saved.setup.remote);
   const step = (label, command, args, options = {}) => {
     const result = spawnSync(command, args, { env, encoding: 'utf8', windowsHide: true, ...options });
     const skillCheckFailed = label === 'skill' && /Failed to check skills|No installed skills found|No global skills tracked|No project skills|cannot be (?:checked|updated) automatically|Skipped/i.test((result.stdout || '') + (result.stderr || ''));
-    if (result.error || result.status !== 0 || skillCheckFailed) throw new Error(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Run the factory installer over SSH to inspect the build or service error, then retry sympp update.'}`);
+    if (result.error || result.status !== 0 || skillCheckFailed) throw new Error(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp -g, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Run the factory installer over SSH to inspect the build or service error, then retry sympp update.'}`);
     process.stdout.write(`${label}: updated\n`);
   };
-  if (process.platform === 'win32') step('skill', 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '& npx.cmd skills update sympp $env:SYMPP_UPDATE_SCOPE; exit $LASTEXITCODE'], { cwd: saved.setup.skillCwd });
-  else step('skill', 'npx', ['skills', 'update', 'sympp', saved.setup.global ? '--global' : '--project'], { cwd: saved.setup.skillCwd });
+  if (process.platform === 'win32') step('skill', 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '& npx.cmd skills update sympp -g; exit $LASTEXITCODE'], { cwd: os.homedir() });
+  else step('skill', 'npx', ['skills', 'update', 'sympp', '-g'], { cwd: os.homedir() });
   // Spawn after the skill update so setup comes from the newly installed bundle.
   step('setup', process.execPath, [path.join(__dirname, 'setup-sympp.js'), '--host', saved.setup.hosts,
     ...(saved.setup.server ? ['--server', saved.setup.server] : [])], { cwd: saved.setup.cwd });

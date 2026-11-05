@@ -50,7 +50,7 @@ function Resolve-Revision([string]$Candidate, [string]$RepoRoot) {
 }
 
 function Resolve-PluginIdentity([string]$RepoRoot) {
-  $pluginPath = Join-Path $RepoRoot "plugins/symphony-plus-plus-mcp/.codex-plugin/plugin.json"
+  $pluginPath = Join-Path $RepoRoot "packages/sympp/package.json"
   Require-Path $pluginPath "MCP plugin manifest" | Out-Null
 
   $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
@@ -357,7 +357,6 @@ exit $LASTEXITCODE
 $payload = [ordered]@{
   schema_version = 1
   plugin = [ordered]@{
-    marketplace = "symphony-plus-plus"
     name = $pluginIdentity.name
     version = $pluginIdentity.version
     packages = @("symphony-plus-plus", "symphony-plus-plus-mcp")

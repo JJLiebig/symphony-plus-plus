@@ -36,10 +36,10 @@ async function run(name, command, args, timeout) {
 
 try {
   await run('install', process.execPath, [npx, '--yes', 'skills@1.7.0', 'add', repo,
-    '--agent', 'claude-code', '--skill', 'sympp', '--yes'], 180000);
-  const installed = await realpath(join(root, '.claude/skills/sympp'));
+    '-g', '--agent', 'claude-code', '--skill', 'sympp', '--yes'], 180000);
+  const installed = await realpath(join(env.HOME, '.claude/skills/sympp'));
   await run('process', 'pwsh', ['-NoProfile', '-File',
-    join(repo, 'plugins/symphony-plus-plus-mcp/tests/launcher/persistent-artifact-runtime-smoke.ps1'),
+    join(repo, 'packages/sympp/tests/launcher/persistent-artifact-runtime-smoke.ps1'),
     '-SkillsInstall', installed, '-ArtifactManifest', process.env.SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST, ...(process.env.GITHUB_ACTIONS === 'true' ? ['-HostedProcessCreation'] : [])], 900000);
 } finally {
   await rm(root, { recursive: true, force: true });

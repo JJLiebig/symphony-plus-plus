@@ -43,39 +43,6 @@ function Get-FileSha256([string]$Path) {
   }
 }
 
-function Normalize-SymppMarketplaceSourceRevision([string]$Revision) {
-  if ([string]::IsNullOrWhiteSpace($Revision)) {
-    return $null
-  }
-
-  $normalized = $Revision.Trim().ToLowerInvariant()
-  if ($normalized -match "^[0-9a-f]{40}$") {
-    return $normalized
-  }
-
-  return $null
-}
-
-function Get-SymppMarketplaceSourceRevision([string]$SourceRoot) {
-  $installPath = Join-Path $SourceRoot ".codex-marketplace-install.json"
-  if (Test-Path -LiteralPath $installPath -PathType Leaf) {
-    try {
-      $install = Get-Content -LiteralPath $installPath -Raw | ConvertFrom-Json
-      foreach ($propertyName in @("revision", "source_revision", "sourceRevision")) {
-        if ($install.PSObject.Properties[$propertyName]) {
-          $revision = Normalize-SymppMarketplaceSourceRevision ([string]$install.PSObject.Properties[$propertyName].Value)
-          if ($revision) {
-            return $revision
-          }
-        }
-      }
-    } catch {
-    }
-  }
-
-  return $null
-}
-
 function Get-SymppStringSha256([string]$Value) {
   $sha256 = [System.Security.Cryptography.SHA256]::Create()
   try {
@@ -91,32 +58,12 @@ function Get-SymppPluginGenerationKey([string]$PluginRoot, [string]$SourceRoot) 
   if ($portable) {
     return Get-SymppStringSha256 "$([System.IO.Path]::GetFullPath($PluginRoot).ToLowerInvariant())`n$(if ($env:SYMPP_RUNTIME_CHANNEL) { $env:SYMPP_RUNTIME_CHANNEL } else { 'stable' })`n$($portable.contract_fingerprint)`n$($portable.payload_sha256)"
   }
-  $revision = Get-SymppMarketplaceSourceRevision $SourceRoot
-  try {
-    $contractFingerprint = [string]((Get-Content -LiteralPath (Join-Path $SourceRoot "elixir/priv/symphony_plus_plus/mcp_contract.json") -Raw | ConvertFrom-Json).mcp_contract_fingerprint)
-  } catch {
-    return $null
-  }
-  if ($revision -notmatch "^[0-9a-f]{40}$" -or $contractFingerprint -notmatch "^[0-9a-fA-F]{64}$") {
-    return $null
-  }
-  $install = Get-Content -LiteralPath (Join-Path $SourceRoot ".codex-marketplace-install.json") -Raw | ConvertFrom-Json
-  $ref = [string](Get-JsonPropertyValue $install @("ref_name"))
-  $suffix = if ($ref -and $ref -ne "main") { "`n$ref" } else { "" }
-  return Get-SymppStringSha256 "$([System.IO.Path]::GetFullPath($PluginRoot).ToLowerInvariant())`n$($revision.ToLowerInvariant())`n$($contractFingerprint.ToLowerInvariant())$suffix"
+  return $null
 }
 
 function Get-SymppInstalledIdentityCachePath([string]$PluginRoot) {
   $key = Get-SymppStablePathKey ([System.IO.Path]::GetFullPath($PluginRoot).ToLowerInvariant())
   return Join-Path (Resolve-SymppPluginHome) "runtime/launcher-validation/$key.json"
-}
-
-function Test-SymppInstalledMarketplacePluginRoot([string]$PluginRoot) {
-  $packageRoot = Split-Path -Parent ([System.IO.Path]::GetFullPath($PluginRoot))
-  $marketplaceRoot = Split-Path -Parent $packageRoot
-  $cacheRoot = Split-Path -Parent $marketplaceRoot
-  $pluginsRoot = Split-Path -Parent $cacheRoot
-  return (Split-Path -Leaf $cacheRoot) -eq "cache" -and (Split-Path -Leaf $pluginsRoot) -eq "plugins"
 }
 
 function Get-SymppSkillsBundleHash([string]$PluginRoot) {
@@ -145,7 +92,7 @@ function Read-SymppPortableInstall([string]$PluginRoot) {
 }
 
 function Test-SymppInstalledPluginRoot([string]$PluginRoot) {
-  return (Test-SymppInstalledMarketplacePluginRoot $PluginRoot) -or $null -ne (Read-SymppPortableInstall $PluginRoot)
+  return $null -ne (Read-SymppPortableInstall $PluginRoot)
 }
 
 function Assert-SymppPortableLedgerAvailable([string]$PluginRoot) {
@@ -156,20 +103,20 @@ function Assert-SymppPortableLedgerAvailable([string]$PluginRoot) {
     $probe = [IO.File]::Open($database, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
     $probe.Dispose()
   } catch [IO.IOException] {
-    throw "This ledger is already in use. Close all clients of the previous sympp install before moving it, or choose a separate SYMPP_DATABASE for beta."
+    throw "This ledger is already in use. Close all clients of the previous sympp install before moving it, or choose a separate SYMPP_DATABASE."
   }
 }
 
 function Resolve-SymppInstalledIdentity([string]$PluginRoot, [switch]$ReadOnly) {
   $portable = Read-SymppPortableInstall $PluginRoot
-  if (-not $portable) { return Resolve-SymppInstalledMarketplaceIdentity $PluginRoot -ReadOnly:$ReadOnly }
+  if (-not $portable) { return $null }
   $root = [System.IO.Path]::GetFullPath($PluginRoot)
   # Portable content identifies the install; only a verified artifact identifies runtime source.
   $probe = Resolve-SymppPreparedArtifactRuntime $root $null $portable.contract_fingerprint -ValidateOnly
   if ($probe.detail -eq 'contract_mismatch') {
-    throw 'The Skills bundle and runtime channel have different MCP contracts. Run scripts/install-sympp-beta.ps1 for beta, or update Skills with npx skills update sympp --project --yes, then open fresh MCP client sessions.'
+    throw 'The Skills bundle and runtime channel have different MCP contracts. Update Skills with npx skills update sympp -g, then open fresh MCP client sessions.'
   }
-  $revision = Normalize-SymppMarketplaceSourceRevision ([string]$probe.runtime.source_revision)
+  $revision = Normalize-SymppSourceRevision ([string]$probe.runtime.source_revision)
   if (-not $revision) { throw "The selected runtime has no valid source revision." }
   $identity = [pscustomobject]@{
     schema_version = 1; plugin_root = $root; source_root = $root
@@ -179,25 +126,6 @@ function Resolve-SymppInstalledIdentity([string]$PluginRoot, [switch]$ReadOnly) 
   if (-not $ReadOnly) { Write-SymppInstalledIdentityCache (Get-SymppInstalledIdentityCachePath $root) $identity }
   $script:SymppPreparedInstalledIdentity = $identity
   return $identity
-}
-
-function Read-SymppInstalledIdentityCache([string]$CachePath, [string]$PluginRoot, [string]$SourceRoot, [string]$GenerationKey) {
-  if ([string]::IsNullOrWhiteSpace($GenerationKey) -or -not (Test-Path -LiteralPath $CachePath -PathType Leaf)) { return $null }
-  try {
-    $cache = Get-Content -LiteralPath $CachePath -Raw | ConvertFrom-Json
-    if ([int]$cache.schema_version -ne 1 -or
-        -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$cache.plugin_root, [System.IO.Path]::GetFullPath($PluginRoot)) -or
-        -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$cache.source_root, [System.IO.Path]::GetFullPath($SourceRoot)) -or
-        -not [System.StringComparer]::Ordinal.Equals([string]$cache.generation_key, $GenerationKey) -or
-        [string]$cache.revision -notmatch "^[0-9a-f]{40}$" -or
-        [string]$cache.contract_fingerprint -notmatch "^[0-9a-f]{64}$") {
-      return $null
-    }
-    Write-SymppLauncherTrace "installed_identity_cache_hit"
-    return $cache
-  } catch {
-    return $null
-  }
 }
 
 function Write-SymppInstalledIdentityCache([string]$CachePath, $Identity) {
@@ -212,73 +140,6 @@ function Write-SymppInstalledIdentityCache([string]$CachePath, $Identity) {
   }
 }
 
-function Resolve-SymppInstalledMarketplaceIdentity([string]$PluginRoot, [switch]$ReadOnly) {
-  $versionRoot = [System.IO.Path]::GetFullPath($PluginRoot)
-  $packageRoot = Split-Path -Parent $versionRoot
-  $marketplaceRoot = Split-Path -Parent $packageRoot
-  $cacheRoot = Split-Path -Parent $marketplaceRoot
-  $pluginsRoot = Split-Path -Parent $cacheRoot
-  if (-not (Test-SymppInstalledMarketplacePluginRoot $PluginRoot)) { return $null }
-
-  $codexHome = Split-Path -Parent $pluginsRoot
-  $marketplaceName = Split-Path -Leaf $marketplaceRoot
-  $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $codexHome ".tmp/marketplaces/$marketplaceName"))
-  if (-not (Test-SymphonySourceRoot $sourceRoot)) {
-    throw "installed_marketplace_identity_invalid: marketplace source is missing for $versionRoot. Run codex plugin marketplace upgrade."
-  }
-
-  $generationKey = Get-SymppPluginGenerationKey $versionRoot $sourceRoot
-  $cachePath = Get-SymppInstalledIdentityCachePath $versionRoot
-  $cached = Read-SymppInstalledIdentityCache $cachePath $versionRoot $sourceRoot $generationKey
-  if ($cached) {
-    $script:SymppPreparedInstalledIdentity = $cached
-    return $cached
-  }
-
-  Write-SymppLauncherTrace "installed_identity_full_validation"
-  $marketplaceRevision = Get-SymppMarketplaceSourceRevision $sourceRoot
-  if (-not $marketplaceRevision) {
-    throw "installed_marketplace_identity_invalid: marketplace revision is missing. Run codex plugin marketplace upgrade."
-  }
-  try {
-    $contractFingerprint = [string]((Get-Content -LiteralPath (Join-Path $sourceRoot "elixir/priv/symphony_plus_plus/mcp_contract.json") -Raw | ConvertFrom-Json).mcp_contract_fingerprint)
-  } catch {
-    $contractFingerprint = $null
-  }
-  if ($contractFingerprint -notmatch "^[0-9a-fA-F]{64}$") {
-    throw "installed_marketplace_identity_invalid: marketplace MCP contract fingerprint is missing or invalid."
-  }
-
-  $identity = [pscustomobject]@{
-    schema_version = 1
-    plugin_root = $versionRoot
-    source_root = $sourceRoot
-    generation_key = $generationKey
-    revision = $marketplaceRevision.ToLowerInvariant()
-    contract_fingerprint = $contractFingerprint.ToLowerInvariant()
-  }
-  if (-not $ReadOnly) {
-    Write-SymppInstalledIdentityCache $cachePath $identity
-  }
-  $script:SymppPreparedInstalledIdentity = $identity
-  return $identity
-}
-
-function Resolve-RepoRootFromMarketplaceCache([string]$PluginRoot) {
-  $versionRoot = [System.IO.Path]::GetFullPath($PluginRoot)
-  if ($script:SymppPreparedInstalledIdentity -and
-      [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$script:SymppPreparedInstalledIdentity.plugin_root, $versionRoot)) {
-    return [string]$script:SymppPreparedInstalledIdentity.source_root
-  }
-  try {
-    $identity = Resolve-SymppInstalledMarketplaceIdentity $versionRoot
-    if ($identity) { return [string]$identity.source_root }
-  } catch {
-    return $null
-  }
-  return $null
-}
-
 function Resolve-RepoRootFromPluginRoot([string]$PluginRoot) {
   if (Read-SymppPortableInstall $PluginRoot) { return $null }
   $pluginRoot = [System.IO.Path]::GetFullPath($PluginRoot)
@@ -287,12 +148,7 @@ function Resolve-RepoRootFromPluginRoot([string]$PluginRoot) {
     return $sourceCandidate
   }
 
-  $marketplaceRoot = Resolve-RepoRootFromMarketplaceCache $pluginRoot
-  if ($marketplaceRoot) {
-    return $marketplaceRoot
-  }
-
-  throw "Cannot infer the sympp runtime source. Run codex plugin marketplace upgrade, or set SYMPP_REPO_ROOT only for explicit developer validation."
+  throw "Cannot infer the sympp runtime source. Set SYMPP_REPO_ROOT only for explicit developer validation."
 }
 
 function Resolve-RepoRoot {

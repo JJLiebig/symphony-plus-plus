@@ -45,7 +45,7 @@ export class InspectorHost {
     this.server.listen(this.socketPath);
     await once(this.server, 'listening');
     for (const pane of this.snapshot.panes) if (pane.tokens?.sympp_work_request_id) pane.tokens.sympp_endpoint = endpoint;
-    this.process = spawn(process.execPath, [resolve('plugins/symphony-plus-plus-mcp/herdr/dist/sympp-herdr.mjs')], {
+    this.process = spawn(process.execPath, [resolve('packages/sympp/herdr/dist/sympp-herdr.mjs')], {
       env: {
         PATH: process.env.PATH, HOME: this.root, USERPROFILE: this.root, TMPDIR: this.root,
         HERDR_PLUGIN_ENTRYPOINT_ID: 'execution-inspector', HERDR_SOCKET_PATH: this.socketPath,

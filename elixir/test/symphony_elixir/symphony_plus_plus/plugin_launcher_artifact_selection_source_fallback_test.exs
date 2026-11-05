@@ -10,8 +10,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionSourceF
 
     if powershell && windows?() do
       fake_mix = fake_mix_executable(temp_codex_home)
-      marketplace_root = write_minimal_marketplace_source(temp_codex_home)
-      source_plugin_root = Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp")
+      source_root = write_minimal_source(temp_codex_home)
+      source_plugin_root = Path.join(source_root, "packages/sympp")
       sympp_home = Path.join(temp_codex_home, "sympp-home")
       fake_mix_log = Path.join(temp_codex_home, "fake-mix.log")
       artifact_log = Path.join(temp_codex_home, "artifact.log")
@@ -24,7 +24,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionSourceF
           System.cmd(
             powershell,
             ["-NoProfile", "-File", script_path],
-            cd: marketplace_root,
+            cd: source_root,
             stderr_to_stdout: true,
             env: [
               {"SYMPP_ELIXIR_SETUP_TIMEOUT_SEC", "5"},
@@ -53,7 +53,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionSourceF
 
     if powershell do
       fake_mix = fake_mix_executable(temp_codex_home)
-      write_minimal_marketplace_source(temp_codex_home)
+      source_root = write_minimal_source(temp_codex_home)
       mcp_cache_root = plugin_cache_path(temp_codex_home, ["1.0.0"], "symphony-plus-plus-mcp")
       sympp_home = Path.join(temp_codex_home, "sympp-home")
       fake_mix_log = Path.join(temp_codex_home, "fake-mix.log")
@@ -77,7 +77,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionSourceF
               {"SYMPP_LAUNCHER", "direct"},
               {"SYMPP_MCP_BRIDGE_MODE", "direct_stdio"},
               {"SYMPP_MIX", fake_mix},
-              {"SYMPP_REPO_ROOT", ""},
+              {"SYMPP_REPO_ROOT", source_root},
               {"SYMPP_SOURCE_FALLBACK", "1"}
             ]
           )

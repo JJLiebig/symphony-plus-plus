@@ -61,7 +61,7 @@ failed-call journey does not qualify health calls that lack the selected ledger
 context. Report that diagnostic limitation separately.
 
 The `make-all` workflow requires native API acceptance, unchanged-cache browser
-replay, installed Windows runtime, offline copy, Windows launcher/snapshot and
+replay, installed Windows runtime, offline copy, Windows launcher and offline snapshot and
 frontend builds, static checks, Dialyzer, and the complete retained ExUnit suite.
 Its final job rejects any missing, skipped, cancelled or failed required job.
 Retained ExUnit qualifications run once without partitions or coverage thresholds;
@@ -99,9 +99,7 @@ historical retention timing, or alternate offline entrypoints.
 
 The committed MCP manifest is compared with the real bootstrap health response.
 Installed launcher's contract mismatch refusal is a separate compatibility check.
-The Windows launcher job also checks performance-threshold subprocess exits and
-the transport's installed-source classifier; this does not run or qualify the
-full release performance benchmark.
+The Windows launcher job retains local lifecycle and process ownership checks.
 
 Portable native qualification starts from the candidate when the published runtime
 has an incompatible MCP contract. Cold start, reuse, recovery and offline checks

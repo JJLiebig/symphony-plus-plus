@@ -31,7 +31,7 @@ function Write-Usage {
   Write-Host "  - Bridge Codex stdio MCP traffic into the HTTP backend /mcp endpoint."
   Write-Host ""
   Write-Host "Environment:"
-  Write-Host "  SYMPP_REPO_ROOT              Explicit developer-only sympp source checkout override. Marketplace installs are discovered automatically."
+  Write-Host "  SYMPP_REPO_ROOT              Explicit developer-only sympp source checkout override."
   Write-Host "  SYMPP_DATABASE               Optional SQLite ledger override passed to mix sympp.cockpit and mix sympp.mcp direct fallback."
   Write-Host "  SYMPP_LAUNCHER               Optional launcher: 'direct' or 'mise'. Defaults to 'mise' when elixir/mise.toml can run through mise; otherwise 'direct'."
   Write-Host "  SYMPP_MIX                    Optional mix executable path or name for direct launcher. Defaults to 'mix'."
@@ -57,7 +57,7 @@ function Write-Usage {
   Write-Host "  SYMPP_STARTUP_LOCK_TIMEOUT_SEC       Local startup lock wait. Defaults to the configured startup waits plus 30 seconds, with a 120-second floor."
   Write-Host "  SYMPP_MCP_CLIENT_HEARTBEAT_SEC       Bridge client lease heartbeat interval. Defaults to 300; max 540."
   Write-Host ""
-  Write-Host "Installed plugins resolve through the Codex marketplace snapshot. .sympp-source-root hints are ignored."
+  Write-Host "Installed skills use their bundled launcher and published stable runtime."
 }
 
 function Write-Diagnostic([string]$Message) {
@@ -490,15 +490,6 @@ function Get-McpContractFingerprintFromArtifactManifest($Manifest) {
       )))
 }
 
-function Get-McpContractFingerprintFromMarketplaceSource([string]$PluginRoot) {
-  $marketplaceRoot = Resolve-RepoRootFromMarketplaceCache $PluginRoot
-  if (-not $marketplaceRoot) {
-    return $null
-  }
-
-  return Get-McpContractFingerprintFromContractFile (Join-Path $marketplaceRoot "elixir/priv/symphony_plus_plus/mcp_contract.json")
-}
-
 function Resolve-LocalMcpContractFingerprint([string]$PluginRoot) {
   $portable = Read-SymppPortableInstall $PluginRoot
   if ($portable) { return [string]$portable.contract_fingerprint }
@@ -509,7 +500,7 @@ function Resolve-LocalMcpContractFingerprint([string]$PluginRoot) {
     if ($fingerprint) { return $fingerprint }
   }
 
-  return Get-McpContractFingerprintFromMarketplaceSource $PluginRoot
+  return $null
 }
 
 function Resolve-ExpectedMcpContractFingerprint([string]$PluginRoot) {
@@ -1798,7 +1789,7 @@ function Assert-SymppPortableBackendOwner($Health, [string]$Url, $RuntimeState, 
   if (-not (Test-BackendContractMatches $Health $Contract) -or -not $entry.managed -or
       -not (Test-RuntimeEntryEndpointMatches "backend" $entry $Url) -or
       -not (Test-ProcessOwnsTcpPort ([int]$entry.pid) (Get-PortFromOrigin $Url))) {
-    throw "This ledger is already served by a different sympp launcher. Use the same SYMPP_HOME and SYMPP_RUNTIME_FILE, or stop all old clients before switching installs. Use a separate ledger for side-by-side beta."
+    throw "This ledger is already served by a different sympp launcher. Use the same SYMPP_HOME and SYMPP_RUNTIME_FILE, or stop all old clients before switching installs."
   }
 }
 

@@ -56,20 +56,6 @@ function Get-SymppGitHeadRevision([string]$RepoRoot) {
   return $null
 }
 
-function Get-SymppMarketplaceInstallRevision([string]$RepoRoot) {
-  $installPath = Join-Path $RepoRoot ".codex-marketplace-install.json"
-  if (-not (Test-Path -LiteralPath $installPath)) {
-    return $null
-  }
-
-  try {
-    $install = Get-Content -LiteralPath $installPath -Raw | ConvertFrom-Json
-    return Normalize-SymppSourceRevision ([string]$install.revision)
-  } catch {
-    return $null
-  }
-}
-
 function Get-SymppPinnedSourceRevision([string]$Root) {
   if ([string]::IsNullOrWhiteSpace($Root)) {
     return $null
@@ -91,11 +77,6 @@ function Resolve-SymppSourceRevision([string]$RepoRoot, [string]$PluginRoot = $n
   $gitRevision = Get-SymppGitHeadRevision $RepoRoot
   if ($gitRevision) {
     return $gitRevision
-  }
-
-  $installRevision = Get-SymppMarketplaceInstallRevision $RepoRoot
-  if ($installRevision) {
-    return $installRevision
   }
 
   return Get-SymppPinnedSourceRevision $PluginRoot

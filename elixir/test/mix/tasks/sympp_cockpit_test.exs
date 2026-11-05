@@ -1,8 +1,8 @@
 defmodule Mix.Tasks.Sympp.CockpitTest do
   use ExUnit.Case, async: false
 
-  alias Mix.Tasks.Sympp.BetaMigrate
   alias Mix.Tasks.Sympp.Cockpit, as: CockpitTask
+  alias Mix.Tasks.Sympp.OfflineMigrate
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{Config, Server, Stdio}
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
@@ -55,21 +55,21 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
       System.delete_env("SYMPP_OFFLINE_SANDBOX")
       assert {:ok, opts} = CockpitTask.parse_args_for_test(["--database", database, "--port", "0", "--open-dashboard"])
 
-      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+      assert_raise RuntimeError, ~r/offline snapshot/, fn ->
         CockpitTask.run_cockpit_for_test(opts, fn -> flunk("unprotected HTTP server started") end)
       end
 
-      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+      assert_raise RuntimeError, ~r/offline snapshot/, fn ->
         Repo.init(:supervisor, database: database)
       end
 
-      assert_raise RuntimeError, ~r/offline beta snapshot/, fn ->
+      assert_raise RuntimeError, ~r/offline snapshot/, fn ->
         OfflineSandbox.verify!("file:#{URI.encode(database)}?mode=rwc")
       end
 
       System.put_env("SYMPP_OFFLINE_SANDBOX", "1")
       assert_raise RuntimeError, ~r/requires a marked snapshot/, fn -> OfflineSandbox.verify!(database <> ".missing") end
-      BetaMigrate.run(["--database", database])
+      OfflineMigrate.run(["--database", database])
       assert :ok = OfflineSandbox.verify!(database)
 
       opts = Keyword.put(opts, :operator_dashboard_opener, fn _url -> flunk("browser opened") end)

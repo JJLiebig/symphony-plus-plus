@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const source = resolve(repo, 'plugins/symphony-plus-plus-mcp/skills');
+const source = resolve(repo, 'packages/sympp/skills');
 const bundle = resolve(repo, 'skills/sympp');
 const check = process.argv.includes('--check');
 const portablePath = path => path.split(sep).join('/');
@@ -34,7 +34,7 @@ async function collect(directory) {
 
 await collect(source);
 // Ship the authoritative launcher, not a separately maintained implementation.
-const plugin = resolve(repo, 'plugins/symphony-plus-plus-mcp');
+const plugin = resolve(repo, 'packages/sympp');
 const runtimeFiles = (await readdir(resolve(plugin, 'scripts')))
   .filter(name => /\.(ps1|cmd|js|sh)$/.test(name)).map(name => `scripts/${name}`);
 runtimeFiles.push('assets/sympp-runtime-artifacts.json');
@@ -58,14 +58,14 @@ for (const name of runtimeFiles.sort()) {
   const body = (await readFile(resolve(plugin, name), 'utf8')).replace(/\r\n/g, '\n');
   outputs.set(resolve(bundle, name), body);
 }
-outputs.set(resolve(bundle, 'scripts/sympp_beta_snapshot.py'),
-  (await readFile(resolve(repo, 'scripts/sympp_beta_snapshot.py'), 'utf8')).replace(/\r\n/g, '\n'));
+outputs.set(resolve(bundle, 'scripts/sympp_offline_snapshot.py'),
+  (await readFile(resolve(repo, 'scripts/sympp_offline_snapshot.py'), 'utf8')).replace(/\r\n/g, '\n'));
 for (const name of [...outputs.keys()].map(path => portablePath(relative(bundle, path))).sort()) {
   payloadHash.update(`${name}\n`);
   payloadHash.update(outputs.get(resolve(bundle, name)));
   payloadHash.update('\n');
 }
-const manifest = JSON.parse(await readFile(resolve(plugin, '.codex-plugin/plugin.json'), 'utf8'));
+const manifest = JSON.parse(await readFile(resolve(plugin, 'package.json'), 'utf8'));
 const contract = JSON.parse(await readFile(resolve(repo, 'elixir/priv/symphony_plus_plus/mcp_contract.json'), 'utf8'));
 outputs.set(resolve(bundle, '.sympp-install.json'), JSON.stringify({
   schema_version: 1, distribution: 'skills', name: manifest.name, version: manifest.version,

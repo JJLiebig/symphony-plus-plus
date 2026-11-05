@@ -47,7 +47,7 @@ try {
     } catch { throw "Stop the offline viewer before copying again; another Snapshot or View owns this home." }
   } else {
     $database = [IO.Path]::GetFullPath($migrationArguments[1])
-    if ([IO.Path]::GetDirectoryName($database) -ine $ledgerRoot -or [IO.Path]::GetFileName($database) -notlike ".beta-snapshot-*.sqlite3") {
+    if ([IO.Path]::GetDirectoryName($database) -ine $ledgerRoot -or [IO.Path]::GetFileName($database) -notlike ".offline-snapshot-*.sqlite3") {
       throw "Migrate only accepts the temporary snapshot created inside this home's ledger directory."
     }
   }
@@ -98,7 +98,7 @@ try {
 
   switch ($Action) {
     "Snapshot" {
-      $arguments = @((Join-Path $PSScriptRoot "sympp_beta_snapshot.py"), "snapshot", $SourceDatabase, $database, "--sandbox-root", $ledgerRoot)
+      $arguments = @((Join-Path $PSScriptRoot "sympp_offline_snapshot.py"), "snapshot", $SourceDatabase, $database, "--sandbox-root", $ledgerRoot)
       if ($ReplaceSnapshot) { $arguments += "--replace" }
       $arguments += @("--migrate", (Join-Path $PSHOME "pwsh.exe"), "-NoProfile", "-File", $PSCommandPath, "-Action", "Migrate", "-SymppHome", $offlineHome)
       & $python.Source @arguments

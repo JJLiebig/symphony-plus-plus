@@ -77,56 +77,10 @@ function codexConfig(config, registration) {
   return remaining.trimEnd() + (remaining.trim() ? "\n\n" : "") + block;
 }
 
-function claudeConfig(config, registration) {
-  const value = config ? JSON.parse(config) : {};
-  const existing = value.mcpServers?.[name];
-  if (existing && existing.env?.SYMPP_SKILLS_MANAGED !== "1") {
-    throw new Error("This Claude project already has sympp. Use a separate workspace, or explicitly remove its project registration before setup.");
-  }
-  if (value.mcpServers?.[oldName]?.env?.SYMPP_SKILLS_MANAGED === "1") delete value.mcpServers[oldName];
-  value.mcpServers = { ...value.mcpServers, [name]: registration };
-  return JSON.stringify(value, null, 2) + "\n";
-}
-function isGlobalInstall() {
-  const install = fs.realpathSync(root).toLowerCase();
-  return [path.join(os.homedir(), ".agents", "skills"), path.join(os.homedir(), ".claude", "skills"), ...(process.env.CLAUDE_CONFIG_DIR ? [path.join(process.env.CLAUDE_CONFIG_DIR, "skills")] : [])]
-    .some(dir => fs.existsSync(dir) && install.startsWith(fs.realpathSync(dir).toLowerCase() + path.sep));
-}
-
-function runtimeChannel() {
-  let directory = root;
-  let entry;
-  const globalInstall = isGlobalInstall();
-  while (!globalInstall) {
-    const lock = path.join(directory, "skills-lock.json");
-    if (fs.existsSync(lock)) { entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["sympp"]; if (entry) break; }
-    const parent = path.dirname(directory);
-    if (parent === directory) break;
-    directory = parent;
-  }
-  if (!entry && !globalInstall) {
-    const projectLock = path.join(process.cwd(), "skills-lock.json");
-    if (fs.existsSync(projectLock)) entry = JSON.parse(fs.readFileSync(projectLock, "utf8")).skills?.["sympp"];
-  }
-  if (!entry && globalInstall) {
-    const lock = process.env.XDG_STATE_HOME ? path.join(process.env.XDG_STATE_HOME, "skills", ".skill-lock.json") : path.join(os.homedir(), ".agents", ".skill-lock.json");
-    if (fs.existsSync(lock)) entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["sympp"];
-  }
-  if (!entry) throw new Error("Cannot identify this skill's install branch. Re-add the skill, then run setup again.");
-  if (entry.sourceType === "local") {
-    if (process.env.SYMPP_RUNTIME_CHANNEL && !["stable", "beta"].includes(process.env.SYMPP_RUNTIME_CHANNEL)) throw new Error("Select stable or beta for this local skill copy.");
-    return process.env.SYMPP_RUNTIME_CHANNEL || "stable";
-  }
-  if (entry.source !== "JJLiebig/sympp") throw new Error("Install sympp from its official repository.");
-  if (entry.ref === "beta") return "beta";
-  if (!entry.ref || entry.ref === "main") return "stable";
-  throw new Error("Install sympp from the main or beta branch.");
-}
-
 function main(args) {
-  const install = JSON.parse(fs.readFileSync(path.join(root, fs.existsSync(path.join(root, ".sympp-install.json")) ? ".sympp-install.json" : ".codex-plugin/plugin.json"), "utf8"));
+  const install = JSON.parse(fs.readFileSync(path.join(root, fs.existsSync(path.join(root, ".sympp-install.json")) ? ".sympp-install.json" : "package.json"), "utf8"));
   if (args.length === 1 && ["--version", "-v", "-V"].includes(args[0])) { process.stdout.write(`${install.version}\n`); return; }
-  if (args.length === 1 && args[0] === "--help") { emit("usage", usage); emit("help", "Run from the project that will use sympp. Omit --host to register installed Codex and Claude Code. Local setup: Windows x64. Remote setup: Windows and Linux."); return; }
+  if (args.length === 1 && args[0] === "--help") { emit("usage", usage); emit("help", "Setup registers sympp for this user. Omit --host to register installed Codex and Claude Code. Local setup: Windows x64. Remote setup: Windows and Linux."); return; }
   let selection = "auto", server;
   for (let i = 0; i < args.length; i += 2) {
     if (args[i] === "--host" && ["auto", "codex", "claude", "both"].includes(args[i + 1])) selection = args[i + 1];
@@ -139,7 +93,7 @@ function main(args) {
   if (!hosts.length || hosts.some(host => !commands[host])) throw new Error("The selected host is not installed on PATH. Install Codex or Claude Code, then retry setup with --host codex or --host claude.");
   const symppHome = path.resolve(process.env.SYMPP_HOME || path.join(os.homedir(), ".agents", "splusplus"));
   let env = {
-    SYMPP_SKILLS_MANAGED: "1", SYMPP_RUNTIME_CHANNEL: server ? "remote" : runtimeChannel(), SYMPP_HOME: symppHome,
+    SYMPP_SKILLS_MANAGED: "1", SYMPP_RUNTIME_CHANNEL: "stable", SYMPP_HOME: symppHome,
     SYMPP_DATABASE: path.resolve(process.env.SYMPP_DATABASE || path.join(symppHome, "symphony_plus_plus.sqlite3")),
     SYMPP_RUNTIME_FILE: path.resolve(process.env.SYMPP_RUNTIME_FILE || path.join(symppHome, "runtime", "codex-plugin.json")),
   };
@@ -152,7 +106,7 @@ function main(args) {
     env = { SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: symppHome, SYMPP_SERVER_URL: remote.endpoint, SYMPP_SERVER_NAME: server.startsWith("http://") ? new URL(server).hostname : server, SYMPP_SERVER_TOKEN_FILE: tokenFile };
   }
   const registration = { type: "stdio", command: fs.realpathSync.native(process.execPath), args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
-  const globalClaude = (Boolean(server) || isGlobalInstall()) && hosts.includes("claude");
+  const globalClaude = hosts.includes("claude");
   let claudeUser, claudeCommand, claudeShadow, claudeOld;
   if (globalClaude) {
     const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
@@ -182,11 +136,11 @@ function main(args) {
       }
     }
   }
-  plans.push(...hosts.filter(host => host !== "claude" || !globalClaude).map(host => {
-    const file = host === "codex" ? path.join(path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")), "config.toml") : path.join(process.cwd(), ".mcp.json");
+  if (hosts.includes("codex")) {
+    const file = path.join(path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")), "config.toml");
     const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    return { host, file, before, after: host === "codex" ? codexConfig(before, registration) : claudeConfig(before, registration) };
-  }));
+    plans.push({ host: "codex", file, before, after: codexConfig(before, registration) });
+  }
   if (remote) require("./sympp-remote.js").privateWrite(env.SYMPP_SERVER_TOKEN_FILE, remote.token);
   for (const plan of plans) {
     if (plan.before !== plan.after) {
@@ -223,17 +177,13 @@ function main(args) {
     if (result.error || result.status !== 0) throw new Error('Herdr panel setup failed. Run the installed integrations/herdr-next/install.mjs with --chrome to inspect the desk, then retry sympp setup. ' + (result.stdout || '').trim());
     emit('herdr', 'configured');
   }
-  let skillCwd = root;
-  while (!fs.existsSync(path.join(skillCwd, 'skills-lock.json')) && path.dirname(skillCwd) !== skillCwd) skillCwd = path.dirname(skillCwd);
-  if (!fs.existsSync(path.join(skillCwd, 'skills-lock.json'))) skillCwd = process.cwd();
-  require("./sympp-command.js").saveConnection({ env, setup: { cwd: isGlobalInstall() ? os.homedir() : process.cwd(), skillCwd: isGlobalInstall() ? os.homedir() : skillCwd, homes: Object.fromEntries(['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'HERDR_APP_HOME'].map(key => [key, process.env[key] ? path.resolve(process.env[key]) : ''])), global: isGlobalInstall(), hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].map(key => [key, process.env[key] || ''])) } });
+  require("./sympp-command.js").saveConnection({ env, setup: { cwd: os.homedir(), homes: Object.fromEntries(['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'HERDR_APP_HOME'].map(key => [key, process.env[key] ? path.resolve(process.env[key]) : ''])), hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].map(key => [key, process.env[key] || ''])) } });
   emit("channel", server ? "remote" : env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);
-  if (hosts.includes("claude") && !globalClaude) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its sympp entry before opening a fresh session here.");
-  emit("next", "Open fresh host sessions in this project and verify sympp tools before ledger work.");
+  emit("next", "Open fresh host sessions and verify sympp tools before ledger work.");
 }
 
 if (require.main === module) {
   try { main(process.argv.slice(2)); } catch (error) { emit("error", error.message); emit("help", usage); process.exitCode = 1; }
 }
-module.exports = { codexConfig, claudeConfig, runtimeChannel, main };
+module.exports = { codexConfig, main };

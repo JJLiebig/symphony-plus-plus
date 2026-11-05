@@ -22,7 +22,7 @@ From a global Skills installation on the server:
 SYMPP_SERVICE_HOST=100.123.207.19 bash ~/.agents/skills/sympp/scripts/setup-sympp-service.sh
 ```
 
-The Skills helper builds the official `beta` branch in
+The Skills helper builds the official `main` branch in
 `~/.local/share/symphony-plus-plus/source`. `SYMPP_SERVICE_REF` selects another
 branch or tag. It refuses to overwrite local changes. It installs the same
 systemd user service as `just install`; it does not register an MCP client.
@@ -54,7 +54,7 @@ the existing local checkout and worktree behavior.
 
 On first startup the service creates `remote-token` inside `SYMPP_HOME` with
 mode `0600` and preserves it on subsequent starts. On each client, install the
-skill with `npx skills add JJLiebig/sympp`, then ask the agent to set up sympp.
+skill with `npx skills add JJLiebig/sympp -g`, then ask the agent to set up sympp.
 After initial setup, use:
 
 ```sh
@@ -71,7 +71,7 @@ ledger, repository root, port, workflow and service name. Never print the creden
 For a separate factory, set `SYMPP_REMOTE_HOME`, `SYMPP_REMOTE_PORT`, and
 `SYMPP_REMOTE_SERVICE` on the client before setup. Setup saves them for updates.
 Service installs record their checkout and ref for future updates. Older Skills
-service installs use the documented default checkout and beta ref; reinstall a
+service installs use the documented default checkout and main ref; reinstall a
 custom checkout once with `just install` before updating it from a client.
 
 Clients send `Authorization: Bearer <token>` on every remote HTTP request,

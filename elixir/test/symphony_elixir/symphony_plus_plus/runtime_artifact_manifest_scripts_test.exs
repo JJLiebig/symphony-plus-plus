@@ -302,7 +302,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactManifestScriptsTest do
 
   defp expected_mcp_plugin_version do
     @repo_root
-    |> Path.join("plugins/symphony-plus-plus-mcp/.codex-plugin/plugin.json")
+    |> Path.join("packages/sympp/package.json")
     |> File.read!()
     |> Jason.decode!()
     |> Map.fetch!("version")

@@ -2,15 +2,13 @@
 
 The guides describe the current beta product. The [factory workflow](design/factory-workflow.md)
 preserves its approved contract and editable diagram.
-[Branch runtime and cutover](runbooks/beta-release-cutover.md)
-record exact tested builds and hosts.
 
 ## Sources Of Truth
 
 | Subject | Authority |
 |---|---|
 | Runtime behavior and state transitions | Elixir code and behavior tests |
-| Agent operating procedure | Packaged `plugins/**/skills/**/SKILL.md` files |
+| Agent operating procedure | Packaged `packages/sympp/skills/**/SKILL.md` files |
 | Human concepts and operations | Current guides in this directory |
 | Product direction | [Product](../PRODUCT.md) and the labeled factory target contract |
 | Interface design | [Design](../DESIGN.md) |
@@ -30,7 +28,6 @@ documents do not remain in the active documentation tree.
 - Review trust boundaries: [Security](security.md)
 - Develop and validate changes: [Development](development.md)
 - Install, connect, upgrade or recover: [Runtime](runtime.md)
-- Publish a beta and move an existing factory: [Release and cutover](runbooks/beta-release-cutover.md)
 - [Linux factory service](linux-service.md): install an always-on factory and authenticate private-network clients.
 - Install portable Codex/Claude procedures: [Portable skills](portable-skills.md)
 - Repair delivery state: [Delivery recovery](runbooks/delivery-recovery.md)

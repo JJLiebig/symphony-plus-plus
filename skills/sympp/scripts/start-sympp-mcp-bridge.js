@@ -298,13 +298,7 @@ function generationKey(pluginRoot, sourceRoot) {
     if (!fs.statSync(pluginRoot).isDirectory()) return null;
     const portable = portableInstall(pluginRoot);
     if (portable) return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${process.env.SYMPP_RUNTIME_CHANNEL || "stable"}\n${portable.contract_fingerprint}\n${portable.payload_sha256}`);
-    const install = readJson(path.join(sourceRoot, ".codex-marketplace-install.json"));
-    const contract = readJson(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"));
-    const revision = String(install && (install.revision || install.source_revision || install.sourceRevision) || "").toLowerCase();
-    const fingerprint = String(contract && contract.mcp_contract_fingerprint || "").toLowerCase();
-    if (!/^[0-9a-f]{40}$/.test(revision) || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
-    const ref = String(install.ref_name || "main");
-    return sha256(`${path.resolve(pluginRoot).toLowerCase()}\n${revision}\n${fingerprint}${ref === "main" ? "" : `\n${ref}`}`);
+    return null;
   } catch (_) {
     return null;
   }
@@ -319,8 +313,7 @@ function portableInstall(pluginRoot) {
 }
 
 function installedScripts(identity) {
-  return portableInstall(identity.pluginRoot) ? path.join(identity.pluginRoot, "scripts") :
-    path.join(identity.sourceRoot, "plugins", path.basename(path.dirname(identity.pluginRoot)), "scripts");
+  return path.join(identity.pluginRoot, "scripts");
 }
 
 function validPid(pid) {
@@ -430,10 +423,8 @@ async function claimPortableLedger(runtimeFile) {
       if (fs.existsSync(receiptFile) && (!receipt || typeof receipt.runtime_file !== "string" || !Array.isArray(receipt.clients))) {
         throw new Error("The ledger ownership receipt is unreadable. Close all sympp clients and inspect the adjacent .sympp-owner.json file before retrying.");
       }
-      const clients = [];
-      for (const client of receipt?.clients || []) {
-        if (await livenessMatches(client.pid, client.pipe, client.token)) clients.push(client);
-      }
+      const clients = (await Promise.all((receipt?.clients || []).map(async client =>
+        await livenessMatches(client.pid, client.pipe, client.token) ? client : null))).filter(Boolean);
       if (receipt && path.resolve(receipt.runtime_file).toLowerCase() !== path.resolve(runtimeFile).toLowerCase()) {
         const state = readJson(receipt.runtime_file);
         const health = state?.backend?.managed && state.backend.url ? await backendHealth(state.backend.url) : null;
@@ -495,11 +486,7 @@ function liveGeneration(markerFile) {
 }
 
 async function coalescedGenerationKey(pluginRoot, sourceRoot, markerFile) {
-  const paths = portableInstall(pluginRoot) ? [{ path: pluginRoot, recursive: true }] : [
-    { path: pluginRoot, recursive: true },
-    { path: path.join(sourceRoot, ".codex-marketplace-install.json"), recursive: false },
-    { path: path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"), recursive: false },
-  ];
+  const paths = [{ path: pluginRoot, recursive: true }];
   const watched = watchGeneration(paths, markerFile);
   if (!watched) return null;
 
@@ -559,19 +546,11 @@ async function coalescedGenerationKey(pluginRoot, sourceRoot, markerFile) {
 
 async function resolveCachedIdentity(pluginRoot) {
   const versionRoot = path.resolve(pluginRoot);
-  const packageRoot = path.dirname(versionRoot);
-  const marketplaceRoot = path.dirname(packageRoot);
-  const cacheRoot = path.dirname(marketplaceRoot);
-  const pluginsRoot = path.dirname(cacheRoot);
-  const portable = portableInstall(versionRoot);
-  if (!portable && (path.basename(cacheRoot).toLowerCase() !== "cache" || path.basename(pluginsRoot).toLowerCase() !== "plugins")) return null;
-
-  const codexHome = path.dirname(pluginsRoot);
-  const marketplaceName = path.basename(marketplaceRoot);
-  const sourceRoot = portable ? versionRoot : path.resolve(codexHome, ".tmp", "marketplaces", marketplaceName);
+  if (!portableInstall(versionRoot)) return null;
+  const sourceRoot = versionRoot;
   const cacheName = sha256(versionRoot.toLowerCase()).slice(0, 12) + ".json";
   const cacheFile = path.join(resolveHome(), "runtime", "launcher-validation", cacheName);
-  const generationMarker = `${cacheFile}.${portable ? process.env.SYMPP_RUNTIME_CHANNEL || "stable" : "marketplace"}.generation`;
+  const generationMarker = `${cacheFile}.${process.env.SYMPP_RUNTIME_CHANNEL || "stable"}.generation`;
   const generation = await coalescedGenerationKey(versionRoot, sourceRoot, generationMarker);
   if (!generation) return null;
   const cache = readJson(cacheFile);
@@ -605,13 +584,13 @@ function prepareCleanupScript(identity) {
   try {
     const names = fs.readdirSync(__dirname).filter((name) => name.toLowerCase().endsWith(".ps1")).sort();
     const directory = path.join(resolveHome(), "runtime", "launcher-cleanup", `${identity.revision}-${identity.generationKey.slice(0, 12)}`);
-    const marketplaceScripts = installedScripts(identity);
+    const installedScriptRoot = installedScripts(identity);
     fs.mkdirSync(directory, { recursive: true });
     const script = path.join(directory, "start-sympp-mcp.ps1");
     const markerFile = path.join(directory, "validated.json");
     const marker = readJson(markerFile);
     const fileStamps = () => Object.fromEntries(names.map((name) => [name, [
-      path.join(__dirname, name), path.join(marketplaceScripts, name), path.join(directory, name),
+      path.join(__dirname, name), path.join(installedScriptRoot, name), path.join(directory, name),
     ].map((file) => { const stat = fs.statSync(file); return `${stat.size}:${stat.mtimeMs}`; }).join("|")]));
     let currentStamps = null;
     try { if (marker) currentStamps = fileStamps(); } catch (_) { }
@@ -624,9 +603,9 @@ function prepareCleanupScript(identity) {
       const source = path.join(__dirname, name);
       const destination = path.join(directory, name);
       const sourceHash = sha256(fs.readFileSync(source));
-      let marketplaceHash;
-      try { marketplaceHash = sha256(fs.readFileSync(path.join(marketplaceScripts, name))); } catch (_) { return CLEANUP_SOURCE_CHANGED; }
-      if (sourceHash !== marketplaceHash) return CLEANUP_SOURCE_CHANGED;
+      let installedHash;
+      try { installedHash = sha256(fs.readFileSync(path.join(installedScriptRoot, name))); } catch (_) { return CLEANUP_SOURCE_CHANGED; }
+      if (sourceHash !== installedHash) return CLEANUP_SOURCE_CHANGED;
       if (!fs.existsSync(destination)) {
         const temporary = `${destination}.${process.pid}.${crypto.randomUUID()}.tmp`;
         try {
@@ -674,14 +653,14 @@ function prepareCleanupScript(identity) {
 
 function cleanupSourcesChanged(identity, script) {
   try {
-    const marketplaceScripts = installedScripts(identity);
-    const directories = [__dirname, marketplaceScripts, path.dirname(script)];
+    const installedScriptRoot = installedScripts(identity);
+    const directories = [__dirname, installedScriptRoot, path.dirname(script)];
     const fileSets = directories.map((directory) => fs.readdirSync(directory).filter((name) => name.toLowerCase().endsWith(".ps1")).sort());
     if (fileSets.some((names) => names.join("\n") !== fileSets[0].join("\n"))) return true;
     return fileSets[0].some((name) => {
       const stagedHash = sha256(fs.readFileSync(path.join(path.dirname(script), name)));
       return sha256(fs.readFileSync(path.join(__dirname, name))) !== stagedHash ||
-        sha256(fs.readFileSync(path.join(marketplaceScripts, name))) !== stagedHash;
+        sha256(fs.readFileSync(path.join(installedScriptRoot, name))) !== stagedHash;
     });
   } catch (_) {
     return null;

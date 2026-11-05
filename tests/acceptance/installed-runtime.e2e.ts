@@ -12,7 +12,7 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(await installed.skills(['add', resolve('.'), '--list'])).toContain('sympp');
     const bundle = await installed.install('codex');
     installed.env.SYMPP_BACKEND_PORT = '21345';
-    const claudeFile = join(installed.project, '.mcp.json');
+    const claudeFile = join(installed.env.CLAUDE_CONFIG_DIR!, '.claude.json');
     await writeFile(claudeFile, JSON.stringify({ other: true, mcpServers: { notes: { command: 'notes.exe' } } }));
     expect(existsSync(installed.env.CODEX_HOME!)).toBe(false);
     expect((await installed.setup(bundle)).code).toBe(0);
@@ -77,37 +77,8 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(await readFile(configFile, 'utf8')).toBe(config);
     expect(await readFile(claudeFile, 'utf8')).toBe(foreignClaude);
     expect(existsSync(installed.env.SYMPP_DATABASE!)).toBe(false);
-    for (const agent of ['codex', 'claude-code']) {
-      await installed.skills(['remove', 'sympp', '--agent', agent, '--yes']);
-    }
-    expect(JSON.parse(await installed.skills(['list', '--json']))).toEqual([]);
+    await installed.skills(['remove', 'sympp', '-g', '--yes']);
+    expect(JSON.parse(await installed.skills(['list', '-g', '--json']))).toEqual([]);
   });
 
-  test('project and global installations preserve their own runtime channel', { timeout: 600_000 }, async ({ installed }) => {
-    const bundle = await installed.install('codex');
-    const projectLock = join(installed.project, 'skills-lock.json');
-    const local = JSON.parse(await readFile(projectLock, 'utf8'));
-    // Candidate installation is real; branch metadata selects the published channel.
-    local.skills.sympp = { ...local.skills.sympp, source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' };
-    await writeFile(projectLock, JSON.stringify(local));
-    expect((await installed.setup(bundle)).code).toBe(0);
-    const beta = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
-    expect(beta.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
-
-    await installed.skills(['add', resolve('.'), '--global', '--agent', 'codex', '--skill', 'sympp', '--yes']);
-    const globalBundle = join(installed.env.HOME!, '.agents/skills/sympp');
-    const globalLock = join(installed.env.HOME!, '.agents/.skill-lock.json');
-    // A local-source global Skills install has no remote lock; supply tracked-branch metadata for this fixture.
-    const global = { skills: { sympp: { source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' } } };
-    global.skills.sympp = { ...global.skills.sympp, source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' };
-    await writeFile(globalLock, JSON.stringify(global));
-    local.skills.sympp.ref = 'main';
-    await writeFile(projectLock, JSON.stringify(local));
-    expect((await installed.setup(globalBundle)).code).toBe(0);
-    const selected = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
-    expect(selected.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('beta');
-    expect((await installed.setup(bundle)).code).toBe(0);
-    const main = JSON.parse(await installed.ok('codex.exe', ['mcp', 'get', 'sympp', '--json']));
-    expect(main.transport.env.SYMPP_RUNTIME_CHANNEL).toBe('stable');
-  });
 }

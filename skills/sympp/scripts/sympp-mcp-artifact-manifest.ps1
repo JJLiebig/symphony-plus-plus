@@ -55,7 +55,7 @@ function Get-JsonFirstPathValue($Object, [string[][]]$Paths) {
 function Get-SymppPluginVersion([string]$PluginRoot) {
   $portable = Read-SymppPortableInstall $PluginRoot
   if ($portable) { return [string]$portable.version }
-  $manifestPath = Join-Path $PluginRoot ".codex-plugin/plugin.json"
+  $manifestPath = Join-Path $PluginRoot "package.json"
   if (-not (Test-Path -LiteralPath $manifestPath)) {
     return $null
   }
@@ -74,7 +74,7 @@ function Get-SymppPluginVersion([string]$PluginRoot) {
 function Get-SymppPluginName([string]$PluginRoot) {
   $portable = Read-SymppPortableInstall $PluginRoot
   if ($portable) { return [string]$portable.name }
-  $manifestPath = Join-Path $PluginRoot ".codex-plugin/plugin.json"
+  $manifestPath = Join-Path $PluginRoot "package.json"
   if (-not (Test-Path -LiteralPath $manifestPath)) {
     return $null
   }
@@ -96,11 +96,6 @@ function Resolve-ExpectedSourceRevision([string]$PluginRoot) {
   $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PluginRoot "../.."))
   if (Test-SymphonySourceRoot $sourceCandidate) {
     return Resolve-SymppSourceRevision $sourceCandidate $PluginRoot
-  }
-
-  $marketplaceRoot = Resolve-RepoRootFromMarketplaceCache $PluginRoot
-  if ($marketplaceRoot) {
-    return Resolve-SymppSourceRevision $marketplaceRoot $PluginRoot
   }
 
   $pinnedRevision = Get-SymppPinnedSourceRevision $PluginRoot

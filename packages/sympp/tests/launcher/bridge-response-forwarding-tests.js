@@ -1,0 +1,238 @@
+"use strict";
+
+const assert = require("assert/strict");
+const crypto = require("crypto");
+const fs = require("fs");
+const http = require("http");
+const os = require("os");
+const path = require("path");
+const { spawn, spawnSync } = require("child_process");
+
+const pluginRoot = path.resolve(__dirname, "../..");
+const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sympp-bridge-response-"));
+const codexHome = path.join(temporaryRoot, "codex");
+const symppHome = path.join(temporaryRoot, "sympp");
+const installedRoot = path.join(temporaryRoot, "profile", ".agents", "skills", "sympp");
+const sourceRoot = installedRoot;
+const sourcePluginRoot = installedRoot;
+const revision = "b".repeat(40);
+const contract = "c".repeat(64);
+let server;
+let bridge;
+const productRoot = path.join(temporaryRoot, "product");
+const productOrigin = "ssh://deploy@git.example/team/product.git";
+const deliveryRequests = new Map();
+const deliverySessions = new Map();
+const forwardSessions = [];
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+async function main() {
+  assert.equal(spawnSync("git", ["init", "-q", productRoot]).status, 0);
+  assert.equal(spawnSync("git", ["-C", productRoot, "remote", "add", "origin", productOrigin]).status, 0);
+  fs.mkdirSync(path.join(installedRoot, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(sourcePluginRoot, "scripts"), { recursive: true });
+  fs.cpSync(path.join(pluginRoot, "scripts"), path.join(installedRoot, "scripts"), { recursive: true });
+  fs.cpSync(path.join(pluginRoot, "scripts"), path.join(sourcePluginRoot, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus"), { recursive: true });
+  fs.writeFileSync(path.join(installedRoot, ".sympp-install.json"), JSON.stringify({ schema_version: 1, distribution: "skills", name: "symphony-plus-plus-mcp", version: "0.2.0", contract_fingerprint: contract, payload_sha256: "e".repeat(64) }));
+  fs.writeFileSync(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"), JSON.stringify({ mcp_contract_fingerprint: contract }));
+
+  server = http.createServer((request, response) => {
+    if (request.method === "GET" && request.url === "/mcp/readiness") {
+      return response.end(JSON.stringify({ status: "ok", factory_owned_worktrees: true,
+        source: { mcp_contract: { fingerprint: contract } }, ledger: { reachable: true, identity: { kind: "sqlite", default_home: true } } }));
+    }
+    if (request.method === "GET" && request.url === "/sympp/board") return response.end("<title>sympp Dashboard</title>");
+    if (request.method === "POST" && request.url === "/mcp/client-lease") {
+      let body = "";
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        const lease = JSON.parse(body);
+        if (lease.action === "attach") {
+          // Directory metadata changes during attach must not look like installed payload edits.
+          if (process.platform === "win32") {
+            const now = new Date();
+            fs.utimesSync(path.join(installedRoot, "scripts"), now, now);
+          }
+          const directory = path.join(symppHome, "runtime", "codex-plugin-leases");
+          const local = fs.readdirSync(directory).map((file) => JSON.parse(fs.readFileSync(path.join(directory, file))))
+            .find((record) => record.client_id === lease.client_id);
+          assert.ok(local, "local identity must exist before HTTP attach");
+          assert.equal(local.pid, bridge.pid);
+        }
+        response.end(JSON.stringify({ stale_after_ms: 300000, factory_owned_worktrees: true }));
+      });
+      return;
+    }
+    if (request.method !== "POST" || request.url !== "/mcp") return response.writeHead(404).end();
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
+      const message = JSON.parse(body);
+      if (["create_work_request", "prepare_work_package_worktree"].includes(message.params?.name)) {
+        response.writeHead(200, { "Content-Type": "application/json", "Mcp-Session-Id": "test-session" });
+        return response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id,
+          result: { content: [{ type: "text", text: "forwarded" }], structuredContent: message.params.arguments } }));
+      }
+      const key = message.params && message.params.name === "record_work_package_delivery" && message.params.arguments.idempotency_key;
+      if (message.params && message.params.name === "test.forward") forwardSessions.push(request.headers["mcp-session-id"]);
+      if (key) {
+        const requests = deliveryRequests.get(key) || [];
+        requests.push(body);
+        deliveryRequests.set(key, requests);
+        const sessions = deliverySessions.get(key) || [];
+        sessions.push(request.headers["mcp-session-id"]);
+        deliverySessions.set(key, sessions);
+        if (key === "replay-success" && requests.length === 1) {
+          response.writeHead(200, { "Content-Type": "application/json", "Mcp-Session-Id": "test-session" });
+          return response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "Server error", data: { reason: "ledger_unavailable" } } }));
+        }
+        if (key === "replay-failure") {
+          const reason = requests.length === 1 ? "first_transient" : "second_transient";
+          response.writeHead(requests.length === 1 ? 500 : 503, { "Content-Type": "application/json", "Mcp-Session-Id": "test-session" });
+          return response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "Server error", data: { reason } } }));
+        }
+        if (key === "session-recovery" && requests.length < 3) {
+          response.writeHead(requests.length === 1 ? 404 : 500, { "Content-Type": "application/json", "Mcp-Session-Id": requests.length === 1 ? "expired-session" : "recovered-session" });
+          return response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "Server error", data: { reason: "session_recovery" } } }));
+        }
+        if (key === "successful-recovery") {
+          response.writeHead(requests.length === 1 ? 404 : 200, { "Content-Type": "application/json", "Mcp-Session-Id": requests.length === 1 ? "expired-session" : "recovered-session" });
+          return response.end(JSON.stringify(requests.length === 1 ? { jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "Server error" } } : { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "forwarded" }] } }));
+        }
+      }
+      const payload = message.method === "initialize"
+        ? { jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-03-26", capabilities: {}, serverInfo: { name: "stub", version: "1" } } }
+        : { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "forwarded" }] } };
+      response.writeHead(200, { "Content-Type": "application/json", "Mcp-Session-Id": "test-session" });
+      response.end(JSON.stringify(payload));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  const backend = `http://127.0.0.1:${server.address().port}`;
+  const runtimeKey = `contract=${contract};backend=${backend};dashboard=${backend}`;
+  const runtimeFile = path.join(symppHome, "runtime", "codex-plugin.json");
+  const generationKey = sha256(`${installedRoot.toLowerCase()}\nstable\n${contract}\n${"e".repeat(64)}`);
+  const validationDir = path.join(symppHome, "runtime", "launcher-validation");
+  fs.mkdirSync(validationDir, { recursive: true });
+  fs.writeFileSync(path.join(validationDir, `${sha256(installedRoot.toLowerCase()).slice(0, 12)}.json`), JSON.stringify({
+    schema_version: 1, plugin_root: installedRoot, source_root: sourceRoot, revision,
+    contract_fingerprint: contract, generation_key: generationKey,
+  }));
+  fs.writeFileSync(runtimeFile, JSON.stringify({
+    plugin_root: installedRoot, runtime_key: runtimeKey, runtime_mode: "artifact",
+    backend: { status: "external_loopback", url: backend, managed: false, pid: null, expected_contract_fingerprint: contract, contract_fingerprint: contract },
+    frontend: { status: "artifact_static", origin: backend, managed: false, pid: null },
+  }));
+  fs.writeFileSync(path.join(symppHome, "runtime", "codex-plugin-health.json"), JSON.stringify({
+    runtime_key: runtimeKey, backend_pid: 0, contract, validated_at_ms: Date.now(), ledger_identity: { kind: "sqlite", default_home: true },
+  }));
+
+  const environment = { ...process.env, HOME: path.join(temporaryRoot, "profile"), USERPROFILE: path.join(temporaryRoot, "profile"), SYMPP_HOME: symppHome, SYMPP_RUNTIME_FILE: runtimeFile, SYMPP_MCP_BRIDGE_MODE: "http" };
+  for (const name of ["SYMPP_DATABASE", "SYMPP_REPO_ROOT", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT", "SYMPP_BACKEND_URL", "SYMPP_DASHBOARD_ORIGIN", "SYMPP_SERVER_URL", "SYMPP_SERVER_TOKEN_FILE", "SYMPP_SERVER_NAME"]) delete environment[name];
+  bridge = spawn(process.execPath, [path.join(installedRoot, "scripts", "start-sympp-mcp-bridge.js")], {
+    env: environment,
+    cwd: productRoot,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let stderr = "";
+  bridge.stderr.on("data", (chunk) => { stderr += chunk; });
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Bridge did not attach. ${stderr}`)), 5000);
+    bridge.stderr.on("data", () => {
+      if (!stderr.includes("MCP bridge attached")) return;
+      clearTimeout(timeout);
+      resolve();
+    });
+    bridge.once("exit", (code) => reject(new Error(`Bridge exited ${code}. ${stderr}`)));
+  });
+
+  let responsePromise = readResponse(1);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } })}\n`);
+  await responsePromise;
+  responsePromise = readResponse(2);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "test.forward", arguments: {} } })}\n`);
+  const response = await responsePromise;
+  assert.equal(response.result.content[0].text, "forwarded");
+
+  responsePromise = readResponse(3);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "record_work_package_delivery", arguments: { idempotency_key: "replay-success" } } })}\n`);
+  assert.equal((await responsePromise).result.content[0].text, "forwarded");
+  assert.equal(deliveryRequests.get("replay-success").length, 2);
+  assert.equal(new Set(deliveryRequests.get("replay-success")).size, 1);
+
+  responsePromise = readResponse(4);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "record_work_package_delivery", arguments: { idempotency_key: "replay-failure" } } })}\n`);
+  assert.equal(JSON.parse((await responsePromise).error.data.detail).error.data.reason, "second_transient");
+  assert.equal(deliveryRequests.get("replay-failure").length, 2);
+
+  responsePromise = readResponse(5);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "record_work_package_delivery", arguments: { idempotency_key: "session-recovery" } } })}\n`);
+  assert.equal((await responsePromise).result.content[0].text, "forwarded");
+  assert.deepEqual(deliverySessions.get("session-recovery"), ["test-session", "test-session", "recovered-session"]);
+
+  responsePromise = readResponse(6);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "record_work_package_delivery", arguments: { idempotency_key: "successful-recovery" } } })}\n`);
+  assert.equal((await responsePromise).result.content[0].text, "forwarded");
+  responsePromise = readResponse(7);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "test.forward", arguments: {} } })}\n`);
+  await responsePromise;
+  assert.equal(forwardSessions.at(-1), "recovered-session");
+
+  // A local bridge without SYMPP_SERVER_URL still follows the backend's ownership capability.
+  responsePromise = readResponse(8);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "create_work_request", arguments: { repo: productRoot } } })}\n`);
+  assert.equal((await responsePromise).result.structuredContent.repo, productOrigin);
+  responsePromise = readResponse(9);
+  bridge.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "prepare_work_package_worktree", arguments: { work_package_id: "wp-local", target_repo_root: productRoot } } })}\n`);
+  assert.deepEqual((await responsePromise).result.structuredContent, { work_package_id: "wp-local" });
+
+
+}
+
+function readResponse(id) {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const timeout = setTimeout(() => {
+      bridge.stdout.off("data", onData);
+      reject(new Error(`JSON-RPC response ${id} did not reach stdout within two seconds`));
+    }, 2000);
+    function onData(chunk) {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line) continue;
+        const message = JSON.parse(line);
+        if (message.id !== id) continue;
+        clearTimeout(timeout);
+        bridge.stdout.off("data", onData);
+        resolve(message);
+        return;
+      }
+    }
+    bridge.stdout.on("data", onData);
+  });
+}
+
+main().then(() => {
+  process.stdout.write("Node bridge response forwarding test passed.\n");
+}).finally(async () => {
+  if (bridge && bridge.exitCode === null) bridge.kill();
+  if (server) {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+  }
+  fs.rmSync(temporaryRoot, { recursive: true, force: true });
+}).catch((error) => {
+  process.stderr.write(`${error.stack || error}\n`);
+  process.exitCode = 1;
+});

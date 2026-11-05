@@ -45,7 +45,7 @@ export class OfflineCopy {
     const receipt = join('.e2e', `${basename(this.root)}-snapshot.jsonl`);
     await appendFile(receipt, JSON.stringify({ phase: 'request', command: 'python3', args }) + '\n');
     const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolveResult, reject) => {
-      const child = spawn('python3', [resolve('scripts/sympp_beta_snapshot.py'), ...args], {
+      const child = spawn('python3', [resolve('scripts/sympp_offline_snapshot.py'), ...args], {
         cwd: resolve('elixir'),
         env: { PATH: `${this.bin}${delimiter}${process.env.PATH}`, HOME: this.home, USERPROFILE: this.home, TMPDIR: this.root,
           SYMPP_OFFLINE_SANDBOX: '1', MIX_ENV: 'dev', MIX_HOME: process.env.MIX_HOME,
@@ -67,7 +67,7 @@ export class OfflineCopy {
 
   snapshot(source: Factory, replace = false) {
     return this.command(['snapshot', source.database, this.database, '--sandbox-root', this.home,
-      ...(replace ? ['--replace'] : []), '--migrate', 'mix', 'sympp.beta_migrate']);
+      ...(replace ? ['--replace'] : []), '--migrate', 'mix', 'sympp.offline_migrate']);
   }
 }
 

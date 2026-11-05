@@ -72,7 +72,7 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
       expect(refreshed.prepare('SELECT body FROM sympp_comments WHERE target_id = ?').all(request)
         .map(row => row.body)).toContain('Only the explicit refresh sees this');
     } finally { refreshed.close(); }
-    expect((await readdir(copy.home)).some(name => name.startsWith('.beta-snapshot-'))).toBe(false);
+    expect((await readdir(copy.home)).some(name => name.startsWith('.offline-snapshot-'))).toBe(false);
     expect(existsSync(copy.commands)).toBe(false);
     expect(source.home).not.toBe(offline.home);
     expect(source.database).not.toBe(copy.database);
