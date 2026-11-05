@@ -110,7 +110,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
           )
 
         assert status == 0, output
-        assert output =~ "Repaired incompatible default Symphony++ plugin cache"
+        assert output =~ "Repaired incompatible default sympp plugin cache"
 
         versioned_manifest =
           published_plugin_cache_path(temp_codex_home, [@plugin_version, ".codex-plugin", "plugin.json"])

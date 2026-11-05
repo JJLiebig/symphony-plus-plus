@@ -4,7 +4,7 @@ import { bindingFromPane, exactWorkerPaneId } from "./binding";
 import { socketEndpoint } from "./herdr-client";
 import type { HerdrPane, HerdrSnapshot } from "./types";
 
-describe("Herdr Symphony++ binding", () => {
+describe("Herdr sympp binding", () => {
   it("accepts only exact architect or coordinator bindings", () => {
     expect(bindingFromPane(pane("architect"))?.workRequestId).toBe("wr-1");
     expect(bindingFromPane(pane("worker"))).toBeUndefined();

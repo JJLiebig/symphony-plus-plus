@@ -428,7 +428,7 @@ async function claimPortableLedger(runtimeFile) {
     try {
       const receipt = readJson(receiptFile);
       if (fs.existsSync(receiptFile) && (!receipt || typeof receipt.runtime_file !== "string" || !Array.isArray(receipt.clients))) {
-        throw new Error("The ledger ownership receipt is unreadable. Close all Symphony++ clients and inspect the adjacent .sympp-owner.json file before retrying.");
+        throw new Error("The ledger ownership receipt is unreadable. Close all sympp clients and inspect the adjacent .sympp-owner.json file before retrying.");
       }
       const clients = [];
       for (const client of receipt?.clients || []) {
@@ -438,7 +438,7 @@ async function claimPortableLedger(runtimeFile) {
         const state = readJson(receipt.runtime_file);
         const health = state?.backend?.managed && state.backend.url ? await backendHealth(state.backend.url) : null;
         if (clients.length || health?.healthy) {
-          throw new Error("This ledger is already owned by another Symphony++ home. Use its SYMPP_HOME and SYMPP_RUNTIME_FILE to share, or choose a separate SYMPP_DATABASE. Close all clients before moving a ledger.");
+          throw new Error("This ledger is already owned by another sympp home. Use its SYMPP_HOME and SYMPP_RUNTIME_FILE to share, or choose a separate SYMPP_DATABASE. Close all clients before moving a ledger.");
         }
       }
       clients.push({ pid: process.pid, pipe: livenessPipe, token: livenessToken });
@@ -446,7 +446,7 @@ async function claimPortableLedger(runtimeFile) {
       return;
     } finally { releaseProcessLock(lockFile, lock); }
   }
-  throw new Error("Another Symphony++ client is selecting this ledger. Retry the connection.");
+  throw new Error("Another sympp client is selecting this ledger. Retry the connection.");
 }
 
 function closeGenerationWatchers() {
@@ -594,7 +594,7 @@ function generationValidForAttachment(identity) {
   if (generationStillValid(identity)) return true;
   trace("warm_miss_generation");
   if (prepareCleanupScript(identity) === CLEANUP_SOURCE_CHANGED) {
-    throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+    throw new Error("Installed sympp cleanup scripts changed during bridge attachment.");
   }
   return false;
 }
@@ -856,7 +856,7 @@ async function mcpPost(url, body, sessionId, protocol, timeoutMs) {
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   if (protocol) headers["MCP-Protocol-Version"] = protocol;
   const response = await request(url, "POST", body, headers, timeoutMs);
-  return { ok: response.status >= 200 && response.status < 300, status: response.status, headers: response.headers, lines: responseLines(response), error: response.status === 401 ? "Remote Symphony++ authentication failed (HTTP 401). Run setup --server again to refresh the token." : response.body || `HTTP ${response.status}`, mayHaveReachedBackend: true };
+  return { ok: response.status >= 200 && response.status < 300, status: response.status, headers: response.headers, lines: responseLines(response), error: response.status === 401 ? "Remote sympp authentication failed (HTTP 401). Run setup --server again to refresh the token." : response.body || `HTTP ${response.status}`, mayHaveReachedBackend: true };
 }
 
 function replayableDeliveryFailure(parsed, response) {
@@ -1028,7 +1028,7 @@ async function cleanupLastDetach(runtimeFile, key, cleanupScript) {
   const args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-CleanupRuntimeKey", key];
   let result = spawnSync("pwsh.exe", args, { stdio: ["ignore", "ignore", "inherit"] });
   if (result.error && result.error.code === "ENOENT") result = spawnSync("powershell.exe", args, { stdio: ["ignore", "ignore", "inherit"] });
-  if (result.error || result.status !== 0) diagnostic(`Symphony++ last-detach cleanup failed: ${result.error ? result.error.message : `exit ${result.status}`}`);
+  if (result.error || result.status !== 0) diagnostic(`sympp last-detach cleanup failed: ${result.error ? result.error.message : `exit ${result.status}`}`);
   else trace("last_detach_cleanup_completed");
 }
 
@@ -1038,7 +1038,7 @@ function indeterminateToolCall(id) {
     id,
     error: {
       code: -32001,
-      message: "Symphony++ tool call outcome is indeterminate.",
+      message: "sympp tool call outcome is indeterminate.",
       data: { reason: "backend_lost_after_request_started", replayed: false },
     },
   };
@@ -1113,7 +1113,7 @@ async function bridge(identity, state, runtimeFile) {
             if (error.symppFatal) {
               fatalRecoveryError = error;
               if (input) input.close();
-            } else diagnostic(`Symphony++ backend recovery failed: ${error.message}`);
+            } else diagnostic(`sympp backend recovery failed: ${error.message}`);
           });
         }
       });
@@ -1134,21 +1134,21 @@ async function bridge(identity, state, runtimeFile) {
       trace("replacement_lease_attached");
       nextCleanupScript = prepareCleanupScript(next.identity);
       if (nextCleanupScript === CLEANUP_SOURCE_CHANGED) {
-        const error = new Error("Installed Symphony++ cleanup scripts changed during backend recovery.");
+        const error = new Error("Installed sympp cleanup scripts changed during backend recovery.");
         error.symppFatal = true;
         throw error;
       }
-      if (!nextCleanupScript) throw new Error("Symphony++ cleanup scripts were unavailable during backend recovery.");
+      if (!nextCleanupScript) throw new Error("sympp cleanup scripts were unavailable during backend recovery.");
       if (!await finishGenerationAttachmentValidation(generationValidation, next.identity, "recovery")) {
-        const error = new Error("Installed Symphony++ generation changed during backend recovery.");
+        const error = new Error("Installed sympp generation changed during backend recovery.");
         error.symppFatal = true;
         throw error;
       }
       const nextCleanupChanged = cleanupSourcesChanged(next.identity, nextCleanupScript);
       if (nextCleanupChanged !== false) {
         const error = new Error(nextCleanupChanged
-          ? "Installed Symphony++ cleanup scripts changed during backend recovery."
-          : "Symphony++ cleanup scripts were unavailable during backend recovery.");
+          ? "Installed sympp cleanup scripts changed during backend recovery."
+          : "sympp cleanup scripts were unavailable during backend recovery.");
         if (nextCleanupChanged) {
           cleanupAllowed = false;
           error.symppFatal = true;
@@ -1177,7 +1177,7 @@ async function bridge(identity, state, runtimeFile) {
     if (!recoveryPromise) {
       recoveryPromise = (async () => {
         const runtime = await resolveHealthyRuntime(runtimeFile, pluginRoot, () => closing);
-        if (!runtime) throw new Error("No healthy managed Symphony++ backend was elected.");
+        if (!runtime) throw new Error("No healthy managed sympp backend was elected.");
         const changedFields = runtimeIdentityChanges(current.identity, runtime.identity);
         const identityChanged = changedFields.length > 0;
         const action = identityChanged ? "full_adopt" : "lease_repair";
@@ -1207,7 +1207,7 @@ async function bridge(identity, state, runtimeFile) {
   const initializeSession = async () => {
     const initialized = await mcpPost(current.mcpUrl, initializeBody(), null, null, timeoutMs);
     if (!initialized.ok) {
-      const error = new Error(initialized.error || "Symphony++ MCP session reinitialization failed.");
+      const error = new Error(initialized.error || "sympp MCP session reinitialization failed.");
       error.symppHttpStatus = initialized.status;
       throw error;
     }
@@ -1224,7 +1224,7 @@ async function bridge(identity, state, runtimeFile) {
         trace("warm_miss_generation");
         cleanupAllowed = false;
         cleanupScript = null;
-        throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+        throw new Error("Installed sympp cleanup scripts changed during bridge attachment.");
       }
       if (!cleanupScript) {
         trace("warm_miss_cleanup");
@@ -1268,14 +1268,14 @@ async function bridge(identity, state, runtimeFile) {
       if (cleanupChanged) {
         trace("warm_miss_generation");
         cleanupAllowed = false;
-        throw new Error("Installed Symphony++ cleanup scripts changed during bridge attachment.");
+        throw new Error("Installed sympp cleanup scripts changed during bridge attachment.");
       }
       if (!generationValidForAttachment(identity)) return false;
       closeGenerationWatchers();
       trace("generation_attach_handles_released");
       scheduleHeartbeat(attachedResponse);
       trace("node_bridge_selected");
-      diagnostic(`Symphony++ MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
+      diagnostic(`sympp MCP bridge attached: backend=${confirmed.backend} dashboard=${confirmed.dashboard ? confirmed.dashboard + "/sympp/board" : "disabled"} runtime=${runtimeFile}`);
 
     }
     input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity, terminal: false });
@@ -1346,7 +1346,7 @@ async function bridge(identity, state, runtimeFile) {
       trace("mcp_request_end", { method: parsed && parsed.method });
       updateHerdrBinding(response, current.identity.backend);
       if (!response.ok) {
-        process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: parsed ? parsed.id : null, error: { code: -32000, message: "Symphony++ HTTP MCP bridge request failed.", data: { detail: response.error } } })}\n`);
+        process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: parsed ? parsed.id : null, error: { code: -32000, message: "sympp HTTP MCP bridge request failed.", data: { detail: response.error } } })}\n`);
         continue;
       }
       if (requestProtocol) {
@@ -1412,14 +1412,14 @@ async function prepareColdRuntime() {
       throw error;
     });
     if (code === 0) return;
-    if (code !== 42) throw new Error(`Symphony++ prepared runtime startup failed with exit code ${code}.`);
+    if (code !== 42) throw new Error(`sympp prepared runtime startup failed with exit code ${code}.`);
   }
   const candidates = configured ? [configured] : (process.platform === "win32" ? ["pwsh.exe", "powershell.exe"] : ["pwsh"]);
   const args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "start-sympp-mcp.ps1"), "-PrepareRuntimeOnly", ...process.argv.slice(2)];
   for (const executable of candidates) {
     try {
       const code = await runPreparation(executable, args);
-      if (code !== 0) throw new Error(`Symphony++ cold runtime preparation failed with exit code ${code}.`);
+      if (code !== 0) throw new Error(`sympp cold runtime preparation failed with exit code ${code}.`);
       return;
     } catch (error) {
       if (error && error.code === "ENOENT" && executable !== candidates[candidates.length - 1]) continue;
@@ -1501,7 +1501,7 @@ async function main() {
   const pluginRoot = path.resolve(__dirname, "..");
   const portable = portableInstall(pluginRoot);
   if (portable) {
-    if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Symphony++ Skills supports Windows x64 only.");
+    if (process.platform !== "win32" || process.arch !== "x64") throw new Error("sympp Skills supports Windows x64 only.");
     // Preserve the cmd entrypoint's neutral directory for native executable lookup.
     process.chdir(process.env.SystemRoot);
   }

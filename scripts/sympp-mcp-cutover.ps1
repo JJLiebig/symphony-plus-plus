@@ -172,7 +172,7 @@ function Resolve-MarketplaceSourceRevision([string]$MarketplaceSourceRoot) {
     }
   }
 
-  throw "Could not resolve the marketplace Symphony++ source revision from git, .codex-marketplace-install.json, or marketplace .sympp-source-revision."
+  throw "Could not resolve the marketplace sympp source revision from git, .codex-marketplace-install.json, or marketplace .sympp-source-revision."
 }
 
 function Normalize-ExpectedSourceRevision([string]$Revision) {
@@ -255,18 +255,18 @@ function Assert-InstalledCommandMcpConfig([string]$InstalledPluginRoot, [int]$Ba
   $expectedUrl = "http://127.0.0.1:$BackendPort/mcp"
 
   if ($null -eq $serverProperty) {
-    throw "Installed Symphony++ MCP config does not define symphony_plus_plus."
+    throw "Installed sympp MCP config does not define symphony_plus_plus."
   }
   $server = $serverProperty.Value
   if ($server.PSObject.Properties["url"]) {
-    throw "Installed Symphony++ MCP config must use the command-backed launcher, not direct HTTP."
+    throw "Installed sympp MCP config must use the command-backed launcher, not direct HTTP."
   }
   if ([string]$server.type -ne "stdio" -or [string]$server.command -ne "cmd.exe" -or [string]$server.cwd -ne ".") {
-    throw "Installed Symphony++ MCP config must use the stdio cmd.exe launcher from the plugin root."
+    throw "Installed sympp MCP config must use the stdio cmd.exe launcher from the plugin root."
   }
   $args = @($server.args)
   if ($args -notcontains "/c" -or -not @($args | Where-Object { [string]$_ -match "scripts[\\/]start-sympp-mcp\.cmd" })) {
-    throw "Installed Symphony++ MCP config must invoke scripts/start-sympp-mcp.cmd through cmd.exe /c."
+    throw "Installed sympp MCP config must invoke scripts/start-sympp-mcp.cmd through cmd.exe /c."
   }
 
   return $expectedUrl
@@ -474,7 +474,7 @@ function Copy-VerifiedPluginPayloadInPlace([object]$PluginStatus, [string]$Sourc
 
 function Invoke-InstalledCacheRefreshFallback([object]$CacheStatus, [string]$SourceRevision) {
   foreach ($plugin in @($CacheStatus.plugins | Where-Object { -not $_.matches })) {
-    if ($PSCmdlet.ShouldProcess($plugin.installedRoot, "Refresh verified Symphony++ installed plugin cache payload in place from marketplace snapshot")) {
+    if ($PSCmdlet.ShouldProcess($plugin.installedRoot, "Refresh verified sympp installed plugin cache payload in place from marketplace snapshot")) {
       Copy-VerifiedPluginPayloadInPlace $plugin $SourceRevision
     }
   }
@@ -507,7 +507,7 @@ function Assert-InstalledCacheFresh([object]$CacheStatus) {
     }
   ) -join "; "
 
-  throw "Installed Symphony++ plugin cache still does not match the verified marketplace snapshot: $details"
+  throw "Installed sympp plugin cache still does not match the verified marketplace snapshot: $details"
 }
 
 function Get-CurrentProcessGuardSet {
@@ -1217,7 +1217,7 @@ if (-not $script:SymppCutoverDryRun) {
   New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 }
 
-Write-Section "Installed Symphony++ MCP Cutover"
+Write-Section "Installed sympp MCP Cutover"
 if (-not $Json) {
   Write-Host "Codex home: $codexHomePath"
   Write-Host "Marketplace source: $marketplaceSourceRoot"
@@ -1355,7 +1355,7 @@ if ($cacheStatus.refreshNeeded) {
     if ($marketplaceUpgradeFailure) {
       Write-Host "Using fallback because marketplace upgrade failed but the marketplace source snapshot is at the expected revision."
     } else {
-      Write-Host "Using fallback because the installed Symphony++ plugin cache does not match the verified marketplace snapshot."
+      Write-Host "Using fallback because the installed sympp plugin cache does not match the verified marketplace snapshot."
     }
     Write-InstalledCacheStatus $cacheStatus
   }
@@ -1366,11 +1366,11 @@ if ($cacheStatus.refreshNeeded) {
   $cacheStatus = Get-InstalledCacheStatus $marketplaceSourceRoot $installedDefaultPluginRoot $installedPluginRoot $sourceRevision
   Assert-InstalledCacheFresh $cacheStatus
   if (-not $Json) {
-    Write-Host "Installed Symphony++ plugin cache refreshed in place and verified."
+    Write-Host "Installed sympp plugin cache refreshed in place and verified."
   }
 } elseif ($marketplaceUpgradeFailure) {
   if (-not $Json) {
-    Write-Host "Marketplace upgrade failed, but the installed Symphony++ plugin cache already matches the verified marketplace snapshot."
+    Write-Host "Marketplace upgrade failed, but the installed sympp plugin cache already matches the verified marketplace snapshot."
   }
 }
 
@@ -1413,7 +1413,7 @@ if ($acceptedManagedArtifactContext) {
 }
 
 Write-Section "Start Singleton"
-if ($backendListeners.Count -eq 0 -and $PSCmdlet.ShouldProcess("127.0.0.1:$BackendPort", "Start Symphony++ backend singleton from installed marketplace cache")) {
+if ($backendListeners.Count -eq 0 -and $PSCmdlet.ShouldProcess("127.0.0.1:$BackendPort", "Start sympp backend singleton from installed marketplace cache")) {
   $backendStart = Start-Backend $marketplaceSourceRoot $sourceRevision $BackendPort $DashboardPort $logDir
 }
 if (-not $backendPid) {
@@ -1428,7 +1428,7 @@ if (-not $acceptedManagedArtifactContext) {
   if ($dashboardListeners.Count -gt 1) {
     throw "Multiple listeners were found on the configured dashboard port $DashboardPort."
   }
-  if ($dashboardListeners.Count -eq 0 -and $PSCmdlet.ShouldProcess("127.0.0.1:$DashboardPort", "Start Symphony++ dashboard from installed marketplace cache")) {
+  if ($dashboardListeners.Count -eq 0 -and $PSCmdlet.ShouldProcess("127.0.0.1:$DashboardPort", "Start sympp dashboard from installed marketplace cache")) {
     $dashboardStart = Start-Dashboard $marketplaceSourceRoot $BackendPort $DashboardPort $logDir
   }
   $dashboardPid = Wait-ListeningPort $DashboardPort 60
@@ -1499,7 +1499,7 @@ if (-not $Json) {
 
 $summary = [pscustomobject]@{
   status = "ok"
-  message = "Installed Symphony++ MCP cutover completed."
+  message = "Installed sympp MCP cutover completed."
   sourceRevision = $sourceRevision
   mcpContractFingerprint = if ($runtimeState.backend.PSObject.Properties["contract_fingerprint"]) { $runtimeState.backend.contract_fingerprint } else { $null }
   marketplaceSourceRoot = $marketplaceSourceRoot

@@ -19,7 +19,7 @@ SYMPP_SERVICE_HOST=100.123.207.19 just install
 From a global Skills installation on the server:
 
 ```sh
-SYMPP_SERVICE_HOST=100.123.207.19 bash ~/.agents/skills/symphony-plus-plus/scripts/setup-sympp-service.sh
+SYMPP_SERVICE_HOST=100.123.207.19 bash ~/.agents/skills/sympp/scripts/setup-sympp-service.sh
 ```
 
 The Skills helper builds the official `beta` branch in
@@ -28,7 +28,7 @@ branch or tag. It refuses to overwrite local changes. It installs the same
 systemd user service as `just install`; it does not register an MCP client.
 
 The installer builds the release, installs it under
-`~/.agents/splusplus/service/`, enables `symphony-plus-plus.service`, and restarts
+`~/.agents/splusplus/service/`, enables `sympp.service`, and restarts
 it. Repeating the command updates that service. It uses the existing ledger at
 `~/.agents/splusplus/symphony_plus_plus.sqlite3`; it never chooses a fallback
 ledger. Set `SYMPP_HOME` and `SYMPP_DATABASE` to explicit absolute paths for an
@@ -37,11 +37,16 @@ isolated factory. `SYMPP_BACKEND_PORT` overrides the default port and
 factory needs workspace hooks from a workflow. Unix hooks run through `sh`.
 
 On first startup the service creates `remote-token` inside `SYMPP_HOME` with
-mode `0600`. It preserves that token on subsequent starts. Retrieve it privately:
+mode `0600` and preserves it on subsequent starts. On each client, install the
+skill with `npx skills add JJLiebig/sympp`, then ask the agent to set up sympp.
+After initial setup, use:
 
 ```sh
-ssh jjdev cat ~/.agents/splusplus/remote-token
+sympp --server jjdev
+sympp status
 ```
+
+Setup retrieves the credential privately over SSH. Never print it.
 
 Clients send `Authorization: Bearer <token>` on every remote HTTP request,
 including MCP, readiness, leases and dashboard API calls. Missing or incorrect
@@ -53,13 +58,13 @@ The service stays running with zero clients and restarts on process failure.
 It does not open a browser. Inspect or stop it with:
 
 ```sh
-systemctl --user status symphony-plus-plus.service
-journalctl --user -u symphony-plus-plus.service
-systemctl --user stop symphony-plus-plus.service
+systemctl --user status sympp.service
+journalctl --user -u sympp.service
+systemctl --user stop sympp.service
 ```
 
 To prevent startup on future logins, use `systemctl --user disable --now
-symphony-plus-plus.service`. The ledger and token remain on disk. Token changes
+sympp.service`. The ledger and token remain on disk. Token changes
 require a service restart. Keep tokens out of logs and shared configuration.
 
 For Linux checkout validation, install the locked dashboard dependencies with

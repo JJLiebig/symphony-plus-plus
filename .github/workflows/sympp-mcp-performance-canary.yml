@@ -1,4 +1,4 @@
-name: Symphony++ MCP performance canary
+name: sympp MCP performance canary
 
 on:
   workflow_dispatch:

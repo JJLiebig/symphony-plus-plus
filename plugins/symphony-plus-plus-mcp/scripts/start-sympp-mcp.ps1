@@ -22,16 +22,16 @@ Write-SymppLauncherTrace "powershell_entry"
 . (Join-Path $PSScriptRoot "sympp-mcp-process-runtime.ps1")
 
 function Write-Usage {
-  Write-Host "Starts the Symphony++ Codex plugin MCP bridge and local operator servers."
+  Write-Host "Starts the sympp Codex plugin MCP bridge and local operator servers."
   Write-Host ""
   Write-Host "Default behavior:"
-  Write-Host "  - Reuse a healthy Symphony++ runtime when its MCP contract fingerprint matches this launcher."
+  Write-Host "  - Reuse a healthy sympp runtime when its MCP contract fingerprint matches this launcher."
   Write-Host "  - Keep source revision mismatches visible in diagnostics while allowing compatible runtimes to attach."
   Write-Host "  - Start a fresh managed backend and dashboard for a new MCP contract, leaving old leased runtimes to drain."
   Write-Host "  - Bridge Codex stdio MCP traffic into the HTTP backend /mcp endpoint."
   Write-Host ""
   Write-Host "Environment:"
-  Write-Host "  SYMPP_REPO_ROOT              Explicit developer-only Symphony++ source checkout override. Marketplace installs are discovered automatically."
+  Write-Host "  SYMPP_REPO_ROOT              Explicit developer-only sympp source checkout override. Marketplace installs are discovered automatically."
   Write-Host "  SYMPP_DATABASE               Optional SQLite ledger override passed to mix sympp.cockpit and mix sympp.mcp direct fallback."
   Write-Host "  SYMPP_LAUNCHER               Optional launcher: 'direct' or 'mise'. Defaults to 'mise' when elixir/mise.toml can run through mise; otherwise 'direct'."
   Write-Host "  SYMPP_MIX                    Optional mix executable path or name for direct launcher. Defaults to 'mix'."
@@ -133,7 +133,7 @@ function Test-SymppBackendOwners([object[]]$Owners) {
 
 function New-BackendBusySymppMessage([int]$Port, [object[]]$Owners, $Health) {
   $detail = if ($null -ne $Health -and -not [string]::IsNullOrWhiteSpace([string]$Health.detail)) { [string]$Health.detail } else { "unhealthy" }
-  return "backend_port_busy_sympp_unhealthy: configured Symphony++ backend port http://127.0.0.1:$Port is occupied by $(Format-PortOwners $Owners), but MCP health did not complete (detail=$detail). Refusing to start a fallback runtime; retry after the singleton finishes startup or stop the stale owner."
+  return "backend_port_busy_sympp_unhealthy: configured sympp backend port http://127.0.0.1:$Port is occupied by $(Format-PortOwners $Owners), but MCP health did not complete (detail=$detail). Refusing to start a fallback runtime; retry after the singleton finishes startup or stop the stale owner."
 }
 
 function Wait-ForTcpPortRelease([int]$Port, [int]$TimeoutSec) {
@@ -146,7 +146,7 @@ function Wait-ForTcpPortRelease([int]$Port, [int]$TimeoutSec) {
 
   $owners = @(Get-TcpPortOwners $Port)
   if ($TimeoutSec -gt 0) {
-    Write-Diagnostic "Configured Symphony++ backend port 127.0.0.1:$Port is occupied by $(Format-PortOwners $owners); waiting up to $TimeoutSec seconds for stale listeners to clear."
+    Write-Diagnostic "Configured sympp backend port 127.0.0.1:$Port is occupied by $(Format-PortOwners $owners); waiting up to $TimeoutSec seconds for stale listeners to clear."
   }
 
   $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSec)
@@ -516,7 +516,7 @@ function Resolve-ExpectedMcpContractFingerprint([string]$PluginRoot) {
   if (-not [string]::IsNullOrWhiteSpace($env:SYMPP_REPO_ROOT)) {
     $explicitRepoRoot = [System.IO.Path]::GetFullPath($env:SYMPP_REPO_ROOT)
     if (-not (Test-SymphonySourceRoot $explicitRepoRoot)) {
-      throw "SYMPP_REPO_ROOT does not look like a Symphony++ checkout: $explicitRepoRoot"
+      throw "SYMPP_REPO_ROOT does not look like a sympp checkout: $explicitRepoRoot"
     }
 
     $contractPath = Join-Path $explicitRepoRoot "elixir/priv/symphony_plus_plus/mcp_contract.json"
@@ -525,7 +525,7 @@ function Resolve-ExpectedMcpContractFingerprint([string]$PluginRoot) {
       return $fingerprint
     }
 
-    throw "Symphony++ MCP launcher expected MCP contract fingerprint could not be resolved from explicit SYMPP_REPO_ROOT contract JSON: $contractPath"
+    throw "sympp MCP launcher expected MCP contract fingerprint could not be resolved from explicit SYMPP_REPO_ROOT contract JSON: $contractPath"
   }
 
   $fingerprint = Resolve-LocalMcpContractFingerprint $PluginRoot
@@ -922,12 +922,12 @@ function Write-CompatibleSourceMismatchDiagnostic([string]$Url, $Health, [string
   }
 
   if ([string]::IsNullOrWhiteSpace([string]$Health.source_revision)) {
-    Write-Diagnostic "Reusing compatible Symphony++ backend $Url with unknown source revision because MCP contract fingerprint $(Format-McpContractFingerprintForDiagnostic $Health.contract_fingerprint) matches this launcher."
+    Write-Diagnostic "Reusing compatible sympp backend $Url with unknown source revision because MCP contract fingerprint $(Format-McpContractFingerprintForDiagnostic $Health.contract_fingerprint) matches this launcher."
     return
   }
 
   if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Health.source_revision, $ExpectedSourceRevision)) {
-    Write-Diagnostic "Reusing compatible Symphony++ backend $Url even though source revision $(Format-SourceRevisionForDiagnostic $Health.source_revision) differs from expected $(Format-SourceRevisionForDiagnostic $ExpectedSourceRevision); MCP contract fingerprint $(Format-McpContractFingerprintForDiagnostic $Health.contract_fingerprint) matches this launcher."
+    Write-Diagnostic "Reusing compatible sympp backend $Url even though source revision $(Format-SourceRevisionForDiagnostic $Health.source_revision) differs from expected $(Format-SourceRevisionForDiagnostic $ExpectedSourceRevision); MCP contract fingerprint $(Format-McpContractFingerprintForDiagnostic $Health.contract_fingerprint) matches this launcher."
   }
 }
 
@@ -1075,7 +1075,7 @@ function Test-SymppPublishedRuntimeReadyLocally($State, [string]$PluginRoot, $In
       -not [System.StringComparer]::Ordinal.Equals([string]$State.publication.generation_key, [string]$InstalledIdentity.generation_key)) { return $false }
   try {
     if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([System.IO.Path]::GetFullPath([string]$State.plugin_root), [System.IO.Path]::GetFullPath($PluginRoot))) { return $false }
-    Assert-LoopbackHttpOrigin ([string]$State.backend.url) "published Symphony++ backend"
+    Assert-LoopbackHttpOrigin ([string]$State.backend.url) "published sympp backend"
   } catch { return $false }
   if ($null -ne $InstalledIdentity -and
       (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$State.backend.expected_contract_fingerprint, [string]$InstalledIdentity.contract_fingerprint) -or
@@ -1120,7 +1120,7 @@ function Enter-SymppColdLeadership([string]$RuntimeFile, [string]$PluginRoot, $I
     }
     Start-Sleep -Milliseconds (Get-Random -Minimum 200 -Maximum 501)
   }
-  throw "cold_start_timeout: timed out waiting for Symphony++ cold runtime publication."
+  throw "cold_start_timeout: timed out waiting for sympp cold runtime publication."
 }
 
 function Resolve-SymppPendingBackendProcess($State) {
@@ -1282,11 +1282,11 @@ function Stop-ManagedRuntimeProcess([string]$Role, $ProcessIdValue, [int]$Port) 
   if (-not (Test-ManagedRuntimeCommandLine $Role $commandLine) -or
       (-not (Test-ManagedRuntimePortCommandLine $Role $commandLine $Port) -and
        -not (Test-ProcessOwnsTcpPort $managedPid $Port))) {
-    Write-Diagnostic "Skipping $Role shutdown for pid=$managedPid because it no longer matches the managed Symphony++ command."
+    Write-Diagnostic "Skipping $Role shutdown for pid=$managedPid because it no longer matches the managed sympp command."
     return $false
   }
 
-  Write-Diagnostic "Stopping managed Symphony++ $Role pid=$managedPid after last Codex MCP bridge exited."
+  Write-Diagnostic "Stopping managed sympp $Role pid=$managedPid after last Codex MCP bridge exited."
   $process = Get-Process -Id $managedPid -ErrorAction SilentlyContinue
   Stop-Process -Id $managedPid -Force -ErrorAction SilentlyContinue
   if ($process) {
@@ -1317,10 +1317,10 @@ function Stop-ManagedRuntimeEntry([string]$Role, $Entry) {
   if (-not [int]::TryParse([string]$Entry.pid, [ref]$managedPid) -or $managedPid -le 0) {
     $listenerPid = if ($entryPort -gt 0) { Get-ManagedListenerPid $Role $entryPort } else { $null }
     if ($listenerPid) {
-      Write-Diagnostic "Stopping managed Symphony++ $Role listener pid=$listenerPid for stale runtime entry with missing pid."
+      Write-Diagnostic "Stopping managed sympp $Role listener pid=$listenerPid for stale runtime entry with missing pid."
       return Stop-ManagedRuntimeProcess $Role $listenerPid $entryPort
     } else {
-      Write-Diagnostic "Pruning stale managed Symphony++ $Role runtime entry with missing pid."
+      Write-Diagnostic "Pruning stale managed sympp $Role runtime entry with missing pid."
     }
 
     return $true
@@ -1329,10 +1329,10 @@ function Stop-ManagedRuntimeEntry([string]$Role, $Entry) {
   if (-not (Test-ProcessAlive $managedPid)) {
     $listenerPid = if ($entryPort -gt 0) { Get-ManagedListenerPid $Role $entryPort } else { $null }
     if ($listenerPid) {
-      Write-Diagnostic "Stopping managed Symphony++ $Role listener pid=$listenerPid for stale runtime entry with exited pid=$managedPid."
+      Write-Diagnostic "Stopping managed sympp $Role listener pid=$listenerPid for stale runtime entry with exited pid=$managedPid."
       return Stop-ManagedRuntimeProcess $Role $listenerPid $entryPort
     } else {
-      Write-Diagnostic "Pruning stale managed Symphony++ $Role runtime entry for exited pid=$managedPid."
+      Write-Diagnostic "Pruning stale managed sympp $Role runtime entry for exited pid=$managedPid."
     }
 
     return $true
@@ -1798,7 +1798,7 @@ function Assert-SymppPortableBackendOwner($Health, [string]$Url, $RuntimeState, 
   if (-not (Test-BackendContractMatches $Health $Contract) -or -not $entry.managed -or
       -not (Test-RuntimeEntryEndpointMatches "backend" $entry $Url) -or
       -not (Test-ProcessOwnsTcpPort ([int]$entry.pid) (Get-PortFromOrigin $Url))) {
-    throw "This ledger is already served by a different Symphony++ launcher. Use the same SYMPP_HOME and SYMPP_RUNTIME_FILE, or stop all old clients before switching installs. Use a separate ledger for side-by-side beta."
+    throw "This ledger is already served by a different sympp launcher. Use the same SYMPP_HOME and SYMPP_RUNTIME_FILE, or stop all old clients before switching installs. Use a separate ledger for side-by-side beta."
   }
 }
 
@@ -1809,7 +1809,7 @@ function Resolve-BackendPlan([int]$PreferredPort, [string]$ConfiguredUrl, $Runti
     $health = Get-SymppBackendHealthWithRetry $url
     Assert-SymppPortableBackendOwner $health $url $RuntimeState $ExpectedContractFingerprint
     if (-not $health.healthy) {
-      throw "SYMPP_BACKEND_URL is not a healthy Symphony++ backend: $url"
+      throw "SYMPP_BACKEND_URL is not a healthy sympp backend: $url"
     }
     if (-not (Test-BackendLaunchCompatible $health $ExpectedContractFingerprint)) {
       throw "SYMPP_BACKEND_URL is healthy but not compatible with this launcher: $(Format-BackendLaunchCompatibilityMismatch $health $ExpectedSourceRevision $ExpectedContractFingerprint): $url"
@@ -1842,7 +1842,7 @@ function Resolve-BackendPlan([int]$PreferredPort, [string]$ConfiguredUrl, $Runti
         Write-CompatibleSourceMismatchDiagnostic $preferredUrl $preferredHealth $ExpectedSourceRevision
         return New-ReusedBackendPlan $status $preferredUrl $preferredHealth $managed $entryPid
       } else {
-        Write-Diagnostic "Ignoring healthy Symphony++ backend $preferredUrl because $(Format-BackendLaunchCompatibilityMismatch $preferredHealth $ExpectedSourceRevision $ExpectedContractFingerprint)"
+        Write-Diagnostic "Ignoring healthy sympp backend $preferredUrl because $(Format-BackendLaunchCompatibilityMismatch $preferredHealth $ExpectedSourceRevision $ExpectedContractFingerprint)"
       }
       $selectedPort = Select-AvailablePort $PreferredPort (@($PreferredPort) + @($AvoidPorts))
     }
@@ -1882,10 +1882,10 @@ function Resolve-BackendPlan([int]$PreferredPort, [string]$ConfiguredUrl, $Runti
           return New-ReusedBackendPlan "external_loopback" "http://127.0.0.1:$PreferredPort" $busyHealth $false $null
         }
         if ($busyHealth.mcp_ready) {
-          Write-Diagnostic "$(New-BackendPortOccupiedMessage $PreferredPort @($portRelease.owners)) The occupied Symphony++ backend responded to MCP but is not a healthy compatible runtime (status=$($busyHealth.status), source=$(Format-SourceRevisionForDiagnostic $busyHealth.source_revision), contract=$(Format-McpContractFingerprintForDiagnostic $busyHealth.contract_fingerprint)). Selecting a fallback managed backend port for this Codex session."
+          Write-Diagnostic "$(New-BackendPortOccupiedMessage $PreferredPort @($portRelease.owners)) The occupied sympp backend responded to MCP but is not a healthy compatible runtime (status=$($busyHealth.status), source=$(Format-SourceRevisionForDiagnostic $busyHealth.source_revision), contract=$(Format-McpContractFingerprintForDiagnostic $busyHealth.contract_fingerprint)). Selecting a fallback managed backend port for this Codex session."
           $selectedPort = Select-AvailablePort $PreferredPort (@($PreferredPort) + @($AvoidPorts))
         } elseif (-not $EnforcePreferredPort) {
-          Write-Diagnostic "$(New-BackendPortOccupiedMessage $PreferredPort @($portRelease.owners)) The occupied Symphony++ backend did not become MCP-ready after the bounded retry window. Selecting a fallback managed backend port for this Codex session."
+          Write-Diagnostic "$(New-BackendPortOccupiedMessage $PreferredPort @($portRelease.owners)) The occupied sympp backend did not become MCP-ready after the bounded retry window. Selecting a fallback managed backend port for this Codex session."
           $selectedPort = Select-AvailablePort $PreferredPort (@($PreferredPort) + @($AvoidPorts))
         } else {
           throw (New-BackendBusySymppMessage $PreferredPort @($portRelease.owners) $busyHealth)
@@ -1987,8 +1987,8 @@ function Resolve-LocalWarmAttachIdentity {
   $backendUrl = $backendUrl.TrimEnd("/")
   $dashboardOrigin = if ([string]::IsNullOrWhiteSpace($dashboardOrigin)) { $null } else { $dashboardOrigin.TrimEnd("/") }
   try {
-    Assert-LoopbackHttpOrigin $backendUrl "recorded Symphony++ backend"
-    if ($dashboardOrigin) { Assert-LoopbackHttpOrigin $dashboardOrigin "recorded Symphony++ dashboard" }
+    Assert-LoopbackHttpOrigin $backendUrl "recorded sympp backend"
+    if ($dashboardOrigin) { Assert-LoopbackHttpOrigin $dashboardOrigin "recorded sympp dashboard" }
   } catch {
     return $null
   }
@@ -2062,8 +2062,8 @@ function Resolve-FastAttachRuntimePlan {
   $backendUrl = $backendUrl.TrimEnd("/")
   $dashboardOrigin = if ([string]::IsNullOrWhiteSpace($dashboardOrigin)) { $null } else { $dashboardOrigin.TrimEnd("/") }
   try {
-    Assert-LoopbackHttpOrigin $backendUrl "recorded Symphony++ backend"
-    if (-not $headlessManagedRuntime) { Assert-LoopbackHttpOrigin $dashboardOrigin "recorded Symphony++ dashboard" }
+    Assert-LoopbackHttpOrigin $backendUrl "recorded sympp backend"
+    if (-not $headlessManagedRuntime) { Assert-LoopbackHttpOrigin $dashboardOrigin "recorded sympp dashboard" }
   } catch {
     return $null
   }
@@ -2209,7 +2209,7 @@ function Invoke-WarmAttachFromRuntimeState {
     }
 
     $attached = $true
-    Write-Diagnostic "Symphony++ MCP bridge attached: backend=$($confirmedPlan.backend_plan.url) dashboard=$($confirmedPlan.dashboard_plan.url) runtime=$RuntimeFile"
+    Write-Diagnostic "sympp MCP bridge attached: backend=$($confirmedPlan.backend_plan.url) dashboard=$($confirmedPlan.dashboard_plan.url) runtime=$RuntimeFile"
     $fallbackRecovery = { param($stdinReadState, $activeRequest)
       $plan = Invoke-PowerShellFallbackRuntimeRecovery $RuntimeFile $PluginRoot $BackendPort $DashboardPort $BackendPortExplicit $DashboardPortExplicit $ConfiguredBackendUrl $ConfiguredDashboardOrigin $PSCommandPath $stdinReadState $activeRequest
       if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($leaseState.runtime_key, $plan.runtime_key)) {
@@ -2263,7 +2263,7 @@ function Resolve-DashboardPlan([int]$PreferredPort, [string]$ConfiguredOrigin, [
 
   if (-not [string]::IsNullOrWhiteSpace($ExpectedSourceRevision) -and
       -not (Test-SourceRevisionEquals $BackendSourceRevision $ExpectedSourceRevision)) {
-    Write-Diagnostic "Not starting Symphony++ dashboard assets from source $(Format-SourceRevisionForDiagnostic $ExpectedSourceRevision) against compatible backend source $(Format-SourceRevisionForDiagnostic $BackendSourceRevision). MCP bridge will attach backend-only; restart the singleton or set SYMPP_DASHBOARD_ORIGIN to use an operator-owned dashboard."
+    Write-Diagnostic "Not starting sympp dashboard assets from source $(Format-SourceRevisionForDiagnostic $ExpectedSourceRevision) against compatible backend source $(Format-SourceRevisionForDiagnostic $BackendSourceRevision). MCP bridge will attach backend-only; restart the singleton or set SYMPP_DASHBOARD_ORIGIN to use an operator-owned dashboard."
     return New-DisabledDashboardPlan "disabled_source_drift" "backend_source_revision_mismatch"
   }
 
@@ -2288,7 +2288,7 @@ function Resolve-SymppLauncherRuntimeInputs([string]$PluginRoot, [string]$Bridge
     $ExpectedContractFingerprint = Resolve-ExpectedMcpContractFingerprint $PluginRoot
   }
   if ([string]::IsNullOrWhiteSpace($ExpectedContractFingerprint)) {
-    throw "Symphony++ MCP launcher expected MCP contract fingerprint could not be resolved from contract JSON or runtime artifact manifest."
+    throw "sympp MCP launcher expected MCP contract fingerprint could not be resolved from contract JSON or runtime artifact manifest."
   }
   if ([string]::IsNullOrWhiteSpace($ExpectedSourceRevision)) {
     $ExpectedSourceRevision = Resolve-ExpectedSourceRevision $PluginRoot
@@ -2483,7 +2483,7 @@ if ($CleanupPreparedRuntime) {
 $pluginRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $script:SymppPortableInstall = Read-SymppPortableInstall $pluginRoot
 if ($script:SymppPortableInstall -and -not $ValidateOnly -and -not $PrepareRuntimeOnly) {
-  throw "Start the Symphony++ skill through scripts/start-sympp-mcp.cmd."
+  throw "Start the sympp skill through scripts/start-sympp-mcp.cmd."
 }
 Write-SymppLauncherTrace "powershell_config_begin"
 $runtimeFile = Resolve-RuntimeFile
@@ -2524,7 +2524,7 @@ $logDir = if ($runtimeInputs) { $runtimeInputs.log_dir } else { Resolve-LogDir }
 if ($ValidateOnly) {
   $validationRuntimeMode = if ($artifactValidationLaunchable) { "artifact" } elseif ($sourceFallbackAllowed) { "source" } else { "blocked" }
   if ($validationRuntimeMode -eq "blocked") {
-    throw "Symphony++ MCP launcher validation failed: no verified runtime artifact is launchable and source fallback is unavailable. artifactStatus=$($artifactProbe.status) artifactDetail=$($artifactProbe.detail)."
+    throw "sympp MCP launcher validation failed: no verified runtime artifact is launchable and source fallback is unavailable. artifactStatus=$($artifactProbe.status) artifactDetail=$($artifactProbe.detail)."
   }
 
   if ($sourceFallbackAllowed -and -not $artifactValidationLaunchable) {
@@ -2536,11 +2536,11 @@ if ($ValidateOnly) {
       Pop-Location
     }
     if ($validationExitCode -ne 0) {
-      throw "Selected Symphony++ MCP launcher failed validation with exit code $validationExitCode."
+      throw "Selected sympp MCP launcher failed validation with exit code $validationExitCode."
     }
   }
 
-  Write-Host "Symphony++ MCP launcher validation passed."
+  Write-Host "sympp MCP launcher validation passed."
   Write-Host "  repoRoot: $(if ([string]::IsNullOrWhiteSpace($repoRoot)) { "artifact-only" } else { $repoRoot })"
   Write-Host "  elixirDir: $(if ([string]::IsNullOrWhiteSpace($elixirDir)) { "not_required" } else { $elixirDir })"
   Write-Host "  assetsDir: $(if ([string]::IsNullOrWhiteSpace($assetsDir)) { "not_required" } else { $assetsDir })"
@@ -2717,7 +2717,7 @@ try {
     $mix = $runtimeInputs.mix; $mise = $runtimeInputs.mise; $launcher = $runtimeInputs.launcher; $defaultMixBuildRoot = $runtimeInputs.default_mix_build_root; $logDir = $runtimeInputs.log_dir
   }
   if ($backendPlan.should_start -and -not $autostartBackend) {
-    throw "Backend autostart is disabled and no reusable Symphony++ backend was found at $($backendPlan.url)."
+    throw "Backend autostart is disabled and no reusable sympp backend was found at $($backendPlan.url)."
   }
   if ($backendPlan.should_start) {
     Assert-SymppPortableLedgerAvailable $pluginRoot
@@ -2826,7 +2826,7 @@ try {
     } catch {
       $frontendError = $_.Exception.Message
       $dashboardPlan.status = "failed"
-      Write-Diagnostic "Symphony++ dashboard autostart failed; MCP bridge will continue. detail=$frontendError"
+      Write-Diagnostic "sympp dashboard autostart failed; MCP bridge will continue. detail=$frontendError"
     }
   }
   if ($null -eq $frontendError -and $null -ne $dashboardPlan.PSObject.Properties["error"]) {
@@ -2920,7 +2920,7 @@ try {
 
   $dashboardSummary = if ($dashboardPlan.url) { "$($dashboardPlan.url) [$($dashboardPlan.status)]" } else { $dashboardPlan.status }
   $readyKind = if ($PrepareRuntimeOnly) { "runtime" } else { "MCP bridge" }
-  Write-Diagnostic "Symphony++ $readyKind ready: backend=$($backendPlan.url) dashboard=$dashboardSummary runtime=$runtimeFile"
+  Write-Diagnostic "sympp $readyKind ready: backend=$($backendPlan.url) dashboard=$dashboardSummary runtime=$runtimeFile"
 } finally {
   Exit-FileLock $startupLock
 }

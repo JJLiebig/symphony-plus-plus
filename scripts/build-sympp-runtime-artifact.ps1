@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 
 function Show-Usage {
   @"
-Builds the Symphony++ installed-runtime artifact for the current platform.
+Builds the sympp installed-runtime artifact for the current platform.
 
 This is the installed artifact workflow: it compiles the Elixir backend release,
 builds static dashboard assets, then emits a package plus manifest. Developer
@@ -43,7 +43,7 @@ function Resolve-Revision([string]$Candidate, [string]$RepoRoot) {
 
   $normalized = ([string]$Candidate).Trim().ToLowerInvariant()
   if ($normalized -notmatch '^[0-9a-f]{40}$') {
-    throw "Missing or invalid Symphony++ source revision. Set SYMPP_SOURCE_REVISION or run from a Git checkout."
+    throw "Missing or invalid sympp source revision. Set SYMPP_SOURCE_REVISION or run from a Git checkout."
   }
 
   $normalized

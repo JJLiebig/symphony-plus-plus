@@ -259,7 +259,7 @@ try {
       $candidateManifest = Get-Content -LiteralPath $ArtifactManifest -Raw | ConvertFrom-Json
       $candidateManifest.artifact.file = Join-Path (Split-Path -Parent $ArtifactManifest) $candidateManifest.artifact.file
       $candidateManifest.artifact.relative_path = $candidateManifest.artifact.file
-      $published = Invoke-RestMethod 'https://github.com/JJLiebig/symphony-plus-plus/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json'
+      $published = Invoke-RestMethod 'https://github.com/JJLiebig/sympp/releases/download/sympp-v2-beta-2-20261013/sympp-runtime-artifacts-beta.json'
       $publishedCompatible = $published.launcher_contract.mcp_contract_fingerprint -eq $install.contract_fingerprint
       $manifest = if ($publishedCompatible) { $published } else { $candidateManifest }
       if (-not $publishedCompatible) {
@@ -270,7 +270,7 @@ try {
       $manifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
       @{ schema_version = 1; channels = @{ stable = @{ manifest = @{ path = $floatingManifest } }; beta = @{ manifest = @{ path = $floatingManifest } } } } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot '.sympp-runtime-artifacts.json')
-      @{ version = 1; skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/symphony-plus-plus'; sourceType = 'github'; ref = 'beta' } } } |
+      @{ version = 1; skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/sympp'; sourceType = 'github'; ref = 'beta' } } } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $tempRoot 'skills-lock.json')
       Copy-Item -LiteralPath (Join-Path $tempRoot 'skills-lock.json') -Destination (Join-Path $skillsWorkspace 'skills-lock.json') -Force
       $codexHome = Join-Path $tempRoot "selected codex home"
@@ -490,7 +490,7 @@ try {
   @{ mcp_contract_fingerprint = $contract } | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $sourceRoot "elixir/priv/symphony_plus_plus/mcp_contract.json")
   $artifactPayload = Join-Path $tempRoot "artifact-payload"
   $artifactArchive = Join-Path $tempRoot "artifact.zip"
-  $dashboardHtml = "<title>Symphony++ Dashboard</title>"
+  $dashboardHtml = "<title>sympp Dashboard</title>"
   New-Item -ItemType Directory -Path (Join-Path $artifactPayload "dashboard") -Force | Out-Null
   @'
 "use strict";
@@ -500,7 +500,7 @@ const send=(r,s,v,h={})=>{const b=typeof v==="string"?v:JSON.stringify(v);r.writ
 const server=http.createServer(async(req,res)=>{
   if(req.url==="/shutdown"){send(res,200,{status:"stopping"});return server.close(()=>process.exit(0));}
   if(req.url==="/mcp/readiness")return send(res,200,{status:"ok",ledger:{reachable:true,identity:{kind:"sqlite",display_path:process.env.SYMPP_DATABASE}},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});
-  if(req.url==="/sympp/board")return send(res,200,"<title>Symphony++ Dashboard</title>",{"Content-Type":"text/html"});
+  if(req.url==="/sympp/board")return send(res,200,"<title>sympp Dashboard</title>",{"Content-Type":"text/html"});
   if(req.url==="/mcp/client-lease"){await body(req);return send(res,200,{stale_after_ms:600000});}
   if(req.url==="/mcp"){const p=JSON.parse(await body(req)),result=p.method==="initialize"?{protocolVersion:"2025-03-26",capabilities:{},serverInfo:{name:"artifact-fixture",version:"1"}}:p.method==="tools/list"?{tools:[{name:"fixture",description:"fixture",inputSchema:{type:"object"}}]}:null;return result?send(res,200,{jsonrpc:"2.0",id:p.id,result},{"Mcp-Session-Id":session}):send(res,404,{error:"missing"});}
   send(res,404,{error:"not found"});

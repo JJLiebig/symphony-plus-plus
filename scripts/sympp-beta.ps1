@@ -127,7 +127,7 @@ function Resolve-BetaConfiguration(
   $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
   $liveDatabase = [System.IO.Path]::GetFullPath((Join-Path $profile ".agents/splusplus/symphony_plus_plus.sqlite3"))
   if (Test-PathInside $homePath (Split-Path -Parent $liveDatabase)) {
-    throw "Beta home must be separate from the live Symphony++ home."
+    throw "Beta home must be separate from the live sympp home."
   }
   if ([string]::IsNullOrWhiteSpace($DatabasePath)) {
     $DatabasePath = if ($UseLiveLedger) { $liveDatabase } else { Join-Path $homePath "ledger/beta.sqlite3" }

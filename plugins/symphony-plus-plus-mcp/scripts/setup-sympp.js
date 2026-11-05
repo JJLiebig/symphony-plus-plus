@@ -6,46 +6,38 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
-const name = "symphony_plus_plus";
-const usage = "node <skill>/scripts/setup-sympp.js [--host auto|codex|claude|both] [--server <ssh-host|http://127.0.0.1:19998>] [--help] [--version]";
+const name = "sympp";
+const oldName = "symphony_plus_plus";
+const usage = "sympp [--host auto|codex|claude|both] [--server <ssh-host|http://127.0.0.1:19998>] [--help] [--version]";
 const emit = (key, value) => process.stdout.write(`${key}: ${JSON.stringify(value)}\n`);
 
 function hostInstalled(host) {
   return spawnSync(process.platform === "win32" ? "where.exe" : "which", [host], { encoding: "utf8", windowsHide: true }).status === 0;
 }
 
-const begin = "# BEGIN Symphony++ Skills MCP";
-const end = "# END Symphony++ Skills MCP";
+const begin = "# BEGIN sympp Skills MCP";
+const end = "# END sympp Skills MCP";
 
-function codexConfig(config, registration, servers = [], plugins = []) {
-  const owned = /^# BEGIN Symphony\+\+ Skills MCP\r?\n[\s\S]*?^# END Symphony\+\+ Skills MCP\r?\n?/m;
-  const previous = config.match(owned);
+function codexConfig(config, registration) {
+  const owned = /^# BEGIN (?:Symphony\+\+|sympp) Skills MCP\r?\n[\s\S]*?^# END (?:Symphony\+\+|sympp) Skills MCP\r?\n?/gm;
   const remaining = config.replace(owned, "");
-  if (!previous && servers.some(server => server.name === name)) {
-    throw new Error("Codex already has an unmanaged MCP registration. Use a separate CODEX_HOME, or explicitly remove symphony_plus_plus before setup.");
+  if (/^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|\])/m.test(remaining)) {
+    throw new Error("Codex already has an unmanaged sympp MCP registration. Remove it explicitly before setup.");
   }
-  if (plugins.some(plugin => plugin.name === "symphony-plus-plus-mcp" && plugin.enabled)) throw new Error("This Codex home enables the Symphony++ MCP marketplace plugin. Use a separate CODEX_HOME, or disable that plugin before setup.");
   if (/^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*=/m.test(remaining)) throw new Error("This Codex configuration uses an inline MCP table that setup cannot safely extend. Use a separate CODEX_HOME with standard server tables.");
   const lines = [begin, `[mcp_servers.${name}]`, `command = ${JSON.stringify(registration.command)}`,
     `args = ${JSON.stringify(registration.args)}`, "startup_timeout_sec = 360", "tool_timeout_sec = 300", "",
     `[mcp_servers.${name}.env]`, ...Object.entries(registration.env).map(([key, value]) => `${key} = ${JSON.stringify(value)}`), end, ""];
-  const block = lines.join("\n");
-  return previous ? config.replace(owned, block) : config.trimEnd() + (config.trim() ? "\n\n" : "") + block;
-}
-
-function codexRead(command) {
-  // Ask the host to parse its own configuration, including inline/dotted TOML.
-  const result = spawnSync(command, { encoding: "utf8", windowsHide: true, shell: true });
-  if (result.error || result.status !== 0) throw new Error("Codex could not read its selected configuration. Check CODEX_HOME and retry setup.");
-  return JSON.parse(result.stdout);
+  return remaining.trimEnd() + (remaining.trim() ? "\n\n" : "") + lines.join("\n");
 }
 
 function claudeConfig(config, registration) {
   const value = config ? JSON.parse(config) : {};
   const existing = value.mcpServers?.[name];
   if (existing && existing.env?.SYMPP_SKILLS_MANAGED !== "1") {
-    throw new Error("This Claude project already has symphony_plus_plus. Use a separate workspace, or explicitly remove its project registration before setup.");
+    throw new Error("This Claude project already has sympp. Use a separate workspace, or explicitly remove its project registration before setup.");
   }
+  if (value.mcpServers?.[oldName]?.env?.SYMPP_SKILLS_MANAGED === "1") delete value.mcpServers[oldName];
   value.mcpServers = { ...value.mcpServers, [name]: registration };
   return JSON.stringify(value, null, 2) + "\n";
 }
@@ -61,41 +53,41 @@ function runtimeChannel() {
   const globalInstall = isGlobalInstall();
   while (!globalInstall) {
     const lock = path.join(directory, "skills-lock.json");
-    if (fs.existsSync(lock)) { entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["symphony-plus-plus"]; if (entry) break; }
+    if (fs.existsSync(lock)) { entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["sympp"]; if (entry) break; }
     const parent = path.dirname(directory);
     if (parent === directory) break;
     directory = parent;
   }
   if (!entry && !globalInstall) {
     const projectLock = path.join(process.cwd(), "skills-lock.json");
-    if (fs.existsSync(projectLock)) entry = JSON.parse(fs.readFileSync(projectLock, "utf8")).skills?.["symphony-plus-plus"];
+    if (fs.existsSync(projectLock)) entry = JSON.parse(fs.readFileSync(projectLock, "utf8")).skills?.["sympp"];
   }
   if (!entry && globalInstall) {
     const lock = process.env.XDG_STATE_HOME ? path.join(process.env.XDG_STATE_HOME, "skills", ".skill-lock.json") : path.join(os.homedir(), ".agents", ".skill-lock.json");
-    if (fs.existsSync(lock)) entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["symphony-plus-plus"];
+    if (fs.existsSync(lock)) entry = JSON.parse(fs.readFileSync(lock, "utf8")).skills?.["sympp"];
   }
   if (!entry) throw new Error("Cannot identify this skill's install branch. Re-add the skill, then run setup again.");
   if (entry.sourceType === "local") {
     if (process.env.SYMPP_RUNTIME_CHANNEL && !["stable", "beta"].includes(process.env.SYMPP_RUNTIME_CHANNEL)) throw new Error("Select stable or beta for this local skill copy.");
     return process.env.SYMPP_RUNTIME_CHANNEL || "stable";
   }
-  if (entry.source !== "JJLiebig/symphony-plus-plus") throw new Error("Install Symphony++ from its official repository.");
+  if (entry.source !== "JJLiebig/sympp") throw new Error("Install sympp from its official repository.");
   if (entry.ref === "beta") return "beta";
   if (!entry.ref || entry.ref === "main") return "stable";
-  throw new Error("Install Symphony++ from the main or beta branch.");
+  throw new Error("Install sympp from the main or beta branch.");
 }
 
 function main(args) {
   const install = JSON.parse(fs.readFileSync(path.join(root, fs.existsSync(path.join(root, ".sympp-install.json")) ? ".sympp-install.json" : ".codex-plugin/plugin.json"), "utf8"));
   if (args.length === 1 && ["--version", "-v", "-V"].includes(args[0])) { process.stdout.write(`${install.version}\n`); return; }
-  if (args.length === 1 && args[0] === "--help") { emit("usage", usage); emit("help", "Run from the project that will use Symphony++. Omit --host to register installed Codex and Claude Code. Local setup: Windows x64. Remote setup: Windows and Linux."); return; }
+  if (args.length === 1 && args[0] === "--help") { emit("usage", usage); emit("help", "Run from the project that will use sympp. Omit --host to register installed Codex and Claude Code. Local setup: Windows x64. Remote setup: Windows and Linux."); return; }
   let selection = "auto", server;
   for (let i = 0; i < args.length; i += 2) {
     if (args[i] === "--host" && ["auto", "codex", "claude", "both"].includes(args[i + 1])) selection = args[i + 1];
     else if (args[i] === "--server" && args[i + 1]) server = args[i + 1];
     else { emit("error", "Unknown argument. " + usage); process.exitCode = 2; return; }
   }
-  if (!server && (process.platform !== "win32" || process.arch !== "x64")) throw new Error("Local Symphony++ Skills setup supports Windows x64 only. Use --server for an existing factory.");
+  if (!server && (process.platform !== "win32" || process.arch !== "x64")) throw new Error("Local sympp Skills setup supports Windows x64 only. Use --server for an existing factory.");
   const commands = { codex: hostInstalled("codex"), claude: hostInstalled("claude") };
   const hosts = selection === "auto" ? Object.keys(commands).filter(host => commands[host]) : selection === "both" ? ["codex", "claude"] : [selection];
   if (!hosts.length || hosts.some(host => !commands[host])) throw new Error("The selected host is not installed on PATH. Install Codex or Claude Code, then retry setup with --host codex or --host claude.");
@@ -115,18 +107,19 @@ function main(args) {
   }
   const registration = { type: "stdio", command: process.execPath, args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
   const globalClaude = (Boolean(server) || isGlobalInstall()) && hosts.includes("claude");
-  let claudeUser, claudeCommand, claudeShadow;
+  let claudeUser, claudeCommand, claudeShadow, claudeOld;
   if (globalClaude) {
     const file = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
     const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
     claudeUser = config.mcpServers?.[name];
+    claudeOld = config.mcpServers?.[oldName]?.env?.SYMPP_SKILLS_MANAGED === "1";
     const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", windowsHide: true });
     const gitDir = git.status === 0 ? git.stdout.trim() : "";
     const projectDir = path.basename(gitDir).toLowerCase() === ".git" ? path.dirname(gitDir) : process.cwd();
     const cwd = fs.realpathSync(projectDir).replaceAll("\\", "/").toLowerCase();
     claudeShadow = fs.existsSync(path.join(process.cwd(), ".mcp.json")) || Object.entries(config.projects || {}).some(([dir, project]) => dir.replaceAll("\\", "/").toLowerCase() === cwd && project.mcpServers?.[name]);
-    if (claudeUser && !(path.basename(claudeUser.command || "").toLowerCase().match(/^node(?:\.exe)?$/) && Array.isArray(claudeUser.args) && claudeUser.args.some(arg => typeof arg === "string" && path.basename(arg).toLowerCase() === "start-sympp-mcp-bridge.js"))) {
-      throw new Error("Claude already has an unrelated user registration for symphony_plus_plus. Explicitly remove it before setup.");
+    if (claudeUser && claudeUser.env?.SYMPP_SKILLS_MANAGED !== "1") {
+      throw new Error("Claude already has an unrelated user registration for sympp. Explicitly remove it before setup.");
     }
     const found = spawnSync(process.platform === "win32" ? "where.exe" : "which", ["claude"], { encoding: "utf8", windowsHide: true });
     claudeCommand = found.stdout.trim().split(/\r?\n/).find(file => process.platform !== "win32" || /\.(?:exe|cmd|bat)$/i.test(file));
@@ -135,13 +128,7 @@ function main(args) {
   const plans = hosts.filter(host => host !== "claude" || !globalClaude).map(host => {
     const file = host === "codex" ? path.join(path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")), "config.toml") : path.join(process.cwd(), ".mcp.json");
     const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    // Native Codex reads require an explicitly selected home to already exist.
-    if (host === "codex") fs.mkdirSync(path.dirname(file), { recursive: true });
-    const servers = host === "codex" ? codexRead("codex mcp list --json") : [];
-    // Filtering the local marketplace avoids querying Codex's remote catalog.
-    const plugins = host === "codex" ? codexRead("codex plugin list --marketplace symphony-plus-plus --json").installed : [];
-    if (!Array.isArray(servers) || !Array.isArray(plugins)) throw new Error("Codex returned an unsupported configuration response. Update Codex and retry setup.");
-    return { host, file, before, after: host === "codex" ? codexConfig(before, registration, servers, plugins) : claudeConfig(before, registration) };
+    return { host, file, before, after: host === "codex" ? codexConfig(before, registration) : claudeConfig(before, registration) };
   });
   if (remote) require("./sympp-remote.js").privateWrite(env.SYMPP_SERVER_TOKEN_FILE, remote.token);
   for (const plan of plans) {
@@ -152,7 +139,7 @@ function main(args) {
     emit(plan.host, plan.before === plan.after ? "already configured" : "configured");
   }
   if (globalClaude) {
-    const unchanged = claudeUser && JSON.stringify(claudeUser) === JSON.stringify(registration);
+    const unchanged = !claudeOld && claudeUser && JSON.stringify(claudeUser) === JSON.stringify(registration);
     if (!unchanged) {
       const run = args => {
         const result = /\.(?:cmd|bat)$/i.test(claudeCommand)
@@ -160,16 +147,19 @@ function main(args) {
           : spawnSync(claudeCommand, args, { encoding: "utf8", windowsHide: true });
         if (result.error || result.status !== 0) throw new Error("Claude could not update its user registration. Check Claude configuration and retry setup.");
       };
+      if (claudeOld) run(["mcp", "remove", "--scope", "user", oldName]);
       if (claudeUser) run(["mcp", "remove", "--scope", "user", name]);
       run(["mcp", "add", "--scope", "user", ...Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]), "--", name, registration.command, ...registration.args]);
     }
     emit("claude", unchanged ? "already configured" : "configured");
-    if (claudeShadow) emit("claude_next", "A local or project symphony_plus_plus registration in this folder takes precedence over the user registration.");
+    if (claudeShadow) emit("claude_next", "A local or project sympp registration in this folder takes precedence over the user registration.");
   }
+  require("./sympp-command.js").installCommand(root);
+  require("./sympp-command.js").saveConnection(env);
   emit("channel", server ? "remote" : env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);
-  if (hosts.includes("claude") && !globalClaude) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its symphony_plus_plus entry before opening a fresh session here.");
-  emit("next", "Open fresh host sessions in this project and verify symphony_plus_plus tools before ledger work.");
+  if (hosts.includes("claude") && !globalClaude) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its sympp entry before opening a fresh session here.");
+  emit("next", "Open fresh host sessions in this project and verify sympp tools before ledger work.");
 }
 
 if (require.main === module) {

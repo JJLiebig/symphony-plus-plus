@@ -355,8 +355,8 @@ async function launch(core, info, options) {
     if (options.tab) labels["herdr.tab"] = options.tab;
     const parent = options.parent || (!options.session && process.env.HC_TERMINAL_SOCKET ? process.env.HC_TERMINAL_ID : null);
     const prompt = options.assignment
-      ? `Read the redacted Symphony++ assignment JSON at ${JSON.stringify(input)}. Follow worker_bootstrap.launch_prompt (possibly under dispatch), or launch_prompt when the file is the bootstrap itself. The parent owns dispatch and ledger reconciliation; do not dispatch or claim again.`
-      : `Read your task from ${JSON.stringify(input)} and carry it out. This is ordinary work; no Symphony++ tracking is required.`;
+      ? `Read the redacted sympp assignment JSON at ${JSON.stringify(input)}. Follow worker_bootstrap.launch_prompt (possibly under dispatch), or launch_prompt when the file is the bootstrap itself. The parent owns dispatch and ledger reconciliation; do not dispatch or claim again.`
+      : `Read your task from ${JSON.stringify(input)} and carry it out. This is ordinary work; no sympp tracking is required.`;
     const returnTo = parent ? ` Report results or questions to your parent with hc send ${JSON.stringify(parent)}; include the evidence and paths they need.` : "";
     const env = Object.fromEntries(FORWARD_ENV.filter((key) => process.env[key]).map((key) => [key, process.env[key]]));
     if (options["provider-home"]) env[PROFILE_ENV[options.provider]] = path.resolve(options["provider-home"]);

@@ -3,10 +3,10 @@ name: symphony-worker
 description: Use when assigned a bounded implementation, investigation, docs, or PR-sized task; deliver native checks, review, and a normal PR or evidence handoff.
 ---
 
-# Symphony++ Worker
+# sympp Worker
 
 Implement the assignment, run its required native checks and review, and return
-a normal PR or evidence handoff. No Symphony++ MCP calls, claim, progress ledger,
+a normal PR or evidence handoff. No sympp MCP calls, claim, progress ledger,
 question record, or duplicate review receipt are required.
 
 ## Scope
@@ -33,7 +33,7 @@ question record, or duplicate review receipt are required.
   requirements; never infer passing checks or review.
 - Keep review evidence with its provider. For Review Suite, use the installed
   procedure and a concise brief from the assignment, including the relevant goal,
-  owned scope, acceptance, and stopping conditions. No Symphony++ brief or
+  owned scope, acceptance, and stopping conditions. No sympp brief or
   completion receipt is required.
 - Resolve findings inside scope; return product/contract conflicts to the parent.
   Complete the provider's convergence process on the current head.

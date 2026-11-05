@@ -22,9 +22,9 @@ set "bridge_exit=%ERRORLEVEL%"
 if "%bridge_exit%"=="0" exit /b 0
 if "%bridge_exit%"=="42" goto :run_pwsh
 if "%bridge_exit%"=="43" goto :run_pwsh
->&2 echo Symphony++ Node bridge could not attach after PowerShell prepared the runtime.
+>&2 echo sympp Node bridge could not attach after PowerShell prepared the runtime.
 "%SYMPP_POWERSHELL%" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0start-sympp-mcp.ps1" -CleanupPreparedRuntime
-if errorlevel 1 >&2 echo Symphony++ prepared runtime cleanup failed.
+if errorlevel 1 >&2 echo sympp prepared runtime cleanup failed.
 exit /b %bridge_exit%
 
 :run_pwsh
@@ -35,7 +35,7 @@ exit /b %ERRORLEVEL%
 :run_portable
 where node.exe >nul 2>nul
 if errorlevel 1 (
-  >&2 echo Symphony++ Skills requires Node.js 22.20 or newer on PATH.
+  >&2 echo sympp Skills requires Node.js 22.20 or newer on PATH.
   exit /b 1
 )
 node.exe "%~dp0start-sympp-mcp-bridge.js" %*

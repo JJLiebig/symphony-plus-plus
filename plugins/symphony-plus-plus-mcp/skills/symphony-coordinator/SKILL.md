@@ -1,15 +1,15 @@
 ---
 name: symphony-coordinator
-description: Use when acting as a parent Codex agent coordinating ordinary repo work from a dedicated Symphony++ MCP config across one or more subagents, including scouting, slicing, worker dispatch, review convergence, and PR/evidence integration.
+description: Use when acting as a parent Codex agent coordinating ordinary repo work from a dedicated sympp MCP config across one or more subagents, including scouting, slicing, worker dispatch, review convergence, and PR/evidence integration.
 ---
 
-# Symphony++ Coordinator
+# sympp Coordinator
 
 When the user selects Herdr-next execution, use the [optional execution helper](../symphony-worker/references/herdr-execution.md)
 for an existing dispatched assignment or ordinary untracked task. It does not
 dispatch, claim work, or replace standalone coordination.
 
-Use for ordinary coordination in a dedicated Symphony++ MCP config. For WorkRequests, WorkPackages,
+Use for ordinary coordination in a dedicated sympp MCP config. For WorkRequests, WorkPackages,
 ledger-backed claims, scoped grants, delivery boards, or MCP merge gates, use
 `symphony-plus-plus-mcp:symphony-architect`.
 Small clear work stays in this direct worker loop; a chief, WorkRequest or
@@ -33,7 +33,7 @@ automatically inside Herdr. Ordinary coordination requires no extra MCP call.
 
 - Optionally attach a coordinator-owned `symphony-plus-plus-mcp:symphony-solo-session`
   for parent planning through configured MCP tools. Do not share that session
-  with workers. Persistence is optional: ordinary delegation needs no Symphony++
+  with workers. Persistence is optional: ordinary delegation needs no sympp
   backend when no ledger state is requested. Required ledger work needs MCP;
   report missing tools and recover the connection instead of substituting CLI
   business commands or private state files.

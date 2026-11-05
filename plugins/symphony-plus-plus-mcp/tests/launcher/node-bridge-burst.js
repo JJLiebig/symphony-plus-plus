@@ -57,7 +57,7 @@ function readBody(request) {
 async function handle(request, response) {
   if (request.url === "/sympp/board") {
     counts.board += 1;
-    return respond(response, 200, "<title>Symphony++ Dashboard</title>", { "Content-Type": "text/html" });
+    return respond(response, 200, "<title>sympp Dashboard</title>", { "Content-Type": "text/html" });
   }
   if (request.url === "/mcp/readiness") {
     counts.readiness += 1;

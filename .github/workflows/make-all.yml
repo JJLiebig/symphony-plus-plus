@@ -228,13 +228,14 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: portable-skills-mirror
-          path: skills/symphony-plus-plus
+          path: skills/sympp
           include-hidden-files: true
       - name: Verify generated bundle and setup behavior
         run: |
           node scripts/package-portable-skills.mjs --check
           node plugins/symphony-plus-plus-mcp/tests/launcher/portable-install-tests.js
           node --test plugins/symphony-plus-plus-mcp/tests/launcher/herdr-execution.test.js
+          node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup-contract.test.js
       - name: Install native configuration hosts
         id: native-hosts
         shell: pwsh
@@ -247,6 +248,8 @@ jobs:
           (Get-ChildItem $bin -Recurse -Filter codex.exe | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
           npm install --global @anthropic-ai/claude-code@2.1.292
           if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
+      - name: Prove setup ownership and remote registration
+        run: node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup-global.test.js plugins/symphony-plus-plus-mcp/tests/launcher/setup-remote.test.js
       - name: Build the current candidate Windows runtime
         shell: pwsh
         run: |
@@ -264,7 +267,7 @@ jobs:
         run: node scripts/qualify-portable-skills.mjs
       - name: Require committed generated mirror
         if: ${{ !cancelled() && steps.native-hosts.outcome == 'success' }}
-        run: git diff --exit-code -- skills/symphony-plus-plus
+        run: git diff --exit-code -- skills/sympp
       - name: Retain installed acceptance evidence including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -477,6 +480,7 @@ jobs:
           node --test integrations/herdr-next/*.test.mjs
           node --test plugins/symphony-plus-plus-mcp/tests/launcher/remote.test.js
           node --test plugins/symphony-plus-plus-mcp/tests/launcher/herdr-execution.test.js
+          node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup-contract.test.js
 
       - name: Check frontend quality
         run: npm run quality

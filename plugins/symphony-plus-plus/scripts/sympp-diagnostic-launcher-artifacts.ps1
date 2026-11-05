@@ -150,7 +150,7 @@ function Get-DiagnosticRuntimeArtifactStatusFromLauncherHelpers([string]$Root, [
     $dashboardRoot = Resolve-SymppArtifactDashboardRoot $artifact
     $dashboardFingerprint = Resolve-SymppArtifactDashboardFingerprint $artifact
     if ([string]::IsNullOrWhiteSpace($dashboardRoot) -or [string]::IsNullOrWhiteSpace($dashboardFingerprint)) {
-      return [pscustomobject]@{ status = "artifact_verification_failed"; detail = "artifact_manifest_invalid: selected Symphony++ runtime artifact must declare dashboard asset_root and fingerprint."; platform = $platform; manifest_path = $manifest.manifest_path }
+      return [pscustomobject]@{ status = "artifact_verification_failed"; detail = "artifact_manifest_invalid: selected sympp runtime artifact must declare dashboard asset_root and fingerprint."; platform = $platform; manifest_path = $manifest.manifest_path }
     }
     $workflow = Resolve-SymppArtifactWorkflow $artifact
     $runtimeArgs = Resolve-SymppArtifactRuntimeArgs $artifact

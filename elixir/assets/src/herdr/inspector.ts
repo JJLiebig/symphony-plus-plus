@@ -18,7 +18,7 @@ export async function runInspector(env = process.env) {
   const client = new HerdrClient(socketPath);
   let snapshot = snapshotFromResponse(await client.request("session.snapshot"));
   const initial = initialBinding(snapshot, env);
-  if (!initial) throw new Error("The bound Symphony++ pane is no longer available");
+  if (!initial) throw new Error("The bound sympp pane is no longer available");
   const state: InspectorState = { binding: initial, pinned: false, snapshot };
   let detailAbort = new AbortController();
   let transition = Promise.resolve();
@@ -38,7 +38,7 @@ export async function runInspector(env = process.env) {
   await client.request("pane.report_metadata", {
     pane_id: paneId,
     source: `plugin:${pluginId}`,
-    title: "Symphony++",
+    title: "sympp",
     tokens: { sympp_inspector: "true", sympp_inspector_tab_id: tabId },
   });
   await refreshDetail(state, detailAbort.signal);

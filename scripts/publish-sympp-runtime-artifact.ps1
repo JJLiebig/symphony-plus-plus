@@ -21,7 +21,7 @@ Set-StrictMode -Version Latest
 
 function Show-Usage {
   @"
-Validates built Symphony++ runtime artifacts before advancing a release channel.
+Validates built sympp runtime artifacts before advancing a release channel.
 
 Single-manifest mode remains available for PR/main validation. Release-channel
 mode validates every required platform, verifies local SHA-256 values, and

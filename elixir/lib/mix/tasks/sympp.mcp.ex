@@ -7,7 +7,7 @@ defmodule Mix.Tasks.Sympp.Mcp do
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{Config, Repository, Stdio}
   alias SymphonyElixir.SymphonyPlusPlus.Repo
 
-  @shortdoc "Starts the Symphony++ MCP server"
+  @shortdoc "Starts the sympp MCP server"
 
   @impl Mix.Task
   def run(args) do
@@ -36,11 +36,11 @@ defmodule Mix.Tasks.Sympp.Mcp do
               Stdio.run(config, [])
 
             {:error, reason} ->
-              Mix.raise("Failed to start Symphony++ MCP server: #{inspect(reason)}")
+              Mix.raise("Failed to start sympp MCP server: #{inspect(reason)}")
           end
 
         {:error, reason} ->
-          Mix.raise("Failed to start Symphony++ MCP server: #{inspect(reason)}")
+          Mix.raise("Failed to start sympp MCP server: #{inspect(reason)}")
       end
     after
       stop_owned_repo(Process.delete(:sympp_mcp_repo_ownership))

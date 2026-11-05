@@ -1,9 +1,9 @@
 ---
 name: symphony-work-package
-description: Optional scoped MCP adapter for a Symphony++ worker; ordinary assignments and PR delivery need no worker ledger calls.
+description: Optional scoped MCP adapter for a sympp worker; ordinary assignments and PR delivery need no worker ledger calls.
 ---
 
-# Symphony++ Work Package
+# sympp Work Package
 
 The parent's assignment is the worker contract. Follow
 `symphony-plus-plus-mcp:symphony-worker` to implement, check, review, and return

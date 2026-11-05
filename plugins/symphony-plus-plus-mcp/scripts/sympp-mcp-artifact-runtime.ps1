@@ -153,7 +153,7 @@ function Copy-SymppArtifactArchive([string]$SourceUri, [string]$TargetPath) {
       } elseif ($uri.Scheme -eq "https" -or ($uri.Scheme -eq "http" -and $uri.IsLoopback)) {
         Invoke-SymppBoundedDownload $SourceUri $tempPath 180 "runtime artifact download"
       } else {
-        throw "artifact_download_blocked: Symphony++ runtime artifacts must use https, file, or loopback http URLs."
+        throw "artifact_download_blocked: sympp runtime artifacts must use https, file, or loopback http URLs."
       }
     } else {
       Copy-Item -LiteralPath $SourceUri -Destination $tempPath -Force
@@ -182,13 +182,13 @@ function Expand-SymppArtifactArchive([string]$ArchivePath, [string]$ExtractRoot,
   Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force -Path $parent | Out-Null
   try {
-    Write-Diagnostic "artifact_extracting: extracting verified Symphony++ runtime artifact to $ExtractRoot."
+    Write-Diagnostic "artifact_extracting: extracting verified sympp runtime artifact to $ExtractRoot."
     $extractWatch = [System.Diagnostics.Stopwatch]::StartNew()
     [System.IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath, $staging)
     $extractWatch.Stop()
     $entrypointPath = Join-Path $staging $Entrypoint
     if (-not (Test-Path -LiteralPath $entrypointPath -PathType Leaf)) {
-      throw "artifact_missing: extracted Symphony++ runtime artifact did not contain entrypoint $Entrypoint."
+      throw "artifact_missing: extracted sympp runtime artifact did not contain entrypoint $Entrypoint."
     }
     if (-not (Test-SymppWindowsPlatform)) {
       try {
@@ -197,7 +197,7 @@ function Expand-SymppArtifactArchive([string]$ArchivePath, [string]$ExtractRoot,
           throw "chmod exited with $LASTEXITCODE"
         }
       } catch {
-        throw "artifact_verification_failed: could not mark extracted Symphony++ runtime artifact entrypoint executable. detail=$($_.Exception.Message)"
+        throw "artifact_verification_failed: could not mark extracted sympp runtime artifact entrypoint executable. detail=$($_.Exception.Message)"
       }
     }
 
@@ -209,7 +209,7 @@ function Expand-SymppArtifactArchive([string]$ArchivePath, [string]$ExtractRoot,
     $dashboardReady = Test-SymppArtifactDashboardReady $staging $DashboardRoot $effectiveDashboardFingerprint
     $dashboardWatch.Stop()
     if (-not $dashboardReady) {
-      throw "artifact_verification_failed: extracted Symphony++ runtime artifact dashboard assets did not match declared fingerprint."
+      throw "artifact_verification_failed: extracted sympp runtime artifact dashboard assets did not match declared fingerprint."
     }
 
     $marker = [pscustomobject]@{
@@ -281,7 +281,7 @@ function Ensure-SymppArtifactPrepared(
     if (-not (Test-Path -LiteralPath $ArchivePath -PathType Leaf)) {
       $sourceUri = Resolve-SymppArtifactSourceUri $Artifact $ManifestPath
       Assert-SymppArtifactSourceUsable $sourceUri
-      Write-Diagnostic "artifact_downloading: downloading Symphony++ runtime artifact for $Platform."
+      Write-Diagnostic "artifact_downloading: downloading sympp runtime artifact for $Platform."
       Write-SymppLauncherTrace "artifact_prepare_begin"
       $downloadWatch = [System.Diagnostics.Stopwatch]::StartNew()
       Copy-SymppArtifactArchive $sourceUri $ArchivePath
@@ -302,7 +302,7 @@ function Ensure-SymppArtifactPrepared(
       }
       $sourceUri = Resolve-SymppArtifactSourceUri $Artifact $ManifestPath
       Assert-SymppArtifactSourceUsable $sourceUri
-      Write-Diagnostic "artifact_redownloading: cached Symphony++ runtime artifact failed verification; downloading again. detail=$($_.Exception.Message)"
+      Write-Diagnostic "artifact_redownloading: cached sympp runtime artifact failed verification; downloading again. detail=$($_.Exception.Message)"
       Remove-Item -LiteralPath $ArchivePath -Force -ErrorAction SilentlyContinue
       $downloadWatch = [System.Diagnostics.Stopwatch]::StartNew()
       Copy-SymppArtifactArchive $sourceUri $ArchivePath
@@ -346,7 +346,7 @@ function Resolve-SymppPreparedArtifactRuntime([string]$PluginRoot, [string]$Expe
 
   $sha256 = Get-SymppArtifactSha256 $artifact
   if (-not $sha256) {
-    throw "artifact_verification_failed: selected Symphony++ runtime artifact does not declare a valid sha256."
+    throw "artifact_verification_failed: selected sympp runtime artifact does not declare a valid sha256."
   }
 
   $entrypoint = Resolve-SymppArtifactEntrypoint $artifact
@@ -354,7 +354,7 @@ function Resolve-SymppPreparedArtifactRuntime([string]$PluginRoot, [string]$Expe
   $dashboardRoot = Resolve-SymppArtifactDashboardRoot $artifact
   $dashboardFingerprint = Resolve-SymppArtifactDashboardFingerprint $artifact
   if ([string]::IsNullOrWhiteSpace($dashboardRoot)) {
-    throw "artifact_manifest_invalid: selected Symphony++ runtime artifact must declare dashboard asset_root."
+    throw "artifact_manifest_invalid: selected sympp runtime artifact must declare dashboard asset_root."
   }
   $runtimeArgs = Resolve-SymppArtifactRuntimeArgs $artifact
   $cacheSourceRevision = Resolve-SymppArtifactCacheSourceRevision $manifest $artifact $ExpectedSourceRevision $requireSourceRevision
@@ -390,7 +390,7 @@ function Resolve-SymppPreparedArtifactRuntime([string]$PluginRoot, [string]$Expe
 
   $prepareDetail = Ensure-SymppArtifactPrepared $artifact $manifest.manifest_path $cacheRoot $archivePath $extractRoot $entrypoint $sha256 $platform $cacheSourceRevision $pluginVersion $dashboardRoot $dashboardFingerprint
   if ($prepareDetail -eq "cache_ready") {
-    Write-Diagnostic "ready: reusing verified Symphony++ runtime artifact at $extractRoot."
+    Write-Diagnostic "ready: reusing verified sympp runtime artifact at $extractRoot."
   }
 
   return [pscustomobject]@{
@@ -453,7 +453,7 @@ function Resolve-LaunchArtifactSelection(
         $dashboardRoot = if ([System.StringComparer]::OrdinalIgnoreCase.Equals($runtimeRoot, $dashboardPath)) { "." } else { $dashboardPath.Substring($runtimeRoot.Length + 1) }
         $prepareDetail = Ensure-SymppArtifactPrepared $ArtifactProbe.selected_artifact $ArtifactProbe.manifest_path $ArtifactProbe.cache_root (Join-Path $ArtifactProbe.cache_root "artifact.zip") $runtime.root $runtime.entrypoint_relative $runtime.sha256 $runtime.platform $runtime.source_revision $runtime.plugin_version $dashboardRoot $runtime.dashboard_fingerprint
         if ($prepareDetail -eq "cache_ready") {
-          Write-Diagnostic "ready: reusing verified Symphony++ runtime artifact at $($runtime.root)."
+          Write-Diagnostic "ready: reusing verified sympp runtime artifact at $($runtime.root)."
         }
         [pscustomobject]@{ status = "ready"; detail = "artifact_ready"; runtime = $runtime }
       } else {
@@ -464,11 +464,11 @@ function Resolve-LaunchArtifactSelection(
         $runtimeMode = "artifact"
         $sourceRevision = [string]$artifactRuntime.source_revision
         Set-SymppSourceRevisionEnvironment $sourceRevision
-        Write-Diagnostic "ready: verified Symphony++ runtime artifact selected for $($artifactRuntime.platform)."
+        Write-Diagnostic "ready: verified sympp runtime artifact selected for $($artifactRuntime.platform)."
       } elseif (-not $SourceFallbackAllowed) {
         Write-Diagnostic "$($preparedArtifact.status): $($preparedArtifact.detail)"
         Write-Diagnostic "source_fallback_disabled: set SYMPP_SOURCE_FALLBACK=1 or SYMPP_DEVELOPER_MODE=1 to compile from a source checkout."
-        throw "source_fallback_disabled: no verified Symphony++ runtime artifact is ready for this installed launcher."
+        throw "source_fallback_disabled: no verified sympp runtime artifact is ready for this installed launcher."
       }
     } catch {
       if (-not $SourceFallbackAllowed) {
@@ -486,7 +486,7 @@ function Resolve-LaunchArtifactSelection(
   } elseif (-not $SourceFallbackAllowed) {
     Write-Diagnostic "$($ArtifactProbe.status): $($ArtifactProbe.detail)"
     Write-Diagnostic "source_fallback_disabled: set SYMPP_SOURCE_FALLBACK=1 or SYMPP_DEVELOPER_MODE=1 to compile from a source checkout."
-    throw "source_fallback_disabled: no verified Symphony++ runtime artifact is ready for this installed launcher."
+    throw "source_fallback_disabled: no verified sympp runtime artifact is ready for this installed launcher."
   }
 
   return [pscustomobject]@{

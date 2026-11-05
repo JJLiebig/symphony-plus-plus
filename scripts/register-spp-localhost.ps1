@@ -32,7 +32,7 @@ if ($Remove) {
   exit 0
 }
 
-$keptLines += "$Address`t$HostName # Symphony++ local dashboard"
+$keptLines += "$Address`t$HostName # sympp local dashboard"
 $keptLines | Set-Content -LiteralPath $HostsPath -Encoding ascii
 
-Write-Host "Registered http://$HostName:19999 for the Symphony++ local dashboard."
+Write-Host "Registered http://$HostName:19999 for the sympp local dashboard."

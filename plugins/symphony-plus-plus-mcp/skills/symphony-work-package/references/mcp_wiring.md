@@ -1,4 +1,4 @@
-# Symphony++ MCP Connection
+# sympp MCP Connection
 
 Configure MCP before the model session starts. Skills supply procedures; the
 host loads tools. Skill visibility, host configuration and actual session tool
@@ -14,13 +14,13 @@ Native Linux/macOS and Windows ARM setup are unsupported.
 Install globally:
 
 ```powershell
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main -g --agent codex claude-code --skill symphony-plus-plus --yes
-node $HOME/.agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/sympp/tree/main -g --agent codex claude-code --skill sympp --yes
+node $HOME/.agents/skills/sympp/scripts/setup-sympp.js
 ```
 
-For a project install omit `-g` and use `.agents/skills/symphony-plus-plus/scripts/setup-sympp.js`.
+For a project install omit `-g` and use `.agents/skills/sympp/scripts/setup-sympp.js`.
 Use one `--agent` for one host. For a Claude-only copy, run setup from
-`.claude/skills/symphony-plus-plus/scripts/setup-sympp.js`. Setup detects installed
+`.claude/skills/sympp/scripts/setup-sympp.js`. Setup detects installed
 hosts; `--host codex`, `--host claude` or `--host both` selects explicitly.
 An agent recovering missing MCP tools may run this installed setup command.
 Then open a fresh model session; setup cannot load tools into an existing one.
@@ -29,7 +29,7 @@ Before setup, set `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE` and optio
 `SYMPP_BACKEND_PORT`; both host entries capture those choices. Codex writes only
 the selected `CODEX_HOME/config.toml` with 360/300-second startup/tool timeouts.
 Claude uses user scope for global installs and the project's `.mcp.json` for project installs. Use a dedicated workspace, host
-profiles, Symphony++ home, ledger and port for side-by-side beta; do not reuse
+profiles, sympp home, ledger and port for side-by-side beta; do not reuse
 the factory ledger for dogfooding. A raw copied ledger is not an MCP sandbox.
 
 Both hosts share one managed runtime only with the same home/runtime file and
@@ -37,11 +37,11 @@ ledger. Setup refuses conflicting unmanaged registration or an enabled MCP
 marketplace plugin in the selected Codex home. It repairs only its own entry.
 Keep local machine paths out of committed shared configuration.
 Claude local and project entries override user configuration; local entries also override project configuration. If this project has an old
-local entry, remove it with `claude mcp remove --scope local symphony_plus_plus`
+local entry, remove it with `claude mcp remove --scope local sympp`
 before opening a fresh session; setup does not inspect that local store.
 
 Close this runtime's clients, then update with
-`npx --yes skills@1.7.0 update symphony-plus-plus -g --yes` (or `--project` for a project install) and open fresh
+`npx --yes skills@1.7.0 update sympp -g --yes` (or `--project` for a project install) and open fresh
 sessions. Skills 1.7.0 retains the beta branch. The stable install path preserves
 registration; repeat setup after relocating the installation. Before updating,
 back up the installed skill directory and its Skills lock. Rollback re-adds that
@@ -72,7 +72,7 @@ The launcher prefers loopback port `19998` and falls back to an available
 higher port. `SYMPP_BACKEND_PORT` requests a preferred port. Installed dashboard
 and MCP share the backend; a separate Vite server is for source development.
 
-Verify `symphony_plus_plus` tools in the actual model session before ledger
+Verify `sympp` tools in the actual model session before ledger
 work. A health probe does not restore a claim. After reconnect, reclaim the
 same assignment and inspect its canonical history before retrying uncertain
 mutations. Required native review stays with its declared provider: use the
@@ -110,14 +110,14 @@ Configure the printed endpoint before the agent starts. For a dedicated Codex
 configuration:
 
 ```toml
-[mcp_servers.symphony_plus_plus]
+[mcp_servers.sympp]
 url = "http://127.0.0.1:19998/mcp"
 ```
 
 For Claude from the intended project:
 
 ```sh
-claude mcp add --transport http --scope local symphony_plus_plus http://127.0.0.1:19998/mcp
+claude mcp add --transport http --scope local sympp http://127.0.0.1:19998/mcp
 ```
 
 Substitute the actual endpoint. URL-only configuration requires an already

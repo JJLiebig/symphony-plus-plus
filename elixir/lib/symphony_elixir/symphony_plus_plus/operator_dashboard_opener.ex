@@ -172,7 +172,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener do
   defp open_url(url, opener) when is_function(opener, 1) do
     case opener.(url) do
       :ok -> :ok
-      {:error, reason} -> Logger.info("Symphony++ dashboard browser open skipped: #{inspect(reason)}")
+      {:error, reason} -> Logger.info("sympp dashboard browser open skipped: #{inspect(reason)}")
       _result -> :ok
     end
   end

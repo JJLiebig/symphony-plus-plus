@@ -53,7 +53,7 @@ It must not touch the default dashboard ports, installed plugin state, shared
 ledger, existing sessions, or credentials.
 
 On Windows workstations affected by the AMD image-load crash in
-[issue #716](https://github.com/JJLiebig/symphony-plus-plus/issues/716), do not
+[issue #716](https://github.com/JJLiebig/sympp/issues/716), do not
 run runtime tests or crash reproductions. Use an unaffected Windows environment
 for executable validation. Executable fixtures belong in system temp outside
 checkouts; choose a short temp path there. Shorter paths do not fix the driver.
@@ -91,10 +91,10 @@ from the beta checkout containing this change. Explicit checkout paths support
 an already registered beta worktree without changing the main checkout:
 
 ```powershell
-$betaScript = 'C:\Code\.worktrees\symphony-plus-plus\beta\scripts\sympp-beta.ps1'
+$betaScript = 'C:\Code\.worktrees\sympp\beta\scripts\sympp-beta.ps1'
 $betaPaths = @{
-  RepoRoot = 'C:\Code\symphony-plus-plus'
-  BetaWorktree = 'C:\Code\.worktrees\symphony-plus-plus\beta'
+  RepoRoot = 'C:\Code\sympp'
+  BetaWorktree = 'C:\Code\.worktrees\sympp\beta'
 }
 & $betaScript -Action Setup @betaPaths
 & $betaScript -Action Snapshot @betaPaths

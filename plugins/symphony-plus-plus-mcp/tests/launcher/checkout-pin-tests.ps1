@@ -10,7 +10,7 @@ try {
   @{ channels = @{ stable = @{ manifest = @{ path = (Join-Path $root 'published.json') } } } } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $bundle 'assets/sympp-runtime-artifacts.json')
   $helpers = Join-Path $repo 'plugins/symphony-plus-plus-mcp/scripts'
   . (Join-Path $helpers 'sympp-mcp-launcher-helpers.ps1')
-  Copy-Item -LiteralPath (Join-Path $repo 'skills/symphony-plus-plus/.sympp-install.json') -Destination $bundle
+  Copy-Item -LiteralPath (Join-Path $repo 'skills/sympp/.sympp-install.json') -Destination $bundle
   $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'scripts/install-sympp-beta.ps1'), [ref]$null, [ref]$null)
   $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-FactoryChannel' }, $true)
   Invoke-Expression $definition.Extent.Text

@@ -1,13 +1,13 @@
 ---
 name: symphony-solo-session
-description: Use when Codex needs lightweight local planning memory for one normal single-agent repo, worktree, or task without Symphony++ WorkRequest or WorkPackage orchestration. Creates or attaches a local Solo Session, appends task plan, finding, progress, blocker, decision, and validation entries, reads the ledger, and completes or archives the session through configured Symphony++ MCP tools.
+description: Use when Codex needs lightweight local planning memory for one normal single-agent repo, worktree, or task without sympp WorkRequest or WorkPackage orchestration. Creates or attaches a local Solo Session, appends task plan, finding, progress, blocker, decision, and validation entries, reads the ledger, and completes or archives the session through configured sympp MCP tools.
 ---
 
-# Symphony++ Solo Session
+# sympp Solo Session
 
 Use Solo Sessions when ordinary single-agent work or parent coordination needs
 durable planning memory without WorkRequest or WorkPackage orchestration.
-Persistence is optional; ordinary repo work may proceed without a Symphony++
+Persistence is optional; ordinary repo work may proceed without a sympp
 backend when no ledger state is requested.
 
 Do not use this as authority for assigned WorkPackages, WorkRequests,
@@ -29,7 +29,7 @@ secret hashes, secret-bearing commands, or claim lease internals.
 
 ## Tools
 
-Use configured MCP tools from the `symphony_plus_plus` namespace in an
+Use configured MCP tools from the `sympp` namespace in an
 unbound session for every ledger read and write. The exposed tool names are:
 
 ```text

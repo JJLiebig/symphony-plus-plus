@@ -12,7 +12,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixirWeb.Endpoint
 
-  @shortdoc "Starts the local Symphony++ operator cockpit"
+  @shortdoc "Starts the local sympp operator cockpit"
   @default_host "127.0.0.1"
   @default_port 19_998
   @retention_interval_ms 30 * 60_000
@@ -94,13 +94,13 @@ defmodule Mix.Tasks.Sympp.Cockpit do
         {:error, usage()}
 
       invalid_dashboard_origin?(Keyword.get(normalized_opts, :dashboard_origin)) ->
-        {:error, "Symphony++ cockpit dashboard origin must be a loopback http origin."}
+        {:error, "sympp cockpit dashboard origin must be a loopback http origin."}
 
       not loopback_host?(Keyword.fetch!(normalized_opts, :host)) ->
-        {:error, "Symphony++ cockpit host must be loopback: #{@default_host}, localhost, ::1, or [::1]."}
+        {:error, "sympp cockpit host must be loopback: #{@default_host}, localhost, ::1, or [::1]."}
 
       invalid_port?(Keyword.fetch!(normalized_opts, :port)) ->
-        {:error, "Symphony++ cockpit port must be an integer from 0 to 65535."}
+        {:error, "sympp cockpit port must be an integer from 0 to 65535."}
 
       true ->
         {:ok, normalized_opts}
@@ -185,8 +185,8 @@ defmodule Mix.Tasks.Sympp.Cockpit do
       :ok = start_http_server_or_raise(opts)
       port = wait_for_bound_port()
 
-      Mix.shell().info("Symphony++ local operator dashboard: #{cockpit_url(opts, port)}")
-      Mix.shell().info("Symphony++ API bridge: #{api_url(opts, port)}")
+      Mix.shell().info("sympp local operator dashboard: #{cockpit_url(opts, port)}")
+      Mix.shell().info("sympp API bridge: #{api_url(opts, port)}")
       :ok = maybe_open_operator_dashboard(opts, port)
       Mix.shell().info(dashboard_open_message(opts))
       Mix.shell().info("Press Ctrl+C to stop.")
@@ -237,7 +237,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
     host = opts |> Keyword.fetch!(:host) |> url_host()
     port = Keyword.fetch!(opts, :port)
 
-    "Symphony++ cockpit could not bind http://#{host}:#{port}. " <>
+    "sympp cockpit could not bind http://#{host}:#{port}. " <>
       "Stop the existing local daemon or pass --port 0 / --port <port>. " <>
       "Reason: #{inspect(reason)}"
   end
@@ -272,10 +272,10 @@ defmodule Mix.Tasks.Sympp.Cockpit do
 
     cond do
       not File.dir?(assets_dir) ->
-        Mix.raise("Symphony++ dashboard assets directory is missing: #{assets_dir}")
+        Mix.raise("sympp dashboard assets directory is missing: #{assets_dir}")
 
       is_nil(npm) ->
-        Mix.raise("Symphony++ dashboard assets are missing and npm was not found. Run npm install/build in #{assets_dir}.")
+        Mix.raise("sympp dashboard assets are missing and npm was not found. Run npm install/build in #{assets_dir}.")
 
       true ->
         {executable, args} = SymphonyElixir.LocalCommand.executable_invocation(npm, ["run", "build"])
@@ -285,7 +285,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
             sync_dashboard_static_assets()
 
           {output, status} ->
-            Mix.raise("Symphony++ dashboard asset build failed with exit #{status}:\n#{output}")
+            Mix.raise("sympp dashboard asset build failed with exit #{status}:\n#{output}")
         end
     end
   end
@@ -300,7 +300,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
     end
 
     unless File.exists?(runtime_dashboard_index_path()) do
-      Mix.raise("Symphony++ dashboard asset build completed but #{runtime_dashboard_index_path()} was not created.")
+      Mix.raise("sympp dashboard asset build completed but #{runtime_dashboard_index_path()} was not created.")
     end
 
     :ok
@@ -401,14 +401,14 @@ defmodule Mix.Tasks.Sympp.Cockpit do
         migrate_work_request_ledger()
 
       {:error, reason} ->
-        Mix.raise("Symphony++ cockpit WorkRequest ledger open failed: #{inspect(reason)}")
+        Mix.raise("sympp cockpit WorkRequest ledger open failed: #{inspect(reason)}")
     end
   end
 
   defp migrate_work_request_ledger do
     case WorkRequestRepository.migrate(Repo) do
       :ok -> :ok
-      {:error, reason} -> Mix.raise("Symphony++ cockpit WorkRequest ledger migration failed: #{inspect(reason)}")
+      {:error, reason} -> Mix.raise("sympp cockpit WorkRequest ledger migration failed: #{inspect(reason)}")
     end
   end
 
@@ -437,7 +437,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
   end
 
   defp skip_operator_retention(reason) do
-    Mix.shell().info("Symphony++ cockpit retention skipped: #{inspect(reason)}")
+    Mix.shell().info("sympp cockpit retention skipped: #{inspect(reason)}")
     :ok
   end
 
@@ -478,7 +478,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
           Process.sleep(20)
           {:cont, nil}
       end
-    end) || Mix.raise("Symphony++ cockpit started but no bound HTTP port was reported.")
+    end) || Mix.raise("sympp cockpit started but no bound HTTP port was reported.")
   end
 
   defp cockpit_url(opts, port) do
@@ -535,7 +535,7 @@ defmodule Mix.Tasks.Sympp.Cockpit do
   defp normalize_open_result(:ok), do: :ok
 
   defp normalize_open_result({:error, reason}) do
-    Mix.shell().info("Symphony++ dashboard browser open skipped: #{inspect(reason)}")
+    Mix.shell().info("sympp dashboard browser open skipped: #{inspect(reason)}")
     :ok
   end
 

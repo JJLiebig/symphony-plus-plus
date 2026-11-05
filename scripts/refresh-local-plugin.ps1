@@ -176,7 +176,7 @@ function Sync-ManagedDirectoryChildren([string]$Source, [string]$Target, [string
       continue
     }
 
-    Remove-ManagedCachePath $targetChild.FullName $TargetRoot "Removed stale managed Symphony++ plugin cache item"
+    Remove-ManagedCachePath $targetChild.FullName $TargetRoot "Removed stale managed sympp plugin cache item"
   }
 }
 
@@ -196,7 +196,7 @@ function Copy-PluginCacheTarget([string]$TargetRoot, [string]$SourceRoot, [strin
       Copy-Item -LiteralPath $source -Destination $TargetRoot -Recurse -Force
       Sync-ManagedDirectoryChildren $source $target $TargetRoot
     } elseif (Test-Path -LiteralPath $target) {
-      Remove-ManagedCachePath $target $TargetRoot "Removed stale managed Symphony++ plugin cache item"
+      Remove-ManagedCachePath $target $TargetRoot "Removed stale managed sympp plugin cache item"
     }
   }
 
@@ -207,7 +207,7 @@ function Copy-PluginCacheTarget([string]$TargetRoot, [string]$SourceRoot, [strin
 
   $legacySourceRootHintPath = Join-Path $TargetRoot ".sympp-source-root"
   if (Test-Path -LiteralPath $legacySourceRootHintPath) {
-    Remove-ManagedCachePath $legacySourceRootHintPath $TargetRoot "Removed stale Symphony++ source-root cache hint"
+    Remove-ManagedCachePath $legacySourceRootHintPath $TargetRoot "Removed stale sympp source-root cache hint"
   }
 
   $sourceRevisionPath = Join-Path $TargetRoot ".sympp-source-revision"
@@ -216,7 +216,7 @@ function Copy-PluginCacheTarget([string]$TargetRoot, [string]$SourceRoot, [strin
   if ($sourceRevision) {
     [System.IO.File]::WriteAllText($sourceRevisionPath, "$sourceRevision`n", $utf8NoBom)
   } elseif (Test-Path -LiteralPath $sourceRevisionPath) {
-    Remove-ManagedCachePath $sourceRevisionPath $TargetRoot "Removed stale Symphony++ source revision cache marker"
+    Remove-ManagedCachePath $sourceRevisionPath $TargetRoot "Removed stale sympp source revision cache marker"
   }
 }
 
@@ -228,7 +228,7 @@ function Remove-GeneratedLocalCacheEntry([string]$PluginCacheRoot) {
   }
 
   if (Test-GeneratedDefaultPluginCache $localCacheRoot) {
-    Remove-ManagedCachePath $localCacheRoot $PluginCacheRoot "Removed stale generated Symphony++ local plugin cache"
+    Remove-ManagedCachePath $localCacheRoot $PluginCacheRoot "Removed stale generated sympp local plugin cache"
     return
   }
 
@@ -321,7 +321,7 @@ function Repair-IncompatibleDefaultPluginCache([string]$CacheEntryRoot) {
   $changed = $false
   $rootMcpPath = Join-Path $CacheEntryRoot ".mcp.json"
   if (Test-Path -LiteralPath $rootMcpPath) {
-    Remove-ManagedCachePath $rootMcpPath $CacheEntryRoot "Removed stale default Symphony++ plugin MCP startup file"
+    Remove-ManagedCachePath $rootMcpPath $CacheEntryRoot "Removed stale default sympp plugin MCP startup file"
     $changed = $true
   }
 
@@ -334,7 +334,7 @@ function Repair-IncompatibleDefaultPluginCache([string]$CacheEntryRoot) {
   }
 
   if ($changed) {
-    Write-Host "Repaired incompatible default Symphony++ plugin cache: $CacheEntryRoot"
+    Write-Host "Repaired incompatible default sympp plugin cache: $CacheEntryRoot"
   }
 }
 
@@ -343,7 +343,7 @@ function Repair-IncompatibleDefaultPluginCacheEntries([string]$PluginCacheRoot) 
     return
   }
   if ((Get-Item -LiteralPath $PluginCacheRoot -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
-    Write-Host "Skipped stale default Symphony++ plugin cache repair for reparse-point root: $PluginCacheRoot"
+    Write-Host "Skipped stale default sympp plugin cache repair for reparse-point root: $PluginCacheRoot"
     return
   }
 
@@ -489,7 +489,7 @@ function Invoke-InstalledCacheValidation([string]$TargetRoot, [string]$Label, [s
     Pop-Location
   }
 
-  Write-Host "Validated installed Symphony++ plugin cache:"
+  Write-Host "Validated installed sympp plugin cache:"
   Write-Host "  cache: $Label"
   Write-Host "  root: $TargetRoot"
 }
@@ -515,7 +515,7 @@ if ($PluginName -in @("all", "*")) {
       Sort-Object -Unique
   )
   if ($selectedPluginNames.Count -eq 0) {
-    throw "No Symphony++ plugins were found in $marketplaceFile."
+    throw "No sympp plugins were found in $marketplaceFile."
   }
 
   foreach ($selectedPluginName in $selectedPluginNames) {

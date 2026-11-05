@@ -76,7 +76,7 @@ function Invoke-BetaInstallQualification([hashtable]$Environment, $Bridge, $Cand
   $lockText = Get-Content -LiteralPath $lockFile -Raw
   try {
     $mainLock = $lockText | ConvertFrom-Json
-    $mainLock.skills.'symphony-plus-plus' = [pscustomobject]@{ source = 'JJLiebig/symphony-plus-plus'; sourceType = 'github'; ref = 'main' }
+    $mainLock.skills.'symphony-plus-plus' = [pscustomobject]@{ source = 'JJLiebig/sympp'; sourceType = 'github'; ref = 'main' }
     $mainLock | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $lockFile
     $stable = Read-IsolatedCommand $pwsh $arguments $Environment
     if ($stable.exit -eq 0 -or $stable.stderr -notmatch 'beta Skills installation') { throw 'A main Skills factory was accepted.' }
@@ -188,7 +188,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
     if ($installed.exit -ne 0 -or $installed.stdout -notmatch 'Open fresh sessions') { throw 'Bundle upgrade did not succeed with fresh-session guidance.' }
     $updated = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
     $upgrade.pid = [int]$updated.backend.pid
-    $desired = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/symphony-plus-plus/scripts/sympp-herdr.js') -Algorithm SHA256
+    $desired = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/sympp/scripts/sympp-herdr.js') -Algorithm SHA256
     if ((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $desired.Hash) { throw 'The installed helper drift was not replaced.' }
   }
   $beforeDrift = $upgrade.pid
@@ -196,7 +196,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $repaired = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME,
     '-HerdrAppHome', $nativeHome, '-ArtifactManifest', $channelFile) $Environment
   $repairedState = Get-Content -LiteralPath $Environment.SYMPP_RUNTIME_FILE -Raw | ConvertFrom-Json
-  $desired = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/symphony-plus-plus/scripts/sympp-herdr.js') -Algorithm SHA256
+  $desired = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/sympp/scripts/sympp-herdr.js') -Algorithm SHA256
   if ($repaired.exit -ne 0 -or $repaired.stdout -notmatch 'Open fresh sessions' -or $repairedState.backend.pid -eq $beforeDrift -or
       (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $desired.Hash) { throw 'Same-contract helper drift was missed.' }
   $upgrade.pid = [int]$repairedState.backend.pid

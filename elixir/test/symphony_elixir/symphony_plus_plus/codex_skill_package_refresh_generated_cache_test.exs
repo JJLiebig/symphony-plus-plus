@@ -60,7 +60,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshGeneratedCache
           )
 
         assert status == 0, output
-        assert output =~ "Removed stale generated Symphony++ local plugin cache"
+        assert output =~ "Removed stale generated sympp local plugin cache"
         refute File.exists?(published_plugin_cache_path(temp_codex_home, ["local"]))
         refute File.exists?(published_plugin_cache_path(temp_codex_home, ["local"], "symphony-plus-plus-mcp"))
 

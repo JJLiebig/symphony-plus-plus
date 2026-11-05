@@ -52,8 +52,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RepoIdentityTest do
   end
 
   test "scope match rejects owner and repo-name conflicts" do
-    refute RepoIdentity.scope_match?("JJLiebig/symphony-plus-plus", "https://github.com/elsewhere/symphony-plus-plus.git")
-    refute RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/JJLiebig/symphony-plus-plus.git")
+    refute RepoIdentity.scope_match?("JJLiebig/sympp", "https://github.com/elsewhere/symphony-plus-plus.git")
+    refute RepoIdentity.scope_match?("symphony-plus-plus", "https://github.com/JJLiebig/sympp.git")
     refute RepoIdentity.scope_match?("frontend", "https://github.com/other/frontend.git")
 
     refute RepoIdentity.scope_match?("frontend", "https://github.com/other/frontend.git", trusted_remotes: ["https://github.com/JJLiebig/frontend.git"])

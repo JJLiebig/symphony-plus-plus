@@ -45,7 +45,7 @@ test("start detaches pipes, survives preparation exit 4 and reuses the backend",
   const plugin = path.join(root, "installed skills");
   fs.mkdirSync(path.join(plugin, "scripts"), { recursive: true });
   fs.copyFileSync(path.resolve(__dirname, "../../scripts/setup-sympp.js"), path.join(plugin, "scripts", "setup-sympp.js"));
-  fs.writeFileSync(path.join(root, "skills-lock.json"), JSON.stringify({ skills: { "symphony-plus-plus": { sourceType: "local" } } }));
+  fs.writeFileSync(path.join(root, "skills-lock.json"), JSON.stringify({ skills: { "sympp": { sourceType: "local" } } }));
   const home = path.join(root, "factory home");
   fs.mkdirSync(path.join(home, "runtime"), { recursive: true });
   const runtime = path.join(home, "runtime", "codex-plugin.json");

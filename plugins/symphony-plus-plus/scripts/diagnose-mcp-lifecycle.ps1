@@ -14,19 +14,19 @@ $SymppPluginPackageNames = @("symphony-plus-plus", "symphony-plus-plus-mcp")
 
 $diagnosticRuntimeArtifactHelpers = Join-Path $PSScriptRoot "sympp-diagnostic-runtime-artifacts.ps1"
 if (-not (Test-Path -LiteralPath $diagnosticRuntimeArtifactHelpers -PathType Leaf)) {
-  throw "Symphony++ lifecycle diagnostic helper is missing: $diagnosticRuntimeArtifactHelpers. Refresh or repair the installed plugin cache."
+  throw "sympp lifecycle diagnostic helper is missing: $diagnosticRuntimeArtifactHelpers. Refresh or repair the installed plugin cache."
 }
 . $diagnosticRuntimeArtifactHelpers
 
 $diagnosticLauncherArtifactHelpers = Join-Path $PSScriptRoot "sympp-diagnostic-launcher-artifacts.ps1"
 if (-not (Test-Path -LiteralPath $diagnosticLauncherArtifactHelpers -PathType Leaf)) {
-  throw "Symphony++ lifecycle diagnostic launcher helper is missing: $diagnosticLauncherArtifactHelpers. Refresh or repair the installed plugin cache."
+  throw "sympp lifecycle diagnostic launcher helper is missing: $diagnosticLauncherArtifactHelpers. Refresh or repair the installed plugin cache."
 }
 . $diagnosticLauncherArtifactHelpers
 
 $diagnosticSelfTestHelpers = Join-Path $PSScriptRoot "sympp-diagnostic-self-test.ps1"
 if (-not (Test-Path -LiteralPath $diagnosticSelfTestHelpers -PathType Leaf)) {
-  throw "Symphony++ lifecycle diagnostic self-test helper is missing: $diagnosticSelfTestHelpers. Refresh or repair the installed plugin cache."
+  throw "sympp lifecycle diagnostic self-test helper is missing: $diagnosticSelfTestHelpers. Refresh or repair the installed plugin cache."
 }
 . $diagnosticSelfTestHelpers
 
@@ -644,7 +644,7 @@ function New-SourceCheckoutAction([string]$Code, [string]$Lane, [string]$Message
   $note = if ($null -ne $SourceCheckout -and -not [string]::IsNullOrWhiteSpace([string]$SourceCheckout.note)) {
     [string]$SourceCheckout.note
   } else {
-    "No Symphony++ source checkout could be inferred; rerun this doctor with -RepoRoot <path-to-symphony-plus-plus-checkout>."
+    "No sympp source checkout could be inferred; rerun this doctor with -RepoRoot <path-to-symphony-plus-plus-checkout>."
   }
 
   return New-ReadinessAction $Code $Lane "$Message $note"
@@ -2014,14 +2014,14 @@ function Invoke-McpCompanionEnable($Summary, [string]$RequestedMarketplaceName, 
     companion_cache_lifecycle = $companionPackage.default_plugin_lifecycle_status
     companion_reference_mcp_server_status = $companionPackage.reference_mcp_server_status
     companion_http_mcp_reachability_status = $companionPackage.http_mcp_reachability_status
-    restart_action = "Restart or reload the dedicated Symphony++ MCP Codex session so the plugin launcher starts the managed backend/dashboard before the model starts."
+    restart_action = "Restart or reload the dedicated sympp MCP Codex session so the plugin launcher starts the managed backend/dashboard before the model starts."
     smoke_command = $smokeCommand
     boundary = "Keep symphony-plus-plus-mcp out of generic worker, worker_smart, review-suite, and codex review configs; use a dedicated S++ MCP-enabled config/session instead."
   }
 }
 
 function Write-McpCompanionEnableSummary($Result) {
-  Write-Host "Symphony++ MCP companion enable"
+  Write-Host "sympp MCP companion enable"
   Write-Host "  status: $($Result.status)"
   Write-Host "  changed: $($Result.changed)"
   Write-Host "  codex_home: $($Result.codex_home)"
@@ -2378,7 +2378,7 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
 
   if ($defaultCacheStale) {
     $warnings += New-ReadinessWarning "default_plugin_cache_stale" "$(Format-PackageFreshnessMessage $defaultFreshness) Upgrade the Codex marketplace before relying on newly merged skill or wrapper changes."
-    $actions += New-ReadinessAction "upgrade_default_plugin_cache" "solo_session" "Upgrade the stale skill-only Symphony++ plugin from the configured marketplace." (New-CodexMarketplaceUpgradeCommand $CodexHomePath $defaultMarketplace)
+    $actions += New-ReadinessAction "upgrade_default_plugin_cache" "solo_session" "Upgrade the stale skill-only sympp plugin from the configured marketplace." (New-CodexMarketplaceUpgradeCommand $CodexHomePath $defaultMarketplace)
   }
 
   if ($companionCacheStale) {
@@ -2388,7 +2388,7 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
 
   if (-not $configExists) {
     $createConfigMessage = if (-not $companionSelectionBlocked -and $companionStructurallyReady -and $defaultCodexHomeSelected) {
-      "No Codex config exists at $($Config.path). Choose a dedicated Symphony++ MCP Codex home before enabling the companion; the default Codex home is intentionally refused."
+      "No Codex config exists at $($Config.path). Choose a dedicated sympp MCP Codex home before enabling the companion; the default Codex home is intentionally refused."
     } elseif (-not $companionSelectionBlocked -and $companionStructurallyReady) {
       "No Codex config exists at $($Config.path). Run the explicit MCP companion enable command below to create it, or restore the config before diagnosing unrelated plugin enablement."
     } else {
@@ -2421,10 +2421,10 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
   }
 
   if (-not $defaultMarketplaceAmbiguous -and -not $crossMarketplacePairingAmbiguous -and -not $defaultStructurallyReady -and -not $companionProvidesSoloSkills) {
-    $actions += New-ReadinessAction "upgrade_default_plugin_cache" "solo_session" "Install or repair the skill-only Symphony++ plugin from the configured marketplace." (New-CodexMarketplaceUpgradeCommand $CodexHomePath $defaultMarketplace)
+    $actions += New-ReadinessAction "upgrade_default_plugin_cache" "solo_session" "Install or repair the skill-only sympp plugin from the configured marketplace." (New-CodexMarketplaceUpgradeCommand $CodexHomePath $defaultMarketplace)
   } elseif (-not $defaultMarketplaceAmbiguous -and -not $crossMarketplacePairingAmbiguous -and $configExists -and $defaultEnabled -ne $true -and -not $companionProvidesSoloSkills) {
     $defaultConfigKey = Get-ActivationConfigKey "symphony-plus-plus" $defaultMarketplace
-    $actions += New-ReadinessAction "enable_default_plugin" "solo_session" "Enable the default skill-only plugin for ordinary work without persistence; Symphony++ ledger work requires configured MCP tools: [plugins.`"$defaultConfigKey`"] enabled = true."
+    $actions += New-ReadinessAction "enable_default_plugin" "solo_session" "Enable the default skill-only plugin for ordinary work without persistence; sympp ledger work requires configured MCP tools: [plugins.`"$defaultConfigKey`"] enabled = true."
   }
 
   $companionArtifactStatus = if ($null -ne $companionPackage -and $null -ne $companionPackage.runtime_artifact) {
@@ -2502,7 +2502,7 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
     }
     $actions += New-ReadinessAction "restart_codex_session" "workrequest_mcp" "Restart or reload that dedicated Codex session so the plugin launcher can start the managed S++ backend/dashboard before the model starts."
   } elseif (-not $companionSelectionBlocked -and $companionStatus -eq "endpoint_unreachable") {
-    $actions += New-SourceCheckoutAction "start_cockpit" "workrequest_mcp" "Start the local Symphony++ cockpit/HTTP MCP daemon." $SourceCheckout (New-CockpitCommand $sourceRoot)
+    $actions += New-SourceCheckoutAction "start_cockpit" "workrequest_mcp" "Start the local sympp cockpit/HTTP MCP daemon." $SourceCheckout (New-CockpitCommand $sourceRoot)
     $actions += New-SourceCheckoutAction "verify_http_mcp" "workrequest_mcp" "Verify the local HTTP MCP daemon source revision independently of Codex plugin loading." $SourceCheckout (New-VerifyHttpMcpCommand $sourceRoot)
   } elseif (-not $companionSelectionBlocked -and $companionStatus -eq "runtime_artifact_unavailable") {
     $actions += New-SourceCheckoutAction "refresh_mcp_companion_cache" "workrequest_mcp" "Refresh the opt-in MCP companion cache so its runtime artifact manifest matches the plugin version and MCP contract." $SourceCheckout (New-SourceScriptCommand $sourceRoot "scripts/refresh-local-plugin.ps1" "$($refreshCodexHomeArg)$($companionRefreshMarketplaceArg)-PluginName symphony-plus-plus-mcp -ValidateInstalledCache")
@@ -2518,7 +2518,7 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
 
   if ($defaultHomeMcpCompanionEnabled) {
     $warnings += New-ReadinessWarning "default_codex_home_mcp_companion_enabled" "symphony-plus-plus-mcp is enabled in the default Codex home. Move MCP companion activation to a dedicated S++ Codex home/session to keep generic worker and review configs MCP-clean."
-    $actions += New-ReadinessAction "move_mcp_companion_to_dedicated_codex_home" "config" "Disable symphony-plus-plus-mcp in the default Codex home and enable it only in a dedicated Symphony++ MCP Codex home/session."
+    $actions += New-ReadinessAction "move_mcp_companion_to_dedicated_codex_home" "config" "Disable symphony-plus-plus-mcp in the default Codex home and enable it only in a dedicated sympp MCP Codex home/session."
   }
 
   if ($otherMarketplaceMcpCompanionEnabled) {
@@ -2590,7 +2590,7 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
 
 function Write-DoctorSummary($Summary) {
   $readiness = $Summary.readiness
-  Write-Host "Symphony++ activation doctor"
+  Write-Host "sympp activation doctor"
   Write-Host "  overall: $($readiness.overall_status)"
   Write-Host "  codex_home: $($Summary.codex_home)"
   Write-Host "  marketplace: $($readiness.marketplace_name)"
@@ -2652,7 +2652,7 @@ $pluginRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $repoRootWasProvided = -not [string]::IsNullOrWhiteSpace($RepoRoot)
 $RepoRoot = Resolve-OptionalFullPath $RepoRoot
 if ($repoRootWasProvided -and -not (Test-Path -LiteralPath (Join-Path $RepoRoot "elixir/mix.exs"))) {
-  throw "RepoRoot does not look like a Symphony++ checkout with elixir/mix.exs: $RepoRoot"
+  throw "RepoRoot does not look like a sympp checkout with elixir/mix.exs: $RepoRoot"
 }
 $repoRootFilter = Normalize-ComparablePath $RepoRoot
 
@@ -2924,7 +2924,7 @@ if ($Doctor) {
   exit 0
 }
 
-Write-Host "Symphony++ plugin MCP lifecycle diagnostic"
+Write-Host "sympp plugin MCP lifecycle diagnostic"
 Write-Host "  generated_at: $($summary.generated_at)"
 Write-Host "  codex_home: $($summary.codex_home)"
 Write-Host "  marketplace_name: $($summary.marketplace_name)"

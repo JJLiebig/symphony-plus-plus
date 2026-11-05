@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Measures the shipped Symphony++ MCP command against a disposable marketplace install.
+Measures the shipped sympp MCP command against a disposable marketplace install.
 #>
 [CmdletBinding()]
 param(

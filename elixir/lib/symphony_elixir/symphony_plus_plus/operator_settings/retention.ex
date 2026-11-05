@@ -27,7 +27,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention do
          :ok <- run(state.repo, settings) do
       :ok
     else
-      {:error, reason} -> Logger.warning("Symphony++ retention skipped: #{inspect(reason)}")
+      {:error, reason} -> Logger.warning("sympp retention skipped: #{inspect(reason)}")
     end
 
     schedule(state)

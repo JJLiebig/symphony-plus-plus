@@ -1,7 +1,7 @@
 {
   "name": "symphony-plus-plus",
   "interface": {
-    "displayName": "Symphony++"
+    "displayName": "sympp"
   },
   "plugins": [
     {

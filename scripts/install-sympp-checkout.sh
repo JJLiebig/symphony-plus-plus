@@ -7,7 +7,7 @@ export SYMPP_HOME="${SYMPP_HOME:-$HOME/.agents/splusplus}"
 export SYMPP_DATABASE="${SYMPP_DATABASE:-$SYMPP_HOME/symphony_plus_plus.sqlite3}"
 export SYMPP_SERVICE_HOST="${SYMPP_SERVICE_HOST:?Set SYMPP_SERVICE_HOST to the machine tailnet IPv4 address}"
 export SYMPP_BACKEND_PORT="${SYMPP_BACKEND_PORT:-19998}"
-export SYMPP_SERVICE_NAME="${SYMPP_SERVICE_NAME:-symphony-plus-plus}"
+export SYMPP_SERVICE_NAME="${SYMPP_SERVICE_NAME:-sympp}"
 export SYMPP_SERVICE_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 [[ "$SYMPP_HOME" == /* && "$SYMPP_DATABASE" == /* ]] || { echo 'Factory home and ledger paths must be absolute.' >&2; exit 1; }
 [[ "$SYMPP_SERVICE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid service name.' >&2; exit 1; }
@@ -58,7 +58,7 @@ for key in ['SYMPP_WORKFLOW_FILE', 'ERL_FLAGS']:
     if os.environ.get(key):
         env[key] = os.environ[key]
 unit = '\n'.join([
-    '[Unit]', 'Description=Symphony++ factory', 'After=network-online.target', '',
+    '[Unit]', 'Description=sympp factory', 'After=network-online.target', '',
     '[Service]', 'Type=simple', 'UMask=0077', 'Restart=on-failure', 'RestartSec=3',
     'WorkingDirectory=' + home.replace('%', '%%'),
     *['Environment=' + quoted(key + '=' + value) for key, value in env.items()],

@@ -106,10 +106,10 @@ Both patches are now chrome 3 (the new S marks). Upgrade a desk with chrome 2
 using its matching installer to remove it first, then install this checkout:
 
 ```powershell
-git worktree add C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove 77ef41d796a2a5e9688bfb97b736212a589b8849
-node C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove/integrations/herdr-next/install.mjs --remove-chrome
+git worktree add C:/Code/.worktrees/sympp/chrome-2-remove 77ef41d796a2a5e9688bfb97b736212a589b8849
+node C:/Code/.worktrees/sympp/chrome-2-remove/integrations/herdr-next/install.mjs --remove-chrome
 node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace
-git worktree remove C:/Code/.worktrees/symphony-plus-plus/chrome-2-remove
+git worktree remove C:/Code/.worktrees/sympp/chrome-2-remove
 git worktree prune
 ```
 

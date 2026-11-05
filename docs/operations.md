@@ -78,10 +78,10 @@ schemas; an existing session does not acquire the new detail options automatical
 Install the optional Herdr plugin from the repository root:
 
 ```powershell
-herdr plugin install JJLiebig/symphony-plus-plus --ref beta --yes
+herdr plugin install JJLiebig/sympp --ref beta --yes
 ```
 
-When a Herdr tab contains a bound Symphony++ architect or coordinator, one
+When a Herdr tab contains a bound sympp architect or coordinator, one
 execution inspector opens to its right. It follows that tab's focused bound
 agent and stays compact for a trivial WorkRequest. Larger or branching work
 shows its execution frontier.
@@ -113,7 +113,7 @@ runtime freshness. Unknown timing and observations remain explicit.
 | Coordinate ordinary repository work without required persistence | `symphony-plus-plus:symphony-coordinator` |
 | Inspect human progress | Work board and Herdr execution inspector |
 
-All agent-facing Symphony++ ledger reads and writes use configured MCP tools.
+All agent-facing sympp ledger reads and writes use configured MCP tools.
 Workers and coordinators may operate without a backend when persistence is not
 requested. Shell commands remain for installation, startup, diagnosis, upgrade,
 and recovery; recover MCP before continuing required ledger work.

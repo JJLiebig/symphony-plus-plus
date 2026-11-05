@@ -37,7 +37,7 @@ async function main() {
   fs.writeFileSync(path.join(sourceRoot, "elixir", "priv", "symphony_plus_plus", "mcp_contract.json"), JSON.stringify({ mcp_contract_fingerprint: contract }));
 
   server = http.createServer((request, response) => {
-    if (request.method === "GET" && request.url === "/sympp/board") return response.end("<title>Symphony++ Dashboard</title>");
+    if (request.method === "GET" && request.url === "/sympp/board") return response.end("<title>sympp Dashboard</title>");
     if (request.method === "POST" && request.url === "/mcp/client-lease") {
       let body = "";
       request.on("data", (chunk) => { body += chunk; });

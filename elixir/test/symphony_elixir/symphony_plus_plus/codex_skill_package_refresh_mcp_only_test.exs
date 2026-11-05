@@ -42,7 +42,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshMcpOnlyTest do
           )
 
         assert status == 0, output
-        assert output =~ "Repaired incompatible default Symphony++ plugin cache"
+        assert output =~ "Repaired incompatible default sympp plugin cache"
 
         repaired_manifest = stale_manifest_path |> File.read!() |> Jason.decode!()
         refute Map.has_key?(repaired_manifest, "mcpServers")

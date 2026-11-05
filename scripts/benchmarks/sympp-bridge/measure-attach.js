@@ -53,7 +53,7 @@ function response(res, status, body, headers = {}) {
 function startBackend() {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
-      if (req.method === "GET" && req.url === "/sympp/board") return response(res, 200, "Symphony++ Dashboard", { "content-type": "text/html" });
+      if (req.method === "GET" && req.url === "/sympp/board") return response(res, 200, "sympp Dashboard", { "content-type": "text/html" });
       if (req.method === "GET" && req.url === "/mcp/readiness") {
         return response(res, 200, { status: "ok", ledger: { reachable: true }, dashboard: { ready: true }, source: { mcp_contract: { fingerprint: contract } } });
       }

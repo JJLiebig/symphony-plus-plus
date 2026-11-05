@@ -96,10 +96,10 @@ function Invoke-ElixirSetupCommand([string]$ElixirDir, [string]$Launcher, [strin
 }
 
 function Initialize-ElixirRuntime([string]$ElixirDir, [string]$Launcher, [string]$MixCommand, [string]$MiseCommand, [string]$LogDir, [int]$TimeoutSec) {
-  Write-Diagnostic "source_fallback_compiling: ensuring Symphony++ Elixir dependencies are available in $ElixirDir."
+  Write-Diagnostic "source_fallback_compiling: ensuring sympp Elixir dependencies are available in $ElixirDir."
   Invoke-ElixirSetupCommand $ElixirDir $Launcher $MixCommand $MiseCommand @("deps.get", "--check-locked") "elixir-deps" $LogDir $TimeoutSec
 
-  Write-Diagnostic "source_fallback_compiling: compiling Symphony++ Elixir runtime in $ElixirDir."
+  Write-Diagnostic "source_fallback_compiling: compiling sympp Elixir runtime in $ElixirDir."
   Invoke-ElixirSetupCommand $ElixirDir $Launcher $MixCommand $MiseCommand @("compile") "elixir-compile" $LogDir $TimeoutSec
 }
 
@@ -311,16 +311,16 @@ function Start-Backend($Plan, [string]$DashboardOrigin, [string]$ElixirDir, [str
     $portOwners = @(Get-TcpPortOwners ([int]$Plan.port))
     $portDetail = "portOwners=$(Format-PortOwners $portOwners)"
     if ($launch.process.HasExited) {
-      throw "Symphony++ backend exited before becoming healthy at $($Plan.url). $portDetail stderr_log=$($launch.stderr)"
+      throw "sympp backend exited before becoming healthy at $($Plan.url). $portDetail stderr_log=$($launch.stderr)"
     }
 
     Stop-LoggedProcess $launch
-    throw "Symphony++ backend did not become healthy at $($Plan.url) within $TimeoutSec seconds. $portDetail stderr_log=$($launch.stderr)"
+    throw "sympp backend did not become healthy at $($Plan.url) within $TimeoutSec seconds. $portDetail stderr_log=$($launch.stderr)"
   }
 
   if (-not (Test-BackendContractMatches $health $ExpectedContractFingerprint)) {
     Stop-LoggedProcess $launch
-    throw "Symphony++ backend at $($Plan.url) reported MCP contract fingerprint $(Format-McpContractFingerprintForDiagnostic $health.contract_fingerprint), expected $(Format-McpContractFingerprintForDiagnostic $ExpectedContractFingerprint). stderr_log=$($launch.stderr)"
+    throw "sympp backend at $($Plan.url) reported MCP contract fingerprint $(Format-McpContractFingerprintForDiagnostic $health.contract_fingerprint), expected $(Format-McpContractFingerprintForDiagnostic $ExpectedContractFingerprint). stderr_log=$($launch.stderr)"
   }
 
   return [pscustomobject]@{
@@ -360,7 +360,7 @@ function Install-FrontendDependencies([string]$AssetsDir, [string]$LogDir, [int]
     @("install", "--no-audit", "--no-fund")
   }
 
-  Write-Diagnostic "Installing Symphony++ dashboard dependencies in $AssetsDir because Vite is missing."
+  Write-Diagnostic "Installing sympp dashboard dependencies in $AssetsDir because Vite is missing."
   $launch = Start-LoggedProcess $npm $args $AssetsDir @{} "frontend-install" $LogDir
   $completed = $false
   try {
@@ -391,11 +391,11 @@ function Start-Frontend($Plan, [string]$BackendUrl, [string]$AssetsDir, [string]
   $ready = Wait-Until { Test-HealthySymppDashboard $Plan.origin } $TimeoutSec
   if (-not $ready) {
     if ($launch.process.HasExited) {
-      throw "Symphony++ dashboard exited before becoming healthy. stderr: $($launch.stderr)"
+      throw "sympp dashboard exited before becoming healthy. stderr: $($launch.stderr)"
     }
 
     Stop-LoggedProcess $launch
-    throw "Symphony++ dashboard did not become healthy at $($Plan.origin) within $TimeoutSec seconds. logs: $($launch.stderr)"
+    throw "sympp dashboard did not become healthy at $($Plan.origin) within $TimeoutSec seconds. logs: $($launch.stderr)"
   }
 
   $listenerPid = Get-ManagedListenerPid "frontend" ([int]$Plan.port)
@@ -940,7 +940,7 @@ function Invoke-McpBackendRecovery([scriptblock]$Recover, [string]$McpUrl, [stri
       heartbeat_interval_ms = Resolve-McpClientHeartbeatIntervalMs $HeartbeatIntervalSec $lease
     }
   } catch {
-    if ($_.Exception -isnot [System.OperationCanceledException]) { Write-Diagnostic "Symphony++ fallback backend recovery failed: $($_.Exception.Message)" }
+    if ($_.Exception -isnot [System.OperationCanceledException]) { Write-Diagnostic "sympp fallback backend recovery failed: $($_.Exception.Message)" }
     return $null
   }
 }
@@ -1004,7 +1004,7 @@ function Invoke-HttpMcpBridge([string]$McpUrl, [int]$TimeoutSec, [string]$Client
       if ($null -ne $Recover -and -not (Test-LoopbackHttpTcpOpen $McpUrl)) {
         $recovered = Invoke-McpBackendRecovery $Recover $McpUrl $ClientId $HeartbeatIntervalSec $stdinReadState $true
         if ($null -eq $recovered) {
-          Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32000 "Symphony++ HTTP MCP bridge request failed." @{ detail = "Backend recovery failed before request transmission." }
+          Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32000 "sympp HTTP MCP bridge request failed." @{ detail = "Backend recovery failed before request transmission." }
           continue
         }
         $McpUrl = $recovered.mcp_url; $heartbeatIntervalMs = $recovered.heartbeat_interval_ms
@@ -1014,7 +1014,7 @@ function Invoke-HttpMcpBridge([string]$McpUrl, [int]$TimeoutSec, [string]$Client
       if ($needsInitialize -and [string]::IsNullOrWhiteSpace($requestProtocolVersion)) {
         $bridgeInitialize = Invoke-McpBridgeInitialize $McpUrl $TimeoutSec $ClientId $heartbeatIntervalMs
         if (-not $bridgeInitialize.ok) {
-          Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32000 "Symphony++ HTTP MCP bridge request failed." @{ detail = "Replacement MCP session initialization failed." }
+          Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32000 "sympp HTTP MCP bridge request failed." @{ detail = "Replacement MCP session initialization failed." }
           continue
         }
         $sessionId = $bridgeInitialize.session_id; $protocolVersion = $bridgeInitialize.protocol_version; $needsInitialize = $false
@@ -1075,12 +1075,12 @@ function Invoke-HttpMcpBridge([string]$McpUrl, [int]$TimeoutSec, [string]$Client
         }
       }
       if ((Test-McpBackendUnavailableResponse $response) -and (Test-McpToolCall $line) -and $requestMayHaveReachedBackend) {
-        Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32001 "Symphony++ tool call outcome is indeterminate." @{ reason = "backend_lost_after_request_started"; replayed = $false }
+        Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32001 "sympp tool call outcome is indeterminate." @{ reason = "backend_lost_after_request_started"; replayed = $false }
         continue
       }
       Update-SymppHerdrBinding $response $McpUrl
       if (-not $response.ok) {
-        Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32000 "Symphony++ HTTP MCP bridge request failed." @{
+        Write-JsonRpcErrorLine (Get-RequestIdForError $line) -32000 "sympp HTTP MCP bridge request failed." @{
           statusCode = $response.statusCode
           detail = $response.error
         }

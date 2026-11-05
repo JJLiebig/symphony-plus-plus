@@ -1,6 +1,6 @@
 # Optional Herdr-next execution
 
-Use this only when the user chose Herdr-core execution. Ordinary Symphony++
+Use this only when the user chose Herdr-core execution. Ordinary sympp
 orchestration, its web UI, and workers using another host remain unchanged.
 Small fixes need no WorkRequest or worker claim.
 

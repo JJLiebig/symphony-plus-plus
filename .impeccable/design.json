@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-08-27T16:30:44.0148821Z",
-  "title": "Design System: Symphony++",
+  "title": "Design System: sympp",
   "extensions": {
     "colorMeta": {
       "control-teal": {
@@ -103,7 +103,7 @@
   ],
   "narrative": {
     "northStar": "The Live Control Room",
-    "overview": "Symphony++ is a calm operational surface for supervising live agent work. It is information-dense without becoming visually loud: inactive structure recedes, active work carries motion, and meaningful state changes are visible immediately. The interface rejects nested-card labyrinths, oversized execution records, beige neutral states, and decorative workflow graphics. Geometry must stay stable while status changes. Complex work may reveal more structure, but the operator's mental map always wins.",
+    "overview": "sympp is a calm operational surface for supervising live agent work. It is information-dense without becoming visually loud: inactive structure recedes, active work carries motion, and meaningful state changes are visible immediately. The interface rejects nested-card labyrinths, oversized execution records, beige neutral states, and decorative workflow graphics. Geometry must stay stable while status changes. Complex work may reveal more structure, but the operator's mental map always wins.",
     "keyCharacteristics": ["Compact, state-first information hierarchy.", "Cool neutral surfaces with restrained semantic signals.", "Stable spatial organization from overview to detail.", "Motion only for activity, topology changes, and direct feedback.", "Familiar product controls with explicit keyboard and focus behavior."],
     "rules": [
       { "name": "The Operational Signal Rule", "body": "Semantic color describes current state; it is never decoration.", "section": "colors" },

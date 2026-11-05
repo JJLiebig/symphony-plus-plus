@@ -1,6 +1,6 @@
 # Current System
 
-Symphony++ is a local planning and orchestration cockpit. Humans see product
+sympp is a local planning and orchestration cockpit. Humans see product
 progress while agents receive bounded assignments from the same ledger.
 Delivery tracking usually begins after a human and agent have agreed on a
 sufficiently concrete goal. Ordinary coordinators and workers can operate
@@ -56,7 +56,7 @@ authenticated architect anchor history; there is no worker reporting cadence.
 A declared review requirement identifies a provider and optional arguments,
 such as `review-suite` with its selected mode. It can also name another plugin
 or a human process. Results remain with the provider and worker handoff;
-Symphony++ does not require a duplicate review-completion record.
+sympp does not require a duplicate review-completion record.
 
 The worker procedure owns required checks and review convergence. MCP readiness
 checks ledger prerequisites and current provider-backed PR metadata; a ready
@@ -64,7 +64,7 @@ state alone is not proof that every test or review requirement passed. See the
 [WorkPackage skill](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/SKILL.md)
 for the authoritative handoff procedure.
 
-GitHub owns commits, PRs, checks, and merge state. Symphony++ records the delivery
+GitHub owns commits, PRs, checks, and merge state. sympp records the delivery
 outcome so its completion projection is auditable and idempotent.
 
 ## Runtime Shape
@@ -73,7 +73,7 @@ outcome so its completion projection is auditable and idempotent.
 Codex MCP client
   -> installed plugin bridge
   -> local HTTP MCP endpoint
-  -> Symphony++ Elixir runtime
+  -> sympp Elixir runtime
   -> local SQLite ledger
 ```
 
@@ -102,9 +102,9 @@ the ledger and validates supplied context against it. Tool discovery is not
 authorization: calls still check session, role, capabilities, resource scope,
 and lifecycle state. See [Security](security.md).
 
-`SPEC.md` and the non-Symphony++ parts of `elixir/` describe upstream Symphony:
+`SPEC.md` and the non-sympp parts of `elixir/` describe upstream Symphony:
 tracker polling, workspace management, Codex app-server execution, and runtime
-observability. Symphony++ adds its local ledger, MCP orchestration, plugin
+observability. sympp adds its local ledger, MCP orchestration, plugin
 runtime, dashboard, and GitHub delivery workflow alongside that behavior.
 
 `ToolCatalog` and MCP handlers own live schemas and behavior.

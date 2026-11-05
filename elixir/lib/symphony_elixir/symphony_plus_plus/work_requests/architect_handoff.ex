@@ -159,8 +159,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff do
   def error_message(:invalid_status), do: "WorkRequest is not ready for architect handoff"
   def error_message(:local_architect_claim_unavailable), do: "architect handoff requires a local file-backed ledger claim path"
   def error_message(:not_found), do: "WorkRequest was not found"
-  def error_message(:database_busy), do: "the Symphony++ ledger is busy"
-  def error_message({:storage_failed, _reason}), do: "the Symphony++ ledger could not store the architect handoff"
+  def error_message(:database_busy), do: "the sympp ledger is busy"
+  def error_message({:storage_failed, _reason}), do: "the sympp ledger could not store the architect handoff"
 
   def error_message({:handoff_setup_rollback_failed, _reason, _failures}),
     do: "architect handoff setup failed and local grant/secret cleanup needs attention"
@@ -688,7 +688,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff do
       branch_pattern: "agent/#{String.downcase(anchor_id)}/architect-handoff",
       product_description: work_request.human_description,
       engineering_scope:
-        "Architect anchor for WorkRequest #{work_request.id}. Launch with opt-in Symphony++ MCP loaded, then use the symphony-plus-plus-mcp:symphony-architect skill and WorkRequest MCP tools before slicing.",
+        "Architect anchor for WorkRequest #{work_request.id}. Launch with opt-in sympp MCP loaded, then use the symphony-plus-plus-mcp:symphony-architect skill and WorkRequest MCP tools before slicing.",
       acceptance_criteria: [
         "Architect agent can read and update the scoped WorkRequest.",
         "Architect agent can answer or escalate scoped guidance requests.",

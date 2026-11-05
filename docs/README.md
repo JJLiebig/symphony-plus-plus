@@ -1,4 +1,4 @@
-# Symphony++ Documentation
+# sympp Documentation
 
 The guides describe the current beta product. The [factory workflow](design/factory-workflow.md)
 preserves its approved contract and editable diagram.
@@ -23,7 +23,7 @@ documents do not remain in the active documentation tree.
 ## Read By Goal
 
 - Understand the model and boundaries: [Current system](system.md)
-- Operate Symphony++: [Operations](operations.md)
+- Operate sympp: [Operations](operations.md)
 - Configure deploy observations: [Operator board deployments](operator-board-deployments.md)
 - Configure board area and machine labels: [Operator board labels](operator-board-configuration.md)
 - Read operator board fields and notifications: [Operator board API](operator-board-api.md)

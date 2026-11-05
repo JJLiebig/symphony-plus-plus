@@ -8,10 +8,10 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "sympp-launcher-runtime.ps1")
 
 function Write-Usage {
-  Write-Host "Starts the generic Symphony++ MCP stdio server for the Codex plugin."
+  Write-Host "Starts the generic sympp MCP stdio server for the Codex plugin."
   Write-Host ""
   Write-Host "Environment:"
-  Write-Host "  SYMPP_REPO_ROOT   Explicit developer-only Symphony++ source checkout override."
+  Write-Host "  SYMPP_REPO_ROOT   Explicit developer-only sympp source checkout override."
   Write-Host "  SYMPP_DATABASE    Optional SQLite ledger override passed to mix sympp.mcp. When omitted, mix sympp.mcp prefers %USERPROFILE%\.agents\splusplus\symphony_plus_plus.sqlite3 and falls back under temp/relative .agents\splusplus if home is unavailable."
   Write-Host "  SYMPP_LAUNCHER    Optional launcher: 'direct' or 'mise'. Defaults to 'mise' when elixir/mise.toml can run through mise; otherwise 'direct'."
   Write-Host "  SYMPP_MIX         Optional mix executable path or name for direct launcher. Defaults to 'mix'."
@@ -36,7 +36,7 @@ function Resolve-RepoRoot {
       return $configuredRoot
     }
 
-    throw "SYMPP_REPO_ROOT does not look like a Symphony++ checkout with elixir/mix.exs: $configuredRoot"
+    throw "SYMPP_REPO_ROOT does not look like a sympp checkout with elixir/mix.exs: $configuredRoot"
   }
 
   $sourceCandidate = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
@@ -44,7 +44,7 @@ function Resolve-RepoRoot {
     return $sourceCandidate
   }
 
-  throw "Cannot infer the Symphony++ checkout. Use the opt-in MCP companion installed from the marketplace, or set SYMPP_REPO_ROOT only for explicit developer validation."
+  throw "Cannot infer the sympp checkout. Use the opt-in MCP companion installed from the marketplace, or set SYMPP_REPO_ROOT only for explicit developer validation."
 }
 
 if ($Help) {
@@ -141,10 +141,10 @@ Assert-LauncherAvailable
 if ($ValidateOnly) {
   $validationExitCode = Test-LauncherVersion
   if ($validationExitCode -ne 0) {
-    throw "Selected Symphony++ MCP launcher failed validation with exit code $validationExitCode."
+    throw "Selected sympp MCP launcher failed validation with exit code $validationExitCode."
   }
 
-  Write-Host "Symphony++ generic MCP wrapper validation passed."
+  Write-Host "sympp generic MCP wrapper validation passed."
   Write-Host "  repoRoot: $repoRoot"
   Write-Host "  elixirDir: $elixirDir"
   Write-Host "  launcher: $launcher"

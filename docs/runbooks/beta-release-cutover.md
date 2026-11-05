@@ -48,7 +48,7 @@ offline beta home is not an upgrade source or destination.
    or `-journal` sidecars together to a new private backup directory. Do not
    discard a WAL file. Copy the factory's entire `SYMPP_HOME` (runtime artifacts,
    launcher metadata, configuration and logs), the marketplace source clone,
-   installed Symphony++ plugin cache and Codex `config.toml`. Also preserve the
+   installed sympp plugin cache and Codex `config.toml`. Also preserve the
    workflow, operator config or runtime state if outside those homes, and each
    Claude project's MCP registration. Record the original paths with the backup.
    Do not upload this backup; it can contain private ledger data and credentials.
@@ -94,9 +94,9 @@ After the stopped-ledger backup above and an approved cutover window:
 
 1. Retain the original marketplace registration/configuration and artifacts for
    rollback. In the selected replacement Codex home, explicitly disable/remove
-   its old Symphony++ MCP plugin or manual entry. In the project being converted,
+   its old sympp MCP plugin or manual entry. In the project being converted,
    remove its old Claude local entry with
-   `claude mcp remove --scope local symphony_plus_plus`; local entries take
+   `claude mcp remove --scope local sympp`; local entries take
    precedence over the project file and setup cannot detect them. Setup refuses
    conflicting project entries.
 2. In the intended project, select the recorded `SYMPP_HOME`, `SYMPP_DATABASE`
@@ -114,7 +114,7 @@ After the stopped-ledger backup above and an approved cutover window:
 
 For future Skills upgrades, close clients, back up the installed skill directory
 and `skills-lock.json` using the [portable guide](../portable-skills.md), run
-`npx --yes skills@1.7.0 update symphony-plus-plus --project --yes`, and reopen
+`npx --yes skills@1.7.0 update sympp --project --yes`, and reopen
 sessions. Repeat setup after updating to capture the recorded branch and repair its owned entry.
 Source rollback alone does not pin a floating runtime. Preserve the previous build's
 manifest and archive alongside its installed bundle and recorded actual SHA. A
@@ -131,7 +131,7 @@ rollback for a first distribution change.
 Use the same factory environment in every replacement host. Clear developer-only
 `SYMPP_REPO_ROOT`, source-root hints and artifact overrides from that environment.
 Do not change the ledger path or reuse a sandbox marker. The marketplace source
-clone is under `$factoryCodexHome/.tmp/marketplaces/symphony-plus-plus`; normal
+clone is under `$factoryCodexHome/.tmp/marketplaces/sympp`; normal
 runtime execution must come from the installed cache and downloaded artifact.
 
 The following uses the existing Codex marketplace commands. Switching an existing
@@ -144,8 +144,8 @@ $env:CODEX_HOME = $factoryCodexHome
 $env:SYMPP_HOME = $factorySymppHome
 $env:SYMPP_DATABASE = $factoryDatabase
 Set-Location -LiteralPath $env:USERPROFILE
-codex plugin marketplace remove symphony-plus-plus
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref main
+codex plugin marketplace remove sympp
+codex plugin marketplace add https://github.com/JJLiebig/sympp --ref main
 codex plugin marketplace upgrade symphony-plus-plus
 codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
 codex plugin list --marketplace symphony-plus-plus --json

@@ -1,5 +1,5 @@
 ---
-name: Symphony++
+name: sympp
 description: A calm, dense, trustworthy control room for human-supervised agent delivery.
 colors:
   control-teal: "#00647a"
@@ -77,13 +77,13 @@ components:
     padding: "4px 8px"
 ---
 
-# Design System: Symphony++
+# Design System: sympp
 
 ## Overview
 
 **Creative North Star: "The Live Control Room"**
 
-Symphony++ is a calm operational surface for supervising live agent work. It is information-dense without becoming visually loud: inactive structure recedes, active work carries motion, and meaningful state changes are visible immediately.
+sympp is a calm operational surface for supervising live agent work. It is information-dense without becoming visually loud: inactive structure recedes, active work carries motion, and meaningful state changes are visible immediately.
 
 The interface rejects nested-card labyrinths, oversized execution records, beige neutral states, and decorative workflow graphics. Geometry must stay stable while status changes. Complex work may reveal more structure, but the operator's mental map always wins.
 
@@ -162,7 +162,7 @@ The palette is an operational signal system. Cool neutrals carry the interface; 
 
 ### Primary
 
-- **Control Teal** (#00647a): Primary actions, focus identity, selected controls, and the Symphony++ brand anchor.
+- **Control Teal** (#00647a): Primary actions, focus identity, selected controls, and the sympp brand anchor.
 
 ### Secondary
 
@@ -210,7 +210,7 @@ The palette is an operational signal system. Cool neutrals carry the interface; 
 
 ## Elevation
 
-Symphony++ uses state-based layering. Cards and groups stay visually still at rest and during focus. Borders, tonal shifts, focus outlines, and shine communicate interaction; cards never lift or translate. Shadows are restrained and structural, reserved for floating panels or subtle separation from a busy surface.
+sympp uses state-based layering. Cards and groups stay visually still at rest and during focus. Borders, tonal shifts, focus outlines, and shine communicate interaction; cards never lift or translate. Shadows are restrained and structural, reserved for floating panels or subtle separation from a busy surface.
 
 ### Shadow Vocabulary
 

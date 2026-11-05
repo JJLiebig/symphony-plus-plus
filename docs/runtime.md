@@ -1,6 +1,6 @@
 # Install And Run
 
-Symphony++ `0.2.0` supports native Codex and Claude Code connections on Windows x64.
+sympp `0.2.0` supports native Codex and Claude Code connections on Windows x64.
 Use [Skills installation](portable-skills.md) for the normal host-neutral route.
 Install main for normal work; `/tree/beta` selects an isolated preview.
 
@@ -49,12 +49,6 @@ Restart briefly loses client leases; the panel restarts an idle factory within a
 selection, dashboard type/lint checks and Vitest, plus Skills mirror validation.
 It excludes backend ExUnit, native acceptance and release qualification; run those
 when changing their surfaces. `just install` also compiles the backend release.
-
-## Existing Marketplace Installations
-
-Existing Codex marketplace installations can run `codex plugin marketplace upgrade
-symphony-plus-plus` and open a fresh session. For new installations use the
-[global Skills route](portable-skills.md).
 
 ## Open The Board
 
@@ -118,7 +112,7 @@ next install command selects a newer publication.
 
 If startup reports that the Skills bundle and runtime channel have different MCP
 contracts, run the beta install command above or update the project Skills with
-`npx skills update symphony-plus-plus --project --yes`, then open fresh MCP client
+`npx skills update sympp --project --yes`, then open fresh MCP client
 sessions. A channel publication can move ahead of the installed bundle while the
 factory is stopped.
 
@@ -152,7 +146,7 @@ For an upgrade, close clients using this beta runtime, retain the beta
 environment variables, and run:
 
 ```powershell
-codex plugin marketplace upgrade symphony-plus-plus
+npx skills update sympp
 ```
 
 Open fresh sessions. If the package version changes, update Claude's bridge

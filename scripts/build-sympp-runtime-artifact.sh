@@ -8,7 +8,7 @@ dry_run=0
 
 usage() {
   cat <<'USAGE'
-Builds the Symphony++ installed-runtime artifact for the current platform.
+Builds the sympp installed-runtime artifact for the current platform.
 
 This is the installed artifact workflow: it compiles the Elixir backend release,
 builds static dashboard assets, then emits a package plus manifest. Developer
@@ -61,7 +61,7 @@ fi
 
 revision="$(printf '%s' "$revision" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "Missing or invalid Symphony++ source revision. Set SYMPP_SOURCE_REVISION or run from a Git checkout." >&2
+  echo "Missing or invalid sympp source revision. Set SYMPP_SOURCE_REVISION or run from a Git checkout." >&2
   exit 1
 fi
 

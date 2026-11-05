@@ -464,7 +464,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   end
 
   test "phase board status filters keep repo identity from the phase scope", %{repo: repo} do
-    with_trusted_repo_remotes(["JJLiebig/symphony-plus-plus"], fn ->
+    with_trusted_repo_remotes(["JJLiebig/sympp"], fn ->
       assert {:ok, phase} = PhaseRepository.create(repo, %{id: "phase-dashboard-repo-identity", title: "Repo identity phase"})
 
       assert {:ok, bare} =
@@ -488,7 +488,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                    kind: "delegation",
                    phase_id: phase.id,
                    status: "blocked",
-                   repo: "JJLiebig/symphony-plus-plus",
+                   repo: "JJLiebig/sympp",
                    base_branch: "main"
                  )
                )
@@ -499,8 +499,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert card.repo == "symphony-plus-plus"
       assert card.repo_key == "symphony-plus-plus"
       assert card.repo_display == "symphony-plus-plus"
-      assert card.repo_remote == "JJLiebig/symphony-plus-plus"
-      assert card.repo_aliases == ["JJLiebig/symphony-plus-plus", "symphony-plus-plus"]
+      assert card.repo_remote == "JJLiebig/sympp"
+      assert card.repo_aliases == ["JJLiebig/sympp", "symphony-plus-plus"]
     end)
   end
 
@@ -1468,7 +1468,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   end
 
   test "local operator dashboard infers canonical repo identity from local origin", %{repo: repo} do
-    with_local_repo_origin("https://github.com/JJLiebig/symphony-plus-plus.git", fn ->
+    with_local_repo_origin("https://github.com/JJLiebig/sympp.git", fn ->
       with_local_operator_endpoint(fn ->
         assert {:ok, work_package} =
                  WorkPackageRepository.create(
@@ -1494,7 +1494,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         assert {:ok, owner_session} =
                  SoloSessionsService.create_or_attach_current(repo, %{
-                   repo: "JJLiebig/symphony-plus-plus",
+                   repo: "JJLiebig/sympp",
                    base_branch: "main",
                    workspace_path: Path.join(@repo_root, "repo-identity-owner"),
                    caller_id: "repo-identity-owner",
@@ -1531,10 +1531,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         refute Enum.any?(deferred_payload["work_packages"], &(&1["id"] == work_package.id))
 
-        assert [%{"repo_key" => "symphony-plus-plus", "repo_remote" => "JJLiebig/symphony-plus-plus"}] =
+        assert [%{"repo_key" => "symphony-plus-plus", "repo_remote" => "JJLiebig/sympp"}] =
                  payload["work_requests"]["work_requests"]
 
-        assert [%{"work_request" => %{"repo_key" => "symphony-plus-plus", "repo_remote" => "JJLiebig/symphony-plus-plus"}}] =
+        assert [%{"work_request" => %{"repo_key" => "symphony-plus-plus", "repo_remote" => "JJLiebig/sympp"}}] =
                  deferred_payload["work_request_details"]
 
         assert [
@@ -1542,8 +1542,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                    "repo" => "symphony-plus-plus",
                    "repo_key" => "symphony-plus-plus",
                    "repo_display" => "symphony-plus-plus",
-                   "repo_remote" => "JJLiebig/symphony-plus-plus",
-                   "repo_aliases" => ["JJLiebig/symphony-plus-plus", "symphony-plus-plus"]
+                   "repo_remote" => "JJLiebig/sympp",
+                   "repo_aliases" => ["JJLiebig/sympp", "symphony-plus-plus"]
                  }
                ] = deferred_payload["guidance_requests"]["guidance_requests"]
 
@@ -1559,7 +1559,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert Enum.map(solo_sessions, & &1["id"]) |> Enum.sort() == Enum.sort([owner_session.id, bare_session.id])
         assert Enum.all?(solo_sessions, &(&1["repo_key"] == "symphony-plus-plus"))
         assert Enum.all?(solo_sessions, &(&1["repo_display"] == "symphony-plus-plus"))
-        assert Enum.all?(solo_sessions, &(&1["repo_remote"] == "JJLiebig/symphony-plus-plus"))
+        assert Enum.all?(solo_sessions, &(&1["repo_remote"] == "JJLiebig/sympp"))
 
         assert {:ok, repo_identity_catalog} = Dashboard.local_operator_repo_identity_catalog(repo)
         assert {:ok, streams} = Dashboard.solo_session_streams(repo, repo_identity_catalog: repo_identity_catalog)
@@ -1568,8 +1568,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  %{
                    repo_key: "symphony-plus-plus",
                    repo_display: "symphony-plus-plus",
-                   repo_remote: "JJLiebig/symphony-plus-plus",
-                   repo_aliases: ["JJLiebig/symphony-plus-plus", "symphony-plus-plus"],
+                   repo_remote: "JJLiebig/sympp",
+                   repo_aliases: ["JJLiebig/sympp", "symphony-plus-plus"],
                    base_branch: "main",
                    solo_session_count: 2
                  } = stream
@@ -1787,13 +1787,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   end
 
   test "record detail repo identity stays scoped unless a catalog is passed", %{repo: repo} do
-    with_trusted_repo_remotes(["JJLiebig/symphony-plus-plus"], fn ->
+    with_trusted_repo_remotes(["JJLiebig/sympp"], fn ->
       assert {:ok, _unrelated} =
                WorkPackageRepository.create(
                  repo,
                  WorkPackageFactory.attrs(
                    id: "SYMPP-REPO-DETAIL-CATALOG-SOURCE",
-                   repo: "JJLiebig/symphony-plus-plus",
+                   repo: "JJLiebig/sympp",
                    base_branch: "main"
                  )
                )

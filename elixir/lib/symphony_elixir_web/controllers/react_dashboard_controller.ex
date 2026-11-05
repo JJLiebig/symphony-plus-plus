@@ -31,7 +31,7 @@ defmodule SymphonyElixirWeb.ReactDashboardController do
         |> html("""
         <!doctype html>
         <html lang="en">
-          <head><meta charset="utf-8"><title>Symphony++ Dashboard</title></head>
+          <head><meta charset="utf-8"><title>sympp Dashboard</title></head>
           <body><main id="root">Dashboard assets have not been built yet.</main></body>
         </html>
         """)
