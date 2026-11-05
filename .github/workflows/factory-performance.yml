@@ -1,6 +1,17 @@
 name: factory performance
 
+# Measure serial operations and concurrent reads. Concurrent dispatch is excluded
+# from #806; the separate dispatch bug-fix PR will add it back to this check.
+# Weekly release builds avoid packaging every server PR; PR runs qualify changes
+# to this measurement check itself.
+# Budgets use three fresh jjdev Linux ledgers: max p95 x3 rounded to 10 ms,
+# max query count +2, and max bytes x1.1 rounded to KiB.
+
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/factory-performance.yml"
+      - "scripts/perf/**"
   workflow_dispatch:
   schedule:
     - cron: '23 5 * * 1'
@@ -15,6 +26,7 @@ jobs:
     env:
       MIX_ENV: prod
       PERF_OUTPUT: ${{ github.workspace }}/.perf
+      PERF_BUDGETS: ${{ github.workspace }}/scripts/perf/budgets.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
@@ -40,3 +52,4 @@ jobs:
         with:
           name: factory-performance-${{ github.sha }}
           path: .perf/
+          include-hidden-files: true

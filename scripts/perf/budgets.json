@@ -1,0 +1,65 @@
+[
+  {
+    "operation": "list_work_requests",
+    "concurrency": 1,
+    "p95": 70,
+    "queries": 23,
+    "bytes": 2048
+  },
+  {
+    "operation": "read_plan",
+    "concurrency": 1,
+    "p95": 180,
+    "queries": 43,
+    "bytes": 27648
+  },
+  {
+    "operation": "read_work_request",
+    "concurrency": 1,
+    "p95": 460,
+    "queries": 39,
+    "bytes": 10240
+  },
+  {
+    "operation": "board",
+    "concurrency": 1,
+    "p95": 370,
+    "queries": 45,
+    "bytes": 167936
+  },
+  {
+    "operation": "dispatch_work_package",
+    "concurrency": 1,
+    "p95": 130,
+    "queries": 75,
+    "bytes": 2048
+  },
+  {
+    "operation": "list_work_requests",
+    "concurrency": 10,
+    "p95": 410,
+    "queries": 23,
+    "bytes": 2048
+  },
+  {
+    "operation": "read_plan",
+    "concurrency": 10,
+    "p95": 1010,
+    "queries": 43,
+    "bytes": 28672
+  },
+  {
+    "operation": "read_work_request",
+    "concurrency": 10,
+    "p95": 1350,
+    "queries": 39,
+    "bytes": 10240
+  },
+  {
+    "operation": "board",
+    "concurrency": 10,
+    "p95": 2040,
+    "queries": 45,
+    "bytes": 169984
+  }
+]
