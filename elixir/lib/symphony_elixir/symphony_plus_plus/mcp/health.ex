@@ -1,6 +1,8 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+
   alias SymphonyElixir.SymphonyPlusPlus.MCP.{
     Config,
     HandleStateStore,
@@ -51,6 +53,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
 
     %{
       "status" => health["status"],
+      "factory_owned_worktrees" => FactoryRepos.enabled?(),
       "source" => %{
         "revision" => get_in(health, ["source", "revision"]),
         "mcp_contract" => %{"fingerprint" => get_in(health, ["source", "mcp_contract", "fingerprint"])}

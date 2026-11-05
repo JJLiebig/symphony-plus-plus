@@ -49,13 +49,13 @@ function withLocation(body, location) {
   } catch (_) { return body; }
 }
 
-function isRemoteFactory(env) {
+function isRemoteEndpoint(env) {
   if (!env.SYMPP_SERVER_URL) return false;
   return !["localhost", "127.0.0.1", "[::1]"].includes(new URL(env.SYMPP_SERVER_URL).hostname);
 }
 
-async function remoteArguments(body, env) {
-  if (!isRemoteFactory(env)) return body;
+async function remoteArguments(body, env, factoryOwned = isRemoteEndpoint(env)) {
+  if (!factoryOwned) return body;
   const payload = JSON.parse(body);
   if (payload.method !== "tools/call" || !payload.params?.arguments) return body;
   const origin = cwd => new Promise((resolve, reject) => {
@@ -89,7 +89,7 @@ async function remoteArguments(body, env) {
 }
 
 function remoteWorktreeResponse(body, env = process.env) {
-  if (!isRemoteFactory(env)) return body;
+  if (!isRemoteEndpoint(env)) return body;
   try {
     const payload = JSON.parse(body);
     const result = payload.result;
@@ -105,6 +105,7 @@ function remoteWorktreeResponse(body, env = process.env) {
 function createReporter(env = process.env, connect = selected => connectCore(undefined, "hc", [], selected)) {
   const clientId = randomUUID();
   let location = locationFromEnvironment(env, os.hostname(), clientId);
+  let factoryOwned = isRemoteEndpoint(env);
   const native = Boolean(env.HC_TERMINAL_ID && env.HC_TERMINAL_SOCKET);
   const file = path.resolve(env.SYMPP_HOME || path.join(os.homedir(), ".agents", "splusplus"), "herdr-sessions", `${clientId}.json`);
   let refreshAt = 0;
@@ -142,6 +143,7 @@ function createReporter(env = process.env, connect = selected => connectCore(und
   return {
     clientId,
     native,
+    setFactoryOwned(value) { if (typeof value === "boolean") factoryOwned = value; },
     clear,
     close() { closed = true; clear(); },
     report(binding, probe) {
@@ -186,7 +188,7 @@ function createReporter(env = process.env, connect = selected => connectCore(und
         }).finally(() => { pending = null; });
       }
       if (pending) await pending;
-      return withLocation(await remoteArguments(body, env), location);
+      return withLocation(await remoteArguments(body, env, factoryOwned), location);
     },
   };
 }

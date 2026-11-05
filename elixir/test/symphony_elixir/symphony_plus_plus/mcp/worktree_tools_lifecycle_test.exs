@@ -22,7 +22,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     File.write!(peer, """
     const {spawnSync} = require("node:child_process");
     if (process.argv.at(-1) !== #{Jason.encode!("git-upload-pack 'team/#{name}.git'")}) process.exit(2);
-    const result = spawnSync("git-upload-pack", [#{Jason.encode!(fixture.origin)}], {stdio: "inherit"});
+    const result = spawnSync("git", ["upload-pack", #{Jason.encode!(fixture.origin)}], {stdio: "inherit"});
     process.exit(result.status ?? 1);
     """)
 
@@ -69,7 +69,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", ssh_remote])
     assert {:ok, ^checkout} = FactoryRepos.resolve(ssh_remote)
     refute FactoryRepos.matches?(checkout, "ssh://other-user@git.example/team/#{name}.git")
+    assert FactoryRepos.matches?(checkout, "ssh://deploy@git.example:22/team/#{name}.git")
+    refute FactoryRepos.matches?(checkout, "ssh://deploy@git.example:443/team/#{name}.git")
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", "ssh://git@git.example/team/#{name}.git"])
+    refute FactoryRepos.matches?(checkout, "ssh://git.example/team/#{name}.git")
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", "git.example:team/#{name}.git"])
+    assert {:ok, ^checkout} = FactoryRepos.resolve("git.example:team/#{name}.git")
+    refute FactoryRepos.matches?(checkout, "git@git.example:team/#{name}.git")
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", ssh_remote])
     assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("ssh://deploy:password@git.example/team/#{name}.git")
+
+    for protocol <- ["http", "git"] do
+      network_remote = "#{protocol}://git.example/team/#{name}.git"
+      {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", network_remote])
+      assert {:ok, ^checkout} = FactoryRepos.resolve(network_remote)
+      refute FactoryRepos.matches?(checkout, "#{protocol}://git.example:443/team/#{name}.git")
+    end
+
     {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", remote])
     refute FactoryRepos.matches?(checkout, String.replace(remote, "/factory/", "/other/"))
     assert {:error, :target_repo_root_scope_mismatch} = FactoryRepos.resolve(String.replace(remote, "/factory/", "/other/"))

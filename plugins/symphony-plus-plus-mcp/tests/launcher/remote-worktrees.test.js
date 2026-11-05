@@ -25,6 +25,8 @@ test("remote path requests become origin identities and qualified responses pres
   assert.equal(output.structuredContent.worker_launch.workspace_path, "/srv/Code/.worktrees/service/fix");
   assert.equal(remoteWorktreeResponse(response, {}), response);
   const local = { SYMPP_SERVER_URL: "http://127.0.0.1:19998" };
+  assert.equal(JSON.parse(await remoteArguments(input, local, true)).params.arguments.repo, converted.repo);
+  assert.equal(await remoteArguments(input, env, false), input);
   execFileSync("git", ["-C", root, "remote", "remove", "origin"]);
   assert.equal(await remoteArguments(input, local), input);
   const prepare = JSON.stringify({ method: "tools/call", params: { name: "prepare_work_package_worktree", arguments: { work_package_id: "wp-local", target_repo_root: root } } });

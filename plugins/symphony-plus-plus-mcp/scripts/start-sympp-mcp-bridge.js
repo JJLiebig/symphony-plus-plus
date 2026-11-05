@@ -898,7 +898,7 @@ async function backendHealth(origin) {
     const contract = String((readiness.source && readiness.source.mcp_contract && readiness.source.mcp_contract.fingerprint) || "").toLowerCase();
     const ledgerIdentity = readiness.ledger?.identity;
     const healthy = readiness.status === "ok" && readiness.ledger?.reachable === true && requestedDatabaseMatches(ledgerIdentity);
-    return { healthy, contract, ledgerIdentity, retryable: false };
+    return { healthy, contract, ledgerIdentity, factoryOwned: readiness.factory_owned_worktrees, retryable: false };
   } catch (error) {
     return { healthy: false, contract: "", retryable: /timed out/i.test(String(error && error.message)) };
   }
@@ -1210,6 +1210,7 @@ async function bridge(identity, state, runtimeFile) {
     return recoveryPromise;
   };
   const initializeSession = async () => {
+    if (remoteConnection) sessionLocation.setFactoryOwned((await backendHealth(remoteConnection.origin))?.factoryOwned);
     const initialized = await mcpPost(current.mcpUrl, initializeBody(), null, null, timeoutMs);
     if (!initialized.ok) {
       const error = new Error(initialized.error || "sympp MCP session reinitialization failed.");
@@ -1502,6 +1503,7 @@ async function main() {
   if (process.env.SYMPP_SERVER_URL) {
     // The remote factory is always on; this client never elects or owns its lifecycle.
     remoteConnection = require("./sympp-remote.js").remoteConnection(process.env.SYMPP_SERVER_URL, process.env.SYMPP_SERVER_TOKEN_FILE);
+    sessionLocation.setFactoryOwned((await backendHealth(remoteConnection.origin))?.factoryOwned);
     if (sessionLocation.native) await ensureLivenessProbe();
     await bridge({ backend: remoteConnection.origin }, { backend: { managed: false } }, null);
     return;
