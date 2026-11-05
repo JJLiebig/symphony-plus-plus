@@ -216,6 +216,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiLocalOperatorVisibilityTes
 
       assert Enum.map(payload["work_request_details"], & &1["work_request"]["id"]) ==
                Enum.map(browser_payload["work_request_details"], & &1["work_request"]["id"])
+
       assert payload["guidance_requests"] == browser_payload["guidance_requests"]
 
       assert payload["work_packages"] ==
