@@ -11,6 +11,8 @@ test("migration replaces owned blocks while preserving unrelated registrations a
   assert.ok(migrated.startsWith(unrelated));
   assert.doesNotMatch(migrated, /symphony_plus_plus/);
   assert.equal(codexConfig(migrated, registration), migrated);
+  const augmented = 'model = "example-model"\n' + codexConfig("", registration) + '\n# operator note\n';
+  assert.equal(codexConfig(augmented, registration), augmented);
   for (const table of ['[mcp_servers.sympp]', '[mcp_servers."sympp"]', "['mcp_servers'.'sympp']", '[mcp_servers.sympp.env]']) {
     assert.throws(() => codexConfig(migrated + table + '\n', registration), /unmanaged/);
   }
@@ -33,5 +35,32 @@ test("TOML instruction examples are inert and preserved during managed migration
     const result = codexConfig(instruction, registration);
     assert.ok(result.startsWith(instruction));
     assert.equal(codexConfig(result, registration), result);
+  }
+});
+
+
+test("status refuses degraded or unauthenticated factories and accepts a reachable ledger", async t => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const { spawn } = require("node:child_process"), http = require("node:http"), { once } = require("node:events");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "sympp-status-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  let code = 200, body;
+  const server = http.createServer((req, res) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(body)); });
+  server.listen(0, "0.0.0.0"); await once(server, "listening");
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const file = path.join(home, ".local/share/sympp/connection.json"); fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ SYMPP_SERVER_URL: `http://127.0.0.1:${server.address().port}` }));
+  for (const [statusCode, readiness, expected] of [
+    [200, { status: "degraded", ledger: { reachable: false } }, 1],
+    [401, { error: "unauthorized" }, 1],
+    [200, { status: "ok", ledger: { reachable: true } }, 0],
+  ]) {
+    code = statusCode; body = readiness;
+    const child = spawn(process.execPath, [path.resolve(__dirname, "../../scripts/sympp-command.js"), "status"], {
+      env: { ...process.env, HOME: home, USERPROFILE: home }, windowsHide: true,
+    });
+    let stdout = ""; child.stdout.on("data", value => stdout += value);
+    assert.equal((await once(child, "close"))[0], expected);
+    assert.match(stdout, new RegExp(`answers: ${expected === 0}`));
   }
 });

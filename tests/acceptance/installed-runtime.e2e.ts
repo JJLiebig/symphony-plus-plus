@@ -97,7 +97,8 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     await installed.skills(['add', resolve('.'), '--global', '--agent', 'codex', '--skill', 'sympp', '--yes']);
     const globalBundle = join(installed.env.HOME!, '.agents/skills/sympp');
     const globalLock = join(installed.env.HOME!, '.agents/.skill-lock.json');
-    const global = JSON.parse(await readFile(globalLock, 'utf8'));
+    // A local-source global Skills install has no remote lock; supply tracked-branch metadata for this fixture.
+    const global = { skills: { sympp: { source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' } } };
     global.skills.sympp = { ...global.skills.sympp, source: 'JJLiebig/sympp', sourceType: 'github', ref: 'beta' };
     await writeFile(globalLock, JSON.stringify(global));
     local.skills.sympp.ref = 'main';

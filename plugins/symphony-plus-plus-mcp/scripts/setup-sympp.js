@@ -50,8 +50,9 @@ function tomlSyntax(source) {
 
 function codexConfig(config, registration) {
   const owned = /^# BEGIN (?:Symphony\+\+|sympp) Skills MCP\r?\n[\s\S]*?^# END (?:Symphony\+\+|sympp) Skills MCP\r?\n?/gm;
+  const matches = [...tomlSyntax(config).matchAll(owned)];
   let remaining = config;
-  for (const match of [...tomlSyntax(config).matchAll(owned)].reverse()) {
+  for (const match of [...matches].reverse()) {
     remaining = remaining.slice(0, match.index) + remaining.slice(match.index + match[0].length);
   }
   const syntax = tomlSyntax(remaining);
@@ -64,7 +65,16 @@ function codexConfig(config, registration) {
   const lines = [begin, `[mcp_servers.${name}]`, `command = ${JSON.stringify(registration.command)}`,
     `args = ${JSON.stringify(registration.args)}`, "startup_timeout_sec = 360", "tool_timeout_sec = 300", "",
     `[mcp_servers.${name}.env]`, ...Object.entries(registration.env).map(([key, value]) => `${key} = ${JSON.stringify(value)}`), end, ""];
-  return remaining.trimEnd() + (remaining.trim() ? "\n\n" : "") + lines.join("\n");
+  const block = lines.join("\n");
+  if (matches.length) {
+    let updated = config;
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      updated = updated.slice(0, match.index) + (i === 0 ? block : "") + updated.slice(match.index + match[0].length);
+    }
+    return updated;
+  }
+  return remaining.trimEnd() + (remaining.trim() ? "\n\n" : "") + block;
 }
 
 function claudeConfig(config, registration) {

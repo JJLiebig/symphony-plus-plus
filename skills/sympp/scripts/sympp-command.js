@@ -19,6 +19,7 @@ function installCommand(root) {
       const line = 'export PATH="$HOME/.local/bin:$PATH"';
       const before = fs.existsSync(profile) ? fs.readFileSync(profile, "utf8") : "";
       if (!before.includes(line)) fs.appendFileSync(profile, `\n${line}\n`);
+      process.stdout.write(`activate: ${JSON.stringify(line)}\n`);
     }
   }
 }
@@ -37,7 +38,11 @@ async function status() {
   let answers = false;
   if (endpoint) {
     const token = env.SYMPP_SERVER_TOKEN_FILE ? fs.readFileSync(env.SYMPP_SERVER_TOKEN_FILE, "utf8").trim() : "";
-    try { answers = (await fetch(`${endpoint}/mcp/readiness`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(5000) })).ok; } catch {}
+    try {
+      const response = await fetch(`${endpoint}/mcp/readiness`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(5000) });
+      const readiness = await response.json();
+      answers = response.ok && readiness.status === "ok" && readiness.ledger?.reachable === true;
+    } catch {}
   }
   process.stdout.write(`answers: ${answers}\n`);
   if (!answers) process.exitCode = 1;

@@ -227,6 +227,11 @@ external-command sentinels, Ctrl+C shutdown, stopped refresh and refusal of
 ordinary startup. This uses the selected branch artifact, not a local source build.
 
 Setup installs `sympp` in `~/.local/bin` and adds it to the user PATH. Open a
-fresh shell, then use `sympp --server <ssh-host>`, `sympp` for local setup,
+fresh terminal from the Windows Start menu, or a Unix login shell, then use `sympp --server <ssh-host>`, `sympp` for local setup,
 or `sympp status` to see the selected factory and whether it answers. Re-running
 setup migrates its old managed MCP registration to `sympp`.
+
+If setup prints `activate` on Linux/macOS, run the printed export in the shell
+where you will type `sympp`; opening a tab in an existing terminal may retain
+its previous PATH. `sympp status` succeeds when the factory answers with a
+reachable ledger.
