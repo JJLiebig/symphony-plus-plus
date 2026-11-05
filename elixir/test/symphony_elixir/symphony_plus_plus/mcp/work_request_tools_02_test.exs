@@ -4,10 +4,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
   use SymphonyElixir.SymphonyPlusPlus.MCPCase
 
   test "legacy recovered handoff architects read same repo/base without persisted repo scope", %{repo: repo} do
+    fixture = TestSupport.git_repo_with_origin_fixture!("https://github.com/fixture-owner/handoff-fixture.git", prefix: "legacy-handoff-scope")
+    config = Config.default(repo: repo, repo_root: fixture)
+
     handoff_work_request =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF",
-        repo: "sympp",
+        repo: "handoff-fixture",
         base_branch: "main",
         status: "ready_for_slicing"
       )
@@ -15,7 +18,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     equivalent_sibling =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF-SIBLING",
-        repo: "JJLiebig/sympp",
+        repo: "fixture-owner/handoff-fixture",
         base_branch: handoff_work_request.base_branch,
         status: "ready_for_slicing"
       )
@@ -23,7 +26,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     other_repo =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF-OTHER-REPO",
-        repo: "Elsewhere/symphony-plus-plus",
+        repo: "other-owner/handoff-fixture",
         base_branch: handoff_work_request.base_branch,
         status: "ready_for_slicing"
       )
@@ -52,7 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
 
     session = legacy_handoff_session_without_repo_scope!(repo, session, grant)
 
-    list_response = mcp_tool(repo, session, "list_work_requests", %{"status" => "ready_for_slicing"})
+    list_response = mcp_tool(repo, session, "list_work_requests", %{"status" => "ready_for_slicing"}, config: config)
     list_payload = get_in(list_response, ["result", "structuredContent"])
 
     assert list_payload["scope"] == %{
@@ -64,39 +67,51 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     refute inspect(list_response) =~ other_repo.id
     refute inspect(list_response) =~ other_base.id
 
-    sibling_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => equivalent_sibling.id})
+    sibling_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => equivalent_sibling.id}, config: config)
     assert get_in(sibling_read_response, ["result", "structuredContent", "work_request", "id"]) == equivalent_sibling.id
 
-    sibling_board_response = mcp_tool(repo, session, "read_delivery_board", %{"work_request_id" => equivalent_sibling.id})
+    sibling_board_response = mcp_tool(repo, session, "read_delivery_board", %{"work_request_id" => equivalent_sibling.id}, config: config)
     assert get_in(sibling_board_response, ["result", "structuredContent", "work_request", "id"]) == equivalent_sibling.id
 
-    other_repo_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => other_repo.id})
+    other_repo_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => other_repo.id}, config: config)
     assert get_in(other_repo_read_response, ["error", "code"]) == -32_004
     assert get_in(other_repo_read_response, ["error", "data", "reason"]) == "not_found"
     refute inspect(other_repo_read_response) =~ other_repo.id
 
-    other_base_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => other_base.id})
+    other_base_read_response = mcp_tool(repo, session, "read_work_request", %{"detail" => "full", "work_request_id" => other_base.id}, config: config)
     assert get_in(other_base_read_response, ["error", "code"]) == -32_004
     assert get_in(other_base_read_response, ["error", "data", "reason"]) == "not_found"
     refute inspect(other_base_read_response) =~ other_base.id
 
     sibling_status_response =
-      mcp_tool(repo, session, "set_work_request_status", %{
-        "work_request_id" => equivalent_sibling.id,
-        "current_status" => "ready_for_slicing",
-        "next_status" => "sliced"
-      })
+      mcp_tool(
+        repo,
+        session,
+        "set_work_request_status",
+        %{
+          "work_request_id" => equivalent_sibling.id,
+          "current_status" => "ready_for_slicing",
+          "next_status" => "sliced"
+        },
+        config: config
+      )
 
     assert get_in(sibling_status_response, ["error", "code"]) == -32_004
     assert get_in(sibling_status_response, ["error", "data", "reason"]) == "not_found"
 
     sibling_update_response =
-      mcp_tool(repo, session, "update_work_package", %{
-        "work_request_id" => equivalent_sibling.id,
-        "work_package_id" => sibling_slice.id,
-        "expected_contract_revision" => sibling_slice.contract_revision,
-        "patch" => %{"title" => "Out of scope"}
-      })
+      mcp_tool(
+        repo,
+        session,
+        "update_work_package",
+        %{
+          "work_request_id" => equivalent_sibling.id,
+          "work_package_id" => sibling_slice.id,
+          "expected_contract_revision" => sibling_slice.contract_revision,
+          "patch" => %{"title" => "Out of scope"}
+        },
+        config: config
+      )
 
     assert get_in(sibling_update_response, ["error", "code"]) == -32_004
     assert get_in(sibling_update_response, ["error", "data", "reason"]) == "not_found"
