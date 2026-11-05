@@ -86,6 +86,9 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
   assert.match(credentialOrigin.replies[1].error.data.detail, /Repository origins must not include credentials/);
   assert.equal(JSON.stringify(credentialOrigin).includes("fixture-password"), false);
   assert.equal(received.some(r => r.body?.params?.name === "create_work_request"), false);
+  execFileSync("git", ["-C", root, "remote", "set-url", "origin", "https://fixture-account-or-token@example.org/team/repo.git"]);
+  await run("fixture-token", "create_work_request");
+  assert.equal(received.find(r => r.body?.params?.name === "create_work_request").body.params.arguments.repo, "https://example.org/team/repo.git");
   const postsBeforeDenial = received.filter(r => r.url === "/mcp").length;
   const denied = await run("wrong-token", "list_work_requests", false);
   assert.match(denied.stderr, /authentication failed.*401/);

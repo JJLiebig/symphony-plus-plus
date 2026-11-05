@@ -499,9 +499,9 @@ const body=r=>new Promise(q=>{const c=[];r.on("data",x=>c.push(x));r.on("end",()
 const send=(r,s,v,h={})=>{const b=typeof v==="string"?v:JSON.stringify(v);r.writeHead(s,{"Content-Type":"application/json","Content-Length":Buffer.byteLength(b),...h});r.end(b);};
 const server=http.createServer(async(req,res)=>{
   if(req.url==="/shutdown"){send(res,200,{status:"stopping"});return server.close(()=>process.exit(0));}
-  if(req.url==="/mcp/readiness")return send(res,200,{status:"ok",ledger:{reachable:true,identity:{kind:"sqlite",display_path:process.env.SYMPP_DATABASE}},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});
+  if(req.url==="/mcp/readiness")return send(res,200,{status:"ok",factory_owned_worktrees:false,ledger:{reachable:true,identity:{kind:"sqlite",display_path:process.env.SYMPP_DATABASE}},dashboard:{ready:true},source:{revision,mcp_contract:{fingerprint:contract}}});
   if(req.url==="/sympp/board")return send(res,200,"<title>sympp Dashboard</title>",{"Content-Type":"text/html"});
-  if(req.url==="/mcp/client-lease"){await body(req);return send(res,200,{stale_after_ms:600000});}
+  if(req.url==="/mcp/client-lease"){await body(req);return send(res,200,{stale_after_ms:600000,factory_owned_worktrees:false});}
   if(req.url==="/mcp"){const p=JSON.parse(await body(req)),result=p.method==="initialize"?{protocolVersion:"2025-03-26",capabilities:{},serverInfo:{name:"artifact-fixture",version:"1"}}:p.method==="tools/list"?{tools:[{name:"fixture",description:"fixture",inputSchema:{type:"object"}}]}:null;return result?send(res,200,{jsonrpc:"2.0",id:p.id,result},{"Mcp-Session-Id":session}):send(res,404,{error:"missing"});}
   send(res,404,{error:"not found"});
 });

@@ -59,8 +59,14 @@ async function remoteArguments(body, factoryOwned) {
   const credentialFree = value => {
     let remote;
     try { remote = new URL(value); } catch (_) { return value; }
-    if (remote.password || /%3a/i.test(remote.username) || (["http:", "https:"].includes(remote.protocol) && remote.username)) {
+    if (remote.password || /%3a/i.test(remote.username)) {
       throw new Error("Repository origins must not include credentials. Use a credential-free remote and configure Git authentication on the factory.");
+    }
+    // HTTP userinfo can be either an account or a token. It is authentication,
+    // not repository identity; the factory uses its own Git credentials.
+    if (["http:", "https:"].includes(remote.protocol) && remote.username) {
+      remote.username = "";
+      return remote.href;
     }
     return value;
   };
