@@ -192,8 +192,9 @@ function createReporter(env = process.env, connect = selected => connectCore(und
           "sympp.session_id": clientId, "sympp.session_core_id": receipt.core_id,
           "sympp.session_pid": String(receipt.pid), "sympp.session_process_id": String(receipt.process_id),
           "sympp.session_receipt": file, "sympp.session_role": receipt.role,
-          "sympp.session_work_request_id": receipt.work_request_id,
-          "sympp.session_work_package_id": receipt.work_package_id,
+          // Herdr takes only text labels; an empty one removes a scope this session no longer has.
+          "sympp.session_work_request_id": receipt.work_request_id ?? "",
+          "sympp.session_work_package_id": receipt.work_package_id ?? "",
         } });
       })).catch(() => {});
       return reports;

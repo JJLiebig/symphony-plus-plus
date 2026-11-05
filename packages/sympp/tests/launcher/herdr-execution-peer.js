@@ -29,7 +29,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       break;
     case "terminal.label":
       if (state.lose_label_reply) { write(); process.exit(0); }
-      Object.assign(state.terminal.labels, params.labels); result = state.terminal; break;
+      // As herdr-core: text values only, and an empty one removes the label.
+      if (Object.values(params.labels).some(value => typeof value !== "string")) { error = { data: { kind: "invalid_params" } }; break; }
+      for (const [key, value] of Object.entries(params.labels)) if (value) state.terminal.labels[key] = value; else delete state.terminal.labels[key];
+      result = state.terminal; break;
     case "terminal.get":
       if (state.terminal) result = state.terminal;
       else error = { data: { kind: "not_found" }, message: "dependency output must stay private" };
