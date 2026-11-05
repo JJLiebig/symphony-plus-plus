@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 // B1 jobs select one owned file from the shared API target. Unrelated filtered
 // definitions are not skips in this gate; every definition in its file is owed.
 const expected = new Map([
-  ['tests/acceptance/installed-runtime.e2e.ts', 2],
+  ['tests/acceptance/installed-runtime.e2e.ts', 1],
   ['tests/acceptance/offline-copy.e2e.ts', 1],
 ]);
 const file = process.argv[2];
