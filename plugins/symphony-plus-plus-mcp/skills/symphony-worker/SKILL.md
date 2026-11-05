@@ -9,6 +9,11 @@ Implement the assignment, run its required native checks and review, and return
 a normal PR or evidence handoff. No Symphony++ MCP calls, claim, progress ledger,
 question record, or duplicate review receipt are required.
 
+Read the bootstrap's `assignment` alongside `launch_prompt`; the prompt does
+not repeat the assignment. Within `assignment`, a `*_ref` JSON pointer supplies
+the same field from elsewhere in that object (for example, an inherited product
+description points to `#/parent_work_request/goal`). Use that complete text.
+
 ## Scope
 
 - Understand the goal, owned/forbidden paths, acceptance, repo/base/branch/worktree,
@@ -23,6 +28,22 @@ question record, or duplicate review receipt are required.
   Do not infer takeover authority from missing or stale observations.
 - Honor assigned budgets; otherwise keep one cohesive outcome. Escalate material
   scope growth before implementing it. Do not invent product behavior for a review.
+
+## UI Collaboration
+
+For UI work, collaborate directly with the human in the worker's terminal:
+
+- In Herdr, publish the running dev-server URL on your own terminal with
+  `hc label $HC_TERMINAL_ID sympp.preview_url=<url>`; clear it with
+  `hc label $HC_TERMINAL_ID sympp.preview_url=` when the server stops.
+  In PowerShell, use `$env:HC_TERMINAL_ID` for the terminal argument.
+- Post screenshots at visual milestones and pause for the human's feedback in
+  that terminal before continuing visual iteration.
+- Treat direct human input as product direction and record the decisions in
+  the handoff. Return scope or authority conflicts to the parent.
+
+Keep ownership of checks, required review and the PR. Non-UI work continues
+autonomously without these collaboration pauses.
 
 ## Checks and Review
 
@@ -54,6 +75,11 @@ Use scoped worker MCP tools only when they help an explicitly chosen workflow;
 see [the optional adapter](../symphony-work-package/SKILL.md). Authentication and
 scope denials still apply when using those tools. Never substitute business CLI
 commands or private state files for required parent ledger operations.
+
+When Herdr-next execution is explicitly chosen, the parent can launch Codex,
+Claude or OpenCode with the [optional execution helper](references/herdr-execution.md).
+It accepts an existing redacted assignment or an ordinary untracked task;
+it never dispatches or claims ledger work.
 
 ## Safety
 

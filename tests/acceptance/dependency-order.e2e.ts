@@ -1,9 +1,9 @@
 import { expect } from 'e2e';
 import { contract, type Client } from '../support/factory.js';
-import { close, head, pr, row, sync, test } from '../support/delivery.js';
+import { close, head, pr, prUrl, row, sync, test } from '../support/delivery.js';
 
 const endpoint = (id: string, kind = 'work_package') => ({ kind, id });
-const graph = async (client: Client, request: string) => (await client.call('read_plan', {
+const graph = async (client: Client, request: string) => (await client.call('read_plan', { detail: 'full',
   work_request_id: request, view: 'groups_with_work_packages',
 })).product_tree.execution_graph;
 
@@ -79,15 +79,15 @@ test('candidate pins allow dispatch but all overlapping constraints and current 
   await architect.call('upsert_dependency', { dependency_id: ordinary, dependent: endpoint(ui), prerequisite: endpoint(backend), candidate_head_sha: head('b'), reason: 'Conflicting candidate qualification.' });
   await architect.reject('dispatch_work_package', { work_package_id: ui }, 'unmet_work_package_dependencies');
   await architect.call('delete_dependency', { dependency_id: ordinary });
-  const dispatch = await architect.call('dispatch_work_package', { work_package_id: ui });
+  const dispatch = await architect.call('dispatch_work_package', { detail: 'full', work_package_id: ui });
   const selection = dispatch.worker_bootstrap.assignment.dependency_selections[0].constraints[0];
   expect(selection.candidate_head_sha).toBe(head('a'));
   expect(selection.candidate_state).toBe('current');
   expect(selection.selection_updated_at).toBeTruthy();
-  const contextBefore = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
+  const contextBefore = (await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
   const invalidContext = await architect.rpc('tools/call', { name: 'upsert_dependency', arguments: { ...pinned, dependency_id: pin, reason: '', decision_ref: {} } });
   expect(invalidContext.error).toBeTruthy();
-  const contextAfter = (await architect.call('read_plan', { work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
+  const contextAfter = (await architect.call('read_plan', { detail: 'full', work_request_id: request })).product_tree.dependency_intents.find((edge: any) => edge.id === pin);
   expect(contextAfter).toEqual(contextBefore);
   expect(contextAfter.decision_ref).toEqual({ id: decision.decision_log_entry.id });
   expect((await graph(architect, request)).effective_edges.find((edge: any) => edge.dependent_work_package_id === ui).constraints[0].candidate_head_sha).toBe(head('a'));
@@ -171,7 +171,7 @@ test('clearing a candidate and expanding to a group requires fresh qualification
   expect((await row(architect, request, ui)).merge_eligibility.eligible).toBe(true);
 });
 
-test('out-of-order external merge remains truthful through dry-run, apply and later prerequisite delivery', async ({ delivery: { factory, provider } }) => {
+test('out-of-order automatic and manual closeout retain order violations through reconciliation', async ({ delivery: { factory, provider } }) => {
   const architect = await factory.client();
   const request = await architect.request('External merge order');
   const [backend, ui, replay] = (await architect.call('slice_work_request', { work_packages: [contract('Prerequisite'), contract('Dependent'), contract('Manual action replay')] })).work_package_ids;
@@ -185,18 +185,25 @@ test('out-of-order external merge remains truthful through dry-run, apply and la
     expect((await sync(architect, wp, number, head('d'))).pr_sync.readiness_reasons).toContain('dependencies_unavailable');
     expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(false);
     provider.set(number, pr(number, head('d'), { state: 'MERGED', mergedAt: mergeTime, mergeCommit: { oid: head('f') } }));
-    await sync(architect, wp, number, head('d'));
+    if (wp === ui) {
+      await architect.call('sync_pr', { work_package_id: wp, url: prUrl(number) });
+    } else {
+      const action = { work_package_id: wp, outcome: 'pr_merged', idempotency_key: 'external-manual-closeout', recorded_by: 'acceptance-architect', evidence: {
+        pr_merged: { pr_url: prUrl(number), pr_number: number, pr_repository: 'example/service', pr_merged_at: mergeTime, merge_commit_sha: head('f') },
+      } };
+      const recorded = (await architect.call('record_work_package_delivery', action)).work_package_delivery;
+      expect(recorded.outcome).toBe('pr_merged');
+      expect(recorded.recorded_by).toBe('acceptance-architect');
+      expect((await architect.call('record_work_package_delivery', action)).work_package_delivery.id).toBe(recorded.id);
+    }
   }
   const dry = await architect.call('reconcile_work_request', { work_request_id: request, recorded_by: 'acceptance-architect' });
-  expect(dry.reconciliation.proposed_count).toBe(2);
+  expect(dry.reconciliation.proposed_count).toBe(0);
   expect(dry.reconciliation.applied_count).toBe(0);
-  expect((await row(architect, request, ui)).delivery_outcome).toBeNull();
-  const action = dry.reconciliation.results.find((result: any) => result.action?.work_package_id === replay).action;
-  expect(action.recorded_by).toBe('acceptance-architect');
-  expect((await architect.call('record_work_package_delivery', action)).work_package_delivery.outcome).toBe('pr_merged');
+  expect((await row(architect, request, ui)).delivery_outcome).toBe('pr_merged');
   expect((await row(architect, request, replay)).work_package.blocker_state['active?']).toBe(false);
   const applied = await architect.call('reconcile_work_request', { work_request_id: request, apply: true });
-  expect(applied.reconciliation.applied_count).toBe(1);
+  expect(applied.reconciliation.applied_count).toBe(0);
   const merged = await row(architect, request, ui);
   expect(merged.raw_status).toBe('merged');
   expect(merged.delivery_outcome).toBe('pr_merged');

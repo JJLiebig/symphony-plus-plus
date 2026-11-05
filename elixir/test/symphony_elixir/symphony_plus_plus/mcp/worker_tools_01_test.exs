@@ -537,7 +537,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     # A fresh session recovers the original observation without replaying its mutation.
     reconnected = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
-    response = mcp_tool(repo, reconnected, "read_work_package_document", %{"document" => "progress.md"})
+    response = mcp_tool(repo, reconnected, "read_work_package_document", %{"detail" => "full", "document" => "progress.md"})
     assert [%{"id" => ^id, "sequence" => 1, "idempotency_key" => "consumed-once"} = event] = get_in(response, ["result", "structuredContent", "progress_events"])
     assert event["payload"]["observation"] == %{"head_sha" => "consumer-head", "dependency_inputs" => [input]}
     assert event["body"] =~ "Evidence is in the existing PR."
@@ -559,7 +559,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
       assert {:ok, _} = PlanningRepository.append_audit_progress_event(repo, assignment, attrs)
     end
 
-    typed = mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"})
+    typed = mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => "progress.md"})
     [_, branch, pr] = get_in(typed, ["result", "structuredContent", "progress_events"])
     assert branch["payload"]["observation"] == %{"type" => "branch", "source_tool" => "attach_branch", "branch" => "agent/example", "head_sha" => "branch-head"}
     assert pr["payload"]["observation"]["head_sha"] == "pr-head"
@@ -573,17 +573,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     expected_identity = "sha256:" <> Base.encode16(:crypto.hash(:sha256, generated_key), case: :lower)
     assert pr["idempotency_key"] == expected_identity
     refute Jason.encode!(typed) =~ generated_key
-    handoff = mcp_tool(repo, reconnected, "read_work_package_document", %{"document" => "handoff.md"})
+    handoff = mcp_tool(repo, reconnected, "read_work_package_document", %{"detail" => "full", "document" => "handoff.md"})
     assert List.last(get_in(handoff, ["result", "structuredContent", "latest_progress"]))["idempotency_key"] == expected_identity
     refute Jason.encode!(handoff) =~ generated_key
 
     operator_key = "operator_sync_pr:#{package.id}:operator:" <> Base.url_encode64(:erlang.term_to_binary(%{"private_payload" => "hidden"}))
     assert {:ok, _} = PlanningRepository.append_finding(repo, %{work_package_id: package.id, title: "Encoded", body: "Safe body", idempotency_key: operator_key})
-    finding_history = mcp_tool(repo, session, "read_work_package_document", %{"document" => "findings.md"})
+    finding_history = mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => "findings.md"})
     assert List.last(get_in(finding_history, ["result", "structuredContent", "findings"]))["idempotency_key"] =~ ~r/^sha256:[a-f0-9]{64}$/
     refute Jason.encode!(finding_history) =~ operator_key
 
-    finding = mcp_tool(repo, session, "read_work_package_document", %{"document" => "findings.md"}) |> get_in(["result", "structuredContent", "findings", Access.at(0)])
+    finding = mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => "findings.md"}) |> get_in(["result", "structuredContent", "findings", Access.at(0)])
     assert finding["sequence"] == 1
     assert finding["idempotency_key"] == "finding-once"
     assert finding["body"] == "Recover the finding body"
@@ -601,7 +601,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
 
     document = "handoff.md"
     collection = "artifacts"
-    first = mcp_tool(repo, session, "read_work_package_document", %{"document" => document}) |> get_in(["result", "structuredContent"])
+    first = mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => document}) |> get_in(["result", "structuredContent"])
     assert Enum.map(first[collection], & &1["sequence"]) == Enum.to_list(106..205)
     assert first["omitted"][collection] == 105
     assert first["next_before_sequence"] == 106
@@ -609,10 +609,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Concurrent append #{document}"})
     assert {:ok, _} = PlanningRepository.append_artifact(repo, %{work_package_id: package.id, title: "Concurrent append", path: document})
 
-    second = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => first["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+    second =
+      mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => document, "before_sequence" => first["next_before_sequence"]})
+      |> get_in(["result", "structuredContent"])
+
     assert Enum.map(second[collection], & &1["sequence"]) == Enum.to_list(6..105)
     assert second["omitted"][collection] == 5
-    last = mcp_tool(repo, session, "read_work_package_document", %{"document" => document, "before_sequence" => second["next_before_sequence"]}) |> get_in(["result", "structuredContent"])
+
+    last =
+      mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => document, "before_sequence" => second["next_before_sequence"]})
+      |> get_in(["result", "structuredContent"])
+
     assert Enum.map(last[collection], & &1["sequence"]) == Enum.to_list(1..5)
     assert last["omitted"][collection] == 0
     assert last["next_before_sequence"] == nil
@@ -629,8 +636,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools01Test do
     session = MCPHarness.session(assignment, proof_hash: minted.grant.secret_hash)
 
     repo.update_all(AccessGrant, set: [expires_at: DateTime.add(DateTime.utc_now(:microsecond), -1, :second)])
-    assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"}), ["error", "data", "reason"]) == "expired"
+    assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => "progress.md"}), ["error", "data", "reason"]) == "expired"
     assert {:ok, _} = AccessGrantService.revoke(repo, minted.grant.id)
-    assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"document" => "progress.md"}), ["error", "data", "reason"]) == "revoked"
+    assert get_in(mcp_tool(repo, session, "read_work_package_document", %{"detail" => "full", "document" => "progress.md"}), ["error", "data", "reason"]) == "revoked"
   end
 end

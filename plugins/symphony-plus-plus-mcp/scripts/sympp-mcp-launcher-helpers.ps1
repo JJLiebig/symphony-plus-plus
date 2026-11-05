@@ -119,6 +119,17 @@ function Test-SymppInstalledMarketplacePluginRoot([string]$PluginRoot) {
   return (Split-Path -Leaf $cacheRoot) -eq "cache" -and (Split-Path -Leaf $pluginsRoot) -eq "plugins"
 }
 
+function Get-SymppSkillsBundleHash([string]$PluginRoot) {
+  $root = [IO.Path]::GetFullPath($PluginRoot).TrimEnd('\', '/')
+  $records = [string[]]@(Get-ChildItem -LiteralPath $PluginRoot -File -Recurse -Force | Where-Object {
+    $_.FullName -ine (Join-Path $PluginRoot '.sympp-runtime-artifacts.json')
+  } | ForEach-Object {
+    $_.FullName.Substring($root.Length + 1).Replace('\', '/') + ' ' + (Get-FileSha256 $_.FullName)
+  })
+  [Array]::Sort($records, [StringComparer]::Ordinal)
+  return Get-SymppStringSha256 ($records -join "`n")
+}
+
 function Read-SymppPortableInstall([string]$PluginRoot) {
   $path = Join-Path $PluginRoot ".sympp-install.json"
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
@@ -155,6 +166,9 @@ function Resolve-SymppInstalledIdentity([string]$PluginRoot, [switch]$ReadOnly) 
   $root = [System.IO.Path]::GetFullPath($PluginRoot)
   # Portable content identifies the install; only a verified artifact identifies runtime source.
   $probe = Resolve-SymppPreparedArtifactRuntime $root $null $portable.contract_fingerprint -ValidateOnly
+  if ($probe.detail -eq 'contract_mismatch') {
+    throw 'The Skills bundle and runtime channel have different MCP contracts. Run scripts/install-sympp-beta.ps1 for beta, or update Skills with npx skills update symphony-plus-plus --project --yes, then open fresh MCP client sessions.'
+  }
   $revision = Normalize-SymppMarketplaceSourceRevision ([string]$probe.runtime.source_revision)
   if (-not $revision) { throw "The selected runtime has no valid source revision." }
   $identity = [pscustomobject]@{
@@ -441,7 +455,13 @@ function Get-ActiveBridgeLeases([string]$RuntimeFile) {
   foreach ($leasePath in @(Get-ChildItem -LiteralPath $leaseDir -Filter "bridge-*.json" -File -ErrorAction SilentlyContinue)) {
     $lease = $null
     try {
-      $lease = Get-Content -LiteralPath $leasePath.FullName -Raw | ConvertFrom-Json
+      # Another client may detach while this Windows reader is still open.
+      $reader = [IO.StreamReader]::new([IO.File]::Open($leasePath.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)))
+      try {
+        $lease = $reader.ReadToEnd() | ConvertFrom-Json
+      } finally {
+        $reader.Dispose()
+      }
     } catch {
     }
     $candidates.Add([pscustomobject]@{ path = $leasePath.FullName; lease = $lease })

@@ -289,6 +289,7 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
 
   defp validate_local_request(conn) do
     cond do
+      SymphonyElixirWeb.FactoryAccessPlug.authenticated?(conn) -> {:ok, true}
       not loopback_address?(conn.remote_ip) -> {:error, :local_only}
       not loopback_host?(conn.host) -> {:error, :local_only}
       forwarded_request?(conn) -> {:error, :local_only}
@@ -297,6 +298,8 @@ defmodule SymphonyElixirWeb.MCPHTTPPlug do
       true -> {:ok, true}
     end
   end
+
+  defp validate_origin(%Conn{private: %{sympp_remote_authenticated: true}}), do: :ok
 
   defp validate_origin(conn) do
     case Conn.get_req_header(conn, "origin") do

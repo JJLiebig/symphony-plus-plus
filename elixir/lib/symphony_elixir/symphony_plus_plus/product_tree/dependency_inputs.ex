@@ -92,12 +92,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ProductTree.DependencyInputs do
         |> reason(Enum.any?(constraints, &(not &1.delivered_before)), "delivery_order_violation")
 
       ready = state.status == "ready_for_merge"
+      terminal = state.status in ["skipped", "merged", "closed", "abandoned"] or not is_nil(state.delivery_outcome)
 
       %{
         work_package_id: id,
-        eligible: ready and reasons == [],
-        reason_codes: if(ready or state.delivery_outcome == "pr_merged", do: reasons, else: ["not_ready" | reasons]),
-        next_action: next_action(reasons, ready)
+        eligible: ready and not terminal and reasons == [],
+        reason_codes: if(ready or terminal, do: reasons, else: ["not_ready" | reasons]),
+        next_action: if(terminal, do: nil, else: next_action(reasons, ready))
       }
     end)
   end

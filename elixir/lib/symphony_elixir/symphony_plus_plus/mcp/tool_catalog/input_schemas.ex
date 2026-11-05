@@ -15,6 +15,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   def solo_tool_input_schema(name), do: SoloTools.input_schema(name)
 
   @spec bootstrap_tool_input_schema(tool_name()) :: input_schema()
+  def bootstrap_tool_input_schema("register_chief") do
+    schema(
+      %{
+        "domain" => string_schema(),
+        "repos" => %{"type" => "array", "items" => string_schema()},
+        "session_description" => session_description_schema()
+      },
+      ["domain"]
+    )
+    |> Map.put("additionalProperties", true)
+  end
+
   def bootstrap_tool_input_schema("create_work_request") do
     schema(
       %{
@@ -132,6 +144,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "document" => string_enum_schema(Renderer.virtual_files()),
+        "detail" => payload_detail_schema(),
         "before_sequence" => integer_schema() |> Map.put("minimum", 1)
       },
       ["document"]
@@ -277,13 +290,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   end
 
   def architect_tool_input_schema("read_work_request") do
-    schema(%{"work_request_id" => string_schema(), "session_description" => session_description_schema()}, ["work_request_id"])
+    schema(%{"work_request_id" => string_schema(), "session_description" => session_description_schema(), "detail" => payload_detail_schema()}, ["work_request_id"])
   end
 
   def architect_tool_input_schema("read_plan") do
     schema(
       %{
         "work_request_id" => described_string_schema("Scoped WorkRequest id to project."),
+        "detail" => payload_detail_schema(),
         "view" =>
           ToolCatalog.work_request_product_tree_views()
           |> string_enum_schema()
@@ -306,7 +320,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   def architect_tool_input_schema("read_delivery_board") do
     schema(
       %{
-        "work_request_id" => current_work_request_id_schema()
+        "work_request_id" => current_work_request_id_schema(),
+        "detail" => payload_detail_schema()
       },
       []
     )
@@ -317,8 +332,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
       %{
         "work_request_id" => current_work_request_id_schema(),
         "work_package_id" => described_string_schema("Explicit descendant WorkPackage to synchronize through GitHub."),
-        "url" => described_string_schema("PR URL from the normal worker handoff. Supply head_sha with it to reconcile readiness without a worker claim."),
-        "head_sha" => described_string_schema("Expected PR head from the handoff; must match the fetched provider head.")
+        "url" => described_string_schema("PR URL to synchronize; merged PRs close delivery from GitHub merge evidence."),
+        "number" => pr_number_schema(),
+        "repository" => string_schema(),
+        "head_sha" => described_string_schema("Optional expected PR head; when supplied, must match the fetched provider head.")
       },
       ["work_package_id"]
     )
@@ -341,6 +358,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_request_id" => current_work_request_id_schema(),
+        "detail" => payload_detail_schema(),
         "apply" =>
           boolean_schema()
           |> Map.put("description", "When false or omitted, only report proposed closeout repairs. When true, apply through record_work_package_delivery."),
@@ -608,7 +626,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
     schema(
       %{
         "work_request_id" => current_work_request_id_schema(),
-        "work_package_id" => string_schema()
+        "work_package_id" => string_schema(),
+        "detail" => payload_detail_schema()
       },
       ["work_package_id"]
     )
@@ -1028,5 +1047,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
 
   defp session_description_schema do
     described_string_schema("Optional human-readable place to find this session outside Herdr, such as Terminal window: widget work.")
+  end
+
+  defp payload_detail_schema do
+    ["summary", "full"]
+    |> string_enum_schema()
+    |> Map.put("default", "summary")
+    |> Map.put("description", "Summary by default; full includes the complete payload.")
   end
 end

@@ -42,10 +42,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
         worker_session_tool_specs() ++ local_assignment_claim_tool_specs(config)
 
       :architect ->
-        architect_session_tool_specs(current_work_request?: true) ++ local_architect_assignment_claim_tool_specs(config)
+        architect_tools = architect_session_tool_specs(current_work_request?: true)
+        architect_tools ++ local_architect_assignment_claim_tool_specs(config) ++ [bootstrap_tool_spec("register_chief")]
 
       profile when profile in [:coordinator, :solo] ->
-        introspection_tool_specs() ++ Enum.map(ToolCatalog.solo_tools(), &SoloTools.tool_spec/1)
+        chief_tools = if(profile == :coordinator, do: [bootstrap_tool_spec("register_chief")], else: [])
+        introspection_tool_specs() ++ Enum.map(ToolCatalog.solo_tools(), &SoloTools.tool_spec/1) ++ chief_tools
 
       :full ->
         unbound_tool_specs_for_config(config) ++ local_operator_tool_specs()
@@ -110,16 +112,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     %{
       "name" => name,
       "title" => name,
-      "description" => "Symphony++ worker tool #{name}.",
+      "description" => worker_tool_description(name),
       "inputSchema" => InputSchemas.worker_tool_input_schema(name)
     }
   end
+
+  defp worker_tool_description("read_work_package_document"),
+    do: "Read a scoped WorkPackage document. Large progress pages summarize recent events; use detail: full with the same document/before_sequence for complete evidence."
+
+  defp worker_tool_description(name), do: "Symphony++ worker tool #{name}."
 
   defp unbound_worker_tool_spec(name) do
     %{
       "name" => name,
       "title" => name,
-      "description" => "Symphony++ worker tool #{name}.",
+      "description" => worker_tool_description(name),
       "inputSchema" => InputSchemas.unbound_worker_tool_input_schema(name)
     }
   end
@@ -139,10 +146,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     %{
       "name" => name,
       "title" => name,
-      "description" => "Create a local Symphony++ WorkRequest with creator provenance and return a redacted architect handoff.",
+      "description" => bootstrap_tool_description(name),
       "inputSchema" => InputSchemas.bootstrap_tool_input_schema(name)
     }
   end
+
+  defp bootstrap_tool_description("register_chief"),
+    do: "Register this trusted local session as the current chief for a domain. Records attribution and location only; grants no claim or dispatch authority."
+
+  defp bootstrap_tool_description("create_work_request"),
+    do: "Create a local Symphony++ WorkRequest with creator provenance and return a redacted architect handoff."
 
   defp local_architect_assignment_claim_tool_spec do
     name = ToolCatalog.local_architect_assignment_claim_tool()
@@ -225,10 +238,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
   end
 
   defp architect_tool_description("list_work_requests"), do: "List WorkRequests scoped to the architect grant's repo and base branch."
-  defp architect_tool_description("read_work_request"), do: "Read a scoped WorkRequest with clarification questions, decisions, visible WorkPackages, and status summaries."
+
+  defp architect_tool_description("read_work_request"),
+    do: "Read a compact WorkRequest overview: status, description, open questions, package next actions and recent decisions. Use detail: full for all contracts and history."
 
   defp architect_tool_description("read_plan"),
-    do: "Read the scoped WorkRequest execution graph, Groups, effective WorkPackage dependencies, and optional WorkPackage payloads."
+    do: "Read the scoped execution graph, Groups and package references. Use detail: full with the desired view for complete package payloads."
 
   defp architect_tool_description("read_task_plan"),
     do: "Read the task plan for an explicit descendant WorkPackage."
@@ -251,7 +266,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
     do:
       "Force-release a WorkPackage's worker claim, including active or paused leases and reservations left after release. Any authenticated architect may target any WorkRequest. Invalidates previous worker sessions and records an audit reason; leaves package status and delivery unchanged."
 
-  defp architect_tool_description("read_delivery_board"), do: "Read the scoped WorkRequest delivery-board projection for visible work-package closeout without broad package visibility."
+  defp architect_tool_description("read_delivery_board"), do: "Read a compact scoped WorkRequest delivery board; detail: full includes complete package and closeout evidence."
   defp architect_tool_description("attach_branch"), do: "Update canonical branch metadata for an explicit descendant WorkPackage."
 
   defp architect_tool_description("sync_pr"),
@@ -294,7 +309,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.SurfaceSpecs do
 
   defp architect_tool_description("delete_dependency"), do: "Remove one dependency intent from the claimed current WorkRequest."
   defp architect_tool_description("skip_work_package"), do: "Skip a WorkPackage that belongs to the claimed current WorkRequest."
-  defp architect_tool_description("dispatch_work_package"), do: "Activate one planned WorkPackage and return its redacted ledger-backed worker claim bootstrap."
+
+  defp architect_tool_description("dispatch_work_package"),
+    do: "Activate one planned WorkPackage and return ids, status, workspace and assignment_uri. Read that resource for the worker bootstrap, or request detail: full inline."
+
   defp architect_tool_description("prepare_work_package_worktree"), do: "Prepare a scoped WorkPackage git worktree and record only its worktree_path."
   defp architect_tool_description("cleanup_work_package_worktree"), do: "Clean up a scoped WorkPackage git worktree after validating the recorded path and dirty state."
 

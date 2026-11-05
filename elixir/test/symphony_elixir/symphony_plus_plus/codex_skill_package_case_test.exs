@@ -3,7 +3,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
   use ExUnit.CaseTemplate
 
   using opts do
-    async? = Keyword.get(opts, :async, true)
+    # Enable diagnostics use the synchronous default to avoid PowerShell contention.
+    async? = Keyword.get(opts, :async, false)
 
     quote do
       use ExUnit.Case, async: unquote(async?)

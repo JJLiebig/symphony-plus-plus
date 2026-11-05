@@ -1,7 +1,7 @@
 Code.require_file("codex_skill_package_case_test.exs", __DIR__)
 
 defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageEnableMissingDefaultConfigTest do
-  use SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase, async: true
+  use SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase
 
   @moduletag :ci_slow
 

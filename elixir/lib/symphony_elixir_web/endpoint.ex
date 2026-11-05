@@ -8,6 +8,7 @@ defmodule SymphonyElixirWeb.Endpoint do
   plug(Plug.RequestId)
   plug(Plug.Telemetry, event_prefix: [:phoenix, :endpoint])
 
+  plug(SymphonyElixirWeb.FactoryAccessPlug)
   plug(SymphonyElixirWeb.MCPHTTPPlug)
 
   plug(Plug.Static,

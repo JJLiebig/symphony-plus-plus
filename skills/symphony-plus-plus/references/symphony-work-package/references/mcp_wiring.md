@@ -11,13 +11,14 @@ runtime pointer as the MCP package. Git, Node.js 22.20+, PowerShell 7 and the se
 host are required on Windows x64. No marketplace clone or Codex cache is needed.
 Native Linux/macOS and Windows ARM setup are unsupported.
 
-Install from the intended project:
+Install globally:
 
 ```powershell
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/beta --agent codex claude-code --skill symphony-plus-plus --yes
-node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main -g --agent codex claude-code --skill symphony-plus-plus --yes
+node $HOME/.agents/skills/symphony-plus-plus/scripts/setup-sympp.js
 ```
 
+For a project install omit `-g` and use `.agents/skills/symphony-plus-plus/scripts/setup-sympp.js`.
 Use one `--agent` for one host. For a Claude-only copy, run setup from
 `.claude/skills/symphony-plus-plus/scripts/setup-sympp.js`. Setup detects installed
 hosts; `--host codex`, `--host claude` or `--host both` selects explicitly.
@@ -27,7 +28,7 @@ Then open a fresh model session; setup cannot load tools into an existing one.
 Before setup, set `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE` and optional
 `SYMPP_BACKEND_PORT`; both host entries capture those choices. Codex writes only
 the selected `CODEX_HOME/config.toml` with 360/300-second startup/tool timeouts.
-Claude writes only the project's `.mcp.json`. Use a dedicated workspace, host
+Claude uses user scope for global installs and the project's `.mcp.json` for project installs. Use a dedicated workspace, host
 profiles, Symphony++ home, ledger and port for side-by-side beta; do not reuse
 the factory ledger for dogfooding. A raw copied ledger is not an MCP sandbox.
 
@@ -35,65 +36,25 @@ Both hosts share one managed runtime only with the same home/runtime file and
 ledger. Setup refuses conflicting unmanaged registration or an enabled MCP
 marketplace plugin in the selected Codex home. It repairs only its own entry.
 Keep local machine paths out of committed shared configuration.
-Claude local entries override project configuration. If this project has an old
+Claude local and project entries override user configuration; local entries also override project configuration. If this project has an old
 local entry, remove it with `claude mcp remove --scope local symphony_plus_plus`
 before opening a fresh session; setup does not inspect that local store.
 
-Close this runtime's clients, then update from the same project with
-`npx --yes skills@1.7.0 update symphony-plus-plus --project --yes` and open fresh
+Close this runtime's clients, then update with
+`npx --yes skills@1.7.0 update symphony-plus-plus -g --yes` (or `--project` for a project install) and open fresh
 sessions. Skills 1.7.0 retains the beta branch. The stable install path preserves
 registration; repeat setup after relocating the installation. Before updating,
-back up the installed skill directory and project lock. Rollback re-adds that
+back up the installed skill directory and its Skills lock. Rollback re-adds that
 local bundle or a known previous Skills-capable commit using `/tree/<full-sha>`
 and repeats setup. The lock does not record a resolved installation commit.
 Older runtime tags contain procedures only. Ledger migrations and retention
 need their own stopped-backup rollback. Setup prints the selected runtime build
 and payload digest; changing launcher/procedures does not require a new runtime.
 
-## Windows Marketplace Beta
+## Existing Marketplace Installations
 
-Use Git, Node.js, PowerShell 7 and Codex on Windows. The skill-only
-`symphony-plus-plus` package does not start MCP; dedicated persistent sessions
-use `symphony-plus-plus-mcp`. Keep ordinary reviewer sessions MCP-free.
-
-Choose separate beta paths in PowerShell:
-
-```powershell
-$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
-New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
-$env:SYMPP_HOME = Join-Path $env:USERPROFILE '.agents/splusplus-beta'
-$env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'symphony_plus_plus.sqlite3'
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
-codex plugin marketplace upgrade symphony-plus-plus
-codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
-```
-
-Retain these variables in every beta terminal. `CODEX_HOME` owns the
-marketplace/configuration/cache; `SYMPP_HOME` owns launcher state;
-`SYMPP_DATABASE` selects the ledger. Only changing `SYMPP_HOME` does not
-isolate the ledger. Both hosts must use the same chosen paths to share work.
-Use the host's normal sign-in flow in a new home; never copy credentials.
-
-Open a fresh Codex session. The plugin's bundled `.mcp.json` starts its local
-command-backed stdio bridge. No separate server command is required.
-
-For Claude Code, install the portable procedures separately, then register
-the same installed bridge from the intended project:
-
-```powershell
-$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0/scripts/start-sympp-mcp.cmd'
-claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
-```
-
-Follow host approval prompts and start a fresh Claude session. Local scope
-keeps registration with that project. The absolute bridge path needs no source
-checkout or working directory. If a later upgrade changes the package version,
-register the new installed path before reopening Claude.
-
-The runtime follows the recorded branch's floating channel (`stable` for main, `beta` for beta).
-Branch pushes publish automatically; cold startup resolves the latest successfully
-published build, while healthy clients keep their current backend. Read actual
-health provenance before assuming a new source feature has reached the runtime.
+Existing installations can run `codex plugin marketplace upgrade symphony-plus-plus`
+and open fresh sessions. New installations use the global Skills route above.
 
 ## Shared Runtime And Recovery
 

@@ -2842,6 +2842,7 @@ try {
     plugin_root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
     mcp_transport = "stdio_to_http_bridge"
     runtime_key = $runtimeKey
+    runtime_channel = Get-SymppRuntimeChannel $pluginRoot
     runtime_kind = if ($runtimeMode -eq "artifact") { "artifact" } elseif ($backendPlan.managed -eq $true) { "managed" } else { [string]$backendPlan.status }
     runtime_mode = $runtimeMode
     artifact = if ($artifactRuntime) {
@@ -2852,6 +2853,7 @@ try {
         sha256 = $artifactRuntime.sha256
         platform = $artifactRuntime.platform
         manifest_path = $artifactRuntime.manifest_path
+        checkout = Get-JsonPathValue $artifactRuntime @("checkout")
         prepared_release = if ($backendLaunch -and $dashboardPlan.status -eq "artifact_static") { $backendLaunch.prepared_release } else { $null }
       }
     } elseif ($null -ne $runtimeState -and $null -ne $runtimeState.artifact) {

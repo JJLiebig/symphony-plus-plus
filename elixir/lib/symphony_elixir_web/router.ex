@@ -23,6 +23,28 @@ defmodule SymphonyElixirWeb.Router do
   end
 
   scope "/", SymphonyElixirWeb do
+    pipe_through(:browser)
+
+    post("/api/v1/sympp/herdr/work-requests", SymppDashboardApiController, :herdr_create_work_request)
+
+    post(
+      "/api/v1/sympp/herdr/work-requests/:work_request_id/questions/:question_id/answer",
+      SymppDashboardApiController,
+      :herdr_answer_question
+    )
+
+    post(
+      "/api/v1/sympp/herdr/work-packages/:work_package_id/guidance/:guidance_request_id/answer",
+      SymppDashboardApiController,
+      :herdr_answer_guidance
+    )
+
+    match(:*, "/api/v1/sympp/herdr/work-requests", ObservabilityApiController, :method_not_allowed)
+    match(:*, "/api/v1/sympp/herdr/work-requests/:work_request_id/questions/:question_id/answer", ObservabilityApiController, :method_not_allowed)
+    match(:*, "/api/v1/sympp/herdr/work-packages/:work_package_id/guidance/:guidance_request_id/answer", ObservabilityApiController, :method_not_allowed)
+  end
+
+  scope "/", SymphonyElixirWeb do
     pipe_through(:operator_dashboard_api)
 
     options("/api/v1/sympp/operator/*path", SymppDashboardApiController, :operator_options)
@@ -32,6 +54,7 @@ defmodule SymphonyElixirWeb.Router do
     get("/api/v1/sympp/operator/dashboard/hydrated", SymppDashboardApiController, :operator_dashboard_hydrated)
     get("/api/v1/sympp/operator/events", SymppDashboardApiController, :operator_events)
     get("/api/v1/sympp/operator/dashboard/events", SymppDashboardApiController, :operator_dashboard_events)
+    get("/api/v1/sympp/herdr/dashboard", SymppDashboardApiController, :herdr_dashboard)
     get("/api/v1/sympp/herdr/events", SymppDashboardApiController, :herdr_events)
     get("/api/v1/sympp/herdr/work-requests/:work_request_id", SymppDashboardApiController, :herdr_work_request_detail)
     post("/api/v1/sympp/operator/settings", SymppDashboardApiController, :operator_update_settings)
@@ -88,6 +111,7 @@ defmodule SymphonyElixirWeb.Router do
     match(:*, "/api/v1/sympp/operator/dashboard/hydrated", ObservabilityApiController, :method_not_allowed)
     match(:*, "/api/v1/sympp/operator/events", ObservabilityApiController, :method_not_allowed)
     match(:*, "/api/v1/sympp/operator/dashboard/events", ObservabilityApiController, :method_not_allowed)
+    match(:*, "/api/v1/sympp/herdr/dashboard", ObservabilityApiController, :method_not_allowed)
     match(:*, "/api/v1/sympp/herdr/events", ObservabilityApiController, :method_not_allowed)
     match(:*, "/api/v1/sympp/herdr/work-requests/:work_request_id", ObservabilityApiController, :method_not_allowed)
     match(:*, "/api/v1/sympp/operator/settings", ObservabilityApiController, :method_not_allowed)

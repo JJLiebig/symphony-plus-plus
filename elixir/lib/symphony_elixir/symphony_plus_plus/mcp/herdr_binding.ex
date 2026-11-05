@@ -57,6 +57,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.HerdrBinding do
     end)
   end
 
+  defp unbound_response_binding(
+         %{"method" => "tools/call", "params" => %{"name" => "register_chief"}},
+         %{"result" => %{"structuredContent" => %{"chief" => %{"domain" => domain}}}}
+       ) do
+    %{"role" => "chief", "domain" => domain}
+  end
+
   defp unbound_response_binding(payload, response) do
     cond do
       not successful_response?(response) -> nil

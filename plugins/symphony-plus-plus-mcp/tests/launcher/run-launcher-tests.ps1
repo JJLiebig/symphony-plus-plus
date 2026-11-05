@@ -269,16 +269,28 @@ try {
   $wrapperScript = Join-Path $pendingRoot "wrapper.ps1"
   $wrapperReady = Join-Path $pendingRoot "wrapper-ready"
   $wrapperRelease = Join-Path $pendingRoot "wrapper-release"
+  $wrapperChild = Join-Path $pendingRoot "wrapper-child.json"
+  $backendReady = Join-Path $pendingRoot "backend-ready"
+  $backendRelease = Join-Path $pendingRoot "backend-release"
   $leaderCmd = Join-Path $pendingRoot "leader.cmd"
-  Set-Content -LiteralPath $runtimeCmd -Value "@echo off`r`npowershell.exe -NoProfile -NonInteractive -Command `"Start-Sleep -Seconds 60`"" -NoNewline
+  Set-Content -LiteralPath (Join-Path $pendingRoot "hold.ps1") -Value 'while (-not (Test-Path -LiteralPath $env:SYMPP_TEST_BACKEND_RELEASE)) { Start-Sleep -Milliseconds 25 }'
+  Set-Content -LiteralPath (Join-Path $pendingRoot "backend.ps1") -Value @(
+    '[System.IO.File]::WriteAllText($env:SYMPP_TEST_BACKEND_READY, "ready")'
+    '& (Join-Path $PSScriptRoot "hold.ps1")'
+  )
+  Set-Content -LiteralPath $runtimeCmd -Value "@echo off`r`npowershell.exe -NoProfile -NonInteractive -File `"%~dp0backend.ps1`"" -NoNewline
   Set-Content -LiteralPath $wrapperScript -Value @(
     '[System.IO.File]::WriteAllText($env:SYMPP_TEST_WRAPPER_READY, "ready")'
     'while (-not (Test-Path -LiteralPath $env:SYMPP_TEST_WRAPPER_RELEASE)) { Start-Sleep -Milliseconds 25 }'
-    'Start-Process cmd.exe -ArgumentList @("/d", "/s", "/c", "call `"$env:SYMPP_TEST_RUNTIME_CMD`"") -WorkingDirectory $env:SYMPP_TEST_RUNTIME_ROOT | Out-Null'
+    '$child = Start-Process cmd.exe -ArgumentList @("/d", "/s", "/c", "call `"$env:SYMPP_TEST_RUNTIME_CMD`"") -WorkingDirectory $env:SYMPP_TEST_RUNTIME_ROOT -WindowStyle Hidden -PassThru'
+    '[System.IO.File]::WriteAllText(($env:SYMPP_TEST_WRAPPER_CHILD + ".tmp"), (@{ pid = $child.Id; parent_pid = $PID } | ConvertTo-Json -Compress))'
+    '[System.IO.File]::Move(($env:SYMPP_TEST_WRAPPER_CHILD + ".tmp"), $env:SYMPP_TEST_WRAPPER_CHILD)'
   )
-  Set-Content -LiteralPath $leaderCmd -Value "@echo off`r`npowershell.exe -NoProfile -NonInteractive -File `"%~dp0wrapper.ps1`"`r`npowershell.exe -NoProfile -NonInteractive -Command `"Start-Sleep -Seconds 60`"" -NoNewline
+  Set-Content -LiteralPath $leaderCmd -Value "@echo off`r`npowershell.exe -NoProfile -NonInteractive -File `"%~dp0wrapper.ps1`"`r`npowershell.exe -NoProfile -NonInteractive -File `"%~dp0hold.ps1`"" -NoNewline
   $env:SYMPP_TEST_WRAPPER_READY = $wrapperReady; $env:SYMPP_TEST_WRAPPER_RELEASE = $wrapperRelease
   $env:SYMPP_TEST_RUNTIME_CMD = $runtimeCmd; $env:SYMPP_TEST_RUNTIME_ROOT = $pendingRoot
+  $env:SYMPP_TEST_WRAPPER_CHILD = $wrapperChild
+  $env:SYMPP_TEST_BACKEND_READY = $backendReady; $env:SYMPP_TEST_BACKEND_RELEASE = $backendRelease
   $publishedAt = [DateTimeOffset]::UtcNow
   $leader = Start-Process cmd.exe -ArgumentList @('/d', '/s', '/c', "call `"$leaderCmd`"") -WorkingDirectory $pendingRoot -WindowStyle Hidden -PassThru
   $leaderIdentity = Get-ProcessStartIdentity $leader
@@ -291,14 +303,18 @@ try {
   $wrapperIdentity = Get-ProcessStartIdentity $wrapperProcess
   Set-Content -LiteralPath $wrapperRelease -Value "ready" -NoNewline
   $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
-  $owned = $null
-  while ($null -eq $owned -and [DateTimeOffset]::UtcNow -lt $deadline) {
-    $owned = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapperPid" -ErrorAction SilentlyContinue | Where-Object { [string]$_.CommandLine -match 'start-runtime\.cmd' } | Select-Object -First 1
-    if ($null -eq $owned) { Start-Sleep -Milliseconds 25 }
+  while ((-not (Test-Path -LiteralPath $wrapperChild) -or -not (Test-Path -LiteralPath $backendReady)) -and [DateTimeOffset]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 25
   }
-  # Wrapper startup and CIM child discovery must not consume the separate exit allowance.
-  Assert-True ($null -ne $owned -and $wrapperProcess.WaitForExit(10000)) "Published wrapper did not exit after creating its backend child"
-  $ownedPid = [int]$owned.ProcessId
+  # The producer supplies fixture identity; real recovery below still proves CIM lineage.
+  $reportedChild = if (Test-Path -LiteralPath $wrapperChild) { Get-Content -LiteralPath $wrapperChild -Raw | ConvertFrom-Json } else { $null }
+  if ($reportedChild) { $ownedPid = [int]$reportedChild.pid }
+  Assert-True ($null -ne $reportedChild) "Backend child publication failed: wrapper=$wrapperPid exited=$($wrapperProcess.HasExited)"
+  Assert-True (Test-Path -LiteralPath $backendReady) "Backend child readiness failed: wrapper=$wrapperPid child=$ownedPid"
+  Assert-True ($reportedChild.parent_pid -eq $wrapperPid) "Backend child publication named the wrong wrapper: expected=$wrapperPid actual=$($reportedChild.parent_pid)"
+  $ownedProcess = Get-Process -Id $ownedPid -ErrorAction Stop
+  Assert-True (-not $ownedProcess.HasExited) "Published backend child exited before recovery: child=$ownedPid"
+  Assert-True ($wrapperProcess.WaitForExit(10000)) "Published wrapper exit failed after child readiness: wrapper=$wrapperPid child=$ownedPid"
   Stop-Process -Id $leader.Id -Force; [void]$leader.WaitForExit(5000)
   $unrelated = Start-Process cmd.exe -ArgumentList @('/d', '/s', '/c', "call `"$runtimeCmd`"") -WorkingDirectory $pendingRoot -WindowStyle Hidden -PassThru
   $controls = New-SymppPublicationControls 31991 31991 $true $true $null $null
@@ -314,10 +330,15 @@ try {
   Assert-True (Test-SymppStartingBackendOwned $pendingState $identity $controls) "Leader-death recovery must adopt the exact backend child after its published wrapper exits"
   Assert-True ([int]$pendingState.publication.backend.pid -eq $ownedPid -and [int]$pendingState.publication.backend.pid -ne $unrelated.Id) "Pending recovery must not adopt an unrelated loopback process"
 } finally {
+  if (Test-Path -LiteralPath $pendingRoot) { Set-Content -LiteralPath $backendRelease -Value "release" -NoNewline }
+  if (-not $ownedPid -and (Test-Path -LiteralPath $wrapperChild)) {
+    $reportedChild = Get-Content -LiteralPath $wrapperChild -Raw | ConvertFrom-Json
+    if ($reportedChild.parent_pid -eq $wrapperPid) { $ownedPid = [int]$reportedChild.pid }
+  }
   foreach ($processId in @($(if ($unrelated) { $unrelated.Id }), $ownedPid, $wrapperPid, $(if ($leader) { $leader.Id }))) {
     if ($processId -and (Get-Process -Id $processId -ErrorAction SilentlyContinue)) { & taskkill.exe /PID $processId /T /F 2>$null | Out-Null }
   }
-  Remove-Item Env:SYMPP_TEST_WRAPPER_READY,Env:SYMPP_TEST_WRAPPER_RELEASE,Env:SYMPP_TEST_RUNTIME_CMD,Env:SYMPP_TEST_RUNTIME_ROOT -ErrorAction SilentlyContinue
+  Remove-Item Env:SYMPP_TEST_WRAPPER_READY,Env:SYMPP_TEST_WRAPPER_RELEASE,Env:SYMPP_TEST_RUNTIME_CMD,Env:SYMPP_TEST_RUNTIME_ROOT,Env:SYMPP_TEST_WRAPPER_CHILD,Env:SYMPP_TEST_BACKEND_READY,Env:SYMPP_TEST_BACKEND_RELEASE -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $pendingBase -Recurse -Force -ErrorAction SilentlyContinue
 }
 & (Join-Path $PSScriptRoot "artifact-fingerprint-tests.ps1")
@@ -656,7 +677,9 @@ try {
 $benchmark = & (Join-Path $PSScriptRoot "warm-attach-benchmark.ps1") | ConvertFrom-Json
 Write-Host ("Fallback warm burst: " + ($benchmark | ConvertTo-Json -Depth 8 -Compress))
 Assert-True ($benchmark.clients -eq 100 -and $benchmark.p95_ms -lt 2000) "100-client PowerShell fallback warm attach p95 must stay below 2 seconds"
-Assert-True ($benchmark.backend_processes -eq 1 -and $benchmark.leases_peak -eq 100 -and $benchmark.leases_after -eq 0) "Fallback warm burst must preserve one listener and exact lease lifecycle"
+Assert-True ($benchmark.backend_processes -eq 1) "Fallback warm burst listener count: expected=1 actual=$($benchmark.backend_processes)"
+Assert-True ($benchmark.leases_peak -eq 100) "Fallback warm burst peak lease count: expected=100 actual=$($benchmark.leases_peak)"
+Assert-True ($benchmark.leases_after -eq 0) "Fallback warm burst remaining lease count: expected=0 actual=$($benchmark.leases_after) deletion_failures=$($benchmark.lease_delete_failures -join '; ') worker_errors=$($benchmark.worker_errors -join '; ')"
 Assert-True ($benchmark.remote_resolution_attempts -eq 0) "Fallback warm burst must make zero artifact or remote resolution attempts"
 $nodeBurstJson = & (Get-Command node.exe -ErrorAction Stop).Source (Join-Path $PSScriptRoot "node-bridge-burst.js")
 $nodeExitCode = $LASTEXITCODE

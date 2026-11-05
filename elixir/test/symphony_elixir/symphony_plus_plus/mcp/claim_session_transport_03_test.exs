@@ -74,7 +74,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
           "jsonrpc" => "2.0",
           "id" => "local-architect-read-work-request",
           "method" => "tools/call",
-          "params" => %{"name" => "read_work_request", "arguments" => %{"work_request_id" => work_request.id}}
+          "params" => %{"name" => "read_work_request", "arguments" => %{"detail" => "full", "work_request_id" => work_request.id}}
         },
         claimed_server
       )
@@ -483,7 +483,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport03Test do
           "jsonrpc" => "2.0",
           "id" => "local-architect-repo-alias-read",
           "method" => "tools/call",
-          "params" => %{"name" => "read_work_request", "arguments" => %{"work_request_id" => work_request.id}}
+          "params" => %{"name" => "read_work_request", "arguments" => %{"detail" => "full", "work_request_id" => work_request.id}}
         },
         claimed_server
       )

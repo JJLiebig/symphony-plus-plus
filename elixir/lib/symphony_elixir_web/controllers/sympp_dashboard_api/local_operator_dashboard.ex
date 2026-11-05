@@ -1,6 +1,7 @@
 defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   @moduledoc false
 
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.{
@@ -11,6 +12,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   }
 
   alias SymphonyElixir.SymphonyPlusPlus.DeploymentObservation
+  alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorConfig
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
@@ -136,7 +138,14 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context),
          {:ok, base} <- priority_dashboard_payload(repo, context, work_requests, projection_context),
          {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
-      {:ok, Map.merge(base, active)}
+      {:ok, Map.merge(base, active) |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?()})}
+    end
+  end
+
+  @spec herdr_dashboard_payload(module()) :: {:ok, map()} | {:error, term()}
+  def herdr_dashboard_payload(repo) do
+    with {:ok, payload} <- operator_dashboard_hydrated_payload(repo) do
+      {:ok, Map.put(payload, :chiefs, Chiefs.public_current(repo, OperatorConfig.load()))}
     end
   end
 
@@ -409,12 +418,14 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
              if(selected_work_package, do: [{"work_package", selected_work_package.id}], else: []),
          {:ok, comment_context} <- Dashboard.comment_context(repo, comment_targets) do
       comment_counts = CommentProjection.counts_for(comment_context, "work_request", work_request_id)
+      newest_decisions = Enum.reverse(decisions)
+      visible_decisions = if Keyword.get(opts, :all_decisions?, false), do: newest_decisions, else: Enum.take(newest_decisions, 3)
 
       payload =
         %{
           work_request: operator_work_request_enrichment(work_request),
           clarification_questions: Enum.map(questions, &Dashboard.clarification_question/1),
-          decision_logs: decisions |> Enum.reverse() |> Enum.take(3) |> Enum.map(&Dashboard.decision_log_entry/1),
+          decision_logs: Enum.map(visible_decisions, &Dashboard.decision_log_entry/1),
           comments: CommentProjection.comments_for(comment_context, "work_request", work_request_id),
           summary: %{
             open_question_count: Enum.count(questions, &(&1.status == "open")),
@@ -441,7 +452,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   @spec herdr_work_request_detail_payload(module(), String.t()) :: {:ok, map()} | {:error, term()}
   def herdr_work_request_detail_payload(repo, work_request_id) when is_binary(work_request_id) do
-    with {:ok, payload} <- operator_work_request_detail_payload(repo, work_request_id),
+    with {:ok, payload} <- operator_work_request_detail_payload(repo, work_request_id, all_decisions?: true),
          {:ok, [board_detail]} <- operator_work_request_board_details(repo, [%{id: work_request_id}], nil),
          {:ok, work_packages} <- WorkRequestRepository.list_work_packages(repo, work_request_id),
          {:ok, contexts} <- Dashboard.work_package_work_package_contexts(repo, work_packages) do
@@ -538,6 +549,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
       inserted_at: timestamp(work_request.inserted_at),
       updated_at: timestamp(work_request.updated_at)
     }
+    |> Chiefs.put_attribution(:dispatched_by, work_request.dispatched_by)
   end
 
   @spec operator_work_request_board_details(module(), [map()], term()) :: {:ok, [map()]} | {:error, term()}

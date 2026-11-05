@@ -80,32 +80,42 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Payloads do
     }
   end
 
-  @spec dispatch_work_package_result_payload(map(), map()) :: map()
+  @spec dispatch_work_package_result_payload(map(), map(), String.t()) :: map()
   def dispatch_work_package_result_payload(
         %{
           work_request: %WorkRequest{} = work_request,
           work_package: %WorkPackage{} = work_package,
           creation: creation
         } = dispatch,
-        scope
+        scope,
+        detail \\ "summary"
       ) do
     worker_bootstrap =
       dispatch_or_creation_value(dispatch, creation, :worker_bootstrap)
       |> dispatch_worker_bootstrap_payload()
 
-    %{
+    payload = %{
       "coordinates" => worker_bootstrap && Map.get(worker_bootstrap, "coordinates"),
       "work_request" => %{"id" => work_request.id},
       "work_package" => %{
         "id" => work_package.id,
         "status" => work_package.status,
-        "dispatched_at" => timestamp(work_package.dispatched_at)
+        "dispatched_at" => timestamp(work_package.dispatched_at),
+        "branch_pattern" => Redactor.redact_text(work_package.branch_pattern),
+        "worktree_path" => Redactor.redact_text(work_package.worktree_path)
       },
-      "worker_bootstrap" => worker_bootstrap,
       "worker_grant" => dispatch_worker_grant_payload(Map.fetch!(creation, :worker_grant)),
       "scope" => scope,
       "status" => %{"work_package_status" => work_package.status}
     }
+
+    if detail == "full" do
+      Map.put(payload, "worker_bootstrap", worker_bootstrap)
+    else
+      payload
+      |> Map.drop(["coordinates", "status", "worker_grant"])
+      |> Map.put("assignment_uri", "sympp://work-packages/#{work_package.id}/worker-bootstrap.json")
+    end
   end
 
   @spec dispatch_work_package_payload(WorkPackage.t() | map()) :: map()

@@ -103,6 +103,10 @@ The Windows launcher job also checks performance-threshold subprocess exits and
 the transport's installed-source classifier; this does not run or qualify the
 full release performance benchmark.
 
+Portable native qualification starts from the candidate when the published runtime
+has an incompatible MCP contract. Cold start, reuse, recovery and offline checks
+still run; same-contract cross-revision refresh needs a compatible published baseline.
+
 ## Retention, Solo and worktrees (B2)
 
 Retention journeys use public operator settings and lifecycle actions against

@@ -11,11 +11,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
 
   import SymphonyElixir.SymphonyPlusPlus.MCP.Payloads,
     only: [
-      dispatch_work_package_result_payload: 2,
+      dispatch_work_package_result_payload: 3,
       json_safe_payload: 1,
       worktree_lifecycle_payload: 3
     ]
 
+  alias SymphonyElixir.SymphonyPlusPlus.AgentFormat.WorkerContext
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.Decision
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.MCPError
   alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
@@ -95,7 +96,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              WorkRequestScope.work_request_repository_filters(filters),
              pagination
            ) do
-      cards = WorkRequestPayloads.work_request_cards(work_requests)
+      cards = WorkRequestPayloads.work_request_cards(config.repo, work_requests)
 
       {:ok,
        ToolResult.agent_tool_result(
@@ -135,7 +136,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              repo_scope_opts,
              pagination
            ) do
-      cards = WorkRequestPayloads.work_request_cards(work_requests)
+      cards = WorkRequestPayloads.work_request_cards(config.repo, work_requests)
 
       {:ok, ToolResult.agent_tool_result(work_request_list_payload(cards, scope, status, pagination.limit, next_cursor))}
     else
@@ -146,11 +147,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
 
   defp call_tool("read_work_request", config, nil, arguments, opts) do
     with :ok <- authorize_local_trusted_work_request_read_tool_call(opts, "read_work_request"),
+         {:ok, detail} <- payload_detail(arguments),
          {:ok, work_request_id} <- required_argument(arguments, "work_request_id"),
          {:ok, work_request, _filters} <- WorkRequestScope.local_trusted_work_request_read_scope(config.repo, work_request_id),
-         {:ok, payload} <- WorkRequestPayloads.work_request_detail(config.repo, work_request, []) do
+         {:ok, payload} <- WorkRequestPayloads.work_request_read(config.repo, work_request, detail) do
       payload = Map.put(payload, "scope", WorkRequestPayloads.redacted_work_request_scope(work_request))
-      {:ok, ToolResult.architect_agent_tool_result(payload, :work_request_read)}
+      {:ok, work_request_read_result(payload, detail)}
     else
       {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "read_work_request", "reason" => reason}}
       {:error, :not_found} -> not_found_error("read_work_request")
@@ -161,6 +163,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
 
   defp call_tool("read_work_request", config, %Session{} = session, arguments, _opts) do
     with {:ok, session} <- Auth.require_session(session, config.repo),
+         {:ok, detail} <- payload_detail(arguments),
          {:ok, work_request_id} <- required_argument(arguments, "work_request_id"),
          {:ok, work_request, _filters, scope} <-
            WorkRequestScope.authorized_work_request_scope(
@@ -171,9 +174,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              "read_work_request",
              WorkRequestScope.work_request_repo_scope_opts(config)
            ),
-         {:ok, payload} <- WorkRequestPayloads.work_request_detail(config.repo, work_request, []) do
+         {:ok, payload} <- WorkRequestPayloads.work_request_read(config.repo, work_request, detail) do
       payload = Map.put(payload, "scope", scope)
-      {:ok, ToolResult.architect_agent_tool_result(payload, :work_request_read)}
+      {:ok, work_request_read_result(payload, detail)}
     else
       {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "read_work_request", "reason" => reason}}
       {:error, :not_found} -> not_found_error("read_work_request")
@@ -183,9 +186,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
 
   defp call_tool("read_plan", config, nil, arguments, opts) do
     with :ok <- authorize_local_trusted_work_request_read_tool_call(opts, "read_plan"),
+         {:ok, detail} <- payload_detail(arguments),
          {:ok, work_request_id, view} <- read_plan_arguments(arguments),
          {:ok, work_request, scope} <- WorkRequestScope.local_trusted_work_request_read_scope(config.repo, work_request_id),
-         {:ok, result} <- read_plan_result(config.repo, work_request, scope, scope, view) do
+         {:ok, result} <- read_plan_result(config.repo, work_request, scope, scope, view, detail) do
       {:ok, result}
     else
       {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "read_plan", "reason" => reason}}
@@ -199,6 +203,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
     repo_scope_opts = WorkRequestScope.work_request_repo_scope_opts(config)
 
     with {:ok, session} <- Auth.require_session(session, config.repo),
+         {:ok, detail} <- payload_detail(arguments),
          {:ok, work_request_id, view} <- read_plan_arguments(arguments),
          {:ok, work_request, filters, scope} <-
            WorkRequestScope.authorized_work_request_scope(
@@ -209,7 +214,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              "read_plan",
              repo_scope_opts
            ),
-         {:ok, result} <- read_plan_result(config.repo, work_request, filters, scope, view, repo_scope_opts) do
+         {:ok, result} <- read_plan_result(config.repo, work_request, filters, scope, view, detail, repo_scope_opts) do
       {:ok, result}
     else
       {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "read_plan", "reason" => reason}}
@@ -221,7 +226,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
   defp call_tool("read_delivery_board", config, %Session{} = session, arguments, _opts) do
     repo_scope_opts = WorkRequestScope.work_request_repo_scope_opts(config)
 
-    with {:ok, session} <- Auth.require_session(session, config.repo),
+    with {:ok, detail} <- payload_detail(arguments),
+         {:ok, session} <- Auth.require_session(session, config.repo),
          {:ok, work_request_id} <- CurrentWorkRequest.id_argument(arguments, session),
          {:ok, work_request, filters, scope} <-
            WorkRequestScope.authorized_work_request_scope(
@@ -235,12 +241,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          {:ok, work_packages} <- WorkRequestService.list_work_packages(config.repo, work_request_id),
          {:ok, delivery_board} <- WorkRequestScope.scoped_delivery_board(config.repo, work_request, work_packages, filters, repo_scope_opts) do
       payload = %{
-        "work_request" => WorkRequestPayloads.work_request_mutation(work_request),
-        "delivery_board" => WorkRequestPayloads.delivery_board(delivery_board),
+        "work_request" => Map.put(WorkRequestPayloads.work_request_mutation(work_request), "execution_status", delivery_board.execution_status),
+        "delivery_board" => WorkRequestPayloads.delivery_board(delivery_board, detail),
+        "detail" => detail,
         "scope" => scope
       }
 
-      {:ok, ToolResult.architect_agent_tool_result(payload, :work_request_delivery_board)}
+      {:ok, delivery_board_result(payload, detail)}
     else
       {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "read_delivery_board", "reason" => reason}}
       {:error, :not_found} -> not_found_error("read_delivery_board")
@@ -250,17 +257,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
 
   defp call_tool("read_delivery_board", config, nil, arguments, opts) do
     with :ok <- authorize_local_trusted_work_request_read_tool_call(opts, "read_delivery_board"),
+         {:ok, detail} <- payload_detail(arguments),
          {:ok, work_request_id} <- required_argument(arguments, "work_request_id"),
          {:ok, work_request, filters} <- WorkRequestScope.local_trusted_work_request_read_scope(config.repo, work_request_id),
          {:ok, work_packages} <- WorkRequestService.list_work_packages(config.repo, work_request_id),
          {:ok, delivery_board} <- WorkRequestScope.scoped_delivery_board(config.repo, work_request, work_packages, filters) do
       payload = %{
-        "work_request" => WorkRequestPayloads.work_request_mutation(work_request),
-        "delivery_board" => WorkRequestPayloads.delivery_board(delivery_board),
+        "work_request" => Map.put(WorkRequestPayloads.work_request_mutation(work_request), "execution_status", delivery_board.execution_status),
+        "delivery_board" => WorkRequestPayloads.delivery_board(delivery_board, detail),
+        "detail" => detail,
         "scope" => WorkRequestPayloads.redacted_work_request_scope(work_request)
       }
 
-      {:ok, ToolResult.architect_agent_tool_result(payload, :work_request_delivery_board)}
+      {:ok, delivery_board_result(payload, detail)}
     else
       {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "read_delivery_board", "reason" => reason}}
       {:error, :not_found} -> not_found_error("read_delivery_board")
@@ -416,8 +425,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
     end
   end
 
-  defp call_tool("dispatch_work_package", config, session, arguments, _opts) do
-    with {:ok, session} <- Auth.require_session(session, config.repo),
+  defp call_tool("dispatch_work_package", config, session, arguments, opts) do
+    with {:ok, detail} <- payload_detail(arguments),
+         {:ok, session} <- Auth.require_session(session, config.repo),
          {:ok, work_request_id} <- CurrentWorkRequest.id_argument(arguments, session),
          {:ok, work_package_id} <- required_argument(arguments, "work_package_id"),
          {:ok, _work_request, work_package, _filters, scope} <-
@@ -430,8 +440,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
              "dispatch_work_package"
            ),
          :ok <- require_planned_dispatch_work_package(work_package),
-         {:ok, dispatch} <- WorkPackageDispatch.dispatch(config.repo, work_request_id, work_package_id) do
-      payload = dispatch_work_package_result_payload(dispatch, scope)
+         {:ok, dispatch} <- WorkPackageDispatch.dispatch(config.repo, work_request_id, work_package_id, server: Keyword.get(opts, :server)) do
+      payload = dispatch_work_package_result_payload(dispatch, scope, detail)
       {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.tool_result(payload) end)}
     else
       {:tool_error, reason} -> invalid_params_error("dispatch_work_package", reason)
@@ -529,9 +539,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          filters,
          scope,
          view,
+         detail,
          repo_scope_opts \\ []
        ) do
-    case repo.transaction(fn -> read_plan_transaction(repo, work_request, filters, scope, view, repo_scope_opts) end) do
+    transaction = fn -> read_plan_transaction(repo, work_request, filters, scope, view, detail, repo_scope_opts) end
+
+    case repo.transaction(transaction) do
       {:ok, result} -> {:ok, result}
       {:error, {:error, reason}} -> {:error, reason}
       {:error, {:tool_error, reason}} -> {:tool_error, reason}
@@ -539,14 +552,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
     end
   end
 
-  defp read_plan_transaction(repo, work_request, filters, scope, view, repo_scope_opts) do
+  defp read_plan_transaction(repo, work_request, filters, scope, view, detail, repo_scope_opts) do
     with {:ok, work_request} <- WorkRequestService.get(repo, work_request.id),
          {:ok, work_packages} <- WorkRequestService.list_work_packages(repo, work_request.id),
          {:ok, delivery_board} <-
            WorkRequestScope.scoped_delivery_board(repo, work_request, work_packages, filters, Keyword.put(repo_scope_opts, :slice_projection, :operational_state)) do
       payload = WorkRequestPayloads.work_request_product_tree(repo, work_request, work_packages, delivery_board, view)
       payload = Map.put(payload, "scope", scope)
-      ToolResult.architect_agent_tool_result(payload, :work_request_product_tree)
+
+      if detail == "full" do
+        ToolResult.architect_agent_tool_result(payload, :work_request_product_tree)
+      else
+        read_summary_result(WorkRequestPayloads.plan_summary(payload))
+      end
     else
       error -> repo.rollback(error)
     end
@@ -1031,4 +1049,38 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
   defp reason_text(reason) when is_binary(reason), do: reason
   defp reason_text(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp reason_text(reason), do: inspect(reason)
+
+  defp payload_detail(arguments) do
+    case Map.get(arguments, "detail", "summary") do
+      detail when detail in ["summary", "full"] -> {:ok, detail}
+      _other -> {:tool_error, "invalid_detail"}
+    end
+  end
+
+  defp work_request_read_result(payload, "full"), do: ToolResult.architect_agent_tool_result(payload, :work_request_read)
+
+  defp work_request_read_result(payload, "summary") do
+    read_summary_result(payload)
+  end
+
+  defp read_summary_result(payload) do
+    text_payload =
+      payload
+      |> Map.take(~w(work_request summary omitted help))
+      |> Map.update!("work_request", &Map.take(&1, ~w(id title status execution_status)))
+
+    ToolResult.with_text_profile(:full, fn ->
+      ToolResult.agent_tool_result(payload, fn -> WorkerContext.encode_tool_payload(text_payload) end)
+    end)
+  end
+
+  defp delivery_board_result(payload, detail) do
+    ToolResult.with_text_profile(:full, fn ->
+      if detail == "full" do
+        ToolResult.architect_agent_tool_result(payload, :work_request_delivery_board)
+      else
+        ToolResult.read_tool_result(Map.put(payload, "help", "Use read_delivery_board with detail: full for complete evidence."))
+      end
+    end)
+  end
 end

@@ -5,6 +5,10 @@ description: Use when assigned a Symphony++ WorkRequest, product-tree planning l
 
 # Symphony++ Architect
 
+When the user selects Herdr-next execution, use the [optional execution helper](../symphony-worker/references/herdr-execution.md)
+to launch the existing bounded worker bootstrap. Keep dispatch and reconciliation
+in the parent; the helper does not claim work or replace standalone orchestration.
+
 Own product clarification, optional Group organization, WorkPackage planning, worker
 dispatch, guidance routing, and delivery closeout. Do not implement worker
 packages yourself. Workers own implementation, required validation/review,
@@ -18,6 +22,14 @@ payloads, claim secrets, or secret-bearing commands.
 
 ## Start
 
+When the human names this session a domain chief, call
+`register_chief({domain: "Kraken", repos?: ["owner/repo"], session_description?: "Terminal: Kraken chief"})`
+once through trusted local MCP. The bridge reports Herdr location automatically.
+Registration replaces the current chief for that domain, ignoring case, and
+attributes this session's new requests and dispatches; it grants no claim or
+dispatch authority. Ordinary work needs no registration. If this session registers
+several domains, attribution uses its most recent still-current registration.
+
 1. Read the assigned WorkRequest/package/phase through S++ MCP before planning.
    Trusted local architect calls automatically claim the WorkRequest. Supply
    `work_request_id` on the first scoped call; reconnects retain known scope.
@@ -28,7 +40,7 @@ payloads, claim secrets, or secret-bearing commands.
    `phase_scope_not_available` or `work_request_terminal`, follow
    [bootstrap recovery](references/operations.md#bootstrap-recovery).
 2. For WorkRequest lanes, read `read_work_request(work_request_id)`,
-   `read_plan(work_request_id, view?)`, and
+   `read_plan(work_request_id, view?, detail?)`, and
    `list_guidance_requests(work_request_id?)` before planning WorkPackages or rearranging
    Groups. The WorkRequest guidance filter requires the usual
    `read:work_request` grant.
@@ -45,6 +57,14 @@ omit secrets and private connection details. Do not add a registration step.
 
 TOON is presentation only. Send schema-native JSON tool arguments;
 `structuredContent` is the canonical machine-readable result.
+
+`read_work_request` defaults to the request description, open questions, compact
+package rows with PRs/next actions, and the five most recent decision previews.
+Omission counts identify contracts and history available with `detail: "full"`.
+Use full detail before editing a package contract or relying on a decision's
+complete rationale. Decisions explain choices; current status remains delivery
+truth. `read_plan` also defaults to compact package references; use
+`detail: "full"` with the same `view` for complete package fields.
 
 ## Clarify
 
@@ -107,6 +127,26 @@ as `read_plan`, rejecting cycles/unmet dependencies, and atomically activates
 the canonical row with optional worker grant/resources and an ordinary assignment
 bootstrap. Dispatch ownership belongs to the architect; workers need no claim.
 
+Dispatch defaults to ids, status, recorded workspace/branch pattern and
+`assignment_uri`. Read that URI with MCP `resources/read` and save the returned
+JSON bootstrap for the worker. This read neither dispatches nor claims again.
+Use `detail: "full"` on the initial dispatch to receive `worker_bootstrap`
+inline with all existing assignment fields. Do not redispatch to fetch details.
+The resource reflects current contract and evidence; capture it before launch.
+
+`read_delivery_board` defaults to one summary per package, retaining delivery
+outcome, attention reasons, merge eligibility and PR URL. Use `detail: "full"`
+for nested runtime, blocker, review, successor and closeout evidence.
+Terminal packages have no pending merge next action. WorkRequest reads include
+`execution_status`: `closed` means a nonempty plan is entirely terminal; `open`
+means it is not. Raw planning status stays unchanged. Closed execution does not
+claim abandoned scope was fulfilled; delivery outcomes and goal completion remain
+authoritative for that distinction.
+
+`reconcile_work_request` returns counts plus proposed, applied and error rows by
+default. Use `detail: "full"` for every skipped row and nested delivery evidence.
+Update Skills and start fresh MCP sessions after upgrading this contract.
+
 Prepare/provide worktree scope before launch. Use
 `prepare_work_package_worktree(work_package_id)` and its returned
 `worker_launch.workspace_path` as cwd. Override `branch` only when needed;
@@ -162,10 +202,14 @@ escalations or blockers. No report cadence or extra checklist is required.
 
 After the worker returns, verify acceptance and the required native checks/review
 for the exact PR head once. Then call architect `sync_pr` with `work_package_id`,
-`url`, and `head_sha` from the normal handoff. It fetches GitHub evidence and
+`url` (or `number` and `repository`) from the normal handoff. Optional `head_sha`
+must match when supplied. It fetches GitHub evidence and
 applies existing readiness and dependency gates without worker claims or receipts.
 Readiness does not independently prove native checks/review passed; unknown provider
 fields stay unknown. Missing optional observations do not prevent this workflow.
+Once GitHub reports the attached PR merged, sync, reconciliation and periodic PR
+observation record `pr_merged` from its merge timestamp and commit without a head
+handoff or readiness transition. Pre-merge readiness and dependency gates still apply.
 For selected candidate inputs, reconcile qualification from the native handoff
 using existing scoped `append_progress` dependency provenance for the dependent head.
 

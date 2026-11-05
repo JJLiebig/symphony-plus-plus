@@ -33,6 +33,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Server
   alias SymphonyElixir.SymphonyPlusPlus.OperationalLineage
   alias SymphonyElixir.SymphonyPlusPlus.OperatorAudit
+  alias SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Repository, as: OperatorSettingsRepository
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.RetentionThrottle
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Settings, as: OperatorSettings
@@ -72,6 +73,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
     def all(_query), do: raise(%Exqlite.Error{message: "database is locked"})
     def one(_query), do: raise(%Exqlite.Error{message: "database is locked"})
+    def get(_schema, _id), do: raise(%Exqlite.Error{message: "database is locked"})
   end
 
   defmodule CountingRepo do
@@ -2120,6 +2122,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   test "Herdr reads the complete execution graph and current worker sessions over direct loopback", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       work_request = create_work_request!(repo, id: "WR-HERDR-DETAIL", status: "ready_for_slicing")
+
+      for sequence <- 1..5 do
+        assert {:ok, _decision} =
+                 WorkRequestRepository.record_decision(repo, work_request.id, decision_attrs(id: "WRD-HERDR-DETAIL-#{sequence}"))
+      end
+
       assert {:ok, group} = ProductTree.create_node(repo, %{id: "group-herdr", work_request_id: work_request.id, title: "Delivery"})
 
       active =
@@ -2200,6 +2208,20 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       payload = json_response(conn, 200)
       assert get_in(payload, ["work_request", "id"]) == work_request.id
+      assert Enum.map(payload["decision_logs"], & &1["id"]) == Enum.map(5..1, &"WRD-HERDR-DETAIL-#{&1}")
+      assert payload["summary"]["decision_count"] == 5
+
+      assert %{
+               "work_request_id" => work_request_id,
+               "sequence" => 5,
+               "source_type" => "architect",
+               "decision" => "Keep this WorkRequest narrow.",
+               "rationale" => "The next slice owns broader orchestration.",
+               "scope_impact" => "No new runtime tools.",
+               "created_by" => "architect-1"
+             } = hd(payload["decision_logs"])
+
+      assert work_request_id == work_request.id
 
       assert Enum.sort(payload["execution_graph"]["work_package_ids"]) ==
                Enum.sort([active.id, downstream.id, stale.id, terminal.id])
@@ -2223,6 +2245,86 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       assert payload["attention_keys"] == ["group:#{group.id}", "work_package:#{active.id}"]
 
+      assert :ok = OperatorDashboardOpener.ensure_started()
+      opener = :sys.get_state(OperatorDashboardOpener)
+      assert :ok = DashboardPubSub.subscribe()
+
+      assert {:error, :native_read_verified} =
+               repo.transaction(fn ->
+                 # A pending migration must not turn this read into a schema write.
+                 repo.query!("DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)", [])
+                 before_read = repo.query!("SELECT total_changes()", []).rows
+
+                 board =
+                   build_conn()
+                   |> Map.put(:host, "localhost")
+                   |> Map.put(:remote_ip, {127, 0, 0, 1})
+                   |> get("/api/v1/sympp/herdr/dashboard")
+                   |> json_response(200)
+
+                 detail = Enum.find(board["work_request_details"], &(&1["work_request"]["id"] == work_request.id))
+                 assert Enum.any?(detail["product_tree"]["nodes"], &(&1["id"] == group.id))
+                 signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
+                 assert signal["active_blocker_count"] == 1
+                 assert board["runtime"] == %{"offline" => false}
+
+                 native_detail =
+                   build_conn()
+                   |> Map.put(:host, "localhost")
+                   |> Map.put(:remote_ip, {127, 0, 0, 1})
+                   |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
+                   |> json_response(200)
+
+                 assert native_detail["decision_logs"] == payload["decision_logs"]
+                 assert repo.query!("SELECT total_changes()", []).rows == before_read
+                 repo.rollback(:native_read_verified)
+               end)
+
+      assert :sys.get_state(OperatorDashboardOpener) == opener
+      refute_received :operator_dashboard_changed
+
+      for {host, remote_ip} <- [{"localhost", {203, 0, 113, 1}}, {"example.invalid", {127, 0, 0, 1}}] do
+        denied =
+          build_conn()
+          |> Map.put(:host, host)
+          |> Map.put(:remote_ip, remote_ip)
+          |> get("/api/v1/sympp/herdr/dashboard")
+
+        assert json_response(denied, 401)["error"]["code"] == "unauthorized"
+
+        for path <- [
+              "/api/v1/sympp/herdr/work-requests",
+              "/api/v1/sympp/herdr/work-requests/#{work_request.id}/questions/missing/answer",
+              "/api/v1/sympp/herdr/work-packages/#{active.id}/guidance/missing/answer"
+            ] do
+          mutation =
+            native_operator_conn()
+            |> Map.put(:host, host)
+            |> Map.put(:remote_ip, remote_ip)
+            |> post(path, Jason.encode!(%{answer: "Denied network input"}))
+
+          assert json_response(mutation, 401)["error"]["code"] == "unauthorized"
+        end
+      end
+
+      with_local_operator_dashboard_origin("http://localhost", fn ->
+        for method <- [:post, :options],
+            path <- [
+              "/api/v1/sympp/herdr/work-requests",
+              "/api/v1/sympp/herdr/work-requests/#{work_request.id}/questions/missing/answer",
+              "/api/v1/sympp/herdr/work-packages/#{active.id}/guidance/missing/answer"
+            ] do
+          request =
+            native_operator_conn()
+            |> put_req_header("origin", "http://localhost")
+            |> dispatch(@endpoint, method, path, "{}")
+
+          assert request.status == if(method == :post, do: 401, else: 405)
+          assert Plug.Conn.get_resp_header(request, "access-control-allow-origin") == []
+          assert Plug.Conn.get_resp_header(request, "access-control-allow-methods") == []
+        end
+      end)
+
       forwarded =
         build_conn()
         |> Map.put(:host, "localhost")
@@ -2231,6 +2333,45 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         |> get("/api/v1/sympp/herdr/work-requests/#{work_request.id}")
 
       assert %{"error" => %{"code" => "unauthorized"}} = json_response(forwarded, 401)
+    end)
+  end
+
+  test "Herdr detail returns a storage error without migrating an uninitialized ledger" do
+    database_path = WorkPackageFactory.database_path()
+    original_database = Application.get_env(:symphony_elixir, :sympp_repo_database)
+    Application.put_env(:symphony_elixir, :sympp_repo_database, database_path)
+
+    try do
+      {conn, queries} =
+        capture_queries(fn ->
+          build_conn()
+          |> Map.put(:host, "localhost")
+          |> Map.put(:remote_ip, {127, 0, 0, 1})
+          |> get("/api/v1/sympp/herdr/work-requests/missing")
+        end)
+
+      assert json_response(conn, 503) ==
+               %{"error" => %{"code" => "storage_failed", "message" => "Dashboard ledger storage failed"}}
+
+      refute Enum.any?(queries, &Regex.match?(~r/^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i, &1))
+    after
+      Application.put_env(:symphony_elixir, :sympp_repo_database, original_database)
+      File.rm(database_path)
+    end
+  end
+
+  test "Herdr detail returns the existing busy error" do
+    with_local_operator_endpoint(fn ->
+      Application.put_env(:symphony_elixir, SymphonyElixirWeb.Endpoint, sympp_repo: BusyRepo)
+
+      conn =
+        build_conn()
+        |> Map.put(:host, "localhost")
+        |> Map.put(:remote_ip, {127, 0, 0, 1})
+        |> get("/api/v1/sympp/herdr/work-requests/missing")
+
+      assert json_response(conn, 503) ==
+               %{"error" => %{"code" => "database_busy", "message" => "Dashboard ledger is busy"}}
     end)
   end
 
@@ -2264,11 +2405,24 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  context: "A product decision is needed."
                })
 
+      native_answer = fn package_id, attrs ->
+        native_operator_conn()
+        |> post("/api/v1/sympp/herdr/work-packages/#{package_id}/guidance/#{guidance.id}/answer", Jason.encode!(attrs))
+      end
+
+      assert json_response(native_answer.(needs_human.id, %{answer: "Cannot bypass architect guidance"}), 422)["error"]["code"] == "invalid_status"
+      assert repo.get!(GuidanceRequest, guidance.id).status == "open"
+
       assert {:ok, _guidance} =
                GuidanceRequestRepository.escalate_human_info_needed(repo, guidance.id, %{
                  human_info_reason: "Product decision required",
                  recommended_language: "en",
-                 blocker_id: "herdr-human-guidance"
+                 blocker_id: "herdr-human-guidance",
+                 decision_prompt: %{
+                   "tl_dr" => "Choose the approved UX",
+                   "details" => "The human owns this product decision.",
+                   "options" => [%{"id" => "keep", "label" => "Keep", "answer" => "Keep the approved interaction."}]
+                 }
                })
 
       script = Path.join(root, "review.py")
@@ -2280,6 +2434,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
             Jason.encode!(%{
               review: "rvw_cold",
               status: "running",
+              rounds: 3,
+              steps: [%{index: 2, name: "correctness", state: "current"}],
+              round_history: [
+                %{
+                  number: 3,
+                  round_id: "round_cold",
+                  lane: "local",
+                  step: "correctness",
+                  status: "running",
+                  outcome: nil,
+                  findings: nil,
+                  started_at: "2026-10-01T09:00:00Z",
+                  finished_at: nil
+                }
+              ],
               next_action: "wait",
               progress: "review 2/3 correctness"
             })
@@ -2306,6 +2475,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert review["step"] == "correctness"
         assert review["next_action"] == "wait"
         assert review["observation_state"] == "current"
+        assert review["round"] == 3
+        assert review["provider_status"] == "running"
+        assert review["status"] == "in_progress"
+        assert review["steps"] == [%{"index" => 2, "name" => "correctness", "state" => "current"}]
+        assert [%{"number" => 3, "round_id" => "round_cold", "finished_at" => nil}] = review["round_history"]
+
+        web_payload = json_response(get(local_operator_conn(), "/api/v1/sympp/operator/dashboard/hydrated"), 200)
+        web_detail = Enum.find(web_payload["work_request_details"], &(&1["work_request"]["id"] == work_request.id))
+        web_review = Enum.find(web_detail["work_packages"], &(&1["id"] == reviewing.id))["review_signal"]
+        assert web_review == review
+
         activity = packages[reviewing.id]["activity_signal"]
         assert activity["stage"] == "reviewing"
         assert activity["elapsed_seconds"] == nil
@@ -2320,7 +2500,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         :ets.delete(observation, {:observation, Path.expand(root), "origin/beta"})
         assert {:ok, ready_payload} = LocalOperatorDashboard.herdr_work_request_detail_payload(repo, work_request.id)
-        ready_activity = Enum.find(ready_payload.work_packages, &(&1.id == reviewing.id)).activity_signal
+        ready_package = Enum.find(ready_payload.work_packages, &(&1.id == reviewing.id))
+        refute Map.has_key?(ready_package.review_signal, "steps")
+        refute Map.has_key?(ready_package.review_signal, "round_history")
+        assert ready_package.review_signal["status"] == "passed"
+        ready_activity = ready_package.activity_signal
         assert ready_activity["next_action"] == "verify_native_checks_and_review_then_merge"
         assert ready_activity["next_actor"] == "architect"
         human_activity = packages[needs_human.id]["activity_signal"]
@@ -2328,6 +2512,36 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert human_activity["waiting_reason"] == "Product decision required"
         assert human_activity["next_actor"] == "human"
         assert human_activity["next_action"] == "answer_guidance"
+
+        attrs = %{answer_choice: "keep", answer_note: "Retain keyboard access.", future_field: true}
+
+        assert :ok =
+                 repo.checkout(fn ->
+                   before_refusal = repo.query!("SELECT total_changes()", []).rows
+                   assert json_response(native_answer.(reviewing.id, attrs), 404)["error"]["code"] == "not_found"
+
+                   operator_mismatch =
+                     local_operator_conn()
+                     |> post("/api/v1/sympp/operator/work-packages/#{reviewing.id}/guidance/#{guidance.id}/answer", attrs)
+
+                   assert json_response(operator_mismatch, 404)["error"]["code"] == "not_found"
+                   assert repo.query!("SELECT total_changes()", []).rows == before_refusal
+                   :ok
+                 end)
+
+        assert json_response(native_answer.(needs_human.id, %{answer_choice: "unknown"}), 422)["error"]["code"] == "invalid_answer_choice"
+        assert repo.get!(GuidanceRequest, guidance.id).status == "human_info_needed"
+        assert repo.get!(GuidanceRequest, guidance.id).answer == nil
+
+        assert :ok = DashboardPubSub.subscribe()
+        answered = json_response(native_answer.(needs_human.id, attrs), 200)
+        assert answered["refresh"] == %{"dashboard" => true, "work_package_id" => needs_human.id}
+        assert_received :operator_dashboard_changed
+        persisted = repo.get!(GuidanceRequest, guidance.id)
+        assert persisted.answer == "Keep the approved interaction. Retain keyboard access."
+        assert persisted.answered_by == "local-operator"
+        assert persisted.status == "answered"
+        assert json_response(native_answer.(needs_human.id, attrs), 422)["error"]["code"] == "invalid_status"
       after
         :ets.delete(observation, {:observation, Path.expand(root), "origin/beta"})
         :ets.delete(observation, :review_suite_script)
@@ -4413,6 +4627,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     dashboard
     |> Map.get("work_packages", [])
     |> Enum.map(& &1["id"])
+  end
+
+  defp native_operator_conn do
+    build_conn()
+    |> Map.put(:host, "localhost")
+    |> Map.put(:remote_ip, {127, 0, 0, 1})
+    |> put_req_header("content-type", "application/json")
   end
 
   defp local_operator_conn do

@@ -280,6 +280,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
   defp board_payload(work_request_id, work_packages) do
     %{
       work_request_id: work_request_id,
+      execution_status: WorkRequest.execution_status(Enum.map(work_packages, & &1.raw_status)),
       work_package_count: length(work_packages),
       counts: state_counts(work_packages),
       work_packages: work_packages

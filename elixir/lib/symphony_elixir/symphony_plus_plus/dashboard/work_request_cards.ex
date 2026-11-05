@@ -2,6 +2,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
   @moduledoc false
 
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.{
     CommentProjection,
@@ -78,6 +79,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
              open_question_count: status_count(question_context.counts, work_request.id, "open"),
              answered_question_count: status_count(question_context.counts, work_request.id, "answered"),
              work_package_count: length(request_work_packages),
+             execution_status: WorkRequest.execution_status(Enum.map(request_work_packages, & &1.status)),
              planned_work_package_count: Enum.count(request_work_packages, &(&1.status == "planned")),
              dispatched_work_package_count: Enum.count(request_work_packages, &(not is_nil(&1.dispatched_at))),
              skipped_work_package_count: status_count(work_package_counts, work_request.id, "skipped"),
@@ -146,6 +148,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
 
     work_request
     |> base_payload(repo_identity_catalog)
+    |> Map.put(:execution_status, WorkRequest.execution_status(Enum.map(work_packages, & &1.status)))
     |> Map.put(:operator_report, Keyword.get(opts, :operator_report))
     |> Map.put(:completed_at, timestamp(completion_state.completed_at))
     |> Map.put(:completion_source, work_request.completion_source)
@@ -266,6 +269,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
            comment_count: comment_counts.comment_count,
            open_comment_count: comment_counts.open_comment_count,
            work_package_count: length(work_packages),
+           execution_status: WorkRequest.execution_status(Enum.map(all_work_packages, & &1.status)),
            planned_work_package_count: Enum.count(work_packages, &(&1.status == "planned")),
            dispatched_work_package_count: Enum.count(work_packages, &(not is_nil(&1.dispatched_at))),
            skipped_work_package_count: status_count(work_package_counts, work_request.id, "skipped"),
@@ -467,6 +471,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
       inserted_at: timestamp(work_request.inserted_at),
       updated_at: timestamp(work_request.updated_at)
     })
+    |> Chiefs.put_attribution(:dispatched_by, work_request.dispatched_by)
     |> put_repo_identity_fields(repo_identity_catalog, work_request.repo)
   end
 
@@ -485,6 +490,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard.WorkRequestCards do
       inserted_at: timestamp(work_request.inserted_at),
       updated_at: timestamp(work_request.updated_at)
     }
+    |> Chiefs.put_attribution(:dispatched_by, work_request.dispatched_by)
     |> put_repo_identity_fields(repo_identity_catalog, work_request.repo)
   end
 

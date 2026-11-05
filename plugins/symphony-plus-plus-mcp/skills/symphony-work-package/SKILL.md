@@ -30,6 +30,10 @@ write authority.
   The latter supports `context.md`, `acceptance.md`, `review.md`, `handoff.md`,
   `findings.md`, `progress.md`, and `task_plan.md`. Histories may have older pages;
   use `next_before_sequence` only when the missing history matters.
+  Large progress pages return five recent event summaries and omission counts.
+  Use `detail: "full"` with the same document and cursor for the complete page,
+  including evidence bodies. Other documents and resource reads keep their full
+  payloads.
 - Optional task-plan, finding, progress, comment, branch/PR, and readiness tools
   remain available to authenticated workers. Do not call them just to repeat
   native GitHub, review, or conversational evidence.

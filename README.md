@@ -17,47 +17,20 @@ duplicate status/review reporting are optional.
 
 ## Install
 
+For an always-on Linux factory shared across devices, see [Linux service](docs/linux-service.md).
+
 Windows installation and connection for Codex or Claude Code:
 
-Follow [Install and run](docs/runtime.md) for the Skills route and the marketplace
-alternative. Main is the normal branch; beta is an isolated preview. Both follow
-automatically published branch runtimes. Close clients, update, run setup and open
-fresh sessions to adopt the latest published build.
+Follow [Portable skills](docs/portable-skills.md) for the default global install
+and setup, or a project install. Main is the normal branch; beta is an isolated
+preview. Close clients, update, run setup and open fresh sessions to adopt the
+latest published build. See [Install and run](docs/runtime.md) for runtime details.
 
-Portable procedures without runtime installation:
-
-```sh
-npx skills add https://github.com/JJLiebig/symphony-plus-plus/tree/main
-```
-
-This installs procedures only. See [Portable skills](docs/portable-skills.md)
-for host selection, updates, removal, and separate MCP setup.
-
-For skill-only Codex use, choose a separate beta home and add the marketplace:
-
-```powershell
-$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
-New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
-codex plugin marketplace upgrade symphony-plus-plus
-```
-
-Choose the skill-only plugin for ordinary workers/coordinators:
-
-```powershell
-codex plugin add symphony-plus-plus@symphony-plus-plus
-```
-
-Update packages and open a fresh Codex session:
+Existing Codex marketplace installations can update with:
 
 ```powershell
 codex plugin marketplace upgrade symphony-plus-plus
 ```
-
-Do not install both plugins in the same Codex home unless you intentionally
-want both skill prefixes visible. The MCP companion starts or reuses the local
-runtime and serves its dashboard. See [Runtime](docs/runtime.md) for actual
-endpoint lookup, lifecycle, beta isolation, and repair.
 
 ## Documentation
 

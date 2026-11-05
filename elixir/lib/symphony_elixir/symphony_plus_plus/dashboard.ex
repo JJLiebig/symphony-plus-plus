@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
   alias SymphonyElixir.SymphonyPlusPlus.AgentRuns.AgentRun
   alias SymphonyElixir.SymphonyPlusPlus.AgentRuns.Repository, as: AgentRunRepository
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Repository, as: CommentRepository
 
@@ -1472,6 +1473,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
       inserted_at: timestamp(work_package.inserted_at),
       updated_at: timestamp(work_package.updated_at)
     }
+    |> Chiefs.put_attribution(:dispatched_by, work_package.dispatched_by)
     |> CommentProjection.put_counts(CommentProjection.counts_for(Keyword.get(opts, :comment_context), "work_package", work_package.id))
     |> Map.put(:comments, CommentProjection.comments_for(Keyword.get(opts, :comment_context), "work_package", work_package.id))
     |> maybe_put_dispatch_details(work_package, work_package_statuses, opts)

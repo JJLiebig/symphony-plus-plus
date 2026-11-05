@@ -106,6 +106,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage do
     field(:owner_id, :string)
     field(:contract_revision, :integer, default: 1)
     field(:dispatched_at, :utc_datetime_usec)
+    field(:dispatched_by, :map)
 
     timestamps(type: :utc_datetime_usec)
   end

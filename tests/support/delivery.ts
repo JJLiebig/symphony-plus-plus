@@ -93,7 +93,7 @@ export function pr(number: number, sha: string, patch: object = {}) {
 }
 
 export async function board(client: Client, request: string) {
-  return (await client.call('read_delivery_board', { work_request_id: request })).delivery_board;
+  return (await client.call('read_delivery_board', { work_request_id: request, detail: 'full' })).delivery_board;
 }
 
 export async function row(client: Client, request: string, wp: string) {

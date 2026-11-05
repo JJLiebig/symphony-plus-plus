@@ -1,7 +1,6 @@
 defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryReconciler do
   @moduledoc false
 
-  alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
   alias SymphonyElixir.SymphonyPlusPlus.Planning.ProgressEvent
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Repository, as: PlanningRepository
@@ -193,7 +192,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryReconciler do
          {:ok, evidence} <- merged_pr_evidence(events),
          :ok <- validate_repository(work_package, evidence),
          :ok <- validate_base_branch(work_package, evidence),
-         :ok <- validate_head(events, evidence),
          {:ok, merged_at} <- required_merged_at(evidence),
          {:ok, merge_commit_sha} <- required_merge_commit_sha(evidence) do
       {:ok,
@@ -402,20 +400,6 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryReconciler do
 
       true ->
         :ok
-    end
-  end
-
-  defp validate_head(events, %{ref: ref} = evidence) when is_map(ref) do
-    case PullRequestProgress.expected_head_sha(events, ref) do
-      expected when is_binary(expected) ->
-        if PullRequest.head_sha_matches?(evidence.head_sha, expected) do
-          :ok
-        else
-          {:skip, "head_mismatch", %{expected_head_sha: expected, actual_head_sha: evidence.head_sha}}
-        end
-
-      _missing ->
-        {:skip, "missing_head_evidence", %{actual_head_sha: evidence.head_sha}}
     end
   end
 

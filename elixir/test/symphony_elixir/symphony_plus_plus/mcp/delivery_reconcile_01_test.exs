@@ -5,6 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
   alias SymphonyElixir.FakeGitHubClient
   alias SymphonyElixir.GitHubPullRequestFixtures
+  alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDelivery
 
   test "unbound reads redact historical credential-bearing request and delivery scope", %{repo: repo} do
     work_request =
@@ -70,7 +71,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
           "jsonrpc" => "2.0",
           "id" => "local-read-work-request",
           "method" => "tools/call",
-          "params" => %{"name" => "read_work_request", "arguments" => %{"work_request_id" => work_request.id}}
+          "params" => %{"name" => "read_work_request", "arguments" => %{"detail" => "full", "work_request_id" => work_request.id}}
         },
         list_server
       )
@@ -167,11 +168,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         repo,
         session,
         "dispatch_work_package",
-        %{
-          "work_request_id" => work_request.id,
-          "work_package_id" => approved_slice.id,
-          "claimed_by" => "worker-dispatch-1"
-        },
+        %{"detail" => "full", "work_request_id" => work_request.id, "work_package_id" => approved_slice.id, "claimed_by" => "worker-dispatch-1"},
         config: Config.default(repo: repo, database: configured_database)
       )
 
@@ -252,9 +249,32 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
       assert {:ok, _revoked} = AccessGrantService.revoke(repo, claimed_grant.id)
 
-      accepted = mcp_tool(repo, session, "sync_pr", handoff)
+      mismatch = mcp_tool(repo, session, "sync_pr", Map.put(handoff, "head_sha", String.duplicate("b", 40)))
+      assert get_in(mismatch, ["error", "data", "reason"]) =~ "provider_head_mismatch"
+      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_worker"
+
+      url_only = Map.delete(handoff, "head_sha")
+      accepted = mcp_tool(repo, session, "sync_pr", url_only)
       assert get_in(accepted, ["result", "structuredContent", "work_package", "status"]) == "ready_for_merge"
       assert repo.get!(ClaimLease, other_owner.id).status == "released"
+
+      FakeGitHubClient.put_response(
+        "nextide/repo",
+        413,
+        GitHubPullRequestFixtures.metadata(413, head, base_branch: anchor.base_branch, merged?: true)
+      )
+
+      different_pr = mcp_tool(repo, session, "sync_pr", Map.put(url_only, "url", "https://github.com/nextide/repo/pull/413"))
+      assert get_in(different_pr, ["error", "data", "reason"]) == "pr_reference_mismatch"
+      assert repo.get!(WorkPackage, approved_slice.id).status == "ready_for_merge"
+
+      merged_head = String.duplicate("c", 40)
+      landed_pr = GitHubPullRequestFixtures.metadata(412, merged_head, base_branch: anchor.base_branch, merged?: true)
+
+      FakeGitHubClient.put_response("nextide/repo", 412, landed_pr)
+      landed = mcp_tool(repo, session, "sync_pr", %{"work_package_id" => approved_slice.id, "number" => 412, "repository" => "nextide/repo"})
+      assert get_in(landed, ["result", "structuredContent", "work_package", "status"]) == "merged"
+      assert repo.get_by!(WorkPackageDelivery, work_package_id: approved_slice.id).outcome == "pr_merged"
     after
       restore_app_env(:sympp_github_client, original_client)
       FakeGitHubClient.clear()
@@ -305,6 +325,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         Application.put_env(:symphony_elixir, :sympp_repo_database, configured_live_database)
 
         mcp_tool(repo, session, "dispatch_work_package", %{
+          "detail" => "full",
           "work_request_id" => in_scope.id,
           "work_package_id" => approved_live_database_slice.id,
           "claimed_by" => "worker-dispatch-1"
@@ -334,11 +355,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
         repo,
         session,
         "dispatch_work_package",
-        %{
-          "work_request_id" => in_scope.id,
-          "work_package_id" => approved_blank_database_slice.id,
-          "claimed_by" => "worker-dispatch-1"
-        },
+        %{"detail" => "full", "work_request_id" => in_scope.id, "work_package_id" => approved_blank_database_slice.id, "claimed_by" => "worker-dispatch-1"},
         config: Config.default(repo: repo, repo_root: test_repo_root(), database: "   ")
       )
 
@@ -365,6 +382,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
 
     delivery_base_response =
       mcp_tool(repo, session, "dispatch_work_package", %{
+        "detail" => "full",
         "work_request_id" => in_scope.id,
         "work_package_id" => approved_delivery_base_slice.id,
         "claimed_by" => "worker-dispatch-delivery-base"

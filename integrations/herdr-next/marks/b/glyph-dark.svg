@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 16 16">
+  <!-- Candidate B (Open ribbon), traced from Codex imagegen. The provider icon's 1 px ring stays transparent. -->
+  <defs>
+    <linearGradient id="s" x1="2" y1="2" x2="14" y2="14" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#62B6FF"/><stop offset="1" stop-color="#A38BFF"/>
+    </linearGradient>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+      <rect width="16" height="16" fill="#fff"/>
+      <rect x="-15.43" y="-2.29" width="20.57" height="20.57" rx="4.57" fill="#000"/>
+    </mask>
+  </defs>
+  <g mask="url(#m)">
+    <g transform="translate(3.2 1.2) scale(.82)" fill="url(#s)">
+      <path d="M13.8 3.25C12 3.95 9.8 2.9 7.25 3.55C5.95 3.88 5.5 4.9 6.95 5.8L10.2 7.75C13.4 9.75 14.15 11.5 12.65 13.6C11.3 15.45 7.75 15.7 5.25 14.35C3.65 13.45 3 12.35 1.7 11.55C3.85 10.2 5.8 11.65 8.2 12.25C10 12.7 11.5 12.1 10.25 10.8L5.3 8.45C2.35 7.1 1.7 5.55 3 3.5C4.6 1 7.2 .4 9.6 1.6C11 2.3 12.4 3.2 13.8 3.25Z"/>
+    </g>
+  </g>
+</svg>

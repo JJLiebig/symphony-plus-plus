@@ -1,5 +1,5 @@
 {
-  "mcp_contract_fingerprint": "47d3c9ae16d209dd1fef24601b51cd56389fe427a5fc778ed0fd4428aed9e4f3",
+  "mcp_contract_fingerprint": "84d507b213552c53a69975c0ab09aff7e1d734da331adf52215d047615f6e341",
   "tool_sets": {
     "architect_tools": [
       "list_work_requests",
@@ -50,6 +50,7 @@
     ],
     "trusted_local_http_extra_tools": [
       "create_work_request",
+      "register_chief",
       "add_work_request_comment",
       "record_work_request_operator_decision",
       "summarize_failed_mcp_calls",

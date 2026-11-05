@@ -31,6 +31,7 @@ documents do not remain in the active documentation tree.
 - Develop and validate changes: [Development](development.md)
 - Install, connect, upgrade or recover: [Runtime](runtime.md)
 - Publish a beta and move an existing factory: [Release and cutover](runbooks/beta-release-cutover.md)
+- [Linux factory service](linux-service.md): install an always-on factory and authenticate private-network clients.
 - Install portable Codex/Claude procedures: [Portable skills](portable-skills.md)
 - Repair delivery state: [Delivery recovery](runbooks/delivery-recovery.md)
 - Respond to a permission or secret incident:
@@ -38,6 +39,8 @@ documents do not remain in the active documentation tree.
 
 ## Beta Contract
 
+- [S++ × Herdr-next](design/herdr-next-integration.md): optional native client,
+  execution-host integration and delivery status; standalone S++ stays complete.
 - [Factory workflow](design/factory-workflow.md): roles, small-work and
   architect/UI loops, delivery semantics and visibility.
 - [Editable diagram](design/factory-workflow.excalidraw) and

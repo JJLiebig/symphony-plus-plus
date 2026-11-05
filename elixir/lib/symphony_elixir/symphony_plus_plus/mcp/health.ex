@@ -125,6 +125,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Health do
         "worker" => base_resource_specs() ++ current_assignment_resource_specs() ++ work_package_resource_template_specs()
       },
       "read_payloads" => %{
+        "sympp://work-packages/{work_package_id}/worker-bootstrap.json" => %{
+          "mimeType" => "application/json",
+          "fields" => ["type", "assignment", "coordinates", "required_skills", "preferred_skill_set", "supported_skill_sets", "launch_prompt"]
+        },
         @assignment_resource => %{
           "fields" => Session.public_assignment_fields(),
           "mimeType" => "application/json"

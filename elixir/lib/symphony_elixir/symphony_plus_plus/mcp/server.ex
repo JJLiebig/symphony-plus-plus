@@ -25,6 +25,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
 
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.Decision
   alias SymphonyElixir.SymphonyPlusPlus.Authorization.MCPError
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Comment
   alias SymphonyElixir.SymphonyPlusPlus.Comments.Service, as: CommentService
 
@@ -567,9 +568,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     end
   end
 
-  defp dispatch("tools/call", %{"name" => "create_work_request"} = params, %__MODULE__{} = server) do
-    case prepare_bootstrap_tool_call(server, params, "create_work_request") do
-      {:ok, arguments} -> bootstrap_tool("create_work_request", arguments, server)
+  defp dispatch("tools/call", %{"name" => "register_chief"}, %__MODULE__{session: %Session{assignment: %{grant_role: "worker"}}}) do
+    auth_error({:unauthorized, :architect_grant_required}, "register_chief")
+  end
+
+  defp dispatch("tools/call", %{"name" => "register_chief"}, %__MODULE__{config: %{surface_profile: profile}}) when profile in [:worker, :solo] do
+    auth_error({:unauthorized, :architect_grant_required}, "register_chief")
+  end
+
+  defp dispatch("tools/call", %{"name" => name} = params, %__MODULE__{} = server) when name in ["create_work_request", "register_chief"] do
+    case prepare_bootstrap_tool_call(server, params, name) do
+      {:ok, arguments} -> bootstrap_tool(name, arguments, server)
       {:error, code, message, data} -> {:error, code, message, data}
     end
   end
@@ -963,7 +972,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
   defp bootstrap_tool("create_work_request", arguments, %__MODULE__{config: config} = server) do
     with {:ok, requested_claimed_by} <- create_work_request_requested_claimed_by(arguments),
          {:ok, attrs} <- create_work_request_attrs(arguments, requested_claimed_by),
-         {:ok, work_request} <- WorkRequestService.create(config.repo, attrs) do
+         {:ok, work_request} <- WorkRequestService.create(config.repo, Map.put(attrs, "dispatched_by", Chiefs.attribution(server))) do
       effective_claimed_by = requested_claimed_by || ArchitectHandoff.claimed_by()
       payload = create_work_request_handoff_payload(server, work_request, effective_claimed_by)
 
@@ -971,6 +980,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
     else
       {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "create_work_request", "reason" => reason}}
       {:error, reason} -> create_work_request_error(reason)
+    end
+  end
+
+  defp bootstrap_tool("register_chief", arguments, %__MODULE__{config: config} = server) do
+    case Chiefs.register(config.repo, server.state_key, arguments) do
+      {:ok, chief} ->
+        {:ok, ToolResult.tool_result(%{"chief" => %{"id" => chief.id, "domain" => chief.domain, "repos" => chief.repos, "registered_at" => DateTime.to_iso8601(chief.registered_at)}})}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        changeset_invalid_params_error("register_chief", "invalid_chief", changeset)
+
+      {:error, reason} ->
+        service_error(reason, "register_chief")
     end
   end
 

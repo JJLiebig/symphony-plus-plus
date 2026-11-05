@@ -8,43 +8,27 @@ Linux, macOS and Windows ARM host setup is not supported by this route.
 
 ## Install and connect
 
-From the project that will use Symphony++, choose one pair:
+Install globally for both hosts, then connect them from any project:
 
 ```powershell
-# Claude Code only
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent claude-code --skill symphony-plus-plus --yes
-node .claude/skills/symphony-plus-plus/scripts/setup-sympp.js --host claude
+npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main -g --agent codex claude-code --skill symphony-plus-plus --yes
+node $HOME/.agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+```
 
-# Codex only
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent codex --skill symphony-plus-plus --yes
-node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js --host codex
+Alternatively, install in one project:
 
-# Both hosts
+```powershell
 npx --yes skills@1.7.0 add https://github.com/JJLiebig/symphony-plus-plus/tree/main --agent codex claude-code --skill symphony-plus-plus --yes
 node .agents/skills/symphony-plus-plus/scripts/setup-sympp.js
 ```
 
-Omitting `--host` registers installed Codex and Claude Code detected on PATH.
-`--host both` requires both. The qualified CLI recognizes `/tree/main` and `/tree/beta` and retains that ref
-in `skills-lock.json` across updates. Use main normally; use beta with separate
-homes and an empty ledger for isolated trials. Codex uses
-`.agents/skills/symphony-plus-plus`; Claude uses `.claude/skills/symphony-plus-plus`.
-Shared installations may link to one canonical directory. `--copy` also works.
-
-Setup creates the selected `CODEX_HOME` (default `~/.codex`) when needed, then
-writes its `config.toml` and Claude's project `.mcp.json`, preserving unrelated
-settings. It does not write Claude's user configuration. Both entries launch
-the installed Node bridge with the Node executable running setup. They capture
-the branch-derived `SYMPP_RUNTIME_CHANNEL`, `SYMPP_HOME`, `SYMPP_DATABASE`,
-`SYMPP_RUNTIME_FILE`, and any selected
-backend port/log directory. Codex keeps 360-second startup and 300-second tool
-timeouts. Do not commit machine-specific MCP paths to a shared repository.
-
-Claude local registration takes precedence over project configuration. If this
-project already has a local `symphony_plus_plus` entry, remove that old entry
-with `claude mcp remove --scope local symphony_plus_plus` before the fresh
-session. Setup checks the project file; it does not inspect Claude's local
-registration store. A new dedicated beta workspace avoids that collision.
+Omitting `--host` registers installed hosts; `--host both` requires both.
+Use `/tree/beta` with separate homes and an empty ledger for isolated trials.
+Setup writes Codex's selected `CODEX_HOME/config.toml` and registers Claude
+at user scope for global installs or project scope for project installs.
+Both entries capture the installed bridge and selected `SYMPP_*` settings.
+Claude local and project registrations take precedence over user registrations.
+Do not commit machine-specific MCP paths to a shared repository.
 
 Repeated setup is a no-op and repairs owned registrations after relocation.
 Unrelated `symphony_plus_plus` entries and enabled Symphony++ MCP marketplace
@@ -176,8 +160,19 @@ installations retain their marketplace upgrade path.
 
 ## Update, rollback, and removal
 
-Close clients using this installation and retain selected host profiles. Save
-the current installed bundle outside the workspace before updating:
+Close clients using this installation and retain selected host profiles. For a
+global install, back up `$HOME/.agents/skills/symphony-plus-plus` and
+`$HOME/.agents/.skill-lock.json` (or `$env:XDG_STATE_HOME/skills/.skill-lock.json`
+when set), then run:
+
+```powershell
+npx --yes skills@1.7.0 update symphony-plus-plus -g --yes
+node $HOME/.agents/skills/symphony-plus-plus/scripts/setup-sympp.js
+```
+
+To roll back the global bundle, restore the saved skill and its matching lock
+entry, then run setup. Preserve other skills' lock entries. For a project install,
+save the current installed bundle outside the workspace before updating:
 
 ```powershell
 $previousBundle = Join-Path $env:USERPROFILE 'sympp-previous-install'
@@ -201,7 +196,8 @@ Restore a stopped ledger backup when migrations or retention require it. Keep th
 original marketplace installation and paired backup for the first distribution
 change. Skills locks record branch/content hash rather than a resolved Git SHA.
 
-Before `npx --yes skills@1.7.0 remove symphony-plus-plus --yes`, close clients and
+Before `npx --yes skills@1.7.0 remove symphony-plus-plus -g --yes` (omit `-g`
+for a project install), close clients and
 remove its MCP registration from each host. Removing skill files does not
 remove host configuration.
 

@@ -5,6 +5,10 @@ description: Use when acting as a parent Codex agent coordinating ordinary repo 
 
 # Symphony++ Coordinator
 
+When the user selects Herdr-next execution, use the [optional execution helper](../symphony-worker/references/herdr-execution.md)
+for an existing dispatched assignment or ordinary untracked task. It does not
+dispatch, claim work, or replace standalone coordination.
+
 Use for ordinary coordination in a dedicated Symphony++ MCP config. For WorkRequests, WorkPackages,
 ledger-backed claims, scoped grants, delivery boards, or MCP merge gates, use
 `symphony-plus-plus-mcp:symphony-architect`.
@@ -13,6 +17,14 @@ feature-planning ceremony is optional. Escalate to an architect when scope or
 unresolved product decisions require it, not because of request type or model.
 
 ## Start
+
+When the human names this session a domain chief, call
+`register_chief({domain: "Kraken", repos?: ["owner/repo"], session_description?: "Terminal: Kraken chief"})`
+once through trusted local MCP. The bridge reports Herdr location automatically.
+Registration replaces the current chief for that domain, ignoring case, and
+attributes this session's new requests and dispatches; it grants no claim or
+dispatch authority. Ordinary work needs no registration. If this session registers
+several domains, attribution uses its most recent still-current registration.
 
 When creating a WorkRequest through MCP outside Herdr, optionally include
 `session_description` on `create_work_request`, such as

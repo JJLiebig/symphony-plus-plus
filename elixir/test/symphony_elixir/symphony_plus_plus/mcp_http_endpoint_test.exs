@@ -8,6 +8,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
+  alias SymphonyElixir.SymphonyPlusPlus.Chiefs.Registration
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.ClaimLease
   alias SymphonyElixir.SymphonyPlusPlus.ClaimLeases.Service, as: ClaimLeaseService
 
@@ -75,6 +76,35 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     assert SessionLocations.observe(payload, response, server) == server
   end
 
+  test "successful native tool observations retain separate terminal and MCP process identities" do
+    id = "native-location-#{System.unique_integer([:positive])}"
+    server = %Server{config: Config.default(repo: Repo)}
+
+    native = %{
+      "core_id" => "core-one",
+      "terminal_id" => "t8",
+      "pid" => 123,
+      "process_id" => 456,
+      "client_id" => "client-native",
+      "process_liveness_token" => "private-token",
+      "socket_path" => "private-selector"
+    }
+
+    payload = tool_call_request("native-location", "create_work_request", %{}) |> with_location("client-native", "build-desk", native)
+    response = %{"result" => %{"structuredContent" => %{"work_request" => %{"id" => id}}}}
+
+    assert SessionLocations.observe(payload, response, server).client_location["herdr"] == native
+    location = SessionLocations.get(Repo, "work_request", id)
+    assert location.source == "herdr_next"
+    assert location.herdr["pid"] == 123
+    assert location.herdr["process_id"] == 456
+    public = SessionLocations.public(location, %{})
+    assert public["herdr"]["core_id"] == "core-one"
+    assert public["herdr"]["terminal_id"] == "t8"
+    refute inspect(public) =~ "private-"
+    refute Map.has_key?(location.herdr, "process_liveness_token")
+  end
+
   setup_all do
     database_path = WorkPackageFactory.database_path()
     endpoint_config = Application.get_env(:symphony_elixir, Endpoint, [])
@@ -113,8 +143,202 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     HTTPStateStore.reset!()
     Repo.delete_all(OperatorSettings)
     Repo.delete_all(Location)
+    Repo.delete_all(Registration)
     FailedCall.reset()
     :ok
+  end
+
+  describe "factory service token access" do
+    setup do
+      keys = [:sympp_service, :sympp_remote_token_hash]
+      previous = Map.new(keys, &{&1, Application.get_env(:symphony_elixir, &1)})
+      token = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+      Application.put_env(:symphony_elixir, :sympp_service, true)
+      Application.put_env(:symphony_elixir, :sympp_remote_token_hash, :crypto.hash(:sha256, token))
+
+      on_exit(fn ->
+        for {key, value} <- previous do
+          if is_nil(value) do
+            Application.delete_env(:symphony_elixir, key)
+          else
+            Application.put_env(:symphony_elixir, key, value)
+          end
+        end
+      end)
+
+      %{remote: [remote_ip: {100, 64, 0, 2}, host: "100.123.207.19"], headers: [{"authorization", "Bearer " <> token}]}
+    end
+
+    test "all remote entrypoints require the token before routing or parsing", %{remote: remote} do
+      for headers <- [[], [{"authorization", "Bearer wrong"}], [{"authorization", "Basic wrong"}]] do
+        for path <- ["/mcp", "/mcp/readiness", "/mcp/client-lease", "/sympp/board", "/assets/index.js", "/api/v1/sympp/herdr/dashboard", "/api/v1/sympp/operator/dashboard"] do
+          assert get_local(path, headers, remote).status == 401
+        end
+
+        assert post_raw("not json", headers, remote).status == 401
+        assert post_raw("not json", headers, Keyword.put(remote, :path, "/api/v1/sympp/herdr/work-requests")).status == 401
+      end
+    end
+
+    test "remote token grants the existing MCP operator session and dashboard access", %{remote: remote, headers: headers} do
+      assert get_local("/mcp/readiness", headers, remote).status == 200
+      init = post_json(initialize_request("remote-init"), headers, remote)
+      assert init.status == 200
+      [session] = get_resp_header(init, "mcp-session-id")
+      session_headers = [{"mcp-session-id", session} | headers]
+      response = post_json(tool_call_request("remote-read", "list_work_requests", %{}), session_headers, remote) |> json_response(200)
+      refute response["error"]
+      refute response["result"]["isError"]
+
+      for action <- ["attach", "heartbeat", "detach"] do
+        assert post_json(%{"client_id" => "remote-service-test", "action" => action}, headers, Keyword.put(remote, :path, "/mcp/client-lease")).status == 200
+      end
+
+      for path <- ["/api/v1/sympp/herdr/dashboard", "/api/v1/sympp/operator/dashboard"] do
+        assert get_local(path, headers, remote).status == 200
+      end
+
+      # Authentication is required on every follow-up, not just initialize.
+      assert post_json(tool_call_request("lost-token", "sympp.health", %{}), [{"mcp-session-id", session}], remote).status == 401
+      assert get_local("/mcp/readiness", [{"x-forwarded-for", "127.0.0.1"} | headers], remote).status == 403
+    end
+
+    test "service mode preserves the unauthenticated loopback boundary", %{headers: headers} do
+      assert get_local("/mcp/readiness").status == 200
+      assert get_local("/mcp/readiness", headers, host: "untrusted.example").status == 403
+      assert get_local("/mcp/readiness", [{"origin", "http://untrusted.example"}]).status == 403
+      assert get_local("/mcp/readiness", [{"x-forwarded-for", "100.64.0.2"}]).status == 403
+    end
+  end
+
+  test "chief registration supersedes by domain and attributes only the current session's work" do
+    first = [{"mcp-session-id", unbound_startup_handshake(1)}]
+    native = %{"core_id" => "core-chief", "terminal_id" => "t9", "pid" => 321, "process_id" => 654, "client_id" => "chief-client"}
+    claims_before = Repo.aggregate(ClaimLease, :count)
+
+    registration =
+      tool_call_request("chief", "register_chief", %{"domain" => " Kraken ", "repos" => ["nextide/example"], "future_field" => true})
+      |> with_location("chief-client", "build-desk", native)
+      |> post_json(first)
+
+    [binding] = get_resp_header(registration, "sympp-herdr-binding")
+    assert binding |> Base.url_decode64!(padding: false) |> Jason.decode!() == %{"role" => "chief", "domain" => "Kraken"}
+    registered = json_response(registration, 200)
+    chief_id = get_in(registered, ["result", "structuredContent", "chief", "id"])
+    assert is_binary(chief_id)
+    assert Repo.aggregate(ClaimLease, :count) == claims_before
+    assert SessionLocations.get(Repo, "chief", chief_id).role == "chief"
+
+    denied = chief_call(first, "dispatch_work_package", %{"work_request_id" => "not-owned", "work_package_id" => "not-owned"})
+    assert denied["error"]
+
+    request_args = %{
+      "repo" => "nextide/example",
+      "base_branch" => "main",
+      "title" => "Chief work",
+      "request_kind" => "docs",
+      "description" => "A bounded chief request",
+      "workflow_mode" => "single_package",
+      "status" => "ready_for_slicing",
+      "creator_name" => "original-agent"
+    }
+
+    created = chief_call(first, "create_work_request", request_args)
+    request_id = get_in(created, ["result", "structuredContent", "work_request", "id"])
+    assert is_binary(request_id)
+    attribution = %{"kind" => "chief", "domain" => "Kraken"}
+    request = Repo.get!(SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest, request_id)
+    assert request.dispatched_by == attribution
+    assert request.creator_name == "original-agent"
+
+    sliced =
+      chief_call(first, "slice_work_request", %{
+        "work_request_id" => request_id,
+        "work_packages" => [
+          WorkPackageFactory.attrs(goal: "Deliver chief work", allowed_file_globs: ["docs/**"], validation_steps: [], stop_conditions: []),
+          WorkPackageFactory.attrs(goal: "Deliver more chief work", allowed_file_globs: ["docs/**"], validation_steps: [], stop_conditions: [])
+        ]
+      })
+
+    assert sliced["result"], inspect(sliced)
+    assert [one, two] = get_in(sliced, ["result", "structuredContent", "work_package_ids"])
+    dispatched = chief_call(first, "dispatch_work_package", %{"work_request_id" => request_id, "work_package_id" => one})
+    assert dispatched["result"]
+    assert Repo.get!(WorkPackage, one).dispatched_by == attribution
+
+    board = get_local("/api/v1/sympp/herdr/dashboard") |> json_response(200)
+    assert [%{"domain" => "Kraken", "repos" => ["nextide/example"], "session_location" => location}] = board["chiefs"]
+    assert location["role"] == "chief"
+    assert location["source"] == "herdr_next"
+    assert location["herdr"] == native
+
+    second = [{"mcp-session-id", unbound_startup_handshake(2)}]
+    replacement = chief_call(second, "register_chief", %{"domain" => "KRAKEN", "session_description" => "Terminal: new chief"})
+    assert get_in(replacement, ["result", "structuredContent", "chief", "id"]) != chief_id
+    assert Repo.get!(Registration, chief_id).superseded_at
+    assert Repo.aggregate(Registration, :count) == 2
+
+    assert chief_call(first, "dispatch_work_package", %{"work_request_id" => request_id, "work_package_id" => two})["result"]
+    assert Repo.get!(WorkPackage, two).dispatched_by == nil
+    plain_headers = [{"mcp-session-id", unbound_startup_handshake(3)}]
+    plain = chief_call(plain_headers, "create_work_request", request_args)
+    plain_id = get_in(plain, ["result", "structuredContent", "work_request", "id"])
+    assert Repo.get!(SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest, plain_id).dispatched_by == nil
+
+    current = chief_call(second, "create_work_request", request_args)
+    current_id = get_in(current, ["result", "structuredContent", "work_request", "id"])
+    assert Repo.get!(SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest, current_id).dispatched_by == %{"kind" => "chief", "domain" => "KRAKEN"}
+
+    board = get_local("/api/v1/sympp/herdr/dashboard") |> json_response(200)
+    assert [%{"domain" => "KRAKEN", "repos" => [], "session_location" => current_location}] = board["chiefs"]
+    assert current_location["role"] == "chief"
+    assert current_location["description"] == "Terminal: new chief"
+    refute Map.has_key?(current_location, "live")
+    card = Enum.find(board["work_requests"]["work_requests"], &(&1["id"] == request_id))
+    assert card["dispatched_by"] == attribution
+
+    detail = get_local("/api/v1/sympp/herdr/work-requests/#{request_id}") |> json_response(200)
+    assert detail["work_request"]["dispatched_by"] == attribution
+    assert Enum.find(detail["work_packages"], &(&1["id"] == one))["dispatched_by"] == attribution
+    assert get_local("/api/v1/sympp/herdr/dashboard", [], remote_ip: {10, 0, 0, 2}) |> response(401)
+  end
+
+  test "chief registration rejects invalid inputs and untrusted transports", %{database_path: database} do
+    headers = [{"mcp-session-id", unbound_startup_handshake(1)}]
+
+    for arguments <- [%{"domain" => " "}, %{"domain" => "Kraken", "repos" => "not-an-array"}, %{"domain" => "Kraken", "repos" => [42]}] do
+      assert chief_call(headers, "register_chief", arguments)["error"]["code"] == -32_602
+    end
+
+    assert Repo.aggregate(Registration, :count) == 0
+
+    for config <- [Config.default(repo: Repo), Config.default(mode: :http, repo: Repo, database: database)] do
+      server = Server.new(config, initialized: true, state_key: Ecto.UUID.generate())
+      result = Server.handle(tool_call_request("untrusted-chief", "register_chief", %{"domain" => "Kraken"}), server)
+      assert result["error"]["code"] == -32_001
+    end
+
+    config = Config.default(mode: :http, repo: Repo, database: database, local_daemon_trusted: true)
+
+    for profile <- [:worker, :solo] do
+      server = Server.new(%{config | surface_profile: profile}, initialized: true, state_key: Ecto.UUID.generate())
+      result = Server.handle(tool_call_request("non-chief-role", "register_chief", %{"domain" => "Kraken"}), server)
+      assert result["error"]["code"] == -32_001
+    end
+
+    claims_before = Repo.aggregate(ClaimLease, :count)
+
+    for profile <- [:architect, :coordinator] do
+      server = Server.new(%{config | surface_profile: profile}, initialized: true, state_key: Ecto.UUID.generate())
+      result = Server.handle(tool_call_request("chief-role", "register_chief", %{"domain" => "Kraken"}), server)
+      assert get_in(result, ["result", "structuredContent", "chief", "domain"]) == "Kraken"
+    end
+
+    assert Repo.aggregate(ClaimLease, :count) == claims_before
+  end
+
+  defp chief_call(headers, name, arguments) do
+    tool_call_request(Ecto.UUID.generate(), name, arguments) |> post_json(headers) |> json_response(200)
   end
 
   test "POST /mcp starts the HTTP state store when endpoint runtime omitted it" do
@@ -348,7 +572,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
   test "bound batch metadata ignores unrelated WorkRequest calls" do
     payload = [
-      tool_call_request("read", "read_work_request", %{"work_request_id" => "WR-UNRELATED"}),
+      tool_call_request("read", "read_work_request", %{"detail" => "full", "work_request_id" => "WR-UNRELATED"}),
       tool_call_request("claim", "claim_local_assignment", %{"work_package_id" => "SYMPP-MCP-HTTP"})
     ]
 

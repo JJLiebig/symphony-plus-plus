@@ -134,10 +134,16 @@ function draftBrief(view: GoalView, bumps: string[], at: number) {
   if (view.goal.report?.parked) return `Parked: ${view.goal.report.parked.text}`;
   const total = view.live.length + view.queued.length + view.done.length;
   if (view.state === "settled") return `All ${total} packages have landed.`;
-  if (view.live.length === 0) return `Nothing has moved for ${span(at - view.lastMoveAt)}. ${view.done.length} of ${total} packages have landed.`;
+  if (view.live.length === 0) return quietBrief(view, total, at);
   // A road bump is the news; the counts are on the same line already.
   if (bumps.length > 0) return bumps.length === 1 ? `${bumps[0]}.` : `${bumps[0]}, and ${bumps.length - 1} more.`;
   return `${view.live.length} of ${total} packages are moving. ${view.done.length} have landed.`;
+}
+
+// A short pause between packages is normal; only a stall is worth a clock.
+function quietBrief(view: GoalView, total: number, at: number) {
+  if (!isStalled(view, at)) return `Between packages: ${view.done.length} of ${total} have landed, ${view.queued.length} up next.`;
+  return `Nothing has moved for ${span(at - view.lastMoveAt)}. ${view.done.length} of ${total} packages have landed.`;
 }
 
 // Phases exist only where the architect grouped the work. Nothing is invented for ungrouped goals.

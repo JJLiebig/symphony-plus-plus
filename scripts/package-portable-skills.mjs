@@ -36,7 +36,7 @@ await collect(source);
 // Ship the authoritative launcher, not a separately maintained implementation.
 const plugin = resolve(repo, 'plugins/symphony-plus-plus-mcp');
 const runtimeFiles = (await readdir(resolve(plugin, 'scripts')))
-  .filter(name => /\.(ps1|cmd|js)$/.test(name)).map(name => `scripts/${name}`);
+  .filter(name => /\.(ps1|cmd|js|sh)$/.test(name)).map(name => `scripts/${name}`);
 runtimeFiles.push('assets/sympp-runtime-artifacts.json');
 const payloadHash = createHash('sha256');
 for (const name of runtimeFiles.sort()) {

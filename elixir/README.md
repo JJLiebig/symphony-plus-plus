@@ -347,3 +347,9 @@ you.
 ## License
 
 This project is licensed under the [Apache License 2.0](../LICENSE).
+
+## Always-on Linux factory
+
+Use the [Linux service installer](../docs/linux-service.md) to build a release,
+keep the existing ledger, and serve authenticated clients on the private tailnet.
+The regular local cockpit and Windows launcher retain their current behavior.

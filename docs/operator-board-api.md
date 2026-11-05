@@ -1,5 +1,111 @@
 # Operator board API
 
+`GET /api/v1/sympp/herdr/dashboard` is the optional native-client read of the
+same hydrated board projection as the browser endpoint below. It includes the
+canonical product tree, attention, package/delivery signals and sanitized session
+locations; locations remain last observed addresses, not proof of live agents.
+The normal standalone web board and its authorization are unchanged.
+
+The native dashboard also includes `chiefs: [{domain, repos, registered_at,
+session_location}]` for current optional domain chiefs. Locations use the existing
+sanitized shape with `role: "chief"`; absent locations are `null`, and a recorded
+address is not proof of liveness. Registrations for the same domain ignore case;
+only the newest is current, with earlier registrations retained in the ledger.
+Attributed request cards and request/package details carry optional
+`dispatched_by: {kind: "chief", domain}` captured when a registered session creates
+a request or dispatches a package. Supersession does not rewrite this attribution
+or existing creator fields. Repository lists describe the chief's domain; they
+do not grant repository, claim or dispatch authority.
+
+Successful `register_chief` calls also return a `Sympp-Herdr-Binding` header
+with `{role: "chief", domain}`. The packaged bridge labels that session without
+requiring a request or package. The native chief desk matches the registration's
+client and core identity; Live and Open still require the trusted helper check.
+
+Both hydrated routes include `runtime: {offline: boolean}` from the running
+backend's sandbox mode. A Copy-and-View snapshot reports `true` even though its
+request/package ids match the live ledger. Native clients must disable agent
+navigation when `runtime.offline` is true or unavailable; copied identities must
+not focus live sessions. An online backend reports `false`. This field reports
+context; it grants no mutation or session authority.
+
+Like the existing Herdr detail/event routes, this read requires a loopback peer,
+a local Host, and no `Forwarded`, `X-Forwarded-*` or `X-Real-IP` headers. Native
+clients need no Origin or browser fetch metadata. This existing native policy
+does not validate Origin; it is not the browser operator policy. The route
+returns HTTP 401 for nonlocal or forwarded requests and HTTP 405 for other
+methods. It grants no operator mutation authority. It reads an initialized
+ledger without running migrations, registering a dashboard opener, updating
+session locations, or writing claims, audit or business state. Subscribe to
+`/api/v1/sympp/herdr/events` and refetch after invalidation.
+
+`GET /api/v1/sympp/herdr/work-requests/:work_request_id` uses the same native
+read authority and never runs ledger migrations. It returns the request's
+clarification questions, comments, packages, product tree, execution graph,
+attention keys and current worker sessions. `decision_logs` contains every
+decision for that request, newest first, with the existing decision entry shape;
+`summary.decision_count` remains the total. Browser detail enrichment still
+returns only the newest three decisions. An uninitialized ledger returns HTTP
+503 with `{error:{code:"storage_failed",message}}`; a busy ledger returns HTTP
+503 with `{error:{code:"database_busy",message}}`. These reads do not initialize
+or repair the ledger.
+
+## Native human actions
+
+These optional native POST routes use the same canonical input validation,
+services, response shapes and dashboard invalidation as their operator siblings:
+
+| Route suffix under `/api/v1/sympp/herdr` | Input and result |
+| --- | --- |
+| `/work-requests` | Intake fields below; HTTP 201 with `{ok:true, work_request:<request detail>, refresh:{dashboard:true, work_request_id}}`. The new id is `work_request.work_request.id`. |
+| `/work-requests/:id/questions/:question_id/answer` | Answer fields below; HTTP 200 with `{ok:true, work_request_id, question_id, refresh:{dashboard:true, work_request_id}}`. |
+| `/work-packages/:id/guidance/:guidance_request_id/answer` | Answer fields below; HTTP 200 with `{ok:true, guidance_request_id, refresh:{dashboard:true, work_package_id}}`. |
+
+Native human authority means a trusted direct local process, not an authenticated
+Herdr application identity. Requests require a loopback peer and local Host,
+`Content-Type: application/json` (a charset parameter is accepted), and no
+`Origin`, `Sec-Fetch-*`, `Forwarded`, `X-Forwarded-*` or `X-Real-IP` headers.
+Invalid native authority returns HTTP 401. These POST routes grant no CORS access
+or OPTIONS preflight: other methods return HTTP 405. Browser forms cannot send
+JSON, script JSON requests require preflight, and browser fetch metadata is
+refused. The native read policy above and browser operator policy stay unchanged.
+This does not protect against an untrusted process already running locally.
+
+Minimal intake JSON is
+`{"title":"Widget","repo":"example/service","base_branch":"beta","human_description":"Build the agreed widget."}`.
+Optional fields use existing operator defaults: `work_type: "feature"`,
+`desired_dispatch_shape: "architect_led_feature_branch"`, `constraints: {}`,
+and `status: "ready_for_clarification"`. Intake creates the request; it neither
+claims work nor starts an agent. Unknown request fields are ignored.
+
+Read persisted questions from
+`work_request_details[].clarification_questions[]`: `id`, `work_request_id`,
+`question`, `why_needed`, `decision_prompt`, `status`, `answer`, `answered_by`
+and `answered_at`. Only `status: "open"` is answerable. Package guidance is in
+`guidance_requests.guidance_requests[]`, with `id`, `work_package_id`, `summary`,
+`question`, `context`, `decision_prompt` and `status`, plus recorded answer
+metadata. Only guidance escalated to `human_info_needed` is human-answerable;
+ordinary open guidance remains the architect's responsibility.
+
+A structured `decision_prompt` has `tl_dr`, `details`, 1–4 `options` with `id`,
+`label` and `answer` (optional `description`, `pros` and `cons`), and an optional
+`custom_redirect_label`. Render the persisted options. Submit
+`{"answer_choice":"<option id>","answer_note":"optional note"}`; a structured
+prompt does not accept `answer` alone. The custom choice `__custom_redirect__`
+requires a nonblank `answer_note`. Without a structured prompt, submit
+`{"answer":"the human's answer"}`. The backend records `local-operator` as the
+answer author; a successful answer does not automatically resume or unblock work.
+
+Refetch the native board after success or its event-stream invalidation. Errors
+use `{error:{code,message}}`: malformed input/choice or wrong guidance status
+returns HTTP 422, absent/wrong-scope targets return HTTP 404, and an already
+answered/closed clarification question returns HTTP 409. Wrong-package guidance
+answers now return HTTP 404 on both native and browser routes; previously the
+browser refusal incorrectly returned HTTP 500. No draft-edit, deletion, dispatch
+or claim mutation is exposed by these native routes.
+
+## Hydrated board
+
 `GET /api/v1/sympp/operator/dashboard/hydrated` returns the current board in one
 response. Existing fields retain their meaning. Read each entry of
 `work_request_details[].work_packages[]` for these additive fields:
@@ -18,11 +124,30 @@ response. Existing fields retain their meaning. Read each entry of
 | `pr_signal.head_changed_at` | First observed time of the current PR/head, recorded on snapshot append. |
 | `pr_signal.checks.changed_at` | First observed time of the current check status for that PR/head. |
 | `review_signal.mode` | Native provider mode, falling back to the configured requirement. |
+| `review_signal.round` | Integer count from Review Suite's `rounds`, including zero before its first round. |
+| `review_signal.provider_status` | Review Suite's raw stage; `status` keeps its existing normalized meaning. |
+| `review_signal.steps` | Optional ordered ladder of `{index, name, state}` entries (`done`, `current`, or `pending`). |
+| `review_signal.round_history` | Optional oldest-first list of the latest 20 provider rounds. |
 
 Review progress remains in `review_signal.step`, `current`, `total`, `round`,
 `evidence_id`, `reviewed_head`, `started_at`, `round_started_at`, `observed_at` and
 `observation_state`. `pr_signal.checks.status` remains `passing`, `pending`,
 `failing`, or `unavailable`; missing checks never imply success.
+
+Each round-history entry contains `number`, `round_id`, `lane`, `step`, `status`,
+`outcome` (`findings`, `clean`, `blocked`, or `null`), `findings` (integer or
+`null`), `started_at`, and `finished_at`. Provider strings are trimmed and capped
+at 240 characters; steps are capped at 20 entries. Round timestamps must be ISO
+8601; unavailable or invalid history timestamps are `null`. Top-level
+`started_at` and `round_started_at` follow the same timestamp validation and are
+omitted when unavailable. Older Review Suite versions that omit `steps` or
+`round_history` leave those fields absent from the signal.
+
+Review observations use the enabled Review Suite marketplace plugin first. If
+Codex reports no enabled Review Suite plugin, discovery checks the portable
+skills bundle at `~/.agents/skills/review-suite/plugins/review-suite/scripts/review.py`.
+That fallback must be a regular file at the fixed user-home location; discovery
+does not search PATH or a package's worktree for a provider script.
 
 A dispatched package is building from `dispatched_at`, without worker reports,
 runtime observations, or a reporting cadence. Native review observations augment
@@ -168,10 +293,18 @@ configured worker-session label. Existing configured labels remain supported.
 | `label` | `machines[machine_id].label`, otherwise the client hostname. |
 | `kind` | Configured `desktop`, `laptop`, or `server`; `null` when unknown. |
 | `role` | `architect`, `coordinator`, or `worker`. |
-| `source` | `herdr`, `agent` (human description), or `machine` (hostname only). |
+| `source` | `herdr` (legacy), `herdr_next`, `agent` (human description), or `machine` (hostname only). |
 | `description` | Optional human-readable location supplied by the agent. |
 | `last_seen_at` | UTC time of the latest successful scoped MCP tool call reporting this session. |
-| `herdr` | Workspace, tab and pane ids, with workspace/tab labels when obtainable; empty outside Herdr. |
+| `herdr` | Legacy workspace/tab/pane ids and labels, or native `core_id`, `terminal_id`, root-terminal `pid`, MCP bridge `process_id` and `client_id`; empty outside Herdr. |
+
+The Node MCP bridge discovers native context from `HC_TERMINAL_ID` and
+`HC_TERMINAL_SOCKET`, then asks that core for its actual identity. Socket paths,
+private selectors and liveness credentials are never projected. Native Open
+uses a trusted helper on the terminal's machine: an online factory, unchanged
+core/terminal/root PID and an authenticated live bridge are all required.
+A shell surviving its agent is insufficient. These observations grant no ledger
+authority. The nonportable PowerShell fallback still reports legacy locations.
 
 A claimed architect's observation takes precedence over a coordinator fallback.
 The fallback is established only by the client that creates the WorkRequest;

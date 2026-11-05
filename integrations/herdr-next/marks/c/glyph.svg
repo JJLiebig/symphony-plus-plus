@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 16 16">
+  <!-- Candidate C (Fold), traced from Codex imagegen. The provider icon's 1 px ring stays transparent. -->
+  <defs>
+    <linearGradient id="s" x1="2" y1="2" x2="14" y2="14" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#087EF5"/><stop offset="1" stop-color="#6530E8"/>
+    </linearGradient>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+      <rect width="16" height="16" fill="#fff"/>
+      <rect x="-15.43" y="-2.29" width="20.57" height="20.57" rx="4.57" fill="#000"/>
+    </mask>
+  </defs>
+  <g mask="url(#m)">
+    <g transform="translate(3.2 1.2) scale(.82)" fill="url(#s)">
+      <path d="M8.25 .9Q8.65 .65 9.03 .9L13.12 3.02Q13.3 3.13 13.12 3.25L7.5 5.66L5.08 4.75Q3.98 4.35 4.35 3.35Z"/>
+      <path d="M4.65 2.8Q2.8 3.3 2.8 4.65V6Q2.8 6.55 3.55 6.85L11.55 10.17Q12.9 10.75 11.8 12.18Q13 11.77 13 10.55V8.65Q13 8 12.35 7.75L5.65 4.92Q3.65 4.1 4.65 2.8Z"/>
+      <path d="M3.4 7.9Q4 8.6 5.35 9.15L11.1 11.55Q12.25 12.05 11.75 12.75Q12.7 11.9 11.65 11.4Z"/>
+      <path d="M2.5 12.53L6.8 10.4L11.68 12.43L7.32 14.69Q6.95 14.9 6.6 14.7Z"/>
+    </g>
+  </g>
+</svg>

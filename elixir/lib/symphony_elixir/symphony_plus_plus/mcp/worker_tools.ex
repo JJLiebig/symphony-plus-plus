@@ -74,18 +74,31 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
 
   def call("read_work_package_document", %Config{repo: repo}, session, arguments) do
     with {:ok, session} <- scoped_session(repo, session, arguments),
+         {:ok, detail} <- document_detail(arguments),
          {:ok, document} <- required_argument(arguments, "document"),
          :ok <- validate_document_cursor(document, Map.get(arguments, "before_sequence")),
          work_package_id = Session.work_package_id(session),
          {:ok, state, _session} <- Surface.read_work_package_document_state(repo, session, work_package_id, document, Map.get(arguments, "before_sequence")),
          {:ok, payload} <- WorkerContext.virtual_file_payload(state, document, uri: "sympp://work-packages/#{work_package_id}/#{document}") do
-      {:ok,
-       ToolResult.with_text_profile(:full, fn ->
-         ToolResult.agent_tool_result(payload, fn ->
-           {:ok, toon} = WorkerContext.encode_virtual_file(state, document, uri: payload["uri"])
-           toon
-         end)
-       end)}
+      if detail == "summary" and document == "progress.md" and String.length(Jason.encode!(payload)) > 10_000 do
+        events = payload["progress_events"]
+
+        summary =
+          payload
+          |> Map.put("progress_events", events |> Enum.take(-5) |> Enum.map(&Map.take(&1, ~w(id sequence summary status))))
+          |> Map.put("summary_omitted", %{"progress_events" => max(length(events) - 5, 0), "event_details" => length(events)})
+          |> Map.put("help", "Use read_work_package_document with detail: full and the same document/before_sequence for complete page evidence.")
+
+        {:ok, ToolResult.with_text_profile(:full, fn -> ToolResult.read_tool_result(summary) end)}
+      else
+        {:ok,
+         ToolResult.with_text_profile(:full, fn ->
+           ToolResult.agent_tool_result(payload, fn ->
+             {:ok, toon} = WorkerContext.encode_virtual_file(state, document, uri: payload["uri"])
+             toon
+           end)
+         end)}
+      end
     else
       {:error, _code, _message, _data} = error -> error
       {:tool_error, reason} -> invalid_params_error("read_work_package_document", reason)
@@ -322,6 +335,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerTools do
        end)}
     else
       {:error, reason} -> worker_error(reason, "read_#{file_name}")
+    end
+  end
+
+  defp document_detail(arguments) do
+    case Map.get(arguments, "detail", "summary") do
+      detail when detail in ["summary", "full"] -> {:ok, detail}
+      _other -> {:tool_error, "invalid_detail"}
     end
   end
 

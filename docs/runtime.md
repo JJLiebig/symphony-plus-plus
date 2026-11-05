@@ -15,6 +15,8 @@ branch artifact. Healthy clients share their existing runtime until they close;
 there is no hot replacement. Artifact checksums, MCP contract compatibility and
 actual source SHA remain verified. Publication can lag source head; read the
 running SHA and manifest before relying on a newly merged feature.
+For a coordinated restart of an existing Windows beta Skills factory, use the
+[beta reload command](#reload-an-existing-windows-beta-factory) below.
 
 Keep beta's home, runtime file, port and ledger separate from the original factory.
 Use an empty ledger for real dogfood work. A copied live ledger is inspection-only:
@@ -24,44 +26,35 @@ viewer has no MCP/agent access; Ctrl+C stops it before refresh. Never promote th
 copy to live. A factory move requires the [stopped-ledger backup and cutover
 procedure](runbooks/beta-release-cutover.md).
 
-## Marketplace Alternative In A Separate Beta Home
+## Local Checkout Loop (Windows)
 
-Use PowerShell with Git, Node.js, PowerShell 7 and Codex available. Choose
-separate beta paths so your stable installation and ledger remain independent:
+From any checkout, set `$env:SYMPP_HOME` to the existing factory's absolute home
+(for example `C:\Users\jonat\sympp-herdr-next\.sympp-beta`), then run `just install`.
+It uses the toolchain in `elixir/mise.toml`, builds current files including uncommitted
+changes, regenerates Skills, and replaces the runtime on the same endpoint and ledger.
+The previous runtime is retained for rollback. Herdr and agent sessions stay running;
+open fresh agent sessions only when the command reports a Skills/contract change.
+`HERDR_APP_HOME` selects a non-default Herdr home; existing chrome is retained.
 
-```powershell
-$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
-New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
-$env:SYMPP_HOME = Join-Path $env:USERPROFILE '.agents/splusplus-beta'
-$env:SYMPP_DATABASE = Join-Path $env:SYMPP_HOME 'symphony_plus_plus.sqlite3'
-codex plugin marketplace add https://github.com/JJLiebig/symphony-plus-plus --ref beta
-codex plugin marketplace upgrade symphony-plus-plus
-codex plugin add symphony-plus-plus-mcp@symphony-plus-plus
-codex
-```
+The checkout build stays selected through idle shutdown and reboot. Its commit,
+dirty flag, install time and Skills bundle hash appear in `artifact.checkout` and
+the factory's `runtime/checkout-artifacts.json`. Last install wins: `npx skills update`
+returns to published builds. On the next cold start, a changed Skills bundle quietly
+drops the checkout pin; an unchanged bundle keeps it. Use one Skills installation
+per factory; sharing its directory between independent factories is unsupported.
+Restart briefly loses client leases; the panel restarts an idle factory within about
+25 seconds, and bridges cold-start it on their next request.
 
-Retain these variables in each beta terminal. `CODEX_HOME` selects the plugin
-installation and Codex configuration; `SYMPP_HOME` selects launcher state;
-`SYMPP_DATABASE` selects the ledger. Setting only `SYMPP_HOME` does not
-select a separate ledger. Use the same three paths for both hosts to share work.
+`just test` runs fast launcher/bridge and native-view behavior tests, checkout-pin
+selection, dashboard type/lint checks and Vitest, plus Skills mirror validation.
+It excludes backend ExUnit, native acceptance and release qualification; run those
+when changing their surfaces. `just install` also compiles the backend release.
 
-A fresh Codex session loads MCP tools and starts or attaches to the packaged
-runtime. A separate Codex home has its own authentication; use Codex's normal
-sign-in flow when required. Do not copy credentials.
+## Existing Marketplace Installations
 
-For Claude Code, install the [portable procedures](portable-skills.md), then
-register the same installed bridge from the intended project:
-
-```powershell
-$symppBridge = Join-Path $env:CODEX_HOME 'plugins/cache/symphony-plus-plus/symphony-plus-plus-mcp/0.2.0/scripts/start-sympp-mcp.cmd'
-claude mcp add symphony_plus_plus --transport stdio --scope local -e "CODEX_HOME=$env:CODEX_HOME" -e "SYMPP_HOME=$env:SYMPP_HOME" -e "SYMPP_DATABASE=$env:SYMPP_DATABASE" -- cmd.exe /d /s /c "`"$symppBridge`""
-claude
-```
-
-Follow host approval prompts. Verify `symphony_plus_plus` tools in the actual
-session before ledger work. Skills alone do not connect MCP. The authoritative
-[connection procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/references/mcp_wiring.md)
-covers host setup, claims and developer connections.
+Existing Codex marketplace installations can run `codex plugin marketplace upgrade
+symphony-plus-plus` and open a fresh session. For new installations use the
+[global Skills route](portable-skills.md).
 
 ## Open The Board
 
@@ -79,6 +72,64 @@ when needed. `SYMPP_BACKEND_PORT` requests a preferred port. Use the recorded
 URL. See [Operations](operations.md) for the Work board and starting a request.
 
 ## Attach, Close And Recover
+
+### Reload an existing Windows beta factory
+
+From an S++ checkout on your logged-in Windows desktop, use explicit absolute
+factory and Herdr-app homes:
+
+```powershell
+pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
+```
+
+This installs the latest **published beta runtime**, plus the checkout's generated
+Skills bundle and native view. Published binaries keep repeat installs fast without
+a local Elixir toolchain. Publication can lag a branch push; the command reports
+the exact running SHA, rather than claiming the checkout is running. To select
+an already downloaded beta channel manifest, pass `-ArtifactManifest <path>`.
+
+The factory must already use an official project-local beta Skills installation
+and a managed artifact backend. Its data home must be inside that workspace,
+outside the managed Skills directory, with a separate `beta` word in its final
+folder (such as `.sympp-beta`), its own port, and its database inside that home. Default
+production homes, stable Skills installations, global Skills, marketplace caches,
+linked paths and stable ports are refused. The command never updates a plugin
+cache or host registration. The checkout bundle and published artifact must share
+an MCP contract; when publication lags, the command refuses before interrupting
+the old runtime. The beta workspace's own Skills directory stays at its registered
+path. Actual file changes are detected even if its package marker was not updated.
+
+The archive and native files are prepared before the backend is stopped. The
+installed launcher restarts the same endpoint and ledger, and readiness must
+match the selected revision, contract and database. An unchanged runtime and bundle
+are not replaced while the backend is running; identical native files are not
+rewritten.
+When the recorded backend has stopped, installation skips its readiness check and
+stop step, then starts and verifies the selected runtime on the same endpoint and
+ledger. This catches startup failures during installation and leaves it ready for
+the next MCP client. Normal idle shutdown follows that client's detach.
+The old Skills directory is backed up during cutover. A failed restart or native
+installation restores that directory and restarts the retained previous artifact
+with its original contract.
+Ledger contents are never restored or copied; startup performs only the backend's
+normal additive updates.
+The selected runtime stays pinned in this beta Skills installation until the
+next install command selects a newer publication.
+
+If startup reports that the Skills bundle and runtime channel have different MCP
+contracts, run the beta install command above or update the project Skills with
+`npx skills update symphony-plus-plus --project --yes`, then open fresh MCP client
+sessions. A channel publication can move ahead of the installed bundle while the
+factory is stopped.
+
+After a Skills bundle change, **open fresh sessions for every MCP client**, including
+the coordinating architect. An artifact-only restart leaves the bundle intact;
+connected STDIO bridges reconnect to the same endpoint on their next request.
+Requests overlapping the restart can fail; reload that client's MCP connection
+if it reports an error. Check the result of an interrupted write before retrying
+it. Fresh host sessions load the updated procedures and tool list.
+Do not run this against a shared live beta factory until its coordinating
+architect has agreed to the restart timing.
 
 For moving an existing factory ledger from main to beta, follow the
 [release and cutover runbook](runbooks/beta-release-cutover.md), including its
