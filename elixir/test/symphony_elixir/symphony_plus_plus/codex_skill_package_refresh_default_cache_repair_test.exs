@@ -25,13 +25,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
       scratch_path = published_plugin_cache_path(temp_codex_home, ["scratch", "note.txt"])
       scratch_mcp_path = published_plugin_cache_path(temp_codex_home, ["scratch", ".mcp.json"])
       File.mkdir_p!(Path.dirname(stale_manifest_path))
-      File.write!(stale_manifest_path, Jason.encode!(%{"name" => "sympp", "version" => "0.0.9"}))
+      File.write!(stale_manifest_path, Jason.encode!(%{"name" => "symphony-plus-plus", "version" => "0.0.9"}))
       File.write!(sentinel_path, "preserve")
       File.mkdir_p!(Path.dirname(incompatible_manifest_path))
 
       File.write!(
         incompatible_manifest_path,
-        Jason.encode!(%{"name" => "sympp", "version" => "0.1.1", "mcpServers" => "./.mcp.json"})
+        Jason.encode!(%{"name" => "symphony-plus-plus", "version" => "0.1.1", "mcpServers" => "./.mcp.json"})
       )
 
       File.write!(incompatible_hint_path, "C:/sympp/generated\n")
@@ -39,7 +39,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
       File.write!(
         incompatible_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "pwsh",
             "args" => ["-NoProfile"],
@@ -55,7 +55,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
       File.write!(
         malformed_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "pwsh",
             "args" => ["-NoProfile"],
@@ -70,7 +70,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
       File.write!(
         missing_manifest_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "pwsh",
             "args" => ["-NoProfile"],
@@ -85,7 +85,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshDefaultCacheRe
 
       File.write!(
         manual_manifest_path,
-        Jason.encode!(%{"name" => "sympp", "version" => "manual", "mcpServers" => "./.mcp.json"})
+        Jason.encode!(%{"name" => "symphony-plus-plus", "version" => "manual", "mcpServers" => "./.mcp.json"})
       )
 
       File.write!(manual_manifest_mcp_path, Jason.encode!(%{"manual" => true}))

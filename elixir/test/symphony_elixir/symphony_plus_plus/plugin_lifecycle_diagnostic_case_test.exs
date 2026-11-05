@@ -48,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLifecycleDiagnosticCase do
           File.write!(
             Path.join(cache_root, ".mcp.json"),
             Jason.encode!(%{
-              "symphony_plus_plus" => %{
+              "sympp" => %{
                 "type" => "stdio",
                 "command" => "cmd.exe",
                 "args" => ["/d", "/s", "/c", "scripts/start-sympp-mcp.cmd"],
@@ -86,7 +86,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLifecycleDiagnosticCase do
           )
         end
 
-        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "sympp")
+        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "symphony-plus-plus")
         write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp"), "symphony-plus-plus-mcp", mcp?: true)
 
         marketplace_root
@@ -136,7 +136,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLifecycleDiagnosticCase do
               "marketplace" => @plugin_marketplace_name,
               "name" => "symphony-plus-plus-mcp",
               "version" => @plugin_version,
-              "packages" => ["sympp", "symphony-plus-plus-mcp"]
+              "packages" => ["symphony-plus-plus", "symphony-plus-plus-mcp"]
             },
             "artifacts" => [artifact]
           }

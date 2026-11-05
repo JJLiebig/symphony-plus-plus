@@ -48,8 +48,7 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await expect(goal).toContainText('Dependent findings');
   await expect(goal).toContainText('queued');
   await expect(goal).toContainText('0/2 done');
-  if (process.env.SYMPP_BROWSER_MECHANICAL === '1') await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
-  else await agent.act('Open the sympp settings menu');
+  await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
   await expect(screen.getByLabel('Finished goals are archived after', { exact: false })).toBeVisible();
   await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
   if (candidate.recording) return;

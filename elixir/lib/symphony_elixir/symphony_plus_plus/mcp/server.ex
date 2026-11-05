@@ -473,7 +473,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
          "resources" => %{}
        },
        "serverInfo" => %{
-         "name" => "symphony-plus-plus",
+         "name" => "sympp",
          "version" => config.version
        }
      }}

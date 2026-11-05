@@ -36,7 +36,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageTest do
 
         File.write!(
           default_manifest_path,
-          Jason.encode!(%{"name" => "sympp", "version" => @plugin_version})
+          Jason.encode!(%{"name" => "symphony-plus-plus", "version" => @plugin_version})
         )
 
         File.mkdir_p!(Path.dirname(companion_manifest_path))

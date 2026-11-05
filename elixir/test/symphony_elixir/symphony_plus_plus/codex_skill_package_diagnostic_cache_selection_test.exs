@@ -181,7 +181,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
       File.write!(
         stale_manifest_path,
         Jason.encode!(%{
-          "name" => "sympp",
+          "name" => "symphony-plus-plus",
           "version" => "0.1.1",
           "mcpServers" => "./.mcp.json"
         })
@@ -195,7 +195,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
       File.write!(
         broken_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "cmd.exe"
           }
@@ -211,7 +211,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
       File.write!(
         bad_reference_manifest_path,
         Jason.encode!(%{
-          "name" => "sympp",
+          "name" => "symphony-plus-plus",
           "version" => "0.1.2"
         })
       )
@@ -219,7 +219,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
       File.write!(
         bad_reference_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "cmd.exe",
             "args" => ["-NoProfile"],
@@ -233,7 +233,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
       File.write!(
         malformed_mcp_path,
         Jason.encode!(%{
-          "symphony_plus_plus" => %{
+          "sympp" => %{
             "type" => "stdio",
             "command" => "cmd.exe"
           }
@@ -287,7 +287,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
         assert stale_cache["manifest_mcpServers_declared"] == true
         assert stale_cache["default_plugin_lifecycle_status"] == "incompatible_default_plugin_bundles_mcp"
         assert stale_cache["reference_mcp_server_status"] == "ok"
-        assert stale_cache["symphony_plus_plus_server"] == "incompatible_default_plugin_bundles_mcp"
+        assert stale_cache["sympp_server"] == "incompatible_default_plugin_bundles_mcp"
 
         assert superseded_cache["default_plugin_lifecycle_status"] == "incompatible_default_plugin_bundles_mcp"
         assert superseded_cache["reference_mcp_server_status"] == "ok"
@@ -295,18 +295,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
         assert broken_cache["manifest_exists"] == false
         assert broken_cache["default_plugin_lifecycle_status"] == "missing_manifest"
         assert broken_cache["reference_mcp_server_status"] == "invalid_cwd"
-        assert broken_cache["symphony_plus_plus_server"] == "missing_manifest"
+        assert broken_cache["sympp_server"] == "missing_manifest"
 
         assert malformed_cache["default_plugin_lifecycle_status"] == "manifest_parse_error"
         assert malformed_cache["reference_mcp_server_status"] == "invalid_cwd"
-        assert malformed_cache["symphony_plus_plus_server"] == "manifest_parse_error"
+        assert malformed_cache["sympp_server"] == "manifest_parse_error"
 
         assert bad_reference_cache["default_plugin_lifecycle_status"] == "incompatible_default_plugin_bundles_mcp"
         assert bad_reference_cache["reference_mcp_server_status"] == "invalid_args"
-        assert bad_reference_cache["symphony_plus_plus_server"] == "incompatible_default_plugin_bundles_mcp"
+        assert bad_reference_cache["sympp_server"] == "incompatible_default_plugin_bundles_mcp"
 
         assert report["codex_config"]["symphony_plugin_enabled"] == true
-        assert Enum.any?(config_entries, &(&1["plugin_name"] == "sympp" and &1["enabled"] == false))
+        assert Enum.any?(config_entries, &(&1["plugin_name"] == "symphony-plus-plus" and &1["enabled"] == false))
         assert Enum.any?(config_entries, &(&1["plugin_name"] == "symphony-plus-plus-mcp" and &1["enabled"] == true))
 
         assert report["process_scan_scope"] == "skipped_no_repo_root_scope"

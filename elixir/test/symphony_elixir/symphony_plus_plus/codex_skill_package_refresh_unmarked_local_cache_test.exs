@@ -13,7 +13,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshUnmarkedLocalC
 
       try do
         File.mkdir_p!(Path.dirname(unmarked_manifest_path))
-        File.write!(unmarked_manifest_path, Jason.encode!(%{"name" => "sympp", "version" => "stale"}))
+        File.write!(unmarked_manifest_path, Jason.encode!(%{"name" => "symphony-plus-plus", "version" => "stale"}))
 
         {output, status} =
           System.cmd(
@@ -25,7 +25,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshUnmarkedLocalC
               "-File",
               @refresh_script_path,
               "-PluginName",
-              "sympp",
+              "symphony-plus-plus",
               "-CodexHome",
               temp_codex_home
             ],

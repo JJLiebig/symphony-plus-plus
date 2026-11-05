@@ -7,7 +7,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
       use ExUnit.Case, async: true
 
       @repo_root Path.expand("../../../../", __DIR__)
-      @plugin_marketplace_name "sympp"
+      @plugin_marketplace_name "symphony-plus-plus"
       @plugin_manifest_path Path.join(@repo_root, "plugins/symphony-plus-plus/.codex-plugin/plugin.json")
       @plugin_version @plugin_manifest_path |> File.read!() |> Jason.decode!() |> Map.fetch!("version")
       @marketplace_revision String.duplicate("b", 40)
@@ -48,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
           File.write!(
             Path.join(cache_root, ".mcp.json"),
             Jason.encode!(%{
-              "symphony_plus_plus" => %{
+              "sympp" => %{
                 "type" => "stdio",
                 "command" => "cmd.exe",
                 "args" => ["/d", "/s", "/c", "scripts/start-sympp-mcp.cmd"],
@@ -86,7 +86,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
           )
         end
 
-        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "sympp")
+        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "symphony-plus-plus")
         write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp"), "symphony-plus-plus-mcp", mcp?: true)
 
         marketplace_root
@@ -162,7 +162,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
               "marketplace" => @plugin_marketplace_name,
               "name" => "symphony-plus-plus-mcp",
               "version" => @plugin_version,
-              "packages" => ["sympp", "symphony-plus-plus-mcp"]
+              "packages" => ["symphony-plus-plus", "symphony-plus-plus-mcp"]
             })
           )
           |> maybe_put("source_revision", Keyword.get(opts, :manifest_source_revision))
