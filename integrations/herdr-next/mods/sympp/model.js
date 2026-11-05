@@ -1,4 +1,4 @@
-// Pure S++ Lens model: the native hydrated board in, plain view data out. No GPUI, no Herdr imports,
+// Pure sympp Lens model: the native hydrated board in, plain view data out. No GPUI, no Herdr imports,
 // so every transformation here can be asserted on its own. Semantics follow the standalone board
 // (elixir/assets/src/fresh/model.ts, report.tsx, board.tsx); nothing here is a second ledger.
 
@@ -75,15 +75,15 @@ export function fetchFailed(state, error, now) {
 }
 
 export function httpError(status) {
-  if (status === 401 || status === 403) return `S++ refused this native read (${status}). Check the local S++ connection.`;
-  if (status === 404) return "This S++ has no native board route (404). It needs the release with /herdr/dashboard.";
-  if (status === 503) return "The S++ ledger is busy (503). Retrying.";
-  return `S++ answered ${status}.`;
+  if (status === 401 || status === 403) return `sympp refused this native read (${status}). Check the local sympp connection.`;
+  if (status === 404) return "This sympp has no native board route (404). It needs the release with /herdr/dashboard.";
+  if (status === 503) return "The sympp ledger is busy (503). Retrying.";
+  return `sympp answered ${status}.`;
 }
 
 export function networkError(endpoint, caught) {
   const host = (normalizeEndpoint(endpoint) ?? "").replace(/^https?:\/\//i, "");
-  return `Can't reach S++ at ${host || "the configured endpoint"}. Check the connection and retry.`;
+  return `Can't reach sympp at ${host || "the configured endpoint"}. Check the connection and retry.`;
 }
 
 export function nextDelay(state, active) {
@@ -107,7 +107,7 @@ export function isStale(state, now) {
 
 export function parseBoard(payload) {
   if (!payload || typeof payload !== "object" || !Array.isArray(payload.work_request_details)) {
-    throw new Error("S++ answered with something other than a board.");
+    throw new Error("sympp answered with something other than a board.");
   }
   const now = ms(payload.generated_at) ?? Date.now();
   const guidance = payload.guidance_requests?.guidance_requests ?? [];
@@ -488,7 +488,7 @@ export function bindingsFor(bindings, jobId, pkgId) {
     .filter((b, index, matches) => matches.findIndex(other => other.address === b.address && other.role === b.role) === index);
 }
 
-// A chief has no job of its own: its bindings are the bound sessions with the identity S++ recorded
+// A chief has no job of its own: its bindings are the bound sessions with the identity sympp recorded
 // when it registered. They still need the helper check before anything says Live.
 export function chiefBindings(bindings, chief) {
   const session = chief?.session;

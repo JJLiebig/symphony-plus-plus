@@ -35,7 +35,7 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await browser.reload();
   }
   if (process.env.SYMPP_BROWSER_NEGATIVE === '1') {
-    await agent.act('Open the S++ settings menu for the fail-closed capability probe');
+    await agent.act('Open the sympp settings menu for the fail-closed capability probe');
     await expect(screen.getByLabel('Finished goals are archived after', { exact: false })).toBeVisible();
     throw new Error('Unrecorded model action unexpectedly returned');
   }
@@ -48,10 +48,10 @@ test('operator sees dependency ordering, pending qualification and actual delive
   await expect(goal).toContainText('Dependent findings');
   await expect(goal).toContainText('queued');
   await expect(goal).toContainText('0/2 done');
-  if (process.env.SYMPP_BROWSER_MECHANICAL === '1') await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
-  else await agent.act('Open the S++ settings menu');
+  if (process.env.SYMPP_BROWSER_MECHANICAL === '1') await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
+  else await agent.act('Open the sympp settings menu');
   await expect(screen.getByLabel('Finished goals are archived after', { exact: false })).toBeVisible();
-  await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
+  await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
   if (candidate.recording) return;
   const worker = await candidate.factory!.client();
   await worker.call('claim_local_assignment', { work_package_id: first, claimed_by: 'browser-worker' });
@@ -148,14 +148,14 @@ test('operator attention differs from explicit blockers and settings/archive act
   await expect(browser.locator('title')).toHaveText(/^(?!\(\d+\))\S/);
   expect((await row(client, request, wp)).work_package.blocker_state['active?']).toBe(true);
 
-  await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
+  await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
   await screen.getByLabel('Finished goals are archived after', { exact: false }).fill('30');
   await screen.getByRole('button', 'Save', { exact: true }).tap();
   await expect.poll(async () => (await client.inspect('/api/v1/sympp/operator/dashboard/hydrated')).settings.work_request_archive_after_days).toBe(30);
   await browser.reload();
-  await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
+  await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
   await expect(screen.getByLabel('Finished goals are archived after', { exact: false })).toHaveValue('30');
-  await screen.getByRole('button', 'S++ settings', { exact: true }).tap();
+  await screen.getByRole('button', 'sympp settings', { exact: true }).tap();
 
   await close(client, wp);
   await browser.reload();

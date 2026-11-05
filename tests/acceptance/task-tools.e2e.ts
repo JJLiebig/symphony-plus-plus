@@ -88,7 +88,7 @@ test('cockpit CLI honors opener opt-in and explicit flags override the environme
       '--port', '0', '--dashboard-origin', 'http://127.0.0.1:1', ...flags], { ...env, ACCEPTANCE_OPEN_LOG: log });
     // Opening is synchronous in the task; its completion message is the barrier.
     await expect.poll(() => child.output, { timeout: 30_000 }).toContain('Dashboard browser');
-    const origin = child.output.match(/Symphony\+\+ API bridge: (http:\/\/127\.0\.0\.1:\d+)/)![1];
+    const origin = child.output.match(/sympp API bridge: (http:\/\/127\.0\.0\.1:\d+)/)![1];
     expect((await fetch(`${origin}/mcp/readiness`)).status).toBe(200);
     const urls = (await readFile(log, 'utf8')).trim();
     expect(urls).toBe(opens ? 'http://127.0.0.1:1/sympp/board' : '');

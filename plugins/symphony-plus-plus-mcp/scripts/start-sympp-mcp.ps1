@@ -948,7 +948,7 @@ function Test-HealthySymppDashboard([string]$DashboardOrigin) {
   $url = $DashboardOrigin.TrimEnd("/") + $BoardPath
   try {
     $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-    return [int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 400 -and [string]$response.Content -match "<title>Symphony\+\+( Dashboard)?</title>"
+    return [int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 400 -and [string]$response.Content -match "<title>sympp( Dashboard)?</title>"
   } catch {
     return $false
   }

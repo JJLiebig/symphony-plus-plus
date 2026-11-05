@@ -6,10 +6,10 @@ availability are separate facts.
 
 ## Windows Skills CLI Installation
 
-The portable `symphony-plus-plus` skill includes the same launcher and published
+The portable `sympp` skill includes the same launcher and published
 runtime pointer as the MCP package. Git, Node.js 22.20+, PowerShell 7 and the selected
 host are required on Windows x64. No marketplace clone or Codex cache is needed.
-Native Linux/macOS and Windows ARM setup are unsupported.
+Local setup requires Windows x64; remote clients also support Linux and macOS.
 
 Install globally:
 
@@ -33,8 +33,7 @@ profiles, sympp home, ledger and port for side-by-side beta; do not reuse
 the factory ledger for dogfooding. A raw copied ledger is not an MCP sandbox.
 
 Both hosts share one managed runtime only with the same home/runtime file and
-ledger. Setup refuses conflicting unmanaged registration or an enabled MCP
-marketplace plugin in the selected Codex home. It repairs only its own entry.
+ledger. Setup refuses conflicting unmanaged registrations. It repairs only its own entry.
 Keep local machine paths out of committed shared configuration.
 Claude local and project entries override user configuration; local entries also override project configuration. If this project has an old
 local entry, remove it with `claude mcp remove --scope local sympp`
@@ -50,11 +49,6 @@ and repeats setup. The lock does not record a resolved installation commit.
 Older runtime tags contain procedures only. Ledger migrations and retention
 need their own stopped-backup rollback. Setup prints the selected runtime build
 and payload digest; changing launcher/procedures does not require a new runtime.
-
-## Existing Marketplace Installations
-
-Existing installations can run `codex plugin marketplace upgrade symphony-plus-plus`
-and open fresh sessions. New installations use the global Skills route above.
 
 ## Shared Runtime And Recovery
 
@@ -83,7 +77,7 @@ Close clients using this beta runtime before a generation upgrade, retain the
 beta environment, then run:
 
 ```powershell
-codex plugin marketplace upgrade symphony-plus-plus
+npx skills update sympp
 ```
 
 Open fresh sessions. Same-generation backend recovery reconnects existing
@@ -92,8 +86,8 @@ registration at the new path. Keep healthy sessions running when only one
 client fails. Capture its exact startup error and check its chosen paths before
 repair. If home resolution fails, choose explicit absolute home/database paths.
 
-Installed caches are marketplace-owned. Never repair them from a developer
-checkout, set `SYMPP_REPO_ROOT`, or use a source-root hint as installed proof.
+Keep the installed skill separate from developer checkouts. Do not set
+`SYMPP_REPO_ROOT` or use a source-root hint as installed proof.
 No runtime manifest override is needed. Source validation stays in isolated
 developer homes. Do not put tokens or grant secrets in shared configurations.
 
@@ -128,7 +122,7 @@ Do not treat a stateless URL probe as recovered worker authority.
 ## Optional Worker MCP Claim
 
 Ordinary workers need no MCP connection or claim. When a worker chooses scoped
-MCP access, authenticate by calling `claim_local_assignment` in a dedicated S++ MCP
+MCP access, authenticate by calling `claim_local_assignment` in a dedicated sympp MCP
 session connected to the same ledger as dispatch. Pass `work_package_id` and,
 when provided, `claimed_by`. Before claim, `get_current_assignment()` succeeds
 with `assignment: null` and a claim or reclaim action. Reuse the successful claim

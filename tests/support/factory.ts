@@ -19,7 +19,7 @@ export class Factory extends Candidate {
       const timer = setTimeout(() => reject(new Error('Candidate cockpit startup timed out')), 30_000);
       const lines = createInterface({ input: this.process.stdout });
       lines.on('line', (line) => {
-        const match = line.match(/Symphony\+\+ API bridge: (http:\/\/127\.0\.0\.1:\d+)/);
+        const match = line.match(/sympp API bridge: (http:\/\/127\.0\.0\.1:\d+)/);
         if (match) {
           clearTimeout(timer);
           resolve(`${match[1]}/mcp`);

@@ -1,7 +1,7 @@
-// S++ Lens: the shared S++ board, natively in Herdr. Levels run Factory > Topic > Space > Job under a
+// sympp Lens: the shared sympp board, natively in Herdr. Levels run Factory > Topic > Space > Job under a
 // breadcrumb; Esc goes up one. A copy opened with props.job is that job's own tab. A panel copy follows
 // Herdr's focus (a job's terminal or tab, else the space, else its topic) until it is pinned. A toast
-// says when something newly needs the person. Intake and answers persist through S++; terminal jumps
+// says when something newly needs the person. Intake and answers persist through sympp; terminal jumps
 // and "Live" both rest on a trusted execution helper's check, never on terminal labels or text. A
 // topic with a registered chief shows that chief's desk. A copy opened with props.studio is one UI
 // package's studio: its worker's terminal beside a preview, in a tab named after the package.
@@ -10,7 +10,7 @@
 //   studio?: { job: "<work request id>", pkg: "<work package id>" },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session?, runtime? }, "machine": { node, helper, session? } } }
-// With local.runtime (the factory's runtime record) a view starts that S++ when it doesn't answer.
+// With local.runtime (the factory's runtime record) a view starts that sympp when it doesn't answer.
 // Hosts may also be configured explicitly in shared("sympp.hosts"). A copy without an endpoint uses the
 // connection the last connected copy shared ("sympp.connection"), so a scripted studio needs only its ids.
 //
@@ -18,7 +18,7 @@
 // following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
 // transport.js (native HTTP), ui.js (shared look), overview.js and jobview.js (what each level
 // draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
-// list shows on S++ agents), studio.js and studioview.js (a UI package's studio).
+// list shows on sympp agents), studio.js and studioview.js (a UI package's studio).
 
 import { View } from "gpui-kit";
 import { v_flex, InputState, TextareaState } from "gpui-base";
@@ -52,10 +52,10 @@ const OPEN = "sympp.open";
 const CHIEFS = "sympp.chiefs";
 const STAGES = ["build", "checks", "review", "merge"];
 const SWEEP = 60e3;
-// A copy starting S++ records when ("sympp.starting"); other copies leave it to that one meanwhile.
+// A copy starting sympp records when ("sympp.starting"); other copies leave it to that one meanwhile.
 const STARTING = "sympp.starting";
 const START_WAIT = 60e3;
-// How often an open view renews its S++ client lease; S++ drops one unrenewed for 10 minutes.
+// How often an open view renews its sympp client lease; sympp drops one unrenewed for 10 minutes.
 const LEASE = 60e3;
 // The studio's own pane shrinks to its header, under Herdr's pane header, while a native preview
 // shows below it.
@@ -152,7 +152,7 @@ export default class Lens extends View {
   tick(cx) {
     if (!this.endpoint) return;
     const now = Date.now();
-    // A copy that starts with the app (the S++ panel) ticks before Herdr has a window.
+    // A copy that starts with the app (the sympp panel) ticks before Herdr has a window.
     const active = appWindow()?.active !== false;
     const cadence = M.nextDelay(this.net, active);
     let busy = false;
@@ -225,7 +225,7 @@ export default class Lens extends View {
     });
   }
 
-  // A local S++ that doesn't answer starts through its helper, once per outage (Retry asks again), and
+  // A local sympp that doesn't answer starts through its helper, once per outage (Retry asks again), and
   // only from one copy at a time: the others see the shared start and wait for it.
   startServer(cx) {
     const host = this.hosts?.local;
@@ -249,7 +249,7 @@ export default class Lens extends View {
     });
   }
 
-  // While a view is open S++ counts Herdr as a client, so it stays up after the last agent session
+  // While a view is open sympp counts Herdr as a client, so it stays up after the last agent session
   // closes; the lease lapses on its own if Herdr quits before letting go.
   holdLease(board, now, cx) {
     if (board.offline !== false || now - this.leasedAt < LEASE) return;
@@ -270,7 +270,7 @@ export default class Lens extends View {
     if (this.leasedAt) await this.lease("detach").catch(() => null);
   }
 
-  // Lets a copy opened without connection props (a scripted studio) reach the same S++.
+  // Lets a copy opened without connection props (a scripted studio) reach the same sympp.
   shareConnection() {
     const { role: _role, job: _job, studio: _studio, ...connection } = this.given;
     if (JSON.stringify(shared(CONNECTION)) !== JSON.stringify(connection)) setShared(CONNECTION, connection);
@@ -296,7 +296,7 @@ export default class Lens extends View {
   }
 
   // A toast only for a need that appeared between two successful reads of this copy. Copies share
-  // what was announced, so each need is announced once however many S++ views are open.
+  // what was announced, so each need is announced once however many sympp views are open.
   announce(board) {
     const { seen, fresh } = L.newNeeds(this.seenNeeds, board);
     this.seenNeeds = seen;
@@ -332,7 +332,7 @@ export default class Lens extends View {
       let outcome;
       try {
         const response = await this.request(`${this.endpoint}${J.detailPath(jobId)}`);
-        if (!response.ok) outcome = { error: response.status === 404 ? "This job's details aren't on this S++." : M.httpError(response.status) };
+        if (!response.ok) outcome = { error: response.status === 404 ? "This job's details aren't on this sympp." : M.httpError(response.status) };
         else {
           const payload = await response.json().catch(() => null);
           try { outcome = { decisions: J.decisionsOf(payload) }; } catch (caught) { outcome = { error: caught.message }; }
@@ -484,7 +484,7 @@ export default class Lens extends View {
 
   bindingsOf(board) {
     return M.discoverBindings(this.hosts ?? shared("sympp.hosts"), terminals()).map((binding) => board.offline === false
-      ? binding : { ...binding, available: false, unavailable: board.offline ? "Offline copy" : "Update S++ for agent access" });
+      ? binding : { ...binding, available: false, unavailable: board.offline ? "Offline copy" : "Update sympp for agent access" });
   }
 
   // The panel keeps every topic's chiefs checked, whichever level it shows, and shares them.
@@ -673,7 +673,7 @@ export default class Lens extends View {
     return typeof receipt?.cwd === "string" && receipt.cwd && !binding.machine ? receipt.cwd : null;
   }
 
-  // A local worker's S++ worktree: its Herdr view built on sample data as this package's preview
+  // A local worker's sympp worktree: its Herdr view built on sample data as this package's preview
   // copy, and rebuilt on every save that touches it.
   startPreview(cwd, job, cx) {
     const generation = (this.previewRun ?? 0) + 1;
@@ -788,7 +788,7 @@ export default class Lens extends View {
     const job = board.jobs.find((j) => j.id === this.studio.job);
     const pkg = job?.packages.find((p) => p.id === this.studio.pkg);
     if (!pkg) {
-      return this.root(t, [message(t, "This package isn't here", "It isn't on this S++ board. It may have been archived, or this studio belongs to another factory.", [
+      return this.root(t, [message(t, "This package isn't here", "It isn't on this sympp board. It may have been archived, or this studio belongs to another factory.", [
         button(t, "retry-missing", this.reading ? "Reading…" : "Refresh", (cx) => this.retry(cx), { strong: true }),
       ]), O.floatingStatus(this, t, now)]);
     }
@@ -1007,13 +1007,13 @@ export default class Lens extends View {
     this.rows = [];
     this.level = this.pinned ? "job" : "factory";
     if (!this.endpoint) {
-      return this.root(t, [message(t, "S++ isn't connected", "Give this block an endpoint prop with the local S++ address, for example http://127.0.0.1:4000.")]);
+      return this.root(t, [message(t, "sympp isn't connected", "Give this block an endpoint prop with the local sympp address, for example http://127.0.0.1:4000.")]);
     }
     const board = this.net.data;
     if (!board) {
-      if (!this.net.error) return this.root(t, [message(t, "Reading S++…", null)]);
-      if (!this.given.remote && (this.starting || now - (shared(STARTING) || 0) < START_WAIT)) return this.root(t, [message(t, "Starting S++…", null)]);
-      return this.root(t, [message(t, this.startFailed ? "Couldn't start S++" : "Couldn't read S++", this.startFailed ? null : this.net.error, [
+      if (!this.net.error) return this.root(t, [message(t, "Reading sympp…", null)]);
+      if (!this.given.remote && (this.starting || now - (shared(STARTING) || 0) < START_WAIT)) return this.root(t, [message(t, "Starting sympp…", null)]);
+      return this.root(t, [message(t, this.startFailed ? "Couldn't start sympp" : "Couldn't read sympp", this.startFailed ? null : this.net.error, [
         button(t, "retry-first", this.reading ? "Reading…" : "Retry", (cx) => this.retry(cx), { strong: true }),
         ...(this.dashboard ? [button(t, "dashboard-first", "Open dashboard", (cx) => this.openDashboard(cx))] : []),
       ])]);
@@ -1026,7 +1026,7 @@ export default class Lens extends View {
       this.registerTab(cx);
       const job = board.jobs.find((j) => j.id === this.pinned);
       if (!job) {
-        return this.root(t, [message(t, "This job isn't here", "It isn't on this S++ board. It may have been archived, or this tab belongs to another factory.", [
+        return this.root(t, [message(t, "This job isn't here", "It isn't on this sympp board. It may have been archived, or this tab belongs to another factory.", [
           button(t, "retry-missing", this.reading ? "Reading…" : "Refresh", (cx) => this.retry(cx), { strong: true }),
           ...(this.dashboard ? [button(t, "dashboard-missing", "Open dashboard", (cx) => this.openDashboard(cx))] : []),
         ]), O.floatingStatus(this, t, now)]);

@@ -379,7 +379,7 @@ function Assert-CachePluginConfig([string]$TargetRoot, [string]$ExpectedVersion)
   }
   $manifestHasMcpServers = @($targetManifest.PSObject.Properties.Name) -contains "mcpServers"
   if ($PluginName -eq "symphony-plus-plus" -and $manifestHasMcpServers) {
-    throw "Default installed plugin manifest must not declare mcpServers; keep generic S++ MCP opt-in instead: $targetManifestPath"
+    throw "Default installed plugin manifest must not declare mcpServers; keep generic sympp MCP opt-in instead: $targetManifestPath"
   }
   if ($PluginName -eq "symphony-plus-plus-mcp" -and (-not $manifestHasMcpServers -or $targetManifest.mcpServers -ne "./.mcp.json")) {
     throw "Opt-in MCP plugin manifest must declare mcpServers './.mcp.json': $targetManifestPath"

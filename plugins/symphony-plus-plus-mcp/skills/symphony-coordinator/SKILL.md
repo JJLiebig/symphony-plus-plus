@@ -52,7 +52,7 @@ automatically inside Herdr. Ordinary coordination requires no extra MCP call.
   PR/evidence.
 - Honor assigned budgets; otherwise keep one cohesive outcome and escalate
   material scope growth or reviewability risk. Numerical budgets are optional.
-- For S++ WorkPackages, provide the full scoped assignment and local worktree
+- For sympp WorkPackages, provide the full scoped assignment and local worktree
   scope, including relevant prior findings/decisions. The parent owns dispatch
   authority; workers need no ledger claim or status calls.
 - Use explorers for reconnaissance only.
@@ -66,7 +66,7 @@ Worker prompts should include:
   worker contract.
 - For manual worktrees, use `C:\Code\.worktrees\<repo>\<feature>`. After
   delivery or abandonment, remove only your clean worktree and run
-  `git worktree prune`. S++-managed worktrees use their own lifecycle.
+  `git worktree prune`. sympp-managed worktrees use their own lifecycle.
 
 ## Supervise
 

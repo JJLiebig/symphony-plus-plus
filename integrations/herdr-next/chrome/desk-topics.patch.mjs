@@ -1,19 +1,19 @@
-// S++ chrome 2 for the personal desk-topics mod (cloned from Herdr's spaces 0.1.4): the S++ mark on
-// each topic header, opening that topic's S++ chief. Optional: a desk without desk-topics gets the rest
+// sympp chrome 2 for the personal desk-topics mod (cloned from Herdr's spaces 0.1.4): the sympp mark on
+// each topic header, opening that topic's sympp chief. Optional: a desk without desk-topics gets the rest
 // of the chrome. Each edit's `find` must occur exactly once in the mod; `replace` takes its place. The
 // injected code imports what it uses itself; the only mod locals it touches (this, id, group, t,
 // workspace) are in its anchors.
 // The installed chrome 1, kept so an install upgrades it in place.
 const chrome1 = {
-  mark: 'S++ chrome 1',
+  mark: 'sympp chrome 1',
   mod: 'desk-topics',
   optional: true,
   edits: [
     {
       find: `export default class Topics extends Spaces {
 `,
-      replace: `// S++ chrome 1: a topic with a registered S++ chief shows a crown at the right of its header, from
-// the chiefs the S++ panel shares per topic (shared("sympp.chiefs"), terminal only while confirmed
+      replace: `// sympp chrome 1: a topic with a registered sympp chief shows a crown at the right of its header, from
+// the chiefs the sympp panel shares per topic (shared("sympp.chiefs"), terminal only while confirmed
 // running). Click opens the chief: its pane when it has one, else a peek. Right-click adds it to a
 // composition. Dimmed and inert while the chief isn't running.
 import { div as symppDiv, svg as symppSvg } from "gpui-kit";
@@ -60,7 +60,7 @@ export default class Topics extends Spaces {
 };
 
 export default {
-  mark: 'S++ chrome 2',
+  mark: 'sympp chrome 2',
   mod: 'desk-topics',
   optional: true,
   previous: [chrome1],
@@ -68,8 +68,8 @@ export default {
     {
       find: `export default class Topics extends Spaces {
 `,
-      replace: `// S++ chrome 2: each topic header shows the S++ mark for that topic's S++ chief, from the chiefs the
-// S++ panel shares per topic (shared("sympp.chiefs"), terminal only while confirmed running). Click
+      replace: `// sympp chrome 2: each topic header shows the sympp mark for that topic's sympp chief, from the chiefs the
+// sympp panel shares per topic (shared("sympp.chiefs"), terminal only while confirmed running). Click
 // opens the chief: its pane when it has one, else a peek. Right-click adds it to a composition. Greyed
 // while the topic has no chief, dimmed while its chief isn't running.
 import { div as symppDiv, image as symppImage } from "gpui-kit";

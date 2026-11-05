@@ -49,8 +49,8 @@ function jobHeader(v, t, job, ctx) {
   const actions = h_flex().gap(4).items_center().flex_wrap()
     .when(!pinned, (el) => el.child(button(t, "open-tab", "Open in tab", (cx) => v.openInTab(job, cx), { strong: true, tip: "Open this job in its own tab (T)" })))
     .when(ctx.place !== "side", (el) => el
-      .child(button(t, "job-refresh", "Refresh", (cx) => v.retry(cx), { tip: "Read S++ now (R)" }))
-      .when(Boolean(v.dashboard), (row) => row.child(button(t, "job-dashboard", "Dashboard", (cx) => v.openDashboard(cx), { tip: "Open the S++ dashboard (O)" }))));
+      .child(button(t, "job-refresh", "Refresh", (cx) => v.retry(cx), { tip: "Read sympp now (R)" }))
+      .when(Boolean(v.dashboard), (row) => row.child(button(t, "job-dashboard", "Dashboard", (cx) => v.openDashboard(cx), { tip: "Open the sympp dashboard (O)" }))));
   const stale = M.isStale(v.net, now);
   return v_flex().gap(6)
     .child(h_flex().gap(10).items_center().flex_wrap()

@@ -22,15 +22,9 @@ Main and beta runtimes publish automatically from their branch pushes.
 See the runtime guide for actual provenance and native qualification limits. Linux/macOS archives do not establish
 native host support.
 
-## Package Boundary
+## Package boundary
 
-The default `symphony-plus-plus` plugin is skill-only. Choose the companion
-for persistence or assigned execution; keep ordinary review sessions on the
-skill-only package. Enabling the companion starts its MCP connection at session
-startup. Choose one package per home unless both skill prefixes are intended.
-
-Skill visibility does not prove an already-open session loaded MCP tools.
-Open a fresh session after installation or upgrade. Installed runtime ownership
-stays with the plugin cache and marketplace clone. Do not use a developer
-checkout, `SYMPP_REPO_ROOT`, source-root hints or repository cache refresh
-for installed operation. Upgrade the owning marketplace and open fresh sessions.
+This directory owns the launcher and procedures mirrored into the portable
+[sympp skill](../../skills/sympp/SKILL.md). Install with `npx skills add JJLiebig/sympp`
+and ask the agent to set up sympp. Setup registers `sympp` in Codex and Claude;
+open a fresh session to load the tools. Use `sympp status` to check the factory.

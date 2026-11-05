@@ -69,7 +69,7 @@ URL. See [Operations](operations.md) for the Work board and starting a request.
 
 ### Reload an existing Windows beta factory
 
-From an S++ checkout on your logged-in Windows desktop, use explicit absolute
+From an sympp checkout on your logged-in Windows desktop, use explicit absolute
 factory and Herdr-app homes:
 
 ```powershell

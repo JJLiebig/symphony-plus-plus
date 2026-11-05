@@ -30,7 +30,7 @@ attributes this session's new requests and dispatches; it grants no claim or
 dispatch authority. Ordinary work needs no registration. If this session registers
 several domains, attribution uses its most recent still-current registration.
 
-1. Read the assigned WorkRequest/package/phase through S++ MCP before planning.
+1. Read the assigned WorkRequest/package/phase through sympp MCP before planning.
    Trusted local architect calls automatically claim the WorkRequest. Supply
    `work_request_id` on the first scoped call; reconnects retain known scope.
    An active claim held by another architect means leave that work with its

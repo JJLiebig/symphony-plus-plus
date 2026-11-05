@@ -143,7 +143,7 @@ if (-not $LocalCheckout) {
   for ($directory = $pluginRoot; $directory; $directory = Split-Path -Parent $directory) {
     $lockFile = Join-Path $directory 'skills-lock.json'
     if (-not (Test-Path -LiteralPath $lockFile)) { continue }
-    $entry = (Get-Content -LiteralPath $lockFile -Raw | ConvertFrom-Json).skills.'symphony-plus-plus'
+    $entry = (Get-Content -LiteralPath $lockFile -Raw | ConvertFrom-Json).skills.sympp
     if (-not $entry) { continue }
     if ($entry.source -ne 'JJLiebig/sympp' -or $entry.ref -ne 'beta') {
       throw 'The selected factory must belong to a beta Skills installation.'
@@ -198,7 +198,7 @@ if (Test-Path -LiteralPath $installedMark) {
   }
 }
 $tabs = Join-Path $HerdrAppHome 'mods/desk-tabs/main.js'
-if ((Test-Path -LiteralPath $tabs) -and (Get-Content -LiteralPath $tabs -Raw).Contains('S++ chrome')) { $nativeArgs += '--chrome' }
+if ((Test-Path -LiteralPath $tabs) -and (Get-Content -LiteralPath $tabs -Raw).Contains('sympp chrome')) { $nativeArgs += '--chrome' }
 $stage = Join-Path $SymppHome ('runtime/beta-install-' + [guid]::NewGuid().ToString('N'))
 $candidateBundle = Join-Path $stage 'bundle'
 $bundleBackup = Join-Path $stage 'previous-skills'

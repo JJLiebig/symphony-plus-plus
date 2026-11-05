@@ -1,37 +1,11 @@
-# sympp Codex Plugin
+# sympp procedures
 
-This `0.2.0` package is skill-only. It supplies worker, coordinator and
-Solo Session procedures without starting sympp MCP. Ordinary work needs
-no backend when persistence is not requested. Ledger operations, including
-Solo Sessions, require configured MCP tools.
+The portable [sympp skill](../../skills/sympp/SKILL.md) is the supported install:
 
-## Install
-
-Use a separate beta Codex home:
-
-```powershell
-$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-sympp-beta'
-New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
-codex plugin marketplace add https://github.com/JJLiebig/sympp --ref beta
-codex plugin marketplace upgrade symphony-plus-plus
-codex plugin add symphony-plus-plus@symphony-plus-plus
+```sh
+npx skills add JJLiebig/sympp
 ```
 
-Update in the same home and open a fresh Codex session:
-
-```powershell
-codex plugin marketplace upgrade symphony-plus-plus
-```
-
-For persistence or assigned execution, choose the sibling
-`symphony-plus-plus-mcp` package instead. Its
-[installation guide](https://github.com/JJLiebig/sympp/blob/main/docs/runtime.md)
-covers beta homes and ledger, shared Codex/Claude runtime, dashboard and recovery.
-Do not install both packages unless both skill prefixes are intended.
-
-## Development
-
-The marketplace routes both packages to Git `beta`. Repository refresh helpers
-are for isolated developer homes, not installed runtime repair. See
-[Development](https://github.com/JJLiebig/sympp/blob/main/docs/development.md)
-for source validation.
+Ask the agent to set up sympp, then open a fresh session. See
+[Portable skills](../../docs/portable-skills.md) for local or remote setup.
+This directory retains the source procedures for worker and coordinator use.

@@ -1,6 +1,6 @@
-// Pure Factory, Topic and Space levels: where S++ jobs sit among the person's Herdr topics and
+// Pure Factory, Topic and Space levels: where sympp jobs sit among the person's Herdr topics and
 // spaces, what needs them first, what the panel follows and which needs are new. No GPUI or Herdr
-// imports, so every rule here is asserted on its own. Jobs stay canonical S++ jobs: a level only
+// imports, so every rule here is asserted on its own. Jobs stay canonical sympp jobs: a level only
 // places, ranks and references them; it never copies the backlog.
 
 import { shortRepo, lanesOf, bindingsFor, chiefBindings, stageText } from "./model.js";
@@ -186,7 +186,7 @@ export function terminalSpace(binding, terminalList) {
   return binding.machine ? `${binding.machine}/${id}` : id;
 }
 
-// The S++ agents for some work: each job's architect and workers with something to say about them,
+// The sympp agents for some work: each job's architect and workers with something to say about them,
 // and any bound agent whose terminal sits in these spaces. Live, last seen and unknown come from
 // the Job level's own rule; a report is the agent's own OSC status. Review providers are not agents
 // in a space and stay on the Job level.
@@ -241,7 +241,7 @@ export function chiefsFor(topic, chiefs, desk, repoTopics) {
 }
 
 // The chief as an agent, by the Job level's rule: Live only after a helper check of its bound session,
-// else its last S++ sighting, else unknown. Provider and role come from that binding, the report from
+// else its last sympp sighting, else unknown. Provider and role come from that binding, the report from
 // the agent's own OSC status.
 export function chiefAgent(chief, bindings, terminalList, checks, now) {
   const own = chiefBindings(bindings, chief);
@@ -319,7 +319,7 @@ export function crumbs(path, desk, jobs) {
 
 // ---------- Following focus ----------
 
-// What Herdr's focus shows: an S++-labelled terminal or a job tab names its job; a mod pane (this
+// What Herdr's focus shows: an sympp-labelled terminal or a job tab names its job; a mod pane (this
 // panel, a viewer) keeps what is shown; anything else is its space. Labels only pick what to show;
 // they never authorize an agent jump.
 export function focusTarget(focus, terminalList, jobTabs, paneList) {
@@ -336,7 +336,7 @@ export function focusTarget(focus, terminalList, jobTabs, paneList) {
   return { kind: "space", space: focus.space };
 }
 
-// The path a focus target leads to: its job; else its space while S++ work touches it; else the
+// The path a focus target leads to: its job; else its space while sympp work touches it; else the
 // space's topic; else the space, which says that ordinary Herdr work stays ordinary.
 export function followPath(target, jobs, desk, place) {
   if (!target) return null;

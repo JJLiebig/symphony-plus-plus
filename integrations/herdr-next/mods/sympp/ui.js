@@ -1,4 +1,4 @@
-// The S++ visual language shared by every level: theme tokens only (light and dark alike), quiet
+// The sympp visual language shared by every level: theme tokens only (light and dark alike), quiet
 // by default, loud only for what needs the person. Shapes carry meaning as much as color.
 
 import { div, svg } from "gpui-kit";

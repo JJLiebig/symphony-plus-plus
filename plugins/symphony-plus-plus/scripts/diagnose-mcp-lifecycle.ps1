@@ -1190,8 +1190,8 @@ function Get-PluginConfigSummary([string]$ConfigPath, [string]$MarketplaceName) 
   $rootInlinePattern = "^\s*(?:plugins|`"plugins`"|'plugins')\s*\.\s*(?:`"(symphony-plus-plus(?:-mcp)?)@([^`"]+)`"|'(symphony-plus-plus(?:-mcp)?)@([^']+)')\s*=\s*\{.*\}\s*(?:#.*)?$"
   $pluginsTableDottedEnabledPattern = "^\s*(?:`"(symphony-plus-plus(?:-mcp)?)@([^`"]+)`"|'(symphony-plus-plus(?:-mcp)?)@([^']+)')\s*\.\s*(?:enabled|`"enabled`"|'enabled')\s*=\s*(true|false)\s*(?:#.*)?$"
   $pluginsTableInlinePattern = "^\s*(?:`"(symphony-plus-plus(?:-mcp)?)@([^`"]+)`"|'(symphony-plus-plus(?:-mcp)?)@([^']+)')\s*=\s*\{.*\}\s*(?:#.*)?$"
-  $dottedGlobalMcpPattern = '^\s*(?:mcp_servers|"mcp_servers"|''mcp_servers'')\s*\.\s*(?:symphony_plus_plus|"symphony_plus_plus"|''symphony_plus_plus'')\s*(?:\.|=)'
-  $mcpServersTableEntryPattern = '^\s*(?:symphony_plus_plus|"symphony_plus_plus"|''symphony_plus_plus'')\s*(?:\.|=)'
+  $dottedGlobalMcpPattern = '^\s*(?:mcp_servers|"mcp_servers"|''mcp_servers'')\s*\.\s*(?:sympp|"sympp"|''sympp'')\s*(?:\.|=)'
+  $mcpServersTableEntryPattern = '^\s*(?:sympp|"sympp"|''sympp'')\s*(?:\.|=)'
   $pluginsRootSectionPattern = '^\s*\[\s*(?:plugins|"plugins"|''plugins'')\s*\]\s*(?:#.*)?$'
   $mcpServersRootSectionPattern = '^\s*\[\s*(?:mcp_servers|"mcp_servers"|''mcp_servers'')\s*\]\s*(?:#.*)?$'
 
@@ -1204,7 +1204,7 @@ function Get-PluginConfigSummary([string]$ConfigPath, [string]$MarketplaceName) 
     $atTopLevel = [string]::IsNullOrWhiteSpace($multilineState) -and $containerDepth -eq 0
     $atRootTable = $atTopLevel -and -not $insideTomlTable
 
-    if ($atTopLevel -and $lines[$index] -match '^\s*\[\s*(?:mcp_servers|"mcp_servers"|''mcp_servers'')\s*\.\s*(?:symphony_plus_plus|"symphony_plus_plus"|''symphony_plus_plus'')\s*\]\s*(?:#.*)?$') {
+    if ($atTopLevel -and $lines[$index] -match '^\s*\[\s*(?:mcp_servers|"mcp_servers"|''mcp_servers'')\s*\.\s*(?:sympp|"sympp"|''sympp'')\s*\]\s*(?:#.*)?$') {
       $globalSymppMcpEntry = $true
     }
     if ($atRootTable -and $lines[$index] -match $dottedGlobalMcpPattern) {
@@ -2016,7 +2016,7 @@ function Invoke-McpCompanionEnable($Summary, [string]$RequestedMarketplaceName, 
     companion_http_mcp_reachability_status = $companionPackage.http_mcp_reachability_status
     restart_action = "Restart or reload the dedicated sympp MCP Codex session so the plugin launcher starts the managed backend/dashboard before the model starts."
     smoke_command = $smokeCommand
-    boundary = "Keep symphony-plus-plus-mcp out of generic worker, worker_smart, review-suite, and codex review configs; use a dedicated S++ MCP-enabled config/session instead."
+    boundary = "Keep symphony-plus-plus-mcp out of generic worker, worker_smart, review-suite, and codex review configs; use a dedicated sympp MCP-enabled config/session instead."
   }
 }
 
@@ -2496,11 +2496,11 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
     $enableCommand = New-CurrentDiagnosticCommand $enableArgs
     if ([string]::IsNullOrWhiteSpace($enableCommand)) {
       $enableCommand = New-SourceScriptCommand $sourceRoot "plugins/symphony-plus-plus/scripts/diagnose-mcp-lifecycle.ps1" $enableArgs
-      $actions += New-SourceCheckoutAction "enable_mcp_companion" "workrequest_mcp" "Enable the opt-in MCP companion only in a dedicated S++ config/session: [plugins.`"$companionConfigKey`"] enabled = true." $SourceCheckout $enableCommand
+      $actions += New-SourceCheckoutAction "enable_mcp_companion" "workrequest_mcp" "Enable the opt-in MCP companion only in a dedicated sympp config/session: [plugins.`"$companionConfigKey`"] enabled = true." $SourceCheckout $enableCommand
     } else {
-      $actions += New-ReadinessAction "enable_mcp_companion" "workrequest_mcp" "Enable the opt-in MCP companion only in a dedicated S++ config/session: [plugins.`"$companionConfigKey`"] enabled = true." $enableCommand
+      $actions += New-ReadinessAction "enable_mcp_companion" "workrequest_mcp" "Enable the opt-in MCP companion only in a dedicated sympp config/session: [plugins.`"$companionConfigKey`"] enabled = true." $enableCommand
     }
-    $actions += New-ReadinessAction "restart_codex_session" "workrequest_mcp" "Restart or reload that dedicated Codex session so the plugin launcher can start the managed S++ backend/dashboard before the model starts."
+    $actions += New-ReadinessAction "restart_codex_session" "workrequest_mcp" "Restart or reload that dedicated Codex session so the plugin launcher can start the managed sympp backend/dashboard before the model starts."
   } elseif (-not $companionSelectionBlocked -and $companionStatus -eq "endpoint_unreachable") {
     $actions += New-SourceCheckoutAction "start_cockpit" "workrequest_mcp" "Start the local sympp cockpit/HTTP MCP daemon." $SourceCheckout (New-CockpitCommand $sourceRoot)
     $actions += New-SourceCheckoutAction "verify_http_mcp" "workrequest_mcp" "Verify the local HTTP MCP daemon source revision independently of Codex plugin loading." $SourceCheckout (New-VerifyHttpMcpCommand $sourceRoot)
@@ -2508,21 +2508,21 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
     $actions += New-SourceCheckoutAction "refresh_mcp_companion_cache" "workrequest_mcp" "Refresh the opt-in MCP companion cache so its runtime artifact manifest matches the plugin version and MCP contract." $SourceCheckout (New-SourceScriptCommand $sourceRoot "scripts/refresh-local-plugin.ps1" "$($refreshCodexHomeArg)$($companionRefreshMarketplaceArg)-PluginName symphony-plus-plus-mcp -ValidateInstalledCache")
   } elseif (-not $companionSelectionBlocked -and $companionStatus -eq "ready") {
     $actions += New-SourceCheckoutAction "verify_http_mcp" "workrequest_mcp" "Verify the local HTTP MCP daemon source revision independently of Codex plugin loading." $SourceCheckout (New-VerifyHttpMcpCommand $sourceRoot)
-    $actions += New-ReadinessAction "verify_codex_session" "workrequest_mcp" "If the current Codex session still lacks symphony_plus_plus tools, restart or reload the dedicated MCP-enabled session; this doctor verifies config, cache, and daemon reachability, not the already-open model tool list."
+    $actions += New-ReadinessAction "verify_codex_session" "workrequest_mcp" "If the current Codex session still lacks sympp tools, restart or reload the dedicated MCP-enabled session; this doctor verifies config, cache, and daemon reachability, not the already-open model tool list."
   }
 
   if ($Config.global_sympp_mcp_entry -eq $true) {
-    $warnings += New-ReadinessWarning "global_sympp_mcp_entry_present" "A top-level [mcp_servers.sympp] entry is present. Keep this out of generic worker/review configs unless every session using that config should see S++ MCP."
-    $actions += New-ReadinessAction "relocate_global_sympp_mcp_entry" "config" "Remove the top-level [mcp_servers.sympp] entry from generic configs, or move S++ MCP activation into a dedicated plugin-enabled S++ config/session."
+    $warnings += New-ReadinessWarning "global_sympp_mcp_entry_present" "A top-level [mcp_servers.sympp] entry is present. Keep this out of generic worker/review configs unless every session using that config should see sympp MCP."
+    $actions += New-ReadinessAction "relocate_global_sympp_mcp_entry" "config" "Remove the top-level [mcp_servers.sympp] entry from generic configs, or move sympp MCP activation into a dedicated plugin-enabled sympp config/session."
   }
 
   if ($defaultHomeMcpCompanionEnabled) {
-    $warnings += New-ReadinessWarning "default_codex_home_mcp_companion_enabled" "symphony-plus-plus-mcp is enabled in the default Codex home. Move MCP companion activation to a dedicated S++ Codex home/session to keep generic worker and review configs MCP-clean."
+    $warnings += New-ReadinessWarning "default_codex_home_mcp_companion_enabled" "symphony-plus-plus-mcp is enabled in the default Codex home. Move MCP companion activation to a dedicated sympp Codex home/session to keep generic worker and review configs MCP-clean."
     $actions += New-ReadinessAction "move_mcp_companion_to_dedicated_codex_home" "config" "Disable symphony-plus-plus-mcp in the default Codex home and enable it only in a dedicated sympp MCP Codex home/session."
   }
 
   if ($otherMarketplaceMcpCompanionEnabled) {
-    $warnings += New-ReadinessWarning "other_marketplace_mcp_companion_enabled" "Another symphony-plus-plus-mcp marketplace is already enabled in this Codex config. Keep only one MCP companion marketplace enabled per dedicated S++ session."
+    $warnings += New-ReadinessWarning "other_marketplace_mcp_companion_enabled" "Another symphony-plus-plus-mcp marketplace is already enabled in this Codex config. Keep only one MCP companion marketplace enabled per dedicated sympp session."
   }
 
   $soloReady = $defaultStatus -eq "ready" -or $defaultStatus -eq "ready_via_mcp_companion"
@@ -2584,7 +2584,7 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
     next_actions = @($actions)
     warnings = @($warnings)
     session_visibility_note = "This doctor verifies source/cache/config and the command-backed launcher shape. It cannot inspect tools already registered inside an open Codex model session; restart or reload the dedicated MCP-enabled session after config/cache changes."
-    generic_review_boundary = "Keep symphony-plus-plus-mcp out of generic worker, worker_smart, review-suite, and codex review configs; use a dedicated S++ MCP-enabled config/session instead."
+    generic_review_boundary = "Keep symphony-plus-plus-mcp out of generic worker, worker_smart, review-suite, and codex review configs; use a dedicated sympp MCP-enabled config/session instead."
   }
 }
 

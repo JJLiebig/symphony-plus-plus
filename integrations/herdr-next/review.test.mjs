@@ -9,7 +9,7 @@ const MIN = 60e3;
 const at = (minutesAgo) => new Date(NOW - minutesAgo * MIN).toISOString();
 const jobOf = (id, payload = boardPayload()) => M.parseBoard(payload).jobs.find((job) => job.id === id);
 const pkgOf = (job, id) => job.packages.find((pkg) => pkg.id === id);
-// The review package with another review signal and stage, as S++ would send it.
+// The review package with another review signal and stage, as sympp would send it.
 const reviewing = (signal, board = { stage: 'review', track: 'pr' }) => {
   const payload = boardPayload();
   const slice = payload.work_request_details[0].work_packages.find((p) => p.id === 'wp-review');

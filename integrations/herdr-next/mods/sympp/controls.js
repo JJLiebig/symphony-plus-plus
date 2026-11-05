@@ -30,8 +30,8 @@ export async function postAction(endpoint, path, body, fetcher = fetch) {
     method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error?.message || `S++ answered ${response.status}. Try again after refreshing.`);
-  if (!payload) throw new Error("S++ returned an unreadable response. Refresh before trying again.");
+  if (!response.ok) throw new Error(payload?.error?.message || `sympp answered ${response.status}. Try again after refreshing.`);
+  if (!payload) throw new Error("sympp returned an unreadable response. Refresh before trying again.");
   return payload;
 }
 
@@ -40,7 +40,7 @@ export async function requireAgentAccess(endpoint, fetcher = fetch) {
   const response = await fetcher(`${endpoint}/api/v1/sympp/herdr/dashboard`, { headers: { accept: "application/json" } });
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload?.runtime?.offline !== false) {
-    throw new Error(payload?.runtime?.offline === true ? "Agent access is disabled in an offline copy." : "Couldn't verify agent access. Refresh S++ and try again.");
+    throw new Error(payload?.runtime?.offline === true ? "Agent access is disabled in an offline copy." : "Couldn't verify agent access. Refresh sympp and try again.");
   }
 }
 

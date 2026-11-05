@@ -194,7 +194,7 @@ function Assert-StaticContract {
   }
 
   $cutover = Get-Content -LiteralPath $cutoverPath -Raw
-  foreach ($required in @("Assert-InstalledCommandMcpConfig", "Existing S++ Processes (Preserved)", "external_loopback")) {
+  foreach ($required in @("Assert-InstalledCommandMcpConfig", "Existing sympp Processes (Preserved)", "external_loopback")) {
     if (-not $cutover.Contains($required)) {
       throw "cutover is missing '$required'"
     }

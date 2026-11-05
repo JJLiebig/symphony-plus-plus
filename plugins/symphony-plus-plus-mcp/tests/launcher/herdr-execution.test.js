@@ -150,7 +150,7 @@ async function scenario(fn) {
   }
 }
 
-test("ordinary tasks launch every provider without S++ authority, shell interpolation or credential copying", async () => scenario(async ({ root, task, run, state }) => {
+test("ordinary tasks launch every provider without sympp authority, shell interpolation or credential copying", async () => scenario(async ({ root, task, run, state }) => {
   let claudeConfig;
   for (const provider of ["codex", "claude", "opencode"]) {
     const result = await run(["launch", "--provider", provider, "--model", "chosen/model", "--task", task, "--cwd", root, "--attempt", provider]);

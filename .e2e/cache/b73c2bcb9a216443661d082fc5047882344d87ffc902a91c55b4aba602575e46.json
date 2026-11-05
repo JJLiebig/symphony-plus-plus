@@ -5,11 +5,11 @@
     "actions": [
       {
         "name": "tap",
-        "summary": "tap button \"S++ settings\"",
+        "summary": "tap button \"sympp settings\"",
         "target": {
           "role": "button",
-          "name": "S++ settings",
-          "text": "S++"
+          "name": "sympp settings",
+          "text": "sympp"
         }
       }
     ],
@@ -25,14 +25,14 @@
       "callIndex": 0,
       "agent": "default"
     },
-    "summary": "Opened the S++ settings menu; the settings panel is visible with retention options and machine settings.",
+    "summary": "Opened the sympp settings menu; the settings panel is visible with retention options and machine settings.",
     "startPath": "/sympp/board",
     "endPath": "/sympp/board",
     "endAnchors": [
       {
         "role": "button",
-        "name": "S++ settings",
-        "text": "S++",
+        "name": "sympp settings",
+        "text": "sympp",
         "states": [
           "expanded"
         ]
@@ -68,8 +68,8 @@
     "goneAnchors": [
       {
         "role": "button",
-        "name": "S++ settings",
-        "text": "S++"
+        "name": "sympp settings",
+        "text": "sympp"
       }
     ],
     "endWaitMs": 12001

@@ -867,7 +867,7 @@ function Assert-ListenerKind([int]$ProcessId, [string[]]$ExpectedKinds, [string]
 
   $kind = Get-SymppProcessKind $process $MarketplaceSourceRoot $InstalledPluginRoot $ManagedArtifactRuntimeContext
   if ($ExpectedKinds -notcontains $kind) {
-    throw "$Label listener PID $ProcessId ($($process.Name)) did not match the expected S++ runtime kind. Expected $($ExpectedKinds -join ', '), got '$kind'."
+    throw "$Label listener PID $ProcessId ($($process.Name)) did not match the expected sympp runtime kind. Expected $($ExpectedKinds -join ', '), got '$kind'."
   }
   return $kind
 }
@@ -1277,12 +1277,12 @@ $initialManagedArtifactContext = if (-not $initialCacheStatus.refreshNeeded) {
   $null
 }
 $initialInventory = Get-CandidateProcesses $marketplaceSourceRoot $installedPluginRoot $allPorts $initialManagedArtifactContext
-Write-Section "Existing S++ Processes (Preserved)"
+Write-Section "Existing sympp Processes (Preserved)"
 if (-not $Json) {
-  Write-ProcessTable $initialInventory.Candidates "No verified S++ launcher/runtime processes are currently running."
+  Write-ProcessTable $initialInventory.Candidates "No verified sympp launcher/runtime processes are currently running."
   if ($initialInventory.NonSymppListeners.Count -gt 0) {
     Write-Host ""
-    Write-Host "Non-S++ listeners on checked ports are preserved:"
+    Write-Host "Non-sympp listeners on checked ports are preserved:"
     $initialInventory.NonSymppListeners |
       Select-Object ProcessId, ParentProcessId, Name, ListeningPorts |
       Format-Table -AutoSize -Wrap
@@ -1469,7 +1469,7 @@ $dynamicListeners = @(
 )
 if ($dynamicListeners.Count -gt 0) {
   $dynamicSummary = @($dynamicListeners | ForEach-Object { "pid:$($_.ProcessId)/ports:$($_.ListeningPorts)" }) -join ", "
-  throw "Unexpected dynamic S++ leak/listener ports remain in 20000-20120: $dynamicSummary"
+  throw "Unexpected dynamic sympp leak/listener ports remain in 20000-20120: $dynamicSummary"
 }
 
 $dashboardSmoke = Invoke-DashboardSmoke $dashboardRuntimePort
@@ -1482,7 +1482,7 @@ if (-not $Json) {
   Write-Host "MCP smoke: passed"
   Write-Host "Dashboard smoke: HTTP $($dashboardSmoke.StatusCode), length $($dashboardSmoke.Length)"
   Write-Host ""
-  Write-Host "Left-running S++ listener PIDs:"
+  Write-Host "Left-running sympp listener PIDs:"
   $finalInventory.Listeners |
     Where-Object { $_.LocalPort -in @($BackendPort, $DashboardPort) } |
     ForEach-Object {

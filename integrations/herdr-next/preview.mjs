@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Builds this checkout's S++ view as a preview copy for a UI studio: mods/sympp drawn on the sample
-// board in fixture.mjs, with no S++ reads or writes, as its own mod. The studio runs it from the
+// Builds this checkout's sympp view as a preview copy for a UI studio: mods/sympp drawn on the sample
+// board in fixture.mjs, with no sympp reads or writes, as its own mod. The studio runs it from the
 // worker's worktree and again on every save, so the copy follows the work in progress.
 //   node integrations/herdr-next/preview.mjs --to <herdr home>/mods/sympp-dev-<name> [--base <ref>]
 // With --base the first copy waits until the view differs from that ref (committed or not), exiting
@@ -58,7 +58,7 @@ export async function previewFiles(name, root = resolve(here, '../..'), spec = {
   for (const file of await readdir(source)) {
     const body = await readFile(join(source, file));
     if (file.endsWith('.js')) files.set(file === 'main.js' ? 'lens.js' : file, Buffer.from(body.toString('utf8').replaceAll('mods/sympp/', `mods/${name}/`)));
-    else if (file === 'mod.json') files.set(file, Buffer.from(`${JSON.stringify({ ...JSON.parse(body.toString('utf8')), title: 'S++ preview · sample data' })}\n`));
+    else if (file === 'mod.json') files.set(file, Buffer.from(`${JSON.stringify({ ...JSON.parse(body.toString('utf8')), title: 'sympp preview · sample data' })}\n`));
     else if (file.endsWith('.svg') || file.endsWith('.png')) files.set(file, body);
   }
   files.set('fixture.js', await readFile(join(root, 'integrations/herdr-next/fixture.mjs')));

@@ -1,15 +1,15 @@
-# S++ in Herdr-next
+# sympp in Herdr-next
 
-The optional native view runs inside **herdr-app**. S++ keeps its standalone
+The optional native view runs inside **herdr-app**. sympp keeps its standalone
 backend, ledger, web UI and orchestration workflows. Agent terminals run in
 **herdr-core**, independently of the desktop window.
 
 Implementation and delivery status live in the
-[S++ × Herdr-next contract](../../docs/design/herdr-next-integration.md).
+[sympp × Herdr-next contract](../../docs/design/herdr-next-integration.md).
 
 ## Install the view
 
-Use the URL recorded by your running S++ factory, rather than assuming a port:
+Use the URL recorded by your running sympp factory, rather than assuming a port:
 
 ```powershell
 $runtime = Get-Content (Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json') -Raw | ConvertFrom-Json
@@ -43,37 +43,37 @@ For a native panel beside the focused terminal:
 node integrations/herdr-next/install.mjs --endpoint $origin --open panel
 ```
 
-The panel follows what you focus in its tab: an S++ agent's terminal or a job
-tab shows that job; otherwise the space, or its topic when no S++ work touches
+The panel follows what you focus in its tab: an sympp agent's terminal or a job
+tab shows that job; otherwise the space, or its topic when no sympp work touches
 the space. It never takes focus. Pin (P) keeps it where it is.
 
-When the factory the view was installed for isn't running, opening S++ starts it. While any S++
-view is open, S++ counts Herdr as a client, so it stays up after the last agent session closes.
+When the factory the view was installed for isn't running, opening sympp starts it. While any sympp
+view is open, sympp counts Herdr as a client, so it stays up after the last agent session closes.
 
 The installer adds `mods/sympp` and the agent helper `tools/sympp-herdr.js`.
 Updating removes the former HTTP helper and its private request directory.
 It leaves layouts, topics, compositions,
 settings and terminals intact. Existing edits are protected; use `--replace`
-explicitly to install this version over a differing copy. Close an S++ pane
+explicitly to install this version over a differing copy. Close an sympp pane
 with Herdr's ordinary pane or tab controls.
 
-## S++ in your desk tabs and agents
+## sympp in your desk tabs and agents
 
 On a personal desk layout (its own `desk-tabs` bar and `desk-agents` list),
-`--chrome` adds S++ to them:
+`--chrome` adds sympp to them:
 
 ```powershell
 node integrations/herdr-next/install.mjs --endpoint $origin --chrome
 ```
 
-- **S++** sits beside Files and Changes and toggles the S++ panel the same way.
-- An agent started for S++ shows a small S++ glyph tucked behind its icon in the
+- **sympp** sits beside Files and Changes and toggles the sympp panel the same way.
+- An agent started for sympp shows a small sympp glyph tucked behind its icon in the
   Agents list, and after its name its package's stage: build, checks, review with
   its round (amber from the third), ready to merge or landed, and an orange dot
   when it needs you. A stage older than about two minutes shows dimmed as last
-  known. Stages arrive from an open S++ view's board reads, the panel included,
+  known. Stages arrive from an open sympp view's board reads, the panel included,
   once it has been shown.
-- A UI studio tab shows the S++ glyph in a small window tucked behind its icon.
+- A UI studio tab shows the sympp glyph in a small window tucked behind its icon.
 - With a personal `desk-topics` sidebar, a topic whose chief is registered shows a crown on its
   header: click opens the chief (its pane, else a peek), right-click adds it to a composition. It
   shows dimmed while the chief isn't running. A desk without `desk-topics` gets the rest.
@@ -82,7 +82,7 @@ The installer backs up the layout and the desk mods under `data/sympp-chrome`, a
 a `sympp` panel to the layout's `panel-body` stack, and patches the desk mods in
 place; running it again changes nothing. It refuses, listing what is missing,
 when the layout has no `panel-body` stack, uses Herdr's own `tabs` or `agents`
-mod, a desk mod differs from what its patch expects, or its S++ lines were edited.
+mod, a desk mod differs from what its patch expects, or its sympp lines were edited.
 Edits made since elsewhere in a desk mod are kept, removal included. Other mods can add
 their panels the same way through
 `shared("workspace.panel_buttons")` entries `{ id, label, icon, iconDark? }`: an
@@ -92,14 +92,14 @@ entries `{ tab, icon, iconDark?, label }`: a tab's first mark sits behind the ri
 of its icon with `label` as its tooltip, so draw it 14 px with that icon's ring cut out.
 
 Chrome installation and removal require `herdr-app` on `PATH` or `--app <executable>`.
-The installer checks both desk mods and S++ after writing them. If a check fails,
+The installer checks both desk mods and sympp after writing them. If a check fails,
 it reports the mod and error and restores every changed file to its previous contents.
 
 ```powershell
 node integrations/herdr-next/install.mjs --remove-chrome
 ```
 
-restores both mods from their backups and removes the S++ panel from the layout,
+restores both mods from their backups and removes the sympp panel from the layout,
 keeping any other layout change made since. A desk with another version of the
 chrome is refused; remove it with the installer that added it, then install again.
 Both patches are now chrome 3 (the new S marks). Upgrade a desk with chrome 2
@@ -142,7 +142,7 @@ chat beside its canvas. A package is UI work when its title names UI as a word
 ("UI studio tab", "Token UI") or its worker has published a preview. Open it with
 **Open UI studio** under the selected package in a job view, or U. Opening it again
 selects the open studio. An architect launching a UI worker can open the studio
-with only the ids, once any S++ view has connected:
+with only the ids, once any sympp view has connected:
 
 ```powershell
 herdr-app do tab.new '{"name":"<package title>","mod":"sympp","props":{"studio":{"job":"<work request id>","pkg":"<work package id>"}}}'
@@ -165,14 +165,14 @@ The preview shows, in order:
   `integrations/herdr-next/mods` against the job's base branch. The worktree's own
   `preview.mjs` builds that view on the sample board as `mods/sympp-dev-<package>`
   in the Herdr home and rebuilds on every save, so changes show within seconds. The
-  copy makes no S++ reads or writes; your own `sympp` mod is never written. The
+  copy makes no sympp reads or writes; your own `sympp` mod is never written. The
   copy goes when the package lands, or about a minute after its studio closes
-  while any S++ view is open.
+  while any sympp view is open.
 - Otherwise it says the agent hasn't published a preview yet.
 
 The native view requires a backend with the native board endpoint. Updating the
-view with this installer does not update or restart S++. For an existing Windows
-beta factory, update both with one command from an S++ checkout:
+view with this installer does not update or restart sympp. For an existing Windows
+beta factory, update both with one command from an sympp checkout:
 
 ```powershell
 pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
@@ -180,9 +180,9 @@ pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-
 
 It installs the latest published beta backend, this checkout's project-local beta
 Skills bundle and native files,
-replacing the S++ mod while retaining personal layouts, topics and terminals.
+replacing the sympp mod while retaining personal layouts, topics and terminals.
 It opens no new tabs. Herdr-app watches mod files and reloads changed views;
-reopen the S++ tab or pane if a view stays stale. An unchanged backend stays running.
+reopen the sympp tab or pane if a view stays stale. An unchanged backend stays running.
 Coordinate restart timing with agents using the beta factory, and open fresh MCP
 sessions when its Skills bundle changes. A failed cutover restores the prior
 bundle and runtime together. The
@@ -198,7 +198,7 @@ their current runtime until a supported cutover.
 A separate prototype shows one job as a factory floor on a built-in sample job.
 Packages stand in rooms (Your desk, Yard, Build bay, Checks, Review room,
 Merge dock, Shipped), walk the corridor between them and circle the review
-track once per round. It needs no S++ backend and never replaces the view:
+track once per round. It needs no sympp backend and never replaces the view:
 
 ```powershell
 node integrations/herdr-next/install.mjs --lab --open overview
@@ -206,7 +206,7 @@ node integrations/herdr-next/install.mjs --lab --open overview
 
 `--home`, `--app`, `--open panel` and `--replace` work as above. Without
 `--open`, open it later in Herdr with
-`herdr-app do tab.new '{"name":"S++ Lab","mod":"sympp-lab"}'`.
+`herdr-app do tab.new '{"name":"sympp Lab","mod":"sympp-lab"}'`.
 
 The replay bar steps through the job; Motion turns animation off, since Herdr
 animations do not follow the system's reduced-motion setting. Keys: ←/→ step,
@@ -217,14 +217,14 @@ toggles motion. The same actions are Herdr commands (`sympp-lab.next`,
 
 ## Machines and access
 
-The endpoint belongs to the S++ factory; it is independent of the machine
+The endpoint belongs to the sympp factory; it is independent of the machine
 hosting a terminal. Native reads and actions use the backend's direct local
-consumer policy. A remote core does not make its S++ server local to the app.
+consumer policy. A remote core does not make its sympp server local to the app.
 Use an explicitly managed authenticated tunnel for a remote factory; do not
 expose its loopback API publicly or assume every machine shares a filesystem.
 
 Terminal bindings identify the core and the launched process. Recovered shells
-are not resumed agents. A last-known S++ session location is displayed as an
+are not resumed agents. A last-known sympp session location is displayed as an
 observation, without claiming that its agent is still alive.
 
 Native agent jumps require an online factory and a fresh process identity check.
@@ -236,10 +236,10 @@ qualified for loopback GET and JSON POST without browser or forwarding headers.
 Responses retain their real HTTP status; the view never automatically retries
 a write.
 
-Native S++ routes do not redirect. Herdr fetch can follow same-origin redirects;
+Native sympp routes do not redirect. Herdr fetch can follow same-origin redirects;
 its [redirect policy](https://github.com/herdrdev/herdr-app/blob/b975f5beaa6909cd7806a40096859c5e47938a19/vendor/gpui-kit/crates/shell/src/engine/quickjs/standard/fetch.rs#L341-L355)
 refuses cross-origin redirects for non-GET methods (line 341) and requests with
-caller-supplied headers (line 351). Every S++ request sends `Accept`, and JSON
+caller-supplied headers (line 351). Every sympp request sends `Accept`, and JSON
 POSTs also send `Content-Type`. A redirect flag or changed response URL makes
 the request fail before its JSON can be parsed or shown, retaining the returned
 status for diagnosis.
