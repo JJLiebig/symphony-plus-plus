@@ -7,7 +7,7 @@
 
 import { div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, knownAgents, machines, spaces, shared, setShared, exec, hc, layout, run, settings } from "herdr";
+import { theme, props, closeOverlay, knownAgents, machines, spaces, shared, setShared, exec, hc, home, layout, run, settings } from "herdr";
 import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic } from "./chief.js";
 
 const W = 560;
@@ -47,6 +47,8 @@ export class ChiefStart {
     const last = shared(LAST);
     this.agent = last?.run ? last : null;
     this.machine = null;
+    // The factory's machine is still being looked up; until then, or a pick, nothing starts.
+    this.finding = true;
     this.input = InputState.new({ placeholder: `Start ${this.name} chief…` });
     this.input.on("submit", (_e, cx) => this.start(cx));
     this.input.focus();
@@ -60,6 +62,7 @@ export class ChiefStart {
       const machine = await factoryMachine(endpoint, list, ssh).catch(() => undefined);
       // Picked meanwhile: keep it.
       if (machine && !this.picked) { this.machine = machine; this.load(machine, cx); }
+      this.finding = false;
       cx.notify();
     });
   }
@@ -94,6 +97,11 @@ export class ChiefStart {
     this.agent = list.find((a) => a.key === key) ?? list[0] ?? null;
   }
 
+  // Enter starts only once the machine is settled and has the chosen agent installed.
+  ready() {
+    return (!this.finding || this.picked) && Boolean(this.agent) && this.installed().some((a) => a.key === this.agent.key);
+  }
+
   close() {
     closeOverlay(props().overlay);
   }
@@ -107,7 +115,7 @@ export class ChiefStart {
 
   start(cx) {
     const agent = this.agent;
-    if (this.phase !== "ask" || !agent) return;
+    if (this.phase !== "ask" || !this.ready()) return;
     this.phase = "starting";
     this.picking = null;
     this.error = null;
@@ -123,12 +131,14 @@ export class ChiefStart {
           // The folder is there when a program can start in it.
           if (await exec("git", ["--version"], { cwd: candidate, on: machine }).then(() => true, () => false)) { folder = candidate; break; }
         }
+        // Else the machine's home, said outright: left out, Herdr would start in the focused pane's folder.
+        if (!folder) folder = machine ? (await exec("pwd", [], { on: machine })).stdout.trim() : home();
         const argv = chiefArgv(agent, chiefBrief(this.name, text));
-        const home = mine.find((s) => s.name === chiefSpaceName(this.name) && (s.machine ?? null) === machine);
-        const made = home
-          ? await app("tab.new", { space: home.id, name: "chief", argv, ...(folder ? { folder } : {}) })
+        const own = mine.find((s) => s.name === chiefSpaceName(this.name) && (s.machine ?? null) === machine);
+        const made = own
+          ? await app("tab.new", { space: own.id, name: "chief", argv, ...(folder ? { folder } : {}) })
           : await app("space.new", { name: chiefSpaceName(this.name), tab: "chief", argv, ...(folder ? { folder } : {}), machine: machine ?? "" });
-        if (!home) {
+        if (!own) {
           const next = intoTopic(shared("desk.topics"), this.topic, made.space);
           if (next) setShared("desk.topics", next);
         }
@@ -193,6 +203,7 @@ export class ChiefStart {
     const w = this.size && Math.min(W, this.size.width - 32);
     const x = this.size && (this.size.width - w) / 2, y = this.size && Math.round(this.size.height * 0.4 - H / 2);
     const known = this.agents[this.machine ?? ""];
+    const none = known?.list ? !this.installed().length : Boolean(known?.failed);
     const box = this.size && div().id("chief-box").absolute().left(x).top(y).w(w).h(H)
       .flex().items_center().rounded(10).border_1().border_color(t.border).bg(t.popover).shadow_lg().overflow_hidden()
       .font_family(settings().font_family).text_size(13).text_color(t.foreground)
@@ -200,10 +211,10 @@ export class ChiefStart {
       .child(h_flex().id("chief-line").flex_1().h_full().pl(9).pr(14).gap(6).items_center()
         .child(this.chip("chief-agent", "agent", [this.agentIcon(this.agent, 16)]))
         .child(this.chip("chief-machine", "machine", [this.machineIcon(this.machine, 13),
-          div().text_size(12).text_color(t.muted).child(this.machine ?? "This computer")]))
+          div().text_size(12).text_color(t.muted).child(this.finding && !this.picked ? "" : this.machine ?? "This computer")]))
         .child(div().flex_none().pl(2).text_color(t.dim).child("❯"))
-        .when(this.phase === "ask", (el) => el.child(known?.list && !this.agent
-          ? div().flex_1().text_color(t.dim).child(known.failed ? "Couldn't check agents" : "No agents installed")
+        .when(this.phase === "ask", (el) => el.child(none
+          ? div().flex_1().text_color(t.dim).child(known.list ? "No agents installed" : "Couldn't check agents")
           : Input.new(this.input).flex_1().h_full().text_size(13).text_color(t.foreground)))
         .when(this.phase === "starting", (el) => el
           .child(svg("mods/workspace-chrome/spinner.svg").size(13).flex_none().text_color(t.working).spin(900))
