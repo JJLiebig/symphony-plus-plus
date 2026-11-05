@@ -257,7 +257,8 @@ kernel.FreeConsole()
                 env["SYMPP_DATABASE"] = str(destination)
                 online = run([artifact / "start-runtime.ps1", "-IUnderstandThatThisWillBeRunningWithoutTheUsualGuardrails", "-LogsRoot", root / "refused logs", "-Port", str(port)])
                 self.assertNotEqual(online.returncode, 0)
-                self.assertIn("offline snapshot", online.stdout + online.stderr)
+                # The compatible published stable runtime can predate the label rename.
+                self.assertRegex(online.stdout + online.stderr, r"offline (?:beta )?snapshot")
                 for path, original in originals.items():
                     self.assertEqual(path.read_bytes(), original, f"source changed: {path.name}")
                 self.assertEqual(live.execute("SELECT work_request_archive_after_days FROM sympp_operator_settings").fetchall(), [(14,)])

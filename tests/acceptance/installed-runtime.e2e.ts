@@ -77,9 +77,7 @@ if (process.env.SYMPP_INSTALLED_ACCEPTANCE === '1') {
     expect(await readFile(configFile, 'utf8')).toBe(config);
     expect(await readFile(claudeFile, 'utf8')).toBe(foreignClaude);
     expect(existsSync(installed.env.SYMPP_DATABASE!)).toBe(false);
-    for (const agent of ['codex', 'claude-code']) {
-      await installed.skills(['remove', 'sympp', '-g', '--agent', agent, '--yes']);
-    }
+    await installed.skills(['remove', 'sympp', '-g', '--yes']);
     expect(JSON.parse(await installed.skills(['list', '-g', '--json']))).toEqual([]);
   });
 
