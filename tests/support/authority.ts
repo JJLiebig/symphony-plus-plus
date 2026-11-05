@@ -30,8 +30,8 @@ export async function packages(architect: Client, titles: string[]) {
 
 export async function snapshot(factory: Factory) {
   const destination = join(factory.root, 'offline', 'ledger.sqlite3');
-  const args = [resolve('scripts/sympp_beta_snapshot.py'), 'snapshot', factory.database, destination,
-    '--sandbox-root', join(factory.root, 'offline'), '--migrate', 'mix', 'sympp.beta_migrate'];
+  const args = [resolve('scripts/sympp_offline_snapshot.py'), 'snapshot', factory.database, destination,
+    '--sandbox-root', join(factory.root, 'offline'), '--migrate', 'mix', 'sympp.offline_migrate'];
   // Exercise the supported snapshot operation; never patch the SQLite marker or
   // historical authority rows ourselves. This function runs only in hosted CI.
   let receipt: object;

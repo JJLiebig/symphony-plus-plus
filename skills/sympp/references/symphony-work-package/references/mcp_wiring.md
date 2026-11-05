@@ -14,13 +14,12 @@ Local setup requires Windows x64; remote clients also support Linux and macOS.
 Install globally:
 
 ```powershell
-npx --yes skills@1.7.0 add https://github.com/JJLiebig/sympp/tree/main -g --agent codex claude-code --skill sympp --yes
+npx skills add JJLiebig/sympp -g
 node $HOME/.agents/skills/sympp/scripts/setup-sympp.js
 ```
 
-For a project install omit `-g` and use `.agents/skills/sympp/scripts/setup-sympp.js`.
-Use one `--agent` for one host. For a Claude-only copy, run setup from
-`.claude/skills/sympp/scripts/setup-sympp.js`. Setup detects installed
+For a Claude-only copy, run setup from
+`$HOME/.claude/skills/sympp/scripts/setup-sympp.js`. Setup detects installed
 hosts; `--host codex`, `--host claude` or `--host both` selects explicitly.
 An agent recovering missing MCP tools may run this installed setup command.
 Then open a fresh model session; setup cannot load tools into an existing one.
@@ -28,8 +27,8 @@ Then open a fresh model session; setup cannot load tools into an existing one.
 Before setup, set `SYMPP_HOME`, `SYMPP_DATABASE`, `SYMPP_RUNTIME_FILE` and optional
 `SYMPP_BACKEND_PORT`; both host entries capture those choices. Codex writes only
 the selected `CODEX_HOME/config.toml` with 360/300-second startup/tool timeouts.
-Claude uses user scope for global installs and the project's `.mcp.json` for project installs. Use a dedicated workspace, host
-profiles, sympp home, ledger and port for side-by-side beta; do not reuse
+Claude uses user scope. Use dedicated host
+profiles, sympp home, ledger and port for isolated trials; do not reuse
 the factory ledger for dogfooding. A raw copied ledger is not an MCP sandbox.
 
 Both hosts share one managed runtime only with the same home/runtime file and
@@ -40,8 +39,8 @@ local entry, remove it with `claude mcp remove --scope local sympp`
 before opening a fresh session; setup does not inspect that local store.
 
 Close this runtime's clients, then update with
-`npx --yes skills@1.7.0 update sympp -g --yes` (or `--project` for a project install) and open fresh
-sessions. Skills 1.7.0 retains the beta branch. The stable install path preserves
+`npx skills update sympp -g` and open fresh
+sessions. The stable install path preserves
 registration; repeat setup after relocating the installation. Before updating,
 back up the installed skill directory and its Skills lock. Rollback re-adds that
 local bundle or a known previous Skills-capable commit using `/tree/<full-sha>`
@@ -73,15 +72,15 @@ mutations. Required native review stays with its declared provider: use the
 same declared base for review creation and status, discover the installed
 provider, and return its review reference without a duplicate receipt.
 
-Close clients using this beta runtime before a generation upgrade, retain the
-beta environment, then run:
+Close clients using this runtime before a generation upgrade, retain the
+factory environment, then run:
 
 ```powershell
-npx skills update sympp
+npx skills update sympp -g
 ```
 
 Open fresh sessions. Same-generation backend recovery reconnects existing
-bridges; changed plugin generations require fresh host sessions and Claude
+bridges; changed skill generations require fresh host sessions and Claude
 registration at the new path. Keep healthy sessions running when only one
 client fails. Capture its exact startup error and check its chosen paths before
 repair. If home resolution fails, choose explicit absolute home/database paths.

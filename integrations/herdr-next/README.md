@@ -158,7 +158,7 @@ tab stays there until you choose **Move here** (or **Go to it**).
 The preview shows, in order:
 
 - **A web page** the worker published with `sympp.preview_url` on its terminal
-  (see the [worker UI collaboration procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-worker/SKILL.md#ui-collaboration)),
+  (see the [worker UI collaboration procedure](../../packages/sympp/skills/symphony-worker/SKILL.md#ui-collaboration)),
   as its address with **Open** (O or Enter) for the browser. Herdr mods cannot
   embed a browser; a rendered picture of the page is a later addition.
 - **The Herdr view itself** when the worker is local and its worktree changes
@@ -169,25 +169,6 @@ The preview shows, in order:
   copy goes when the package lands, or about a minute after its studio closes
   while any sympp view is open.
 - Otherwise it says the agent hasn't published a preview yet.
-
-The native view requires a backend with the native board endpoint. Updating the
-view with this installer does not update or restart sympp. For an existing Windows
-beta factory, update both with one command from an sympp checkout:
-
-```powershell
-pwsh -File scripts/install-sympp-beta.ps1 -SymppHome C:/Users/jonat/sympp-herdr-next/.sympp-beta -HerdrAppHome C:/Users/jonat/.config/herdr-app
-```
-
-It installs the latest published beta backend, this checkout's project-local beta
-Skills bundle and native files,
-replacing the sympp mod while retaining personal layouts, topics and terminals.
-It opens no new tabs. Herdr-app watches mod files and reloads changed views;
-reopen the sympp tab or pane if a view stays stale. An unchanged backend stays running.
-Coordinate restart timing with agents using the beta factory, and open fresh MCP
-sessions when its Skills bundle changes. A failed cutover restores the prior
-bundle and runtime together. The
-[beta reload procedure](../../docs/runtime.md#reload-an-existing-windows-beta-factory)
-describes isolation checks, contract changes, reconnects and failure recovery.
 
 For normal installations, follow the
 [installed runtime procedure](../../docs/runtime.md); healthy clients retain
@@ -245,7 +226,7 @@ the request fail before its JSON can be parsed or shown, retaining the returned
 status for diagnosis.
 
 Agent navigation and execution still need Node.js and the separate
-[optional Herdr-next execution procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-worker/references/herdr-execution.md).
+[optional Herdr-next execution procedure](../../packages/sympp/skills/symphony-worker/references/herdr-execution.md).
 Fresh cross-provider handoffs carry a bounded task and evidence. Continuing an
 existing agent depends on its reported status and the core's supported send
 conditions; it is not a shared provider transcript.

@@ -215,13 +215,6 @@ jobs:
           git cat-file -p HEAD > .e2e/checkout-commit.txt
           "ACCEPTANCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
           @{ head = $env:ACCEPTANCE_HEAD_SHA; base = $env:BASE_SHA; run = $env:GITHUB_RUN_ID } | ConvertTo-Json > .e2e/inputs.json
-          # Native marketplace clones fetch branch commits, not GitHub's synthetic merge ref.
-          git fetch --no-tags --depth=1 origin $env:ACCEPTANCE_HEAD_SHA
-          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch marketplace candidate head' }
-          $headTree = git rev-parse "$($env:ACCEPTANCE_HEAD_SHA)^{tree}"
-          $combinedTree = git rev-parse 'HEAD^{tree}'
-          @{ headTree = $headTree; combinedTree = $combinedTree } | ConvertTo-Json > .e2e/marketplace-tree-identity.json
-          if ($headTree -ne $combinedTree) { throw 'Refresh the branch from current beta before marketplace qualification' }
       - name: Generate portable bundle
         run: node scripts/package-portable-skills.mjs
       - name: Retain generated portable mirror
@@ -233,9 +226,9 @@ jobs:
       - name: Verify generated bundle and setup behavior
         run: |
           node scripts/package-portable-skills.mjs --check
-          node plugins/symphony-plus-plus-mcp/tests/launcher/portable-install-tests.js
-          node --test plugins/symphony-plus-plus-mcp/tests/launcher/herdr-execution.test.js
-          node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup-contract.test.js
+          node packages/sympp/tests/launcher/portable-install-tests.js
+          node --test packages/sympp/tests/launcher/herdr-execution.test.js
+          node --test packages/sympp/tests/launcher/setup-contract.test.js
       - name: Install native configuration hosts
         id: native-hosts
         shell: pwsh
@@ -249,7 +242,7 @@ jobs:
           npm install --global @anthropic-ai/claude-code@2.1.292
           if ($LASTEXITCODE -ne 0) { throw 'Claude installation failed' }
       - name: Prove setup ownership and remote registration
-        run: node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup.test.js
+        run: node --test packages/sympp/tests/launcher/setup.test.js
       - name: Build the current candidate Windows runtime
         shell: pwsh
         run: |
@@ -257,7 +250,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $manifest = Get-ChildItem -LiteralPath .e2e/native-runtime -Filter *.manifest.json | Select-Object -First 1
           "SYMPP_ACCEPTANCE_ARTIFACT_MANIFEST=$($manifest.FullName)" >> $env:GITHUB_ENV
-      - name: Prove real Skills and marketplace user journeys
+      - name: Prove real Skills user journeys
         run: |
           npm exec -- e2e run tests/acceptance/installed-runtime.e2e.ts --target api
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -319,6 +312,8 @@ jobs:
           mix local.rebar --force
           mix deps.get
           mix compile --warnings-as-errors
+      - name: Check offline SQLite snapshot safety
+        run: python3 -m unittest discover -s scripts/tests -p test_sympp_offline_snapshot.py
       - name: Prove online copy and offline replacement boundaries
         run: |
           npm exec -- e2e run tests/acceptance/offline-copy.e2e.ts --target api
@@ -330,22 +325,6 @@ jobs:
           name: offline-copy-evidence
           path: .e2e
           include-hidden-files: true
-
-  beta-snapshot:
-    name: beta snapshot safety
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-      - name: Check online SQLite snapshot
-        run: python -m unittest discover -s scripts/tests -p test_sympp_beta_snapshot.py
-      - name: Check performance threshold subprocess and exit contracts
-        run: pwsh -NoProfile -File plugins/symphony-plus-plus-mcp/tests/end-to-end/run-performance-gate-tests.ps1
-      - name: Check installed transport source ownership
-        run: pwsh -NoProfile -File plugins/symphony-plus-plus-mcp/tests/transport/direct-http-transport.ps1 -StaticOnly
-      - name: Check beta launcher isolation and refusal paths
-        shell: pwsh
-        run: ./plugins/symphony-plus-plus-mcp/tests/launcher/run-launcher-tests.ps1 -SkipDesktopTests
 
   single-gates:
     name: ${{ matrix.name }}
@@ -478,9 +457,9 @@ jobs:
         working-directory: .
         run: |
           node --test integrations/herdr-next/*.test.mjs
-          node --test plugins/symphony-plus-plus-mcp/tests/launcher/remote.test.js
-          node --test plugins/symphony-plus-plus-mcp/tests/launcher/herdr-execution.test.js
-          node --test plugins/symphony-plus-plus-mcp/tests/launcher/setup-contract.test.js
+          node --test packages/sympp/tests/launcher/remote.test.js
+          node --test packages/sympp/tests/launcher/herdr-execution.test.js
+          node --test packages/sympp/tests/launcher/setup-contract.test.js
 
       - name: Check frontend quality
         run: npm run quality
@@ -499,7 +478,6 @@ jobs:
       - native-acceptance
       - portable-skills
       - offline-acceptance
-      - beta-snapshot
       - single-gates
       - retained-qualification
       - frontend
@@ -512,7 +490,7 @@ jobs:
           node --input-type=module <<'NODE'
           const results = JSON.parse(process.env.REQUIRED_RESULTS);
           const required = ['browser-native-acceptance', 'windows-frontend', 'native-acceptance',
-            'portable-skills', 'offline-acceptance', 'beta-snapshot', 'single-gates',
+            'portable-skills', 'offline-acceptance', 'single-gates',
             'retained-qualification', 'frontend'];
           for (const job of required) {
             if (results[job]?.result !== 'success') {

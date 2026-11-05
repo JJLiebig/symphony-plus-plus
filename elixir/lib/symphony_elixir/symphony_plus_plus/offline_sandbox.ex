@@ -16,10 +16,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OfflineSandbox do
 
     cond do
       marked? and not enabled?() ->
-        raise "This ledger is an offline beta snapshot. Start it with scripts/sympp-beta.ps1 -Action Start."
+        raise "This ledger is an offline snapshot. Start it with the installed sympp-offline.ps1 -Action View."
 
       enabled?() and not marked? ->
-        raise "Offline beta requires a marked snapshot. Run scripts/sympp-beta.ps1 -Action Snapshot first."
+        raise "Offline mode requires a marked snapshot. Run the installed sympp-offline.ps1 -Action Snapshot first."
 
       true ->
         :ok

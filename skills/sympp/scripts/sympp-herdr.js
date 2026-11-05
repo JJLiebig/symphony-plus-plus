@@ -427,22 +427,20 @@ async function start(options) {
   if (process.platform !== "win32" || !fs.existsSync(launcher)) {
     startFail("launcher_unavailable", "Starting this factory requires its installed Windows PowerShell launcher.");
   }
-  // Use the owning install's channel resolution, never the caller's factory overrides.
+  // Ignore the caller's factory overrides when starting the owning install.
   const env = Object.fromEntries(TRANSPORT_ENV.filter(key => !key.startsWith("SYMPP_") && process.env[key]).map(key => [key, process.env[key]]));
   const workflow = runtime.artifact?.prepared_release?.configured_workflow;
   Object.assign(env, {
     SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: path.dirname(path.dirname(runtimeFile)),
     ...(database ? { SYMPP_DATABASE: database } : {}), SYMPP_RUNTIME_FILE: runtimeFile,
     SYMPP_BACKEND_PORT: String(port), SYMPP_OPEN_DASHBOARD: "0",
-    ...(["stable", "beta"].includes(runtime.runtime_channel) ? { SYMPP_RUNTIME_CHANNEL: runtime.runtime_channel } : {}),
+    SYMPP_RUNTIME_CHANNEL: "stable",
     ...(text(workflow) ? { SYMPP_WORKFLOW_FILE: workflow } : {}),
   });
   let launchError;
   // Start-Process detaches without inheriting Herdr pipes; Node detached PowerShell can exit before executing.
   const quotedLauncher = ('"' + launcher + '"').replace(/'/g, "''");
-  const psQuote = value => "'" + value.replace(/'/g, "''") + "'";
-  const setup = path.join(runtime.plugin_root, "scripts", "setup-sympp.js");
-  const command = `$env:SYMPP_RUNTIME_CHANNEL = & ${psQuote(process.execPath)} -e 'process.stdout.write(require(process.argv[1]).runtimeChannel())' ${psQuote(setup)}; if ($LASTEXITCODE -ne 0) { exit 1 }; Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', '${quotedLauncher}', '-PrepareRuntimeOnly') -WindowStyle Hidden`;
+  const command = `Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', '${quotedLauncher}', '-PrepareRuntimeOnly') -WindowStyle Hidden`;
   const child = spawn("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
     cwd: runtime.plugin_root, env, stdio: "ignore", windowsHide: true,
   });

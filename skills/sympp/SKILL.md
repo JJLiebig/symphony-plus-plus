@@ -22,6 +22,9 @@ business CLI commands, direct SQLite, or private state files as a fallback.
 Operational shell tools remain available for installation, startup, diagnosis,
 upgrade, and connection recovery.
 
+Install globally with `npx skills add JJLiebig/sympp -g`; update with
+`npx skills update sympp -g` or `sympp update`.
+
 If sympp tools are missing, first ask: "This machine or a server (SSH host)?"
 Then run `node <installed-skill>/scripts/setup-sympp.js` for this machine, or
 append `--server <ssh-host>`. Setup installs the `sympp` command and, when Herdr-app is present, its panel.

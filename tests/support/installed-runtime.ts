@@ -24,7 +24,7 @@ export class Installed {
   }
 
   async prepare() {
-    for (const path of [this.project, this.env.HOME!, this.env.TEMP!]) await mkdir(path, { recursive: true });
+    for (const path of [this.project, this.env.HOME!, this.env.TEMP!, this.env.CLAUDE_CONFIG_DIR!]) await mkdir(path, { recursive: true });
   }
 
   async run(command: string, args: string[], cwd = this.project, env = this.env) {
@@ -57,8 +57,8 @@ export class Installed {
   }
 
   async install(agent: 'codex' | 'claude-code', source = resolve('.'), copy = false) {
-    await this.skills(['add', source, '--agent', agent, '--skill', 'sympp', '--yes', ...(copy ? ['--copy'] : [])]);
-    return realpath(join(this.project, agent === 'codex' ? '.agents' : '.claude', 'skills/sympp'));
+    await this.skills(['add', source, '-g', '--agent', agent, '--skill', 'sympp', '--yes', ...(copy ? ['--copy'] : [])]);
+    return realpath(join(this.env.HOME!, agent === 'codex' ? '.agents' : '.claude', 'skills/sympp'));
   }
 
   setup(bundle: string, host = 'both') {

@@ -2,9 +2,8 @@
 
 **Approved beta contract.** The diagram preserves product intent.
 Use [Current system](../system.md), [Operations](../operations.md) and the
-[packaged skills](../../plugins/symphony-plus-plus-mcp/skills/) for current
-behavior. [Branch runtime and cutover](../runbooks/beta-release-cutover.md)
-record exact tested builds and hosts.
+[packaged skills](../../packages/sympp/skills/) for current
+behavior. record exact tested builds and hosts.
 
 The aim is a lean, agent-agnostic delivery system whose human operator can see
 who owns work, what is happening, what is waiting, and who acts next.
@@ -34,8 +33,8 @@ across domains. They do not all need to sit under a machine-wide LLM supervisor.
 A current calling agent can own small work without introducing another chief.
 
 Optional chief self-registration and attribution are implemented through the
-packaged [architect](../../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#start)
-and [coordinator](../../plugins/symphony-plus-plus-mcp/skills/symphony-coordinator/SKILL.md#start)
+packaged [architect](../../packages/sympp/skills/symphony-architect/SKILL.md#start)
+and [coordinator](../../packages/sympp/skills/symphony-coordinator/SKILL.md#start)
 procedures. Registration records domain and session location, never ownership
 or dispatch authority; native boards expose the current chiefs as last-known
 locations.
@@ -100,7 +99,7 @@ another gate between merge and WR completion.
 
 1. The architect dispatches a UI collaborator in a Herdr pane. Human and
    collaborator iterate rapidly on realistic demo data to discover the UI/UX.
-   Follow the [worker UI collaboration procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-worker/SKILL.md#ui-collaboration)
+   Follow the [worker UI collaboration procedure](../../packages/sympp/skills/symphony-worker/SKILL.md#ui-collaboration)
    for preview publication, screenshot milestones and direct human feedback.
 2. The human approves and freezes UX intent. Record interaction behavior,
    states, acceptance, and required data/API shape. Prototype completion alone
@@ -154,7 +153,7 @@ must not authorize a worker takeover or imply delivery.
 ## Current Procedures
 
 The packaged
-[architect procedure](../../plugins/symphony-plus-plus-mcp/skills/symphony-architect/references/operations.md#ui-collaboration-and-candidates)
+[architect procedure](../../packages/sympp/skills/symphony-architect/references/operations.md#ui-collaboration-and-candidates)
 owns durable approval, claim handoff, candidate selection, successor replacement
 and ordered merge. This contract is not a second agent checklist.
 Installed setup and recovery live in [Runtime](../runtime.md); the operator

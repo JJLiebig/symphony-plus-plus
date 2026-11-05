@@ -4,7 +4,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
   @repo_root Path.expand("../../../../", __DIR__)
   @publisher Path.join(@repo_root, "scripts/publish-sympp-runtime-artifact.ps1")
   @contract_path Path.join(@repo_root, "elixir/priv/symphony_plus_plus/mcp_contract.json")
-  @plugin_manifest_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/.codex-plugin/plugin.json")
+  @plugin_manifest_path Path.join(@repo_root, "packages/sympp/package.json")
 
   test "publisher validates all required platforms and writes launcher-readable aggregate manifest" do
     powershell = System.find_executable("pwsh")
@@ -187,9 +187,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactReleaseChannelTest do
       if ($normalized -match "^[0-9a-f]{64}$") { return $normalized }
       return $null
     }
-    . "#{Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/sympp-launcher-runtime.ps1")}"
-    . "#{Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-artifact-channel.ps1")}"
-    . "#{Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-artifact-manifest.ps1")}"
+    . "#{Path.join(@repo_root, "packages/sympp/scripts/sympp-launcher-runtime.ps1")}"
+    . "#{Path.join(@repo_root, "packages/sympp/scripts/sympp-mcp-artifact-channel.ps1")}"
+    . "#{Path.join(@repo_root, "packages/sympp/scripts/sympp-mcp-artifact-manifest.ps1")}"
     $manifest = Get-Content -LiteralPath "#{manifest_path}" -Raw | ConvertFrom-Json
     $artifact = Select-SymppArtifact $manifest "linux-x64" "#{revision}" "#{expected_mcp_contract_fingerprint()}" "symphony-plus-plus-mcp" "#{plugin_version()}"
     if ($null -eq $artifact) { throw "no artifact selected" }

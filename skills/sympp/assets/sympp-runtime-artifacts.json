@@ -5,11 +5,6 @@
       "manifest": {
         "url": "https://github.com/JJLiebig/sympp/releases/download/sympp-runtime-stable/sympp-runtime-artifacts-stable.json"
       }
-    },
-    "beta": {
-      "manifest": {
-        "url": "https://github.com/JJLiebig/sympp/releases/download/sympp-runtime-beta/sympp-runtime-artifacts-beta.json"
-      }
     }
   }
 }

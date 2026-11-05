@@ -14,7 +14,7 @@ SHA = 'a' * 40
 
 
 class RetryPlanTest(unittest.TestCase):
-    def plan(self, *, retry=True, branch='beta', current=SHA, published=SHA, mac=False, available=True):
+    def plan(self, *, retry=True, branch='main', current=SHA, published=SHA, mac=False, available=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'gh').write_text('''#!/bin/bash
@@ -39,7 +39,7 @@ fi
                        GITHUB_REPOSITORY='example/repo', RETRY_MACOS=str(retry).lower(),
                        FAKE_CURRENT=current, FAKE_AVAILABLE=str(available),
                        FAKE_MANIFEST=str(root / 'manifest.json'),
-                       FAKE_CHANNEL='beta' if branch == 'beta' else 'stable')
+                       FAKE_CHANNEL='stable')
             result = subprocess.run(['bash', '-eu', '-o', 'pipefail', '-c', PLAN],
                                     cwd=root, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -51,8 +51,8 @@ fi
         self.assertEqual([item['platform'] for item in json.loads(result['matrix'])['include']],
                          ['linux-x64', 'windows-x64'])
 
-    def test_only_missing_current_macos_is_built_for_both_channels(self):
-        for branch in ['beta', 'main']:
+    def test_only_missing_current_macos_is_built_for_stable(self):
+        for branch in ['main']:
             with self.subTest(branch=branch):
                 result = self.plan(branch=branch)
                 self.assertEqual(result['build'], 'true')

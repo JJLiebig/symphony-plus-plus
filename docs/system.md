@@ -40,7 +40,7 @@ erase actual historical delivery. Explicit operator completion remains available
 
 Solo Sessions do not create a WorkRequest, WorkPackage, worker grant, or dispatch.
 All ledger operations, including Solo, use MCP. The packaged
-[agent skills](../plugins/symphony-plus-plus-mcp/skills/) own operating procedures.
+[agent skills](../packages/sympp/skills/) own operating procedures.
 
 ## Review And Delivery Authority
 
@@ -61,7 +61,7 @@ sympp does not require a duplicate review-completion record.
 The worker procedure owns required checks and review convergence. MCP readiness
 checks ledger prerequisites and current provider-backed PR metadata; a ready
 state alone is not proof that every test or review requirement passed. See the
-[WorkPackage skill](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/SKILL.md)
+[WorkPackage skill](../packages/sympp/skills/symphony-work-package/SKILL.md)
 for the authoritative handoff procedure.
 
 GitHub owns commits, PRs, checks, and merge state. sympp records the delivery
@@ -125,9 +125,9 @@ including all required successors; skipped or abandoned attempts do not count.
 Overlapping dependency constraints all apply. Set the pin to `null` to remove it.
 
 Consumed backend selections belong to the dependent candidate's existing progress
-history. The [WorkPackage procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-work-package/SKILL.md#candidate-inputs)
+history. The [WorkPackage procedure](../packages/sympp/skills/symphony-work-package/SKILL.md#candidate-inputs)
 owns recording and requalification; the
-[architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/references/operations.md#ui-collaboration-and-candidates)
+[architect procedure](../packages/sympp/skills/symphony-architect/references/operations.md#ui-collaboration-and-candidates)
 owns approval, selection and review-owner handoff.
 
 Clearing a previously consumed pin also invalidates that input evidence. Once the
@@ -155,7 +155,7 @@ returns an `assignment_uri`; the architect reads that authorized resource and
 passes the JSON bootstrap to the worker. `detail: "full"` on dispatch returns
 the complete bootstrap inline; on `read_delivery_board` it restores all nested
 package and delivery evidence. Structured results remain JSON and agent text
-uses TOON. See the [architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#dispatch).
+uses TOON. See the [architect procedure](../packages/sympp/skills/symphony-architect/SKILL.md#dispatch).
 `reconcile_work_request` defaults to counts plus proposed, applied and error
 rows; `detail: "full"` restores skipped rows and complete delivery-board evidence.
 Terminal packages have no pending merge next action. WorkRequest reads expose

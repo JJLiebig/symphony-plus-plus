@@ -10,7 +10,7 @@ import { planInstall, planRemoval } from './chrome.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const scripts = resolve(here, '../../scripts');
-const helperScripts = (await contents(join(scripts, 'sympp-herdr.js'))) ? scripts : resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts');
+const helperScripts = (await contents(join(scripts, 'sympp-herdr.js'))) ? scripts : resolve(here, '../../packages/sympp/scripts');
 
 const bundled = existsSync(resolve(here, '../../.sympp-install.json'));
 const help = `Install the optional native sympp view into Herdr-app.

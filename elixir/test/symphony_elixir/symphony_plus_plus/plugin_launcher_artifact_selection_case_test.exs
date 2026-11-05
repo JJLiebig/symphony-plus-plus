@@ -8,10 +8,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
 
       @repo_root Path.expand("../../../../", __DIR__)
       @plugin_marketplace_name "symphony-plus-plus"
-      @plugin_manifest_path Path.join(@repo_root, "plugins/symphony-plus-plus/.codex-plugin/plugin.json")
+      @plugin_manifest_path Path.join(@repo_root, "packages/sympp/package.json")
       @plugin_version @plugin_manifest_path |> File.read!() |> Jason.decode!() |> Map.fetch!("version")
       @marketplace_revision String.duplicate("b", 40)
-      @mcp_plugin_start_script_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.ps1")
+      @mcp_plugin_start_script_path Path.join(@repo_root, "packages/sympp/scripts/start-sympp-mcp.ps1")
       @contract_path Path.join(@repo_root, "elixir/priv/symphony_plus_plus/mcp_contract.json")
 
       defp write_cached_script(cache_root, source_script_path) do
@@ -20,7 +20,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
         File.cp!(source_script_path, target)
 
         for helper_name <-
-              ~w(sympp-launcher-runtime.ps1 sympp-mcp-launcher-helpers.ps1 sympp-mcp-artifact-manifest.ps1 sympp-mcp-artifact-channel.ps1 sympp-mcp-artifact-runtime.ps1 sympp-mcp-process-runtime.ps1 sympp-diagnostic-runtime-artifacts.ps1 sympp-diagnostic-launcher-artifacts.ps1 sympp-diagnostic-self-test.ps1) do
+              ~w(sympp-launcher-runtime.ps1 sympp-mcp-launcher-helpers.ps1 sympp-mcp-artifact-manifest.ps1 sympp-mcp-artifact-channel.ps1 sympp-mcp-artifact-runtime.ps1 sympp-mcp-process-runtime.ps1 ) do
           source_helper = Path.join(Path.dirname(source_script_path), helper_name)
 
           if File.exists?(source_helper) do
@@ -31,78 +31,39 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
         target
       end
 
-      defp write_cache_manifest(cache_root, plugin_name, opts \\ []) do
-        manifest_path = Path.join(cache_root, ".codex-plugin/plugin.json")
-        File.mkdir_p!(Path.dirname(manifest_path))
-
-        manifest =
-          if Keyword.get(opts, :mcp?, false) do
-            %{"name" => plugin_name, "version" => @plugin_version, "mcpServers" => "./.mcp.json"}
-          else
-            %{"name" => plugin_name, "version" => @plugin_version}
-          end
-
-        File.write!(manifest_path, Jason.encode!(manifest))
-
-        if Keyword.get(opts, :mcp?, false) do
-          File.write!(
-            Path.join(cache_root, ".mcp.json"),
-            Jason.encode!(%{
-              "sympp" => %{
-                "type" => "stdio",
-                "command" => "cmd.exe",
-                "args" => ["/d", "/s", "/c", "scripts/start-sympp-mcp.cmd"],
-                "cwd" => "."
-              }
-            })
-          )
-        end
+      defp write_cache_manifest(cache_root, plugin_name, _opts \\ []) do
+        File.mkdir_p!(cache_root)
+        File.write!(Path.join(cache_root, "package.json"), Jason.encode!(%{"name" => plugin_name, "version" => @plugin_version}))
       end
 
-      defp write_minimal_marketplace_source(codex_home) do
-        marketplace_root = Path.join([codex_home, ".tmp", "marketplaces", @plugin_marketplace_name])
-        File.mkdir_p!(marketplace_root)
-        File.write!(Path.join(marketplace_root, ".codex-marketplace-install.json"), Jason.encode!(%{"revision" => @marketplace_revision}))
-        File.mkdir_p!(Path.join(marketplace_root, "elixir"))
-        File.write!(Path.join(marketplace_root, "elixir/mix.exs"), "defmodule SymphonyElixir.MixProject do\nend\n")
-        File.mkdir_p!(Path.join(marketplace_root, "elixir/lib/mix/tasks"))
-        File.mkdir_p!(Path.join(marketplace_root, "scripts"))
-        File.write!(Path.join(marketplace_root, "scripts/refresh-local-plugin.ps1"), "")
-        File.write!(Path.join(marketplace_root, "scripts/smoke-sympp-mcp-http.ps1"), "")
-        File.mkdir_p!(Path.join(marketplace_root, "elixir/priv/symphony_plus_plus"))
-        File.cp!(@contract_path, Path.join(marketplace_root, "elixir/priv/symphony_plus_plus/mcp_contract.json"))
-        File.mkdir_p!(Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp/scripts"))
+      defp write_minimal_source(codex_home) do
+        source_root = Path.join(codex_home, "source-checkout")
+        File.mkdir_p!(source_root)
+        File.mkdir_p!(Path.join(source_root, "elixir"))
+        File.write!(Path.join(source_root, "elixir/mix.exs"), "defmodule SymphonyElixir.MixProject do\nend\n")
+        File.mkdir_p!(Path.join(source_root, "elixir/lib/mix/tasks"))
+        File.mkdir_p!(Path.join(source_root, "scripts"))
+        File.write!(Path.join(source_root, "scripts/smoke-sympp-mcp-http.ps1"), "")
+        File.mkdir_p!(Path.join(source_root, "elixir/priv/symphony_plus_plus"))
+        File.cp!(@contract_path, Path.join(source_root, "elixir/priv/symphony_plus_plus/mcp_contract.json"))
+        File.mkdir_p!(Path.join(source_root, "packages/sympp/scripts"))
 
         File.cp!(
           @mcp_plugin_start_script_path,
-          Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.ps1")
+          Path.join(source_root, "packages/sympp/scripts/start-sympp-mcp.ps1")
         )
 
         for helper_name <-
               ~w(sympp-launcher-runtime.ps1 sympp-mcp-launcher-helpers.ps1 sympp-mcp-artifact-manifest.ps1 sympp-mcp-artifact-channel.ps1 sympp-mcp-artifact-runtime.ps1 sympp-mcp-process-runtime.ps1) do
           File.cp!(
             Path.join(Path.dirname(@mcp_plugin_start_script_path), helper_name),
-            Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp/scripts/#{helper_name}")
+            Path.join(source_root, "packages/sympp/scripts/#{helper_name}")
           )
         end
 
-        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "symphony-plus-plus")
-        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp"), "symphony-plus-plus-mcp", mcp?: true)
+        write_cache_manifest(Path.join(source_root, "packages/sympp"), "symphony-plus-plus-mcp", mcp?: true)
 
-        marketplace_root
-      end
-
-      defp commit_marketplace_source!(marketplace_root, git) do
-        install_manifest = Path.join(marketplace_root, ".codex-marketplace-install.json")
-        File.rm(install_manifest)
-        run_git!(git, marketplace_root, ["init", "-q"])
-        run_git!(git, marketplace_root, ["config", "user.email", "sympp-fixture@example.invalid"])
-        run_git!(git, marketplace_root, ["config", "user.name", "Sympp Fixture"])
-        run_git!(git, marketplace_root, ["add", "."])
-        run_git!(git, marketplace_root, ["commit", "-q", "-m", "fixture"])
-        revision = String.trim(run_git!(git, marketplace_root, ["rev-parse", "HEAD"]))
-        File.write!(install_manifest, Jason.encode!(%{"revision" => revision}))
-        revision
+        source_root
       end
 
       defp write_runtime_artifact!(cache_root, opts) do
@@ -350,7 +311,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionCase do
       end
 
       defp plugin_cache_path(codex_home, suffix, plugin_name) do
-        Path.join([codex_home, "plugins", "cache", @plugin_marketplace_name, plugin_name] ++ suffix)
+        Path.join([codex_home, "installed", plugin_name] ++ suffix)
       end
     end
   end

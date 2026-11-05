@@ -85,7 +85,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionArtifac
     temp_codex_home = unique_temp_path("sympp-plugin-artifact-validate-selected")
 
     if powershell && windows?() do
-      write_minimal_marketplace_source(temp_codex_home)
+      write_minimal_source(temp_codex_home)
       mcp_cache_root = plugin_cache_path(temp_codex_home, ["1.0.0"], "symphony-plus-plus-mcp")
       sympp_home = Path.join(temp_codex_home, "sympp-home")
 
@@ -130,8 +130,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionArtifac
     temp_codex_home = unique_temp_path("sympp-plugin-artifact-stale-installed-marker")
 
     if powershell && windows?() do
-      marketplace_root = write_minimal_marketplace_source(temp_codex_home)
-      File.write!(Path.join(marketplace_root, "elixir/WORKFLOW.md"), "workflow: test\n")
+      source_root = write_minimal_source(temp_codex_home)
+      File.write!(Path.join(source_root, "elixir/WORKFLOW.md"), "workflow: test\n")
       mcp_cache_root = plugin_cache_path(temp_codex_home, ["1.0.0"], "symphony-plus-plus-mcp")
       sympp_home = Path.join(temp_codex_home, "sympp-home")
       stale_revision = String.duplicate("a", 40)
@@ -161,7 +161,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionArtifac
         assert status == 0, output
         assert output =~ "runtimeMode: artifact"
         assert output =~ "artifactStatus: artifact_selected"
-        assert normalize_path_fragment(output) =~ "reporoot: #{normalize_path_fragment(marketplace_root)}"
+        assert normalize_path_fragment(output) =~ "reporoot: #{normalize_path_fragment(source_root)}"
         cache_key = mcp_cache_root |> Path.join("sympp-runtime.zip") |> file_sha256() |> String.slice(0, 16)
         expected_cache = Path.join([sympp_home, "rt", "windows-x86_64", cache_key])
         assert normalize_path_fragment(output) =~ "artifactcache: #{normalize_path_fragment(expected_cache)}"

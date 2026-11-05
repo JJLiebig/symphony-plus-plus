@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "channels": {
+    "stable": {
+      "manifest": {
+        "url": "https://github.com/JJLiebig/sympp/releases/download/sympp-runtime-stable/sympp-runtime-artifacts-stable.json"
+      }
+    }
+  }
+}

@@ -5,8 +5,8 @@ in packaged skills and are not repeated here.
 
 ## Install And Open
 
-Use [Install and run](runtime.md) for Windows beta setup, both host connections
-and upgrades. With the same beta environment, read the active dashboard URL:
+Use [Install and run](runtime.md) for Windows setup, both host connections
+and upgrades. With the same factory environment, read the active dashboard URL:
 
 ```powershell
 (Get-Content (Join-Path $env:SYMPP_HOME 'runtime/codex-plugin.json') -Raw | ConvertFrom-Json).frontend.url
@@ -58,7 +58,7 @@ returns it at `work_request_details[].work_request.operator_report`;
 information; a non-null resume/resolution time means that interval is closed.
 Open clarification questions and worker waits do not imply escalation. Reports
 do not change blockers or completion. See the
-[architect procedure](../plugins/symphony-plus-plus-mcp/skills/symphony-architect/SKILL.md#guidance)
+[architect procedure](../packages/sympp/skills/symphony-architect/SKILL.md#guidance)
 for optional milestone updates and resolving answers given in the conversation.
 
 MCP `read_work_request` defaults to a compact overview: request description,
@@ -78,7 +78,7 @@ schemas; an existing session does not acquire the new detail options automatical
 Install the optional Herdr plugin from the repository root:
 
 ```powershell
-herdr plugin install JJLiebig/sympp --ref beta --yes
+herdr plugin install JJLiebig/sympp --ref main --yes
 ```
 
 When a Herdr tab contains a bound sympp architect or coordinator, one
@@ -155,5 +155,5 @@ goals.
 
 ## Runtime Problems
 
-Use [Runtime](runtime.md) for marketplace ownership, startup, cache identity,
+Use [Runtime](runtime.md) for Skills ownership, startup, cache identity,
 and diagnostics. Do not repair an installed runtime from a developer checkout.
