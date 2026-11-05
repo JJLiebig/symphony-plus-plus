@@ -5,6 +5,10 @@ const base = `http://127.0.0.1:${process.env.PERF_PORT}`;
 const raw = [];
 let id = 0;
 let dispatch = 0;
+function measurement(response, text, start) {
+  const queries = response.headers.get("x-perf-queries");
+  return { ms: performance.now() - start, bytes: Buffer.byteLength(text), queries: queries === null ? null : Number(queries) };
+}
 function client(concurrency) {
   let session;
   return async (method, params) => {
@@ -14,14 +18,15 @@ function client(concurrency) {
     }, body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params }) });
     session = response.headers.get("mcp-session-id") || session;
     const text = await response.text();
-    if (!response.ok || !text) {
+    let result;
+    try { result = JSON.parse(text); } catch {}
+    const metric = measurement(response, text, start);
+    if (!response.ok || !result || typeof result !== "object" || !Object.hasOwn(result, "result") || result.error || result.result?.isError) {
       raw.push({ operation: params?.name ?? method, concurrency, failed: true, status: response.status,
-        ms: performance.now() - start, bytes: Buffer.byteLength(text), queries: Number(response.headers.get("x-perf-queries")) });
+        ...metric });
       throw Error(`Failed ${method} ${params?.name ?? ""}: HTTP ${response.status}`);
     }
-    const result = JSON.parse(text);
-    if (!response.ok || result.error || result.result?.isError) throw Error(`Failed ${method} ${params?.name ?? ""}`);
-    return { ms: performance.now() - start, bytes: Buffer.byteLength(text), queries: Number(response.headers.get("x-perf-queries")) };
+    return metric;
   };
 }
 try {
@@ -44,7 +49,7 @@ try {
             const text = await response.text();
             let validBoard = false;
             try { validBoard = Array.isArray(JSON.parse(text).work_request_details); } catch {}
-            metric = { ms: performance.now() - start, bytes: Buffer.byteLength(text), queries: Number(response.headers.get("x-perf-queries")) };
+            metric = measurement(response, text, start);
             if (!response.ok || !validBoard) {
               raw.push({ operation, concurrency, ...metric, failed: true, status: response.status });
               throw Error(`Invalid board: HTTP ${response.status}`);
