@@ -121,7 +121,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Dashboard do
         Enum.map(work_requests, &{"work_request", &1.id}) ++
           Enum.map(linked_work_packages, &{"work_package", &1.id})
 
-      with {:ok, work_package_contexts} <- work_package_work_package_contexts(repo, work_packages),
+      with {:ok, work_package_contexts} <- work_package_work_package_contexts(repo, linked_work_packages),
            {:ok, product_trees_by_request} <-
              product_tree_contexts_for_work_requests(repo, MapSet.to_list(work_request_ids)),
            {:ok, deliveries_by_slice_id} <-
