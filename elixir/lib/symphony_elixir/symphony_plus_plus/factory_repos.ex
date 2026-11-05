@@ -59,9 +59,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
       Regex.match?(~r/\A[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\z/, value) ->
         remote("https://github.com/" <> String.replace_suffix(value, ".git", "") <> ".git")
 
-      Regex.match?(~r/\Agit@[^:]+:.+\z/, value) ->
-        [host, path] = value |> String.replace_prefix("git@", "") |> String.split(":", parts: 2)
-        remote("ssh://git@" <> host <> "/" <> path)
+      parts = Regex.run(~r/\A([^@:\/\s]+)@([^:]+):(.+)\z/, value) ->
+        [_match, user, host, path] = parts
+        remote("ssh://" <> user <> "@" <> host <> "/" <> path)
 
       true ->
         uri_remote(value)
@@ -85,8 +85,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
 
   defp usable_authority?(uri) do
     uri.scheme in ["https", "ssh"] and is_binary(uri.host) and uri.host != "" and
-      uri.userinfo in [nil, "git"] and is_nil(uri.query) and is_nil(uri.fragment)
+      usable_userinfo?(uri) and is_nil(uri.query) and is_nil(uri.fragment)
   end
+
+  defp usable_userinfo?(%URI{userinfo: nil}), do: true
+
+  defp usable_userinfo?(%URI{scheme: "ssh", userinfo: user}) do
+    user != "" and not String.contains?(URI.decode(user), [":", "@", "/", "\\"])
+  end
+
+  defp usable_userinfo?(%URI{userinfo: user}), do: user == "git"
 
   defp usable_repo_path?(path, name) do
     name not in ["", ".", ".."] and Regex.match?(~r/\A[A-Za-z0-9_.-]+\z/, name) and
@@ -98,6 +106,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
     host = String.downcase(uri.host)
     path = uri.path |> String.trim_trailing("/") |> String.replace_suffix(".git", "")
     path = if host == "github.com", do: String.downcase(path), else: path
-    {host, if(uri.port in [22, 443], do: nil, else: uri.port), path}
+    user = if uri.scheme == "ssh" and uri.userinfo not in [nil, "git"], do: uri.userinfo
+    {host, if(uri.port in [22, 443], do: nil, else: uri.port), user, path}
   end
 end

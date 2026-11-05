@@ -27,6 +27,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
     assert {:ok, checkout} = FactoryRepos.resolve(remote)
     assert checkout == fixture.repo_root
+
+    name = Path.basename(checkout)
+    ssh_remote = "ssh://deploy@git.example/team/#{name}.git"
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", ssh_remote])
+    assert {:ok, ^checkout} = FactoryRepos.resolve("deploy@git.example:team/#{name}.git")
+    assert {:ok, ^checkout} = FactoryRepos.resolve(ssh_remote)
+    refute FactoryRepos.matches?(checkout, "ssh://other-user@git.example/team/#{name}.git")
+    assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("ssh://deploy:password@git.example/team/#{name}.git")
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", remote])
     refute FactoryRepos.matches?(checkout, String.replace(remote, "/factory/", "/other/"))
     assert {:error, :target_repo_root_scope_mismatch} = FactoryRepos.resolve(String.replace(remote, "/factory/", "/other/"))
     assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("C:\\Code\\client")

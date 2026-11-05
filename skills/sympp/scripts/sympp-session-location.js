@@ -49,8 +49,13 @@ function withLocation(body, location) {
   } catch (_) { return body; }
 }
 
+function isRemoteFactory(env) {
+  if (!env.SYMPP_SERVER_URL) return false;
+  return !["localhost", "127.0.0.1", "[::1]"].includes(new URL(env.SYMPP_SERVER_URL).hostname);
+}
+
 async function remoteArguments(body, env) {
-  if (!env.SYMPP_SERVER_URL) return body;
+  if (!isRemoteFactory(env)) return body;
   const payload = JSON.parse(body);
   if (payload.method !== "tools/call" || !payload.params?.arguments) return body;
   const origin = cwd => new Promise((resolve, reject) => {
@@ -84,7 +89,7 @@ async function remoteArguments(body, env) {
 }
 
 function remoteWorktreeResponse(body, env = process.env) {
-  if (!env.SYMPP_SERVER_URL) return body;
+  if (!isRemoteFactory(env)) return body;
   try {
     const payload = JSON.parse(body);
     const result = payload.result;
