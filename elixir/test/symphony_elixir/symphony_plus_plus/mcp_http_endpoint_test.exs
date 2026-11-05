@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
   import Phoenix.ConnTest
   import Plug.Conn, only: [get_resp_header: 2, put_req_header: 3]
 
+  alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Assignment
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
   alias SymphonyElixir.SymphonyPlusPlus.Chiefs.Registration
@@ -395,7 +396,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
 
     for package_id <- package_ids do
       assert Repo.get!(WorkPackage, package_id).status == "ready_for_worker"
-      assert Repo.aggregate(from(g in SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant, where: g.work_package_id == ^package_id and g.grant_role == "worker"), :count) == 1
+
+      worker_grants =
+        from(grant in AccessGrant,
+          where: grant.work_package_id == ^package_id,
+          where: grant.grant_role == "worker"
+        )
+
+      assert Repo.aggregate(worker_grants, :count) == 1
     end
 
     {client, package_id} = hd(clients)
