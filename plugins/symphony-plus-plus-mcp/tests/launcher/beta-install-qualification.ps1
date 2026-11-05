@@ -152,10 +152,10 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $oldInstall = Get-Content -LiteralPath $markerFile -Raw | ConvertFrom-Json
   $oldInstall.contract_fingerprint = $Published.launcher_contract.mcp_contract_fingerprint
   $oldInstall | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $markerFile
-  # Pair the historical runtime with its own bridge protocol, not today's
-  # candidate bridge (which requires the new worktree ownership capability).
+  # Use the pre-feature Skills bridge: the historical server release predates
+  # portable Skills, while today's bridge requires the new ownership capability.
   $bridge = Join-Path $root 'scripts/start-sympp-mcp-bridge.js'
-  $oldBridge = Invoke-RestMethod "https://raw.githubusercontent.com/JJLiebig/sympp/$($Published.source_revision)/plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp-bridge.js"
+  $oldBridge = Invoke-RestMethod 'https://raw.githubusercontent.com/JJLiebig/sympp/e35de6fc686b4158f5a211f6c4203e85cb422880/plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp-bridge.js'
   [IO.File]::WriteAllText($bridge, $oldBridge)
   $oldBridgeHash = (Get-FileHash -LiteralPath $bridge -Algorithm SHA256).Hash
   # This fixture represents the pre-rename installed bundle, including its
@@ -183,11 +183,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   [IO.File]::WriteAllText($blockedHome, 'A file cannot be a native app directory.')
   $upgrade = @{ pid = 0 }
   $manifest = $Published
-  # The historical bridge predates basename lookup protection. Pin its trusted
-  # process seam; candidate waves still exercise the project-local shadow.
-  $oldEnvironment = $Environment.Clone()
-  $oldEnvironment.SYMPP_POWERSHELL = $prepareHost
-  $old = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $oldEnvironment -MarkerSessionId $MarkerSessionId -OnAttached {
+  $old = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId -OnAttached {
     param($activeState, $sessionId)
     $failed = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME,
       '-HerdrAppHome', $blockedHome, '-ArtifactManifest', $channelFile) $Environment
@@ -252,7 +248,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $prepared = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
   if ($prepared.exit -ne 0) { throw "Could not prepare the stopped factory: $($prepared.stderr)" }
   $manifest = $Published
-  $stopped = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $oldEnvironment -MarkerSessionId $MarkerSessionId
+  $stopped = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId
   Wait-ManagedRuntimeStopped $stopped.backend_pid $stopped.backend_port
   $publication | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $root '.sympp-runtime-artifacts.json')
   $mismatch = Read-IsolatedCommand $prepareHost @('-NoProfile', '-File', (Join-Path $root 'scripts/start-sympp-mcp.ps1'), '-PrepareRuntimeOnly') $Environment
