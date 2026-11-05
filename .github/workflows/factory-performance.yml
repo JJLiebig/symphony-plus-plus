@@ -16,8 +16,8 @@ jobs:
       MIX_ENV: prod
       PERF_OUTPUT: ${{ github.workspace }}/.perf
     steps:
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           install: true
           cache: true
@@ -36,7 +36,7 @@ jobs:
         run: python3 scripts/perf/run-factory.py
       - name: Preserve raw measurements and bootstrap logs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: factory-performance-${{ github.sha }}
           path: .perf/
