@@ -12,7 +12,8 @@
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session?, runtime? }, "machine": { node, helper, session? } } }
 // With local.runtime (the factory's runtime record) a view starts that sympp when it doesn't answer.
-// Hosts may also be configured explicitly in shared("sympp.hosts"). A copy without an endpoint uses the
+// Hosts may also be configured explicitly in shared("sympp.hosts"). Another machine without a host runs
+// the sympp skill's helper installed there (model.js). A copy without an endpoint uses the
 // connection the last connected copy shared ("sympp.connection"), so a scripted studio needs only its ids.
 //
 // Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel

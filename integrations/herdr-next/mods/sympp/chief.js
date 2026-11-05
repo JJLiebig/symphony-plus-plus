@@ -16,6 +16,14 @@ export const chiefArgv = (agent, brief) => [...agent.run, ...(MESSAGE[agent.key]
 
 export const chiefSpaceName = (name) => `${name} chief`;
 
+// Where Start chief records the spaces it made: { [space id]: topic id }.
+export const CHIEF_SPACES = "sympp.chief.spaces";
+
+// A topic's chief space: one Start chief made for it, or one named as it names them (spaces made before
+// it kept a record). Reached from the topic's sympp mark, never listed; the desk-topics chrome keeps
+// the same rule.
+export const isChiefSpace = (space, topic, made) => made?.[space.id] === topic.id || space.name === chiefSpaceName(topic.name);
+
 export function endpointHost(endpoint) {
   const host = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]+\]|[^/:?#]+)/i.exec(endpoint ?? "")?.[1];
   return host ? host.replace(/^\[|\]$/g, "").toLowerCase() : null;

@@ -2,13 +2,13 @@
 // the topic has no running chief. Modelled on Herdr's Change anything (app.ask): an agent chip (the
 // last one started comes first), a machine chip that starts on the factory's machine, and the line,
 // whose text is added to the chief's brief. Enter starts the agent as a normal tab in the topic's own
-// "<topic> chief" space on that machine, made once and reused, so the chief stays in its topic like
-// any other space. A failure keeps the dialog and its text and says what failed.
+// "<topic> chief" space on that machine, made once and reused. The space stays in its topic, unlisted:
+// the topic's sympp mark leads there. A failure keeps the dialog and its text and says what failed.
 
 import { div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, knownAgents, machines, spaces, shared, setShared, exec, hc, home, layout, run, settings } from "herdr";
-import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic } from "./chief.js";
+import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic, isChiefSpace, CHIEF_SPACES } from "./chief.js";
 
 const W = 560;
 const H = 46;
@@ -124,8 +124,8 @@ export class ChiefStart {
     cx.spawn(async (cx) => {
       try {
         const desk = shared("desk.topics");
-        const all = spaces(), ids = desk?.groups?.find((g) => g.id === this.topic)?.spaces ?? [];
-        const mine = all.filter((s) => ids.includes(s.id));
+        const topic = desk?.groups?.find((g) => g.id === this.topic) ?? { id: this.topic, name: this.name, spaces: [] };
+        const all = spaces(), mine = all.filter((s) => (topic.spaces ?? []).includes(s.id));
         let folder = "";
         for (const candidate of chiefFolders(mine, all, machine)) {
           // The folder is there when a program can start in it.
@@ -134,7 +134,7 @@ export class ChiefStart {
         // Else the machine's home, said outright: left out, Herdr would start in the focused pane's folder.
         if (!folder) folder = machine ? await exec("pwd", [], { on: machine }).then((r) => (r.code === 0 ? r.stdout.trim() : ""), () => "") : home();
         const argv = chiefArgv(agent, chiefBrief(this.name, text));
-        const own = mine.find((s) => s.name === chiefSpaceName(this.name) && (s.machine ?? null) === machine);
+        const own = mine.find((s) => isChiefSpace(s, topic, shared(CHIEF_SPACES)) && (s.machine ?? null) === machine);
         const made = own
           ? await app("tab.new", { space: own.id, name: "chief", argv, ...(folder ? { folder } : {}) })
           : await app("space.new", { name: chiefSpaceName(this.name), tab: "chief", argv, ...(folder ? { folder } : {}), machine: machine ?? "" });
@@ -142,6 +142,7 @@ export class ChiefStart {
           const next = intoTopic(shared("desk.topics"), this.topic, made.space);
           if (next) setShared("desk.topics", next);
         }
+        setShared(CHIEF_SPACES, { ...shared(CHIEF_SPACES), [own?.id ?? made.space]: this.topic });
         setShared(LAST, { key: agent.key, name: agent.name, icon: agent.icon, tint: agent.tint, run: agent.run });
         // A desk shows its spaces' tabs in its workspace view.
         if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });

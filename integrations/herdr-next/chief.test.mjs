@@ -2,7 +2,7 @@
 // what it is told.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chiefArgv, chiefBrief, chiefFolders, factoryMachine, intoTopic } from './mods/sympp/chief.js';
+import { chiefArgv, chiefBrief, chiefFolders, factoryMachine, intoTopic, isChiefSpace } from './mods/sympp/chief.js';
 
 test('the machine defaults to the factory: this computer for loopback, else the machine its address names or reaches', async () => {
   const machines = [
@@ -40,6 +40,15 @@ test('a new chief space joins the end of its topic, which unfolds; a removed top
   });
   assert.deepEqual(desk.unsorted, ['c', 'jjdev/sp9'], 'the shared value is not changed in place');
   assert.equal(intoTopic(desk, 'gone', 'jjdev/sp9'), null);
+});
+
+test("a topic's chief space is the one Start chief made for it, or, made before it kept a record, named for it", () => {
+  const topic = { id: 'topic-k', name: 'Kraken' };
+  const made = { s1: 'topic-k', s2: 'topic-other' };
+  assert.equal(isChiefSpace({ id: 's1', name: 'Old Kraken chief' }, topic, made), true, 'a renamed topic keeps its chief space');
+  assert.equal(isChiefSpace({ id: 's3', name: 'Kraken chief' }, topic, {}), true, 'a space from before the record');
+  assert.equal(isChiefSpace({ id: 's2', name: 'api' }, topic, made), false, "another topic's chief space");
+  assert.equal(isChiefSpace({ id: 's4', name: 'Kraken' }, topic, undefined), false);
 });
 
 test('the chief is told its topic is its domain, then the person\'s words, in each agent\'s first-message form', () => {

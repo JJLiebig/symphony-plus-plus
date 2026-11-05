@@ -22,6 +22,12 @@ test("migration replaces owned blocks while preserving unrelated registrations a
   assert.throws(() => codexConfig('mcp_servers = { sympp = {} }\n', registration), /inline MCP/);
 });
 
+test("Codex passes the agent's Herdr terminal to the bridge", () => {
+  // Codex gives an MCP server only the variables it lists; without these the bridge can't bind its
+  // terminal, so a remote chief registers without one and never shows as running.
+  assert.match(codexConfig("", registration), /^\[mcp_servers\.sympp\]\n(?:(?!^\[).*\n)*env_vars = \["HC_TERMINAL_ID", "HC_TERMINAL_SOCKET"\]$/m);
+});
+
 test("TOML instruction examples are inert and preserved during managed migration", () => {
   for (const delimiter of ['"""', "'".repeat(3)]) {
     const instruction = `instructions = ${delimiter}\n[mcp_servers.sympp]\n# BEGIN sympp Skills MCP\nexample\n# END sympp Skills MCP\n${delimiter}\n`;
