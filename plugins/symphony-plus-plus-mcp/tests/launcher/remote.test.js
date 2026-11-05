@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
-const { spawn } = require("node:child_process");
+const { spawn, execFileSync } = require("node:child_process");
 const { once } = require("node:events");
 const { serverConnection, privateWrite } = require("../../scripts/sympp-remote.js");
 
@@ -57,7 +57,7 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
     const child = spawn(process.execPath, [path.resolve(__dirname, "../../scripts/start-sympp-mcp-bridge.js")], {
       env: { ...process.env, HC_TERMINAL_ID: "", HERDR_ENV: "", SYMPP_REPO_ROOT: "must-not-use", SYMPP_POWERSHELL: "must-not-start",
         SYMPP_HOME: path.join(root, "runtime-must-not-exist"), SYMPP_SERVER_URL: `http://${nic}:${server.address().port}`, SYMPP_SERVER_TOKEN_FILE: tokenFile },
-      stdio: ["pipe", "pipe", "pipe"], windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"], windowsHide: true, cwd: root,
     });
     t.after(() => child.kill());
     let stdout = "", stderr = "";
@@ -80,6 +80,12 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
   const ambiguous = await run("fixture-token", "ambiguous_mutation");
   assert.equal(ambiguous.replies[1].error.data.reason, "backend_lost_after_request_started");
   assert.equal(received.filter(r => r.body?.params?.name === "ambiguous_mutation").length, 1);
+  execFileSync("git", ["init", root]);
+  execFileSync("git", ["-C", root, "remote", "add", "origin", "https://fixture-user:fixture-password@example.org/team/repo.git"]);
+  const credentialOrigin = await run("fixture-token", "create_work_request");
+  assert.match(credentialOrigin.replies[1].error.data.detail, /Repository origins must not include credentials/);
+  assert.equal(JSON.stringify(credentialOrigin).includes("fixture-password"), false);
+  assert.equal(received.some(r => r.body?.params?.name === "create_work_request"), false);
   const postsBeforeDenial = received.filter(r => r.url === "/mcp").length;
   const denied = await run("wrong-token", "list_work_requests", false);
   assert.match(denied.stderr, /authentication failed.*401/);

@@ -56,14 +56,24 @@ function isRemoteEndpoint(env) {
 
 async function remoteArguments(body, factoryOwned) {
   if (!factoryOwned) return body;
+  const credentialFree = value => {
+    let remote;
+    try { remote = new URL(value); } catch (_) { return value; }
+    if (remote.password || /%3a/i.test(remote.username) || (["http:", "https:"].includes(remote.protocol) && remote.username)) {
+      throw new Error("Repository origins must not include credentials. Use a credential-free remote and configure Git authentication on the factory.");
+    }
+    return value;
+  };
   const origin = cwd => new Promise((resolve, reject) => {
     execFile("git", ["-C", cwd, "remote", "get-url", "origin"],
       { timeout: 5000, maxBuffer: 8192, windowsHide: true }, (error, stdout) => {
         if (error || !stdout.trim()) reject(new Error("Repository origin is unavailable. Supply a git remote URL or owner/name."));
-        else resolve(stdout.trim());
+        else {
+          try { resolve(credentialFree(stdout.trim())); } catch (failure) { reject(failure); }
+        }
       });
   });
-  const repo = async value => typeof value === "string" && (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value)) ? origin(value) : value;
+  const repo = async value => typeof value === "string" && (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value)) ? origin(value) : credentialFree(value);
   const repoObject = async value => {
     if (!value || typeof value !== "object" || Array.isArray(value) || !("repo" in value)) return value;
     return { ...value, repo: await repo(value.repo) };

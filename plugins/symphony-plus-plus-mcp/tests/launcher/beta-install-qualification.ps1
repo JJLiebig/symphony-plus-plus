@@ -152,6 +152,12 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   $oldInstall = Get-Content -LiteralPath $markerFile -Raw | ConvertFrom-Json
   $oldInstall.contract_fingerprint = $Published.launcher_contract.mcp_contract_fingerprint
   $oldInstall | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $markerFile
+  # Pair the historical runtime with its own bridge protocol, not today's
+  # candidate bridge (which requires the new worktree ownership capability).
+  $bridge = Join-Path $root 'scripts/start-sympp-mcp-bridge.js'
+  $oldBridge = Invoke-RestMethod "https://raw.githubusercontent.com/JJLiebig/sympp/$($Published.source_revision)/plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp-bridge.js"
+  [IO.File]::WriteAllText($bridge, $oldBridge)
+  $oldBridgeHash = (Get-FileHash -LiteralPath $bridge -Algorithm SHA256).Hash
   # This fixture represents the pre-rename installed bundle, including its
   # dashboard identity check. The upgrade must replace it with the candidate.
   $launcher = Join-Path $root 'scripts/start-sympp-mcp.ps1'
@@ -177,7 +183,6 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
   [IO.File]::WriteAllText($blockedHome, 'A file cannot be a native app directory.')
   $upgrade = @{ pid = 0 }
   $manifest = $Published
-  $bridge = Join-Path $root 'scripts/start-sympp-mcp-bridge.js'
   $old = Invoke-McpBridge (Get-Command node.exe).Source @($bridge) $Environment -MarkerSessionId $MarkerSessionId -OnAttached {
     param($activeState, $sessionId)
     $failed = Read-IsolatedCommand $pwsh @('-NoProfile', '-File', $installer, '-SymppHome', $Environment.SYMPP_HOME,
@@ -188,7 +193,8 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
     if ($health.source.mcp_contract.fingerprint -ne $oldInstall.contract_fingerprint -or
         (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $oldHelper.Hash -or
         (Get-FileHash -LiteralPath $markerFile -Algorithm SHA256).Hash -ne $oldMarker.Hash -or
-        (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash -ne $oldLauncherHash) {
+        (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash -ne $oldLauncherHash -or
+        (Get-FileHash -LiteralPath $bridge -Algorithm SHA256).Hash -ne $oldBridgeHash) {
       throw 'Rollback did not restore the previous Skills bytes, marker and live contract.'
     }
     [void](Send-BridgeRequest $process @{ jsonrpc = '2.0'; id = 90; method = 'tools/list'; params = @{} })
@@ -201,6 +207,8 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
     if ((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ne $desired.Hash) { throw 'The installed helper drift was not replaced.' }
     $desiredLauncher = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/sympp/scripts/start-sympp-mcp.ps1') -Algorithm SHA256
     if ((Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash -ne $desiredLauncher.Hash) { throw 'The pre-rename launcher was not replaced.' }
+    $desiredBridge = Get-FileHash -LiteralPath (Join-Path $repoRoot 'skills/sympp/scripts/start-sympp-mcp-bridge.js') -Algorithm SHA256
+    if ((Get-FileHash -LiteralPath $bridge -Algorithm SHA256).Hash -ne $desiredBridge.Hash) { throw 'The historical bridge was not replaced.' }
   }
   $beforeDrift = $upgrade.pid
   [IO.File]::AppendAllText($helper, "`n// fixture: same-contract drift with an unchanged package marker.`n")
@@ -226,6 +234,7 @@ function Invoke-BetaBundleQualification([hashtable]$Environment, $Published, $Ca
 
   # Reproduce a channel advancing past the installed bundle while no client is open.
   $oldInstall | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $markerFile
+  [IO.File]::WriteAllText($bridge, $oldBridge)
   # This fixture represents the pre-rename installed bundle, including its
   # dashboard identity check. The upgrade must replace it with the candidate.
   $launcher = Join-Path $root 'scripts/start-sympp-mcp.ps1'
