@@ -111,7 +111,7 @@ function clientCommand(mode) {
   if (mode === "cmd_passthrough") {
     return { file: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", "node.exe scripts\\start-sympp-mcp-bridge.js"] };
   }
-  const server = JSON.parse(fs.readFileSync(path.join(pluginRoot, ".mcp.json"), "utf8")).symphony_plus_plus;
+  const server = JSON.parse(fs.readFileSync(path.join(pluginRoot, ".mcp.json"), "utf8")).sympp;
   return { file: server.command, args: server.args };
 }
 

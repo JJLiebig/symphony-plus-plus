@@ -21,7 +21,9 @@ const end = "# END sympp Skills MCP";
 function codexConfig(config, registration) {
   const owned = /^# BEGIN (?:Symphony\+\+|sympp) Skills MCP\r?\n[\s\S]*?^# END (?:Symphony\+\+|sympp) Skills MCP\r?\n?/gm;
   const remaining = config.replace(owned, "");
-  if (/^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|\])/m.test(remaining)) {
+  if (/^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|\])/m.test(remaining) ||
+      /^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|=)/m.test(remaining) ||
+      /^\s*\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\][^\n]*\n(?:(?!^\s*\[)[\s\S])*?^\s*(?:sympp|"sympp"|'sympp')\s*(?:\.|=)/m.test(remaining)) {
     throw new Error("Codex already has an unmanaged sympp MCP registration. Remove it explicitly before setup.");
   }
   if (/^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*=/m.test(remaining)) throw new Error("This Codex configuration uses an inline MCP table that setup cannot safely extend. Use a separate CODEX_HOME with standard server tables.");
@@ -105,7 +107,7 @@ function main(args) {
     const tokenFile = path.join(symppHome, `remote-client-${require("node:crypto").createHash("sha256").update(remote.endpoint).digest("hex").slice(0, 16)}.token`);
     env = { SYMPP_SKILLS_MANAGED: "1", SYMPP_HOME: symppHome, SYMPP_SERVER_URL: remote.endpoint, SYMPP_SERVER_TOKEN_FILE: tokenFile };
   }
-  const registration = { type: "stdio", command: process.execPath, args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
+  const registration = { type: "stdio", command: fs.realpathSync.native(process.execPath), args: [path.join(root, "scripts", "start-sympp-mcp-bridge.js")], env };
   const globalClaude = (Boolean(server) || isGlobalInstall()) && hosts.includes("claude");
   let claudeUser, claudeCommand, claudeShadow, claudeOld;
   if (globalClaude) {

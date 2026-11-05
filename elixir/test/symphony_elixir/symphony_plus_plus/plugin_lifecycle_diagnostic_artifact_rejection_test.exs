@@ -21,7 +21,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLifecycleDiagnosticArtifactRejec
         """)
 
         installed_script_path = write_cached_script(default_cache_root, @plugin_lifecycle_diagnostic_path)
-        write_cache_manifest(default_cache_root, "symphony-plus-plus")
+        write_cache_manifest(default_cache_root, "sympp")
         write_cache_manifest(mcp_cache_root, "symphony-plus-plus-mcp", mcp?: true)
         write_cached_script(mcp_cache_root, @mcp_plugin_start_script_path)
         write_pinned_source_revision!(mcp_cache_root, revision)

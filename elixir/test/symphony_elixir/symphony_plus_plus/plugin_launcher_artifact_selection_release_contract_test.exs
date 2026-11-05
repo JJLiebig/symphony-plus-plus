@@ -25,7 +25,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionRelease
             "marketplace" => @plugin_marketplace_name,
             "name" => "symphony-plus-plus-mcp",
             "version" => @plugin_version,
-            "packages" => ["symphony-plus-plus", "symphony-plus-plus-mcp"],
+            "packages" => ["sympp", "symphony-plus-plus-mcp"],
             "source_revision" => published_revision
           }
         )
@@ -78,7 +78,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherArtifactSelectionRelease
             "marketplace" => @plugin_marketplace_name,
             "name" => "symphony-plus-plus-mcp",
             "version" => "0.1.7",
-            "packages" => ["symphony-plus-plus", "symphony-plus-plus-mcp"],
+            "packages" => ["sympp", "symphony-plus-plus-mcp"],
             "source_revision" => published_revision
           }
         )

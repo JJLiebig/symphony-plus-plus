@@ -23,7 +23,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshGeneratedCache
         mcp_source_hint_path = published_plugin_cache_path(temp_codex_home, [cache_name, ".sympp-source-root"], "symphony-plus-plus-mcp")
 
         File.mkdir_p!(Path.dirname(stale_manifest_path))
-        File.write!(stale_manifest_path, Jason.encode!(%{"name" => "symphony-plus-plus", "version" => "stale"}))
+        File.write!(stale_manifest_path, Jason.encode!(%{"name" => "sympp", "version" => "stale"}))
         File.write!(stale_mcp_path, Jason.encode!(%{"mcpServers" => %{}}))
         File.write!(source_hint_path, "C:/sympp/generated\n")
         File.mkdir_p!(Path.dirname(stale_root_solo_skill_path))

@@ -1340,8 +1340,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.Server do
      %{
        "tool" => tool,
        "reason" => "invalid_repo_root",
-       "message" =>
-         "symphony_repo_root must point to the sympp helper/namespace repo root containing the worker secret helper script under scripts/; it is not the target product repository root."
+       "message" => "symphony_repo_root must point to the sympp helper/namespace repo root containing the worker secret helper script under scripts/; it is not the target product repository root."
      }}
   end
 

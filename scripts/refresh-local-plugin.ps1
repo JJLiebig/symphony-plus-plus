@@ -425,9 +425,9 @@ function Assert-CachePluginConfig([string]$TargetRoot, [string]$ExpectedVersion)
 
   $mcpConfig = Get-Content -LiteralPath $mcpConfigPath -Raw | ConvertFrom-Json
   $serverMap = Resolve-DocumentedMcpServerMap $mcpConfig $mcpConfigPath
-  $server = $serverMap.symphony_plus_plus
+  $server = $serverMap.sympp
   if ($null -eq $server) {
-    throw "Installed MCP config does not define symphony_plus_plus in a documented MCP config shape: $mcpConfigPath"
+    throw "Installed MCP config does not define sympp in a documented MCP config shape: $mcpConfigPath"
   }
   if (@($server.PSObject.Properties.Name) -contains "url") {
     throw "Installed opt-in MCP server must use the command-backed launcher, not a URL-only endpoint: $mcpConfigPath"

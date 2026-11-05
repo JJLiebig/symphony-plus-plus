@@ -14,6 +14,9 @@ test("migration replaces owned blocks while preserving unrelated registrations a
   for (const table of ['[mcp_servers.sympp]', '[mcp_servers."sympp"]', "['mcp_servers'.'sympp']", '[mcp_servers.sympp.env]']) {
     assert.throws(() => codexConfig(migrated + table + '\n', registration), /unmanaged/);
   }
+  for (const dotted of ['mcp_servers.sympp.command = "other"', '[mcp_servers]\nsympp.command = "other"', '[mcp_servers]\nsympp = { command = "other" }']) {
+    assert.throws(() => codexConfig(dotted + '\n', registration), /unmanaged/);
+  }
   assert.throws(() => codexConfig('mcp_servers = { sympp = {} }\n', registration), /inline MCP/);
   const owned = { ...registration, env: { SYMPP_SKILLS_MANAGED: "1" } };
   const value = JSON.parse(claudeConfig(JSON.stringify({ mcpServers: { symphony_plus_plus: owned, notes: { command: "notes" } } }), registration));

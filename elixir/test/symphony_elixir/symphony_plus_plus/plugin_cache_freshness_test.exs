@@ -6,7 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginCacheFreshnessTest do
   @mcp_plugin_version @mcp_manifest_path |> File.read!() |> Jason.decode!() |> Map.fetch!("version")
   @diagnostic_path Path.join(@repo_root, "plugins/symphony-plus-plus/scripts/diagnose-mcp-lifecycle.ps1")
   @refresh_script_path Path.join(@repo_root, "scripts/refresh-local-plugin.ps1")
-  @marketplace_name "symphony-plus-plus"
+  @marketplace_name "sympp"
 
   @tag :ci_slow
   test "lifecycle diagnostic flags same-version stale MCP companion cache contents" do

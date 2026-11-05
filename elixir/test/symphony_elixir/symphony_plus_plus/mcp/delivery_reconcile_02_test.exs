@@ -431,7 +431,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02Test do
     fixture = %{fixture | repo_root: target_repo_root}
 
     codex_home = Path.join(fixture.root, "codex-home")
-    host_repo_root = Path.join(fixture.root, "symphony-plus-plus")
+    host_repo_root = Path.join(fixture.root, "sympp")
     other_host_repo_root = Path.join(fixture.root, "other-symphony-plus-plus")
     File.mkdir_p!(host_repo_root)
 

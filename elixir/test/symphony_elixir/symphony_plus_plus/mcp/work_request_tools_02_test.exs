@@ -7,7 +7,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     handoff_work_request =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF",
-        repo: "symphony-plus-plus",
+        repo: "sympp",
         base_branch: "main",
         status: "ready_for_slicing"
       )
@@ -112,7 +112,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
     handoff_work_request =
       create_work_request!(repo,
         id: "WR-MCP-WR-LEGACY-HANDOFF-PARTIAL",
-        repo: "symphony-plus-plus",
+        repo: "sympp",
         base_branch: "main",
         status: "ready_for_slicing"
       )

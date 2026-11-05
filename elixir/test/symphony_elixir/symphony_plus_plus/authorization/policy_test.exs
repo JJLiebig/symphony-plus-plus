@@ -27,7 +27,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.Authorization.PolicyTest do
   end
 
   test "architect repo read scope accepts trusted repo identity aliases without widening writes" do
-    actor = architect([Scope.work_request("wr-1"), Scope.repo("symphony-plus-plus", "main")])
+    actor = architect([Scope.work_request("wr-1"), Scope.repo("sympp", "main")])
 
     trusted_alias_target =
       Target.work_request("wr-2",

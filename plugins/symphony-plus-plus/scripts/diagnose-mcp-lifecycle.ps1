@@ -801,7 +801,7 @@ function Get-SymppMcpServerStatus($McpConfig) {
     return "not_configured"
   }
 
-  $server = $serverMap.symphony_plus_plus
+  $server = $serverMap.sympp
   if ($null -eq $server) {
     return "missing"
   }
@@ -865,7 +865,7 @@ function Get-PluginPackageSummary([string]$Root, [string]$Label, [string]$Packag
   $mcp = Get-JsonFile $mcpPath
   $mcpParseError = Get-JsonParseError $mcp
   $serverMap = Get-McpServerMap $mcp
-  $server = if ($null -ne $serverMap) { $serverMap.symphony_plus_plus } else { $null }
+  $server = if ($null -ne $serverMap) { $serverMap.sympp } else { $null }
   $sourceHintPath = Join-Path $Root ".sympp-source-root"
   $sourceHint = if (Test-Path -LiteralPath $sourceHintPath) {
     (Get-Content -LiteralPath $sourceHintPath -Raw).Trim().TrimStart([char]0xFEFF)
@@ -909,7 +909,7 @@ function Get-PluginPackageSummary([string]$Root, [string]$Label, [string]$Packag
     mcp_parse_error = $mcpParseError
     reference_mcp_server_status = $mcpServerStatus
     http_mcp_reachability_status = Get-HttpMcpReachabilityStatus $server
-    symphony_plus_plus_server = if (-not $manifestExists) { "missing_manifest" } elseif ($manifestParseError) { "manifest_parse_error" } elseif ($manifestHasMcpServers -and $isOptInMcpPackage) { $mcpServerStatus } elseif ($defaultPackageBundlesMcp) { "incompatible_default_plugin_bundles_mcp" } else { $mcpServerStatus }
+    sympp_server = if (-not $manifestExists) { "missing_manifest" } elseif ($manifestParseError) { "manifest_parse_error" } elseif ($manifestHasMcpServers -and $isOptInMcpPackage) { $mcpServerStatus } elseif ($defaultPackageBundlesMcp) { "incompatible_default_plugin_bundles_mcp" } else { $mcpServerStatus }
     has_start_script = Test-Path -LiteralPath (Join-Path $Root "scripts/start-sympp-mcp.ps1")
     source_root_hint = $sourceHint
     runtime_artifact = Get-DiagnosticRuntimeArtifactStatus $Root $artifactExpectedRevision
@@ -1962,7 +1962,7 @@ function Invoke-McpCompanionEnable($Summary, [string]$RequestedMarketplaceName, 
   }
 
   if ($Summary.codex_config.global_sympp_mcp_entry -eq $true) {
-    throw "Codex config already contains [mcp_servers.symphony_plus_plus]. Remove or relocate that global MCP entry before enabling the plugin companion in this config."
+    throw "Codex config already contains [mcp_servers.sympp]. Remove or relocate that global MCP entry before enabling the plugin companion in this config."
   }
 
   $companionPackage = Get-PreferredActivationPackage $Summary.installed_cache "symphony-plus-plus-mcp" $RequestedMarketplaceName
@@ -2512,8 +2512,8 @@ function Get-ReadinessSummary($CachePackages, $Config, [string]$MarketplaceName,
   }
 
   if ($Config.global_sympp_mcp_entry -eq $true) {
-    $warnings += New-ReadinessWarning "global_sympp_mcp_entry_present" "A top-level [mcp_servers.symphony_plus_plus] entry is present. Keep this out of generic worker/review configs unless every session using that config should see S++ MCP."
-    $actions += New-ReadinessAction "relocate_global_sympp_mcp_entry" "config" "Remove the top-level [mcp_servers.symphony_plus_plus] entry from generic configs, or move S++ MCP activation into a dedicated plugin-enabled S++ config/session."
+    $warnings += New-ReadinessWarning "global_sympp_mcp_entry_present" "A top-level [mcp_servers.sympp] entry is present. Keep this out of generic worker/review configs unless every session using that config should see S++ MCP."
+    $actions += New-ReadinessAction "relocate_global_sympp_mcp_entry" "config" "Remove the top-level [mcp_servers.sympp] entry from generic configs, or move S++ MCP activation into a dedicated plugin-enabled S++ config/session."
   }
 
   if ($defaultHomeMcpCompanionEnabled) {
@@ -2945,7 +2945,7 @@ Write-Host "  live erl sympp.mcp: $($summary.live_process_counts.erl_sympp_mcp)"
 Write-Host ""
 Write-Host "Installed cache:"
 foreach ($package in $summary.installed_cache) {
-  Write-Host "  $($package.marketplace_name)/$($package.package_name)/$($package.label): version=$($package.manifest_version) lifecycle=$($package.default_plugin_lifecycle_status) shape=$($package.mcp_shape) server=$($package.symphony_plus_plus_server) http=$($package.http_mcp_reachability_status) source=$($package.source_root_hint)"
+  Write-Host "  $($package.marketplace_name)/$($package.package_name)/$($package.label): version=$($package.manifest_version) lifecycle=$($package.default_plugin_lifecycle_status) shape=$($package.mcp_shape) server=$($package.sympp_server) http=$($package.http_mcp_reachability_status) source=$($package.source_root_hint)"
 }
 Write-Host ""
 Write-Host "Live repo roots:"

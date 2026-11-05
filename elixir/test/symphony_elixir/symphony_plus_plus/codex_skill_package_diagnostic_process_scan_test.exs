@@ -30,7 +30,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticProcessScan
         File.mkdir_p!(Path.dirname(default_cache_manifest_path))
         File.mkdir_p!(Path.dirname(diagnostic_path))
         copy_lifecycle_diagnostic!(diagnostic_path)
-        File.write!(default_cache_manifest_path, Jason.encode!(%{"name" => "symphony-plus-plus", "version" => default_version}))
+        File.write!(default_cache_manifest_path, Jason.encode!(%{"name" => "sympp", "version" => default_version}))
         File.write!(default_cache_hint_path, "C:/sympp/repo-one\n")
 
         File.mkdir_p!(Path.dirname(opt_in_cache_manifest_path))
@@ -77,7 +77,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticProcessScan
 
         assert Enum.any?(
                  caches,
-                 &(&1["package_name"] == "symphony-plus-plus" and
+                 &(&1["package_name"] == "sympp" and
                      &1["label"] == default_version and
                      &1["reference_mcp_server_status"] == "not_configured")
                )

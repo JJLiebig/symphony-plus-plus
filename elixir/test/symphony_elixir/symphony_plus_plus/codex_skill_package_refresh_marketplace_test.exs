@@ -14,7 +14,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshMarketplaceTes
         name: "jonat-local",
         plugins: [
           %{
-            name: "symphony-plus-plus",
+            name: "sympp",
             source: %{source: "local", path: "missing/symphony-plus-plus"},
             policy: %{installation: "AVAILABLE", authentication: "ON_USE"},
             category: "Coding"
@@ -65,7 +65,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshMarketplaceTes
         name: "jonat-local",
         plugins: [
           %{
-            name: "symphony-plus-plus",
+            name: "sympp",
             source: %{source: "local", path: "./plugins/symphony-plus-plus"},
             policy: %{installation: "AVAILABLE", authentication: "ON_USE"},
             category: "Coding"
@@ -98,7 +98,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshMarketplaceTes
         refreshed_manifest_path = plugin_cache_path(temp_codex_home, [@plugin_version, ".codex-plugin", "plugin.json"])
         refreshed_mcp_path = plugin_cache_path(temp_codex_home, [@plugin_version, ".mcp.json"])
 
-        assert refreshed_manifest_path |> File.read!() |> Jason.decode!() |> Map.fetch!("name") == "symphony-plus-plus"
+        assert refreshed_manifest_path |> File.read!() |> Jason.decode!() |> Map.fetch!("name") == "sympp"
         refute File.exists?(refreshed_mcp_path)
         refute File.exists?(plugin_cache_path(temp_codex_home, ["local"]))
       after

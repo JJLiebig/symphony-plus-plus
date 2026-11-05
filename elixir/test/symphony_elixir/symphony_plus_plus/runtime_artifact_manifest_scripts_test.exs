@@ -247,10 +247,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.RuntimeArtifactManifestScriptsTest do
         "schema_version" => 1,
         "status" => "built",
         "plugin" => %{
-          "marketplace" => "symphony-plus-plus",
+          "marketplace" => "sympp",
           "name" => "symphony-plus-plus-mcp",
           "version" => expected_mcp_plugin_version(),
-          "packages" => ["symphony-plus-plus", "symphony-plus-plus-mcp"]
+          "packages" => ["sympp", "symphony-plus-plus-mcp"]
         },
         "source_revision" => String.duplicate("a", 40),
         "platform" => "test-x64",

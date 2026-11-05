@@ -181,7 +181,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
       File.write!(
         stale_manifest_path,
         Jason.encode!(%{
-          "name" => "symphony-plus-plus",
+          "name" => "sympp",
           "version" => "0.1.1",
           "mcpServers" => "./.mcp.json"
         })
@@ -211,7 +211,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
       File.write!(
         bad_reference_manifest_path,
         Jason.encode!(%{
-          "name" => "symphony-plus-plus",
+          "name" => "sympp",
           "version" => "0.1.2"
         })
       )
@@ -306,7 +306,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheSelect
         assert bad_reference_cache["symphony_plus_plus_server"] == "incompatible_default_plugin_bundles_mcp"
 
         assert report["codex_config"]["symphony_plugin_enabled"] == true
-        assert Enum.any?(config_entries, &(&1["plugin_name"] == "symphony-plus-plus" and &1["enabled"] == false))
+        assert Enum.any?(config_entries, &(&1["plugin_name"] == "sympp" and &1["enabled"] == false))
         assert Enum.any?(config_entries, &(&1["plugin_name"] == "symphony-plus-plus-mcp" and &1["enabled"] == true))
 
         assert report["process_scan_scope"] == "skipped_no_repo_root_scope"

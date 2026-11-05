@@ -352,7 +352,7 @@ function Get-BetaCodexArguments($Config, [string]$SessionId) {
     "SYMPP_HOME", "SYMPP_RUNTIME_FILE", "SYMPP_LOG_DIR", "MIX_BUILD_ROOT",
     "SYMPP_REPO_ROOT", "SYMPP_DATABASE", "SYMPP_BACKEND_PORT", "SYMPP_DASHBOARD_PORT"
   ) | ForEach-Object { "$_=$($environment[$_] | ConvertTo-Json -Compress)" }
-  $mcpOverride = 'mcp_servers.symphony_plus_plus={command="cmd.exe",args=["/d","/s","/c","scripts\\start-sympp-mcp.cmd"],cwd="' + $pluginRoot + '",env={' + ($mcpEnvironment -join ",") + '},startup_timeout_sec=360,tool_timeout_sec=300}'
+  $mcpOverride = 'mcp_servers.sympp={command="cmd.exe",args=["/d","/s","/c","scripts\\start-sympp-mcp.cmd"],cwd="' + $pluginRoot + '",env={' + ($mcpEnvironment -join ",") + '},startup_timeout_sec=360,tool_timeout_sec=300}'
   $arguments = @("-c", $mcpOverride, "-C", $Config.worktree)
   if (-not [string]::IsNullOrWhiteSpace($SessionId)) { $arguments += @("resume", $SessionId) }
   return $arguments

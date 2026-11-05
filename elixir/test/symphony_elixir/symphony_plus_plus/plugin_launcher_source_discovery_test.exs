@@ -4,7 +4,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
   @moduletag :ci_slow
 
   @repo_root Path.expand("../../../../", __DIR__)
-  @plugin_marketplace_name "symphony-plus-plus"
+  @plugin_marketplace_name "sympp"
   @plugin_manifest_path Path.join(@repo_root, "plugins/symphony-plus-plus/.codex-plugin/plugin.json")
   @plugin_version @plugin_manifest_path |> File.read!() |> Jason.decode!() |> Map.fetch!("version")
   @mcp_plugin_start_script_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.ps1")
@@ -410,7 +410,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
       )
     end
 
-    write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "symphony-plus-plus")
+    write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "sympp")
     write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp"), "symphony-plus-plus-mcp", mcp?: true)
 
     marketplace_root
@@ -576,7 +576,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
     String.replace(id, ~r/[^A-Za-z0-9_.-]/, "-")
   end
 
-  defp plugin_cache_path(codex_home, suffix, plugin_name \\ "symphony-plus-plus") do
+  defp plugin_cache_path(codex_home, suffix, plugin_name \\ "sympp") do
     Path.join([codex_home, "plugins", "cache", @plugin_marketplace_name, plugin_name] ++ suffix)
   end
 end

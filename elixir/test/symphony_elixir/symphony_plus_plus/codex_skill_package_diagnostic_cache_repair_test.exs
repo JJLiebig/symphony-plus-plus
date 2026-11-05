@@ -88,7 +88,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageDiagnosticCacheRepair
         assert invalid_hint_readiness["source_checkout"]["status"] == "not_found"
 
         File.mkdir_p!(Path.dirname(installed_manifest_path))
-        File.write!(installed_manifest_path, Jason.encode!(%{"name" => "symphony-plus-plus", "version" => @plugin_version}))
+        File.write!(installed_manifest_path, Jason.encode!(%{"name" => "sympp", "version" => @plugin_version}))
 
         {hint_output, hint_status} = run_diagnostic.(temp_codex_home)
         assert hint_status == 0, hint_output

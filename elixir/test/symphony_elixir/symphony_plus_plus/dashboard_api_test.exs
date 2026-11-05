@@ -475,7 +475,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                    kind: "delegation",
                    phase_id: phase.id,
                    status: "planning",
-                   repo: "symphony-plus-plus",
+                   repo: "sympp",
                    base_branch: "main"
                  )
                )
@@ -496,11 +496,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert {:ok, board} = Dashboard.phase_board(repo, phase.id, status: "planning")
       assert [%{id: bare_id} = card] = board.groups["planning"]
       assert bare_id == bare.id
-      assert card.repo == "symphony-plus-plus"
-      assert card.repo_key == "symphony-plus-plus"
-      assert card.repo_display == "symphony-plus-plus"
+      assert card.repo == "sympp"
+      assert card.repo_key == "sympp"
+      assert card.repo_display == "sympp"
       assert card.repo_remote == "JJLiebig/sympp"
-      assert card.repo_aliases == ["JJLiebig/sympp", "symphony-plus-plus"]
+      assert card.repo_aliases == ["JJLiebig/sympp", "sympp"]
     end)
   end
 
@@ -1001,7 +1001,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         create_work_request!(repo,
           id: "WR-PERF-#{String.pad_leading(to_string(index), 2, "0")}",
           title: "Perf request #{String.pad_leading(to_string(index), 2, "0")}",
-          repo: "symphony-plus-plus",
+          repo: "sympp",
           base_branch: "main",
           status: "ready_for_clarification"
         )
@@ -1475,7 +1475,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                    repo,
                    WorkPackageFactory.attrs(
                      id: "SYMPP-REPO-IDENTITY",
-                     repo: "symphony-plus-plus",
+                     repo: "sympp",
                      base_branch: "main"
                    )
                  )
@@ -1483,7 +1483,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
         assert {:ok, _work_request} =
                  WorkRequestRepository.create(repo, %{
                    title: "Operator intake",
-                   repo: "symphony-plus-plus",
+                   repo: "sympp",
                    base_branch: "main",
                    work_type: "feature",
                    human_description: "Build the dashboard.",
@@ -1503,7 +1503,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         assert {:ok, bare_session} =
                  SoloSessionsService.create_or_attach_current(repo, %{
-                   repo: "symphony-plus-plus",
+                   repo: "sympp",
                    base_branch: "main",
                    workspace_path: Path.join(@repo_root, "repo-identity-bare"),
                    caller_id: "repo-identity-bare",
@@ -1531,19 +1531,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         refute Enum.any?(deferred_payload["work_packages"], &(&1["id"] == work_package.id))
 
-        assert [%{"repo_key" => "symphony-plus-plus", "repo_remote" => "JJLiebig/sympp"}] =
+        assert [%{"repo_key" => "sympp", "repo_remote" => "JJLiebig/sympp"}] =
                  payload["work_requests"]["work_requests"]
 
-        assert [%{"work_request" => %{"repo_key" => "symphony-plus-plus", "repo_remote" => "JJLiebig/sympp"}}] =
+        assert [%{"work_request" => %{"repo_key" => "sympp", "repo_remote" => "JJLiebig/sympp"}}] =
                  deferred_payload["work_request_details"]
 
         assert [
                  %{
-                   "repo" => "symphony-plus-plus",
-                   "repo_key" => "symphony-plus-plus",
-                   "repo_display" => "symphony-plus-plus",
+                   "repo" => "sympp",
+                   "repo_key" => "sympp",
+                   "repo_display" => "sympp",
                    "repo_remote" => "JJLiebig/sympp",
-                   "repo_aliases" => ["JJLiebig/sympp", "symphony-plus-plus"]
+                   "repo_aliases" => ["JJLiebig/sympp", "sympp"]
                  }
                ] = deferred_payload["guidance_requests"]["guidance_requests"]
 
@@ -1557,8 +1557,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         solo_sessions = solo_payload["solo_sessions"]["solo_sessions"]
         assert Enum.map(solo_sessions, & &1["id"]) |> Enum.sort() == Enum.sort([owner_session.id, bare_session.id])
-        assert Enum.all?(solo_sessions, &(&1["repo_key"] == "symphony-plus-plus"))
-        assert Enum.all?(solo_sessions, &(&1["repo_display"] == "symphony-plus-plus"))
+        assert Enum.all?(solo_sessions, &(&1["repo_key"] == "sympp"))
+        assert Enum.all?(solo_sessions, &(&1["repo_display"] == "sympp"))
         assert Enum.all?(solo_sessions, &(&1["repo_remote"] == "JJLiebig/sympp"))
 
         assert {:ok, repo_identity_catalog} = Dashboard.local_operator_repo_identity_catalog(repo)
@@ -1566,16 +1566,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
         assert [
                  %{
-                   repo_key: "symphony-plus-plus",
-                   repo_display: "symphony-plus-plus",
+                   repo_key: "sympp",
+                   repo_display: "sympp",
                    repo_remote: "JJLiebig/sympp",
-                   repo_aliases: ["JJLiebig/sympp", "symphony-plus-plus"],
+                   repo_aliases: ["JJLiebig/sympp", "sympp"],
                    base_branch: "main",
                    solo_session_count: 2
                  } = stream
                ] = streams
 
-        assert stream.repo == "symphony-plus-plus"
+        assert stream.repo == "sympp"
       end)
     end)
   end
@@ -1585,7 +1585,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       work_request =
         create_work_request!(repo,
           id: "WR-DASHBOARD-LOCAL-INVALIDATE",
-          repo: "symphony-plus-plus",
+          repo: "sympp",
           base_branch: "main",
           status: "ready_for_slicing"
         )
@@ -1801,7 +1801,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
       assert {:ok, work_request} =
                WorkRequestRepository.create(repo, %{
                  title: "Scoped detail request",
-                 repo: "symphony-plus-plus",
+                 repo: "sympp",
                  base_branch: "main",
                  work_type: "feature",
                  human_description: "Keep detail identity scoped.",
@@ -1812,7 +1812,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       assert {:ok, solo_session} =
                SoloSessionsService.create_or_attach_current(repo, %{
-                 repo: "symphony-plus-plus",
+                 repo: "sympp",
                  base_branch: "main",
                  workspace_path: Path.join(@repo_root, "repo-detail-scoped-solo"),
                  caller_id: "repo-detail-scoped-solo",
@@ -1821,11 +1821,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
 
       assert {:ok, request_detail} = Dashboard.work_request_detail(repo, work_request.id)
       assert request_detail.work_request.repo_remote == nil
-      assert request_detail.work_request.repo_aliases == ["symphony-plus-plus"]
+      assert request_detail.work_request.repo_aliases == ["sympp"]
 
       assert {:ok, solo_detail} = Dashboard.solo_session_detail(repo, solo_session.id)
       assert solo_detail.solo_session.repo_remote == nil
-      assert solo_detail.solo_session.repo_aliases == ["symphony-plus-plus"]
+      assert solo_detail.solo_session.repo_aliases == ["sympp"]
     end)
   end
 
@@ -2111,7 +2111,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                json_response(
                  post(conn, "/api/v1/sympp/operator/work-requests", %{
                    "title" => "Cross-origin request",
-                   "repo" => "symphony-plus-plus",
+                   "repo" => "sympp",
                    "base_branch" => "main"
                  }),
                  401
@@ -2659,7 +2659,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                json_response(
                  post(conn, "/api/v1/sympp/operator/work-requests", %{
                    "title" => "Cross-origin request",
-                   "repo" => "symphony-plus-plus",
+                   "repo" => "sympp",
                    "base_branch" => "main"
                  }),
                  401
@@ -4183,7 +4183,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
   defp create_solo_session!(repo, caller_id) do
     assert {:ok, session} =
              SoloSessionsService.create_or_attach_current(repo, %{
-               repo: "symphony-plus-plus",
+               repo: "sympp",
                base_branch: "main",
                workspace_path: Path.join(@repo_root, "solo-retention-#{caller_id}"),
                caller_id: caller_id,

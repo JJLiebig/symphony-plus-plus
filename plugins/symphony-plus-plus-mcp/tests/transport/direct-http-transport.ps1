@@ -167,7 +167,7 @@ function Assert-StaticContract {
   $configPath = Join-Path $repoRoot "plugins/symphony-plus-plus-mcp/.mcp.json"
   $cutoverPath = Join-Path $repoRoot "scripts/sympp-mcp-cutover.ps1"
   $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-  $server = $config.symphony_plus_plus
+  $server = $config.sympp
 
   $expectedEnvVars = @(
     "CODEX_HOME", "SYMPP_HOME", "SYMPP_DATABASE", "SYMPP_BACKEND_PORT",

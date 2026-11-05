@@ -18,7 +18,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageRefreshMcpOnlyTest do
 
         File.write!(
           stale_manifest_path,
-          Jason.encode!(%{"name" => "symphony-plus-plus", "version" => "0.1.1", "mcpServers" => "./.mcp.json"})
+          Jason.encode!(%{"name" => "sympp", "version" => "0.1.1", "mcpServers" => "./.mcp.json"})
         )
 
         File.write!(stale_mcp_path, Jason.encode!(%{"symphony_plus_plus" => %{"type" => "stdio", "command" => "pwsh", "args" => ["-NoProfile"], "cwd" => "."}}))

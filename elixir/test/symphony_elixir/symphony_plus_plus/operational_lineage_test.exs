@@ -229,7 +229,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.OperationalLineageTest do
                    [
                      kind: "mcp",
                      title: "Lineage package",
-                     repo: "symphony-plus-plus",
+                     repo: "sympp",
                      base_branch: "main",
                      status: "ready_for_worker",
                      policy_template: "mcp"

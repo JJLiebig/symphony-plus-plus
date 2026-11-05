@@ -392,7 +392,7 @@ defmodule Mix.Tasks.Sympp.CockpitTest do
     assert {:ok, request} =
              WorkRequestRepository.create(Repo, %{
                title: "Finished request",
-               repo: "symphony-plus-plus",
+               repo: "sympp",
                base_branch: "main",
                work_type: "feature",
                human_description: "Already done.",

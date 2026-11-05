@@ -107,7 +107,7 @@ function Read-CodexMcpStatus([string]$Codex, [hashtable]$Environment) {
   if ($HostedProcessCreation) {
     # Pass only the existing backend-creation seam through Codex's env allowlist.
     # The generated MCP command, args and runtime selections stay untouched.
-    $arguments += @("-c", 'mcp_servers.symphony_plus_plus.env_vars=["SYMPP_POWERSHELL","SYMPP_TEST_REAL_POWERSHELL","SYMPP_TEST_BACKEND_PRELOAD","SYMPP_LAUNCHER_TRACE_DIR"]')
+    $arguments += @("-c", 'mcp_servers.sympp.env_vars=["SYMPP_POWERSHELL","SYMPP_TEST_REAL_POWERSHELL","SYMPP_TEST_BACKEND_PRELOAD","SYMPP_LAUNCHER_TRACE_DIR"]')
   }
   $process = Start-IsolatedProcess $Codex $arguments $Environment
   $stderr = $process.StandardError.ReadToEndAsync()
@@ -125,7 +125,7 @@ function Read-CodexMcpStatus([string]$Codex, [hashtable]$Environment) {
       } while ($response.id -ne $request.id)
       if ($response.error) { throw "Native Codex request failed: $($line.Result)" }
     }
-    $server = @($response.result.data | Where-Object name -eq 'symphony_plus_plus')[0]
+    $server = @($response.result.data | Where-Object name -eq 'sympp')[0]
     Write-Host ("Native Codex MCP status: " + (@{ name = $server.name; server_info = $server.serverInfo; tools_count = @($server.tools.PSObject.Properties).Count; tools_error = $server.toolsError; health_discovered = [bool]$server.tools.'sympp.health' } | ConvertTo-Json -Depth 6 -Compress))
     return $server
   } finally {
@@ -270,7 +270,7 @@ try {
       $manifest | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $floatingManifest
       @{ schema_version = 1; channels = @{ stable = @{ manifest = @{ path = $floatingManifest } }; beta = @{ manifest = @{ path = $floatingManifest } } } } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedRoot '.sympp-runtime-artifacts.json')
-      @{ version = 1; skills = @{ 'symphony-plus-plus' = @{ source = 'JJLiebig/sympp'; sourceType = 'github'; ref = 'beta' } } } |
+      @{ version = 1; skills = @{ 'sympp' = @{ source = 'JJLiebig/sympp'; sourceType = 'github'; ref = 'beta' } } } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $tempRoot 'skills-lock.json')
       Copy-Item -LiteralPath (Join-Path $tempRoot 'skills-lock.json') -Destination (Join-Path $skillsWorkspace 'skills-lock.json') -Force
       $codexHome = Join-Path $tempRoot "selected codex home"
@@ -351,8 +351,8 @@ try {
           (Get-Content $claudeFile -Raw) -cne $savedClaude) { throw 'Repeat setup changed unrelated or already managed configuration.' }
       $listed = Read-IsolatedCommand $codex @("mcp", "list", "--json") $environment
       if ($listed.exit -ne 0) { throw 'Native Codex could not read setup registration.' }
-      $registration = @(($listed.stdout | ConvertFrom-Json) | Where-Object name -eq 'symphony_plus_plus')[0]
-      $claude = (Get-Content (Join-Path $tempRoot '.mcp.json') -Raw | ConvertFrom-Json).mcpServers.symphony_plus_plus
+      $registration = @(($listed.stdout | ConvertFrom-Json) | Where-Object name -eq 'sympp')[0]
+      $claude = (Get-Content (Join-Path $tempRoot '.mcp.json') -Raw | ConvertFrom-Json).mcpServers.sympp
       Write-Host ("Generated Codex registration: " + ($registration | ConvertTo-Json -Depth 10 -Compress))
       Write-Host ("Generated Claude registration: " + ($claude | ConvertTo-Json -Depth 10 -Compress))
       if ($registration.transport.command -cne $claude.command -or

@@ -75,7 +75,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
         Server.new(local_mcp_config(repo), state_key: state_key)
       )
 
-    assert get_in(init_response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
+    assert get_in(init_response, ["result", "serverInfo", "name"]) == "sympp"
     assert get_in(claim_response, ["result", "structuredContent", "assignment", "work_package_id"]) == package.id
     refute inspect(claim_response) =~ minted.work_key.secret
     assert get_in(assignment_response, ["result", "structuredContent", "assignment"]) == nil
@@ -145,7 +145,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
       end)
       |> Task.await()
 
-    assert get_in(init_response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
+    assert get_in(init_response, ["result", "serverInfo", "name"]) == "sympp"
     assert is_list(get_in(tools_response, ["result", "tools"]))
   end
 
@@ -164,7 +164,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
         Server.new(Config.default(repo: UnexpectedAuthRepo), state_key: state_key)
       )
 
-    assert get_in(init_response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
+    assert get_in(init_response, ["result", "serverInfo", "name"]) == "sympp"
     assert get_in(other_repo_response, ["error", "data", "reason"]) == "server_not_initialized"
   end
 
@@ -259,7 +259,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
 
     fresh_tools_by_name = fresh_tools_response |> get_in(["result", "tools"]) |> Map.new(&{&1["name"], &1})
 
-    assert get_in(reinit_response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
+    assert get_in(reinit_response, ["result", "serverInfo", "name"]) == "sympp"
 
     assert tools_by_name == fresh_tools_by_name
 
@@ -267,7 +267,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ClaimSessionTransport04Test do
     assert get_in(stale_solo_response, ["error", "data", "action"]) == "claim_local_assignment"
     assert [%{"id" => stale_comment_id}] = get_in(stale_list_comments_response, ["result", "structuredContent", "comments"])
     assert stale_comment_id == comment.id
-    assert get_in(fresh_init_response, ["result", "serverInfo", "name"]) == "symphony-plus-plus"
+    assert get_in(fresh_init_response, ["result", "serverInfo", "name"]) == "sympp"
     assert Map.has_key?(tools_by_name, "get_current_assignment")
     assert Map.has_key?(fresh_tools_by_name, "read_work_request")
     assert Map.has_key?(fresh_tools_by_name, "claim_local_architect_assignment")

@@ -14,7 +14,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageEnableParserSensitive
         ~s(note = \"\"\"\n) <>
         ~s(enabled = false\n) <>
         ~s([plugins."not-a-real-section@jonat-local"]\n) <>
-        ~s([mcp_servers.symphony_plus_plus]\n) <>
+        ~s([mcp_servers.sympp]\n) <>
         ~s(\"\"\"\n)
 
     if powershell do
@@ -48,7 +48,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageEnableParserSensitive
         config = File.read!(Path.join(temp_codex_home, "config.toml"))
 
         assert normalize_newlines(config) =~
-                 ~s(note = \"\"\"\nenabled = false\n[plugins."not-a-real-section@jonat-local"]\n[mcp_servers.symphony_plus_plus]\n\"\"\")
+                 ~s(note = \"\"\"\nenabled = false\n[plugins."not-a-real-section@jonat-local"]\n[mcp_servers.sympp]\n\"\"\")
 
         {doctor_json, doctor_status} =
           System.cmd(

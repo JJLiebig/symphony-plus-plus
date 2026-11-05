@@ -42,7 +42,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
       @mcp_plugin_start_cmd_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/start-sympp-mcp.cmd")
       @mcp_plugin_helper_path Path.join(@repo_root, "plugins/symphony-plus-plus-mcp/scripts/sympp-mcp-launcher-helpers.ps1")
       @marketplace_path Path.join(@repo_root, ".agents/plugins/marketplace.json")
-      @plugin_marketplace_name "symphony-plus-plus"
+      @plugin_marketplace_name "sympp"
       @plugin_readme_path Path.join(@repo_root, "plugins/symphony-plus-plus/README.md")
       @refresh_script_path Path.join(@repo_root, "scripts/refresh-local-plugin.ps1")
       @smoke_script_path Path.join(@repo_root, "scripts/smoke-sympp-mcp-http.ps1")
@@ -144,7 +144,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
       defp command_mcp_config_json, do: Jason.encode!(command_mcp_config())
 
       defp write_activation_cache(codex_home, marketplace_name) do
-        write_activation_cache_plugin(codex_home, marketplace_name, "symphony-plus-plus")
+        write_activation_cache_plugin(codex_home, marketplace_name, "sympp")
         write_activation_cache_plugin(codex_home, marketplace_name, "symphony-plus-plus-mcp")
       end
 
@@ -184,11 +184,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageCase do
       defp documented_mcp_server_map(%{"mcp_servers" => server_map}), do: server_map
       defp documented_mcp_server_map(server_map), do: server_map
 
-      defp published_plugin_cache_path(codex_home, suffix, plugin_name \\ "symphony-plus-plus") do
+      defp published_plugin_cache_path(codex_home, suffix, plugin_name \\ "sympp") do
         plugin_cache_path(codex_home, suffix, plugin_name, @plugin_marketplace_name)
       end
 
-      defp plugin_cache_path(codex_home, suffix, plugin_name \\ "symphony-plus-plus", marketplace_name \\ "jonat-local") do
+      defp plugin_cache_path(codex_home, suffix, plugin_name \\ "sympp", marketplace_name \\ "jonat-local") do
         Path.join([codex_home, "plugins", "cache", marketplace_name, plugin_name] ++ suffix)
       end
     end

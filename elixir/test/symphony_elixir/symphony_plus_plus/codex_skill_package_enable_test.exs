@@ -61,7 +61,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.CodexSkillPackageEnableTest do
         assert config =~ ~s([plugins."unrelated@jonat-local"])
         assert config =~ "[mcp_servers.other]"
         assert config =~ "caf\u00e9"
-        refute config =~ "[mcp_servers.symphony_plus_plus]"
+        refute config =~ "[mcp_servers.sympp]"
 
         backups = config_backups(temp_codex_home)
         assert length(backups) == 1

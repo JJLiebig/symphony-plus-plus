@@ -19,7 +19,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02BareOriginTest 
         repo,
         "SYMPP-ARCHITECT-WORKTREE-BARE-ORIGIN",
         ["dispatch:work_request"],
-        repo: "symphony-plus-plus"
+        repo: "sympp"
       )
 
     work_request =

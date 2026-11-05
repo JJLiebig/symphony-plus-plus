@@ -251,11 +251,11 @@ function Assert-InstalledCommandMcpConfig([string]$InstalledPluginRoot, [int]$Ba
   Require-File (Join-Path $InstalledPluginRoot "scripts\start-sympp-mcp.cmd") "Installed MCP launcher command" | Out-Null
   $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
   $servers = if ($config.PSObject.Properties["mcp_servers"]) { $config.mcp_servers } else { $config }
-  $serverProperty = $servers.PSObject.Properties["symphony_plus_plus"]
+  $serverProperty = $servers.PSObject.Properties["sympp"]
   $expectedUrl = "http://127.0.0.1:$BackendPort/mcp"
 
   if ($null -eq $serverProperty) {
-    throw "Installed sympp MCP config does not define symphony_plus_plus."
+    throw "Installed sympp MCP config does not define sympp."
   }
   $server = $serverProperty.Value
   if ($server.PSObject.Properties["url"]) {

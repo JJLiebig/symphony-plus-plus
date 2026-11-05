@@ -86,7 +86,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLifecycleDiagnosticCase do
           )
         end
 
-        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "symphony-plus-plus")
+        write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus"), "sympp")
         write_cache_manifest(Path.join(marketplace_root, "plugins/symphony-plus-plus-mcp"), "symphony-plus-plus-mcp", mcp?: true)
 
         marketplace_root
@@ -136,7 +136,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLifecycleDiagnosticCase do
               "marketplace" => @plugin_marketplace_name,
               "name" => "symphony-plus-plus-mcp",
               "version" => @plugin_version,
-              "packages" => ["symphony-plus-plus", "symphony-plus-plus-mcp"]
+              "packages" => ["sympp", "symphony-plus-plus-mcp"]
             },
             "artifacts" => [artifact]
           }
