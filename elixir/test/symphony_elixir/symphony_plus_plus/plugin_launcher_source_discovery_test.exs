@@ -321,6 +321,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.PluginLauncherSourceDiscoveryTest do
 
   defp windows?, do: match?({:win32, _name}, :os.type())
 
+  defp normalize_path_fragment(value) do
+    value
+    |> String.replace("\\", "/")
+    |> String.downcase()
+  end
+
   defp unique_temp_path(prefix) do
     Path.join(System.tmp_dir!(), "#{prefix}-#{unique_id()}")
   end
