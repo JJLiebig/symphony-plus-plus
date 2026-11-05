@@ -130,6 +130,10 @@ cp.spawnSync = (command, args, options) => {
   assert.equal(run('--host', 'codex', '--server', 'http://127.0.0.1:21783').status, 0);
   const config = path.join(env.CODEX_HOME, 'config.toml');
   fs.writeFileSync(config, '');
+  env.CODEX_HOME = path.join(root, 'other-codex');
+  env.HERDR_APP_HOME = path.join(root, 'other-herdr');
+  env.SYMPP_REMOTE_HOME = '/wrong-factory';
+  env.SYMPP_REMOTE_PORT = '21999';
   let result = run('update');
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(fs.readFileSync(config, 'utf8'), /21783/);

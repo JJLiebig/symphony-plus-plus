@@ -226,7 +226,7 @@ function main(args) {
   let skillCwd = root;
   while (!fs.existsSync(path.join(skillCwd, 'skills-lock.json')) && path.dirname(skillCwd) !== skillCwd) skillCwd = path.dirname(skillCwd);
   if (!fs.existsSync(path.join(skillCwd, 'skills-lock.json'))) skillCwd = process.cwd();
-  require("./sympp-command.js").saveConnection({ env, setup: { cwd: process.cwd(), skillCwd, global: isGlobalInstall(), hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].filter(key => process.env[key]).map(key => [key, process.env[key]])) } });
+  require("./sympp-command.js").saveConnection({ env, setup: { cwd: isGlobalInstall() ? os.homedir() : process.cwd(), skillCwd: isGlobalInstall() ? os.homedir() : skillCwd, homes: Object.fromEntries(['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'HERDR_APP_HOME'].map(key => [key, process.env[key] ? path.resolve(process.env[key]) : ''])), global: isGlobalInstall(), hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].map(key => [key, process.env[key] || ''])) } });
   emit("channel", server ? "remote" : env.SYMPP_RUNTIME_CHANNEL);
   emit("install", install.payload_sha256);
   if (hosts.includes("claude") && !globalClaude) emit("claude_next", "Project configuration is ready. An existing Claude local registration takes precedence: remove its sympp entry before opening a fresh session here.");
