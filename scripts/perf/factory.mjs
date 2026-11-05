@@ -42,8 +42,13 @@ try {
             const start = performance.now();
             const response = await fetch(`${base}/api/v1/sympp/herdr/dashboard`);
             const text = await response.text();
-            if (!response.ok || !Array.isArray(JSON.parse(text).work_request_details)) throw Error("Invalid board");
+            let validBoard = false;
+            try { validBoard = Array.isArray(JSON.parse(text).work_request_details); } catch {}
             metric = { ms: performance.now() - start, bytes: Buffer.byteLength(text), queries: Number(response.headers.get("x-perf-queries")) };
+            if (!response.ok || !validBoard) {
+              raw.push({ operation, concurrency, ...metric, failed: true, status: response.status });
+              throw Error(`Invalid board: HTTP ${response.status}`);
+            }
           } else {
             const args = operation === "list_work_requests" ? {} : { work_request_id: "WR-FIXTURE-FANOUT" };
             if (operation === "dispatch_work_package") args.work_package_id = `WP-PERF-${++dispatch}`;

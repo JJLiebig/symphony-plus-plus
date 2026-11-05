@@ -34,6 +34,8 @@ jobs:
           install: true
           cache: true
           working_directory: elixir
+      - name: Verify failed measurements retain evidence
+        run: node --test scripts/perf/factory.test.mjs
       - name: Build isolated packaged server
         working-directory: elixir
         run: |
