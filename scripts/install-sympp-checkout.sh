@@ -3,6 +3,8 @@ set -euo pipefail
 
 [[ "$(uname -s)" == Linux ]] || { echo 'This installer requires Linux.' >&2; exit 1; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export SYMPP_SERVICE_SOURCE="$repo_root"
+export SYMPP_SERVICE_REF="${SYMPP_SERVICE_REF:-$(git -C "$repo_root" symbolic-ref --short -q HEAD || echo beta)}"
 export SYMPP_HOME="${SYMPP_HOME:-$HOME/.agents/splusplus}"
 export SYMPP_REPOS_ROOT="${SYMPP_REPOS_ROOT:-$HOME/Code}"
 export SYMPP_DATABASE="${SYMPP_DATABASE:-$SYMPP_HOME/symphony_plus_plus.sqlite3}"
@@ -44,6 +46,8 @@ env = {
     'HOME': os.environ['HOME'],
     'PATH': os.environ['PATH'],
     'SYMPP_HOME': home,
+    'SYMPP_SERVICE_SOURCE': os.environ['SYMPP_SERVICE_SOURCE'],
+    'SYMPP_SERVICE_REF': os.environ['SYMPP_SERVICE_REF'],
     'SYMPP_DATABASE': os.environ['SYMPP_DATABASE'],
     'SYMPP_REPOS_ROOT': os.environ['SYMPP_REPOS_ROOT'],
     'SYMPP_SOURCE_REVISION': os.environ['SYMPP_SOURCE_REVISION'],

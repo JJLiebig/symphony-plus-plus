@@ -39,6 +39,21 @@ const runtimeFiles = (await readdir(resolve(plugin, 'scripts')))
   .filter(name => /\.(ps1|cmd|js|sh)$/.test(name)).map(name => `scripts/${name}`);
 runtimeFiles.push('assets/sympp-runtime-artifacts.json');
 const payloadHash = createHash('sha256');
+async function panelBody(path) {
+  const body = await readFile(path);
+  return path.endsWith('.png') ? body : body.toString('utf8').replace(/\r\n/g, '\n');
+}
+async function panelFiles(directory, prefix = '') {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const name = prefix + entry.name;
+    if (entry.isDirectory()) await panelFiles(resolve(directory, entry.name), name + '/');
+    else outputs.set(resolve(bundle, 'integrations/herdr-next', name), await panelBody(resolve(directory, entry.name)));
+  }
+}
+for (const name of ['install.mjs', 'chrome.mjs']) outputs.set(resolve(bundle, 'integrations/herdr-next', name), await panelBody(resolve(repo, 'integrations/herdr-next', name)));
+await panelFiles(resolve(repo, 'integrations/herdr-next/mods/sympp'), 'mods/sympp/');
+for (const name of (await readdir(resolve(repo, 'integrations/herdr-next/chrome'))).filter(name => name.endsWith('.mjs'))) outputs.set(resolve(bundle, 'integrations/herdr-next/chrome', name), await panelBody(resolve(repo, 'integrations/herdr-next/chrome', name)));
+
 for (const name of runtimeFiles.sort()) {
   const body = (await readFile(resolve(plugin, name), 'utf8')).replace(/\r\n/g, '\n');
   outputs.set(resolve(bundle, name), body);
@@ -46,7 +61,9 @@ for (const name of runtimeFiles.sort()) {
 outputs.set(resolve(bundle, 'scripts/sympp_beta_snapshot.py'),
   (await readFile(resolve(repo, 'scripts/sympp_beta_snapshot.py'), 'utf8')).replace(/\r\n/g, '\n'));
 for (const name of [...outputs.keys()].map(path => portablePath(relative(bundle, path))).sort()) {
-  payloadHash.update(`${name}\n${outputs.get(resolve(bundle, name))}\n`);
+  payloadHash.update(`${name}\n`);
+  payloadHash.update(outputs.get(resolve(bundle, name)));
+  payloadHash.update('\n');
 }
 const manifest = JSON.parse(await readFile(resolve(plugin, '.codex-plugin/plugin.json'), 'utf8'));
 const contract = JSON.parse(await readFile(resolve(repo, 'elixir/priv/symphony_plus_plus/mcp_contract.json'), 'utf8'));
@@ -57,8 +74,8 @@ outputs.set(resolve(bundle, '.sympp-install.json'), JSON.stringify({
 }, null, 2) + '\n');
 for (const [path, body] of outputs) {
   if (check) {
-    const actual = await readFile(path, 'utf8').catch(() => '');
-    if (actual.replace(/\r\n/g, '\n') !== body) throw new Error(`Stale portable payload: ${portablePath(relative(repo, path))}`);
+    const actual = await readFile(path).catch(() => Buffer.alloc(0));
+    if (Buffer.isBuffer(body) ? !actual.equals(body) : actual.toString('utf8').replace(/\r\n/g, '\n') !== body) throw new Error(`Stale portable payload: ${portablePath(relative(repo, path))}`);
   } else {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, body);

@@ -17,13 +17,13 @@ test("global Claude setup owns only its user entry and project setup remains loc
   fs.writeFileSync(path.join(bin, "claude.cmd"), `@"${found.stdout.trim().split(/\r?\n/)[0]}" %*\r\n`);
   const global = path.join(home, ".agents", "skills", "sympp"), local = path.join(project, ".agents", "skills", "sympp");
   for (const root of [global, local]) {
-    fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+    fs.cpSync(path.resolve(__dirname, "../../../../skills/sympp"), root, { recursive: true });
     for (const name of ["setup-sympp.js", "sympp-command.js"]) fs.copyFileSync(path.resolve(__dirname, "../../scripts", name), path.join(root, "scripts", name));
     fs.writeFileSync(path.join(root, ".sympp-install.json"), JSON.stringify({ version: "test", payload_sha256: "test" }));
   }
   fs.writeFileSync(path.join(home, ".agents", ".skill-lock.json"), JSON.stringify({ skills: { "sympp": { sourceType: "local" } } }));
   fs.writeFileSync(path.join(project, "skills-lock.json"), JSON.stringify({ skills: { "sympp": { sourceType: "local" } } }));
-  const env = { ...process.env, ...isolatedPathEnv(tmp), USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: config, PATH: bin + path.delimiter + process.env.PATH, XDG_STATE_HOME: "" };
+  const env = { ...process.env, ...isolatedPathEnv(tmp), USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: config, PATH: bin + path.delimiter + process.env.PATH, XDG_STATE_HOME: "", HERDR_APP_HOME: path.join(tmp, "herdr"), SYMPP_HOME: path.join(tmp, "sympp") };
   const run = (root, cwd = project) => spawnSync(process.execPath, [path.join(root, "scripts", "setup-sympp.js"), "--host", "claude"], { cwd, env, encoding: "utf8" });
   const cfg = path.join(config, ".claude.json"), mcp = path.join(project, ".mcp.json");
   let result = run(global); assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -86,7 +86,7 @@ cp.spawnSync = (command, args, options) => command === 'powershell.exe' && args.
 test('remote setup registers a launchable bridge in selected Codex and user Claude homes', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-remote-setup-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const env = { ...process.env, ...isolatedPathEnv(root), HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), SYMPP_HOME: path.join(root, 'sympp') };
+  const env = { ...process.env, ...isolatedPathEnv(root), HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), HERDR_APP_HOME: path.join(root, 'herdr'), SYMPP_HOME: path.join(root, 'sympp') };
   fs.mkdirSync(env.SYMPP_HOME, { recursive: true });
   fs.writeFileSync(path.join(env.SYMPP_HOME, 'remote-token'), 'server-token-must-survive');
   const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/setup-sympp.js'), '--host', 'both', '--server', 'http://127.0.0.1:19998'], { env, cwd: root, encoding: 'utf8', windowsHide: true });

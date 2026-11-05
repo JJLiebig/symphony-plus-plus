@@ -24,7 +24,9 @@ upgrade, and connection recovery.
 
 If sympp tools are missing, first ask: "This machine or a server (SSH host)?"
 Then run `node <installed-skill>/scripts/setup-sympp.js` for this machine, or
-append `--server <ssh-host>`. Setup installs the `sympp` command. Open a fresh
+append `--server <ssh-host>`. Setup installs the `sympp` command and, when Herdr-app is present, its panel.
+Use `sympp update` later to update the skill, reconnect hosts and panel, and
+update the factory over the saved SSH host. Open a fresh
 agent session after setup. See [MCP connection](connection.md) for recovery.
 
 Invoke this skill as `$sympp` in Codex or `/sympp` in

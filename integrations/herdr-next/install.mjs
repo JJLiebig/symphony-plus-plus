@@ -2,10 +2,14 @@
 import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { planInstall, planRemoval } from './chrome.mjs';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const scripts = resolve(here, '../../scripts');
+const helperScripts = (await contents(join(scripts, 'sympp-herdr.js'))) ? scripts : resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts');
 
 const help = `Install the optional native sympp view into Herdr-app.
 Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [options]
@@ -95,7 +99,7 @@ async function main() {
       server: { type: 'string' }, endpoint: { type: 'string' }, factory: { type: 'string' }, home: { type: 'string' },
       open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' }, mark: { type: 'string' },
       replace: { type: 'boolean' }, lab: { type: 'boolean' }, help: { type: 'boolean' },
-      chrome: { type: 'boolean' }, 'remove-chrome': { type: 'boolean' },
+      chrome: { type: 'boolean' }, 'auto-chrome': { type: 'boolean' }, 'token-file': { type: 'string' }, 'remove-chrome': { type: 'boolean' },
     } }));
   } catch (error) {
     emit({ error: error.message, help });
@@ -115,7 +119,7 @@ async function main() {
     emit({ error: '--server cannot be combined with --endpoint, --factory or --lab' });
     return 2;
   }
-  const remoteSetup = values.server ? (await import('../../plugins/symphony-plus-plus-mcp/scripts/sympp-remote.js')).default : null;
+  const remoteSetup = values.server ? (await import(pathToFileURL(join(helperScripts, 'sympp-remote.js')).href)).default : null;
   const remote = values.server ? remoteSetup.serverConnection(values.server) : null;
   if (remote) values.endpoint = remote.endpoint;
   const badOpen = values.open && !['overview', 'panel'].includes(values.open);
@@ -138,7 +142,6 @@ async function main() {
   const home = resolve(values.home || process.env.HERDR_APP_HOME || join(homedir(), '.config', 'herdr-app'));
   const mod = values.lab ? 'sympp-lab' : 'sympp';
   const target = join(home, 'mods', mod);
-  const here = dirname(fileURLToPath(import.meta.url));
   const helper = join(home, 'tools', 'sympp-herdr.js');
   const source = join(here, 'mods', mod);
   const markSource = values.mark && values.mark !== 'a' ? join(here, 'marks', values.mark) : source;
@@ -147,7 +150,7 @@ async function main() {
     from: join(!values.lab && /^(glyph|mark)[.-]/.test(name) ? markSource : source, name), to: join(target, name),
   }));
   if (!values.lab) {
-    sources.push({ from: resolve(here, '../../plugins/symphony-plus-plus-mcp/scripts/sympp-herdr.js'), to: helper });
+    sources.push({ from: join(helperScripts, 'sympp-herdr.js'), to: helper });
   }
   const files = await Promise.all(sources.map(async ({ from, to }) => ({
     to, body: await readFile(from), existing: await contents(to),
@@ -163,21 +166,37 @@ async function main() {
     const session = values.session || process.env.HC_SESSION;
     const factory = values.factory || process.env.SYMPP_RUNTIME_FILE || (process.env.SYMPP_HOME && join(process.env.SYMPP_HOME, 'runtime', 'codex-plugin.json'));
     const hosts = { local: { ...(factory ? { runtime: resolve(factory) } : {}), node: process.execPath, helper, ...(session ? { session } : {}) } };
-    props = { endpoint, hosts, remote: Boolean(remote) };
-    if (remote) delete hosts.local.runtime;
+    props = { endpoint, hosts, remote: Boolean(remote || values['token-file']) };
+    if (remote || values['token-file']) delete hosts.local.runtime;
   }
-  const chrome = values.chrome ? await planInstall(home, { ...props, role: 'panel' }, values.session) : null;
+  let chrome = values.chrome || values['auto-chrome'] ? await planInstall(home, { ...props, role: 'panel' }, values.session) : null;
+  if (chrome?.noDesk && values['auto-chrome']) chrome = null;
   if (chrome?.missing) {
     emit({ error: 'The sympp chrome needs your desk layout and mods; no files were changed', missing: chrome.missing });
     return 1;
   }
+  const connectionWrites = [];
+  if (!values.lab && values['auto-chrome'] && !chrome) {
+    const file = join(home, 'shared.json');
+    const shared = JSON.parse((await contents(file))?.toString() || '{}');
+    if (JSON.stringify(shared['sympp.connection']) !== JSON.stringify(props)) {
+      shared['sympp.connection'] = props;
+      connectionWrites.push({ to: file, body: JSON.stringify(shared, null, 2) + '\n' });
+    }
+  }
+  const backupId = new Date().toISOString().replaceAll(':', '-') + '-' + process.pid;
+  const panelBackups = values.replace ? changed.map(file => ({ to: join(home, 'data', 'sympp-panel-backups', backupId, file.to === helper ? 'sympp-herdr.js' : file.to.slice(target.length + 1)), body: file.existing })) : [];
   const writes = files.filter(({ body, existing }) => !existing?.equals(body));
   if (chrome) {
-    if (!await checkedWrite(home, values, [...writes, ...chrome.writes], [...chrome.mods, 'sympp'])) return 1;
-  } else await write(writes);
+    if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...chrome.writes], [...chrome.mods, 'sympp'])) return 1;
+  } else if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...connectionWrites], ['sympp'])) return 1;
   if (!values.lab) {
     await rm(join(home, 'tools', 'sympp-http.cjs'), { force: true });
     await rm(join(home, 'data', 'sympp-requests'), { recursive: true, force: true });
+  }
+  if (values['token-file']) {
+    const remoteSetup = (await import(pathToFileURL(join(helperScripts, 'sympp-remote.js')).href)).default;
+    remoteSetup.privateWrite(join(home, 'sympp-remote.json'), JSON.stringify({ endpoint, token: (await readFile(values['token-file'], 'utf8')).trim() }));
   }
   if (remote) remoteSetup.privateWrite(join(home, 'sympp-remote.json'), JSON.stringify(remote));
   const command = values.open === 'panel' ? 'pane.split' : 'tab.new';

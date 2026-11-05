@@ -99,7 +99,7 @@ export async function planInstall(home, props, selectedSession) {
     if (current === null && patch.optional) continue;
     if (current === null) { missing.push(`mods/${patch.mod}/main.js is missing`); continue; }
     mods.push(patch.mod);
-    if (current.includes(MARK)) {
+    if ((current.includes(MARK) || current.includes('S++ chrome'))) {
       // Edits made since outside the sympp lines are kept; the backup follows them. An older version
       // this patch knows is replaced by it.
       const installed = installedVersion(current, patch);
@@ -118,7 +118,7 @@ export async function planInstall(home, props, selectedSession) {
     if (body === null) missing.push(`${patch.mod} differs from the version this patch was written for`);
     else writes.push({ to: backup, body: current }, { to: file, body });
   }
-  if (missing.length) return { missing };
+  if (missing.length) return { missing, noDesk: desk.missing.length > 0 };
   const existing = desk.body.children?.find((c) => c?.id === PANEL)?.content?.props;
   props = { ...existing, ...props, hosts: { ...existing?.hosts, ...props.hosts, local: { ...existing?.hosts?.local, ...props.hosts?.local, runtime: props.hosts?.local?.runtime } } };
   if (selectedSession === undefined && existing?.hosts?.local?.session) props.hosts.local.session = existing.hosts.local.session;
@@ -150,7 +150,7 @@ export async function planRemoval(home) {
     const backup = join(backups, `${patch.mod}.main.js`);
     const current = await contents(file);
     if (current !== null) mods.push(patch.mod);
-    if (!current?.includes(MARK)) continue;
+    if (!(current?.includes(MARK) || current?.includes('S++ chrome'))) continue;
     const installed = installedVersion(current, patch);
     const original = installed ? revertPatch(current, installed) : null;
     if (!installed) missing.push(`${patch.mod} has another version of the sympp chrome; remove it with the installer that added it`);

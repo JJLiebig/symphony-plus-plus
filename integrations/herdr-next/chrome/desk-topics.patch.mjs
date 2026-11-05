@@ -1,3 +1,4 @@
+import legacy from './desk-topics.legacy.mjs';
 // sympp chrome 2 for the personal desk-topics mod (cloned from Herdr's spaces 0.1.4): the sympp mark on
 // each topic header, opening that topic's sympp chief. Optional: a desk without desk-topics gets the rest
 // of the chrome. Each edit's `find` must occur exactly once in the mod; `replace` takes its place. The
@@ -63,7 +64,7 @@ export default {
   mark: 'sympp chrome 2',
   mod: 'desk-topics',
   optional: true,
-  previous: [chrome1],
+  previous: [chrome1, legacy],
   edits: [
     {
       find: `export default class Topics extends Spaces {

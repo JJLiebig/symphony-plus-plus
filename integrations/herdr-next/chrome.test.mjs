@@ -22,7 +22,7 @@ const install = (home, ...args) => spawnSync(process.execPath,
   { env: checkerEnv, encoding: 'utf8', windowsHide: true });
 const ENDPOINT = ['--endpoint', 'http://127.0.0.1:19997'];
 const app = process.env.HERDR_APP || 'herdr-app';
-const probe = spawnSync(app, ['--version'], { encoding: 'utf8', windowsHide: true });
+const probe = spawnSync(app, ['--version'], { env: { ...process.env, HERDR_APP_HOME: join(tmpdir(), 'sympp-check-probe') }, encoding: 'utf8', windowsHide: true });
 const native = { skip: (probe.error || probe.status !== 0) && 'herdr-app is not installed' };
 
 test('each sympp terminal on the board gets its stage, review round and need; others get nothing', () => {
@@ -147,7 +147,8 @@ test('--chrome patches the desk mods, adds the sympp panel once, and --remove-ch
       assert.deepEqual(await snapshot(home), before);
     }
   }
-  assert.deepEqual(await snapshot(home), installed, 'switching back to A restores the full installed state');
+  const restored = Object.fromEntries(Object.entries(await snapshot(home)).filter(([name]) => !name.includes('sympp-panel-backups')));
+  assert.deepEqual(restored, installed, 'switching back to A restores the installed files; replacement backups remain');
 
   // The person resizes the panel and opens sympp in it before removing the chrome.
   layout.children[2].size = { px: 500 };
@@ -335,4 +336,24 @@ test('current desk fixtures render after chrome install and restore byte-for-byt
     .replace('panel && !panel.hidden && panel.active', 'renamedPanel && !renamedPanel.hidden && renamedPanel.active'));
   const renamed = run(...ENDPOINT, '--chrome');
   assert.equal(renamed.status, 0, renamed.stdout + renamed.stderr);
+});
+
+test('pre-rename chrome upgrades preserving personal edits and backing up the old panel', async t => {
+  const home = await deskHome(t);
+  for (const patch of [deskTabs, deskAgents, deskTopics]) {
+    const legacy = patch.previous.find(p => p.mark.startsWith('S++'));
+    const file = join(home, 'mods', patch.mod, 'main.js');
+    await writeFile(file, applyPatch(await readFile(file, 'utf8'), legacy) + '\n// my personal edit\n');
+  }
+  await mkdir(join(home, 'mods', 'sympp'), { recursive: true });
+  await writeFile(join(home, 'mods', 'sympp', 'main.js'), '// old panel');
+  const result = install(home, ...ENDPOINT, '--chrome', '--replace');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  for (const patch of [deskTabs, deskAgents, deskTopics]) {
+    const text = await readFile(join(home, 'mods', patch.mod, 'main.js'), 'utf8');
+    assert.match(text, /my personal edit/);
+    assert.doesNotMatch(text, /S\+\+ chrome/);
+  }
+  const backups = await snapshot(join(home, 'data', 'sympp-panel-backups'));
+  assert.ok(Object.values(backups).some(body => body.toString() === '// old panel'));
 });

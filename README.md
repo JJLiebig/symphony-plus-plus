@@ -26,12 +26,14 @@ npx skills add JJLiebig/sympp
 ```
 
 The agent asks whether to use this machine or a server and runs setup. Setup
-installs the `sympp` command and connects the installed hosts. Open a fresh agent
+installs the `sympp` command, connects Codex and Claude, and installs the panel
+when Herdr-app is available. Open a fresh agent
 session afterward.
 
 ```sh
 sympp --server jjdev
 sympp status
+sympp update
 ```
 
 Run `sympp` alone for a local Windows x64 factory. Remote clients also support
