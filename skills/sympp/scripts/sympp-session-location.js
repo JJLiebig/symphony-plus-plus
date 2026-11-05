@@ -80,7 +80,7 @@ async function remoteArguments(body, factoryOwned) {
         }
       });
   });
-  const repo = async value => typeof value === "string" && (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value)) ? origin(value) : credentialFree(value);
+  const repo = async value => typeof value === "string" && (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || /^\.\.?([\\/]|$)/.test(value)) ? origin(value) : credentialFree(value);
   const repoObject = async value => {
     if (!value || typeof value !== "object" || Array.isArray(value) || !("repo" in value)) return value;
     return { ...value, repo: await repo(value.repo) };

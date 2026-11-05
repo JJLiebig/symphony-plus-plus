@@ -52,7 +52,7 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
   assert.ok(nic, "a non-loopback interface exercises remote URL admission");
   const tokenFile = path.join(root, "token");
   fs.writeFileSync(tokenFile, "fixture-token");
-  async function run(token, tool = "list_work_requests", expectedSuccess = true) {
+  async function run(token, tool = "list_work_requests", expectedSuccess = true, args = {}) {
     fs.writeFileSync(tokenFile, token);
     const child = spawn(process.execPath, [path.resolve(__dirname, "../../scripts/start-sympp-mcp-bridge.js")], {
       env: { ...process.env, HC_TERMINAL_ID: "", HERDR_ENV: "", SYMPP_REPO_ROOT: "must-not-use", SYMPP_POWERSHELL: "must-not-start",
@@ -63,7 +63,7 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
     let stdout = "", stderr = "";
     child.stdout.on("data", c => stdout += c); child.stderr.on("data", c => stderr += c);
     child.stdin.end([ { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } },
-      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: {} } } ].map(JSON.stringify).join("\n") + "\n");
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: args } } ].map(JSON.stringify).join("\n") + "\n");
     const [code] = await once(child, "exit");
     if (expectedSuccess) assert.equal(code, 0, stderr);
     else assert.notEqual(code, 0, stderr);
@@ -89,6 +89,8 @@ test("remote bridge forwards MCP with authentication, sessions and metadata with
   execFileSync("git", ["-C", root, "remote", "set-url", "origin", "https://fixture-account-or-token@example.org/team/repo.git"]);
   await run("fixture-token", "create_work_request");
   assert.equal(received.find(r => r.body?.params?.name === "create_work_request").body.params.arguments.repo, "https://example.org/team/repo.git");
+  await run("fixture-token", "create_work_request", true, { repo: "." });
+  assert.equal(received.at(-1).body.params.arguments.repo, "https://example.org/team/repo.git");
   const postsBeforeDenial = received.filter(r => r.url === "/mcp").length;
   const denied = await run("wrong-token", "list_work_requests", false);
   assert.match(denied.stderr, /authentication failed.*401/);

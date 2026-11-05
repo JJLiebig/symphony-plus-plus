@@ -69,7 +69,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
         name = Path.basename(path || "") |> String.replace_suffix(".git", "")
 
         if usable_authority?(uri) and name not in ["", ".", ".."] and not String.contains?(value, <<0>>) do
-          {:ok, value, name}
+          {:ok, clone_remote(value, uri), name}
         else
           {:error, :invalid_repo_remote}
         end
@@ -79,6 +79,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   end
 
   defp remote(_), do: {:error, :invalid_repo_remote}
+
+  defp clone_remote(value, %URI{scheme: scheme}) when scheme in ["http", "https"] do
+    String.replace(value, ~r{\A(https?://)[^/?#]*@}, "\\1", global: false)
+  end
+
+  defp clone_remote(value, _uri), do: value
 
   defp parsed_remote(value) do
     case Regex.run(@scp_remote, value) do

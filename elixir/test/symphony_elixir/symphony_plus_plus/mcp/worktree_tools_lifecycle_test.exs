@@ -9,7 +9,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
   @moduletag :ci_slow
 
-  test "factory clone preserves the SSH account-relative repository path" do
+  test "factory clone preserves remote paths and uses factory authentication" do
     alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
 
     fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-ssh")
@@ -19,7 +19,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     node = System.find_executable("node")
 
     command = Enum.map_join([node, peer], " ", fn value -> "'" <> String.replace(value, "'", "'\"'\"'") <> "'" end)
-    keys = ["SYMPP_REPOS_ROOT", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"]
+    keys = ["SYMPP_REPOS_ROOT", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_KEY_1", "GIT_CONFIG_VALUE_1"]
     previous = Map.new(keys, &{&1, System.get_env(&1)})
     on_exit(fn -> Enum.each(previous, fn {key, value} -> restore_env(key, value) end) end)
     System.put_env("SYMPP_REPOS_ROOT", root)
@@ -45,6 +45,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     end
 
     refute FactoryRepos.matches?(Path.join(root, name), "ssh://deploy@git.example/team/#{name}.git")
+
+    for {path, suffix} <- [{"/team/ü", "http"}, {"/team/%2e%2e", "http-encoded"}] do
+      remote = "https://fixture-account-or-token@git.example#{path}/#{name}-#{suffix}.git"
+      clean_remote = String.replace(remote, "fixture-account-or-token@", "")
+      # Both URLs reach the disposable origin, so the regression never contacts
+      # a provider. Inspect Git's stored clone argument, not get-url's rewrite.
+      System.put_env("GIT_CONFIG_COUNT", "2")
+      System.put_env("GIT_CONFIG_KEY_0", "url.#{fixture.origin}.insteadOf")
+      System.put_env("GIT_CONFIG_VALUE_0", clean_remote)
+      System.put_env("GIT_CONFIG_KEY_1", "url.#{fixture.origin}.insteadOf")
+      System.put_env("GIT_CONFIG_VALUE_1", remote)
+      assert {:ok, checkout} = FactoryRepos.resolve(remote)
+      assert {stored_origin, 0} = System.cmd("git", ["-C", checkout, "config", "--get", "remote.origin.url"])
+      assert String.trim(stored_origin) == clean_remote
+    end
   end
 
   test "factory resolves by remote, refuses a different owner, and owns prepare, replay and cleanup", %{repo: repo} do

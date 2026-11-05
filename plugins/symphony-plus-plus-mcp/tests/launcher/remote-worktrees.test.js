@@ -17,6 +17,7 @@ test("remote path requests become origin identities and qualified responses pres
   const input = call({ repo: root, repo_scopes: [{ repo: root }, { repo: "other/repo" }], constraints: { repo: "/deployment/path", review: { repos: ["/do-not-resolve"] } } });
   const converted = JSON.parse(await remoteArguments(input, true)).params.arguments;
   assert.equal(converted.repo, "https://github.com/example/service.git");
+  assert.equal(JSON.parse(await remoteArguments(call({ repo: path.relative(process.cwd(), root) }), true)).params.arguments.repo, converted.repo);
   assert.deepEqual(converted.repo_scopes, [{ repo: converted.repo }, { repo: "other/repo" }]);
   assert.deepEqual(converted.constraints, JSON.parse(input).params.arguments.constraints);
   assert.equal(JSON.parse(await remoteArguments(call({ repo: 0 }), true)).params.arguments.repo, 0);
