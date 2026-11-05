@@ -92,7 +92,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
           "work_request_id" => equivalent_sibling.id,
           "current_status" => "ready_for_slicing",
           "next_status" => "sliced"
-        }, config: config)
+        },
+        config: config
+      )
 
     assert get_in(sibling_status_response, ["error", "code"]) == -32_004
     assert get_in(sibling_status_response, ["error", "data", "reason"]) == "not_found"
@@ -107,7 +109,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkRequestTools02Test do
           "work_package_id" => sibling_slice.id,
           "expected_contract_revision" => sibling_slice.contract_revision,
           "patch" => %{"title" => "Out of scope"}
-        }, config: config)
+        },
+        config: config
+      )
 
     assert get_in(sibling_update_response, ["error", "code"]) == -32_004
     assert get_in(sibling_update_response, ["error", "data", "reason"]) == "not_found"
