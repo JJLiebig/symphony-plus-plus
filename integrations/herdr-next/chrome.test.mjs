@@ -179,10 +179,17 @@ test('a desk without desk-topics gets the rest of the chrome, and removing it le
 });
 
 test('an older desk-topics chrome upgrades in place and keeps later edits', async t => {
+  const header = '    return h_flex().id(`topic-${id ?? "other"}`).h(26).flex_none().mt(8).px(8).gap(4).items_center().rounded(5)';
   for (const older of deskTopics.previous.filter((p) => p.mark.startsWith('sympp'))) {
     const home = await deskHome(t);
     const file = join(home, 'mods', 'desk-topics', 'main.js');
-    const plain = await readFile(file, 'utf8');
+    const fixture = await readFile(file, 'utf8');
+    // A desk that reworked two lines chrome 4 edits after it went in: pointer only while not dragging,
+    // and its drag state in a local.
+    const reworked = fixture.replace(`${header}.cursor_pointer()\n`, `${header}\n      .when(!this.drag, (el) => el.cursor_pointer())\n`)
+      .replace('      if (!rows.length && !this.drag) return [];\n', '      if (!rows.length && !drag) return [];\n');
+    assert.notEqual(reworked, fixture);
+    const plain = applyPatch(fixture, older) ? fixture : reworked;
     await writeFile(file, applyPatch(plain, older) + '// my later tweak\n');
     const result = install(home, ...ENDPOINT, '--chrome');
     assert.equal(result.status, 0, result.stdout + result.stderr);

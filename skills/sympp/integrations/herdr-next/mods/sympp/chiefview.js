@@ -1,14 +1,17 @@
-// Start chief: one line that starts a topic's chief, opened from the topic header's sympp mark while
-// the topic has no running chief. Modelled on Herdr's Change anything (app.ask): an agent chip (the
-// last one started comes first), a machine chip that starts on the factory's machine, and the line,
-// whose text is added to the chief's brief. Enter starts the agent as a normal tab in the topic's own
-// "<topic> chief" space on that machine, made once and reused. The space stays in its topic, unlisted:
-// the topic's sympp mark leads there. A failure keeps the dialog and its text and says what failed.
+// Start chief: opened from the topic header's sympp mark while the topic has no running chief. When
+// the topic's last chief saved a session, it resumes that session without asking, or shows the chief
+// when its agent still runs. Otherwise, or when that fails, one line that starts a chief: modelled on
+// Herdr's Change anything (app.ask), an agent chip (the last one started comes first), a machine chip
+// that starts on the factory's machine, and the line, whose text is added to the chief's brief. Enter
+// starts the agent as a normal tab in the topic's own "<topic> chief" space on that machine, made once
+// and reused. The space stays in its topic, unlisted: the topic's sympp mark leads there. A failure
+// keeps the dialog and its text and says what failed.
 
 import { div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input, Button } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, knownAgents, machines, spaces, terminals, panes, shared, setShared, exec, hc, home, layout, run, settings } from "herdr";
-import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic, isChiefSpace, CHIEF_SPACES, chiefMenu } from "./chief.js";
+import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic, isChiefSpace, CHIEF_SPACES, chiefMenu,
+  CHIEF_SESSIONS, FACTORY_ROOT, canResume, chiefRunning, machineOf, resumeArgv } from "./chief.js";
 
 const W = 560;
 const H = 46;
@@ -16,6 +19,11 @@ const H = 46;
 const KNOWN = "sympp.chief.agents";
 // The agent last started as a chief.
 const LAST = "sympp.chief.agent";
+// Each topic's chiefs as its mark shows them (main.js keeps it).
+const CHIEFS = "sympp.chiefs";
+// A resumed agent counts as started once it has run this long; one that ends sooner failed.
+const SETTLE = 3000;
+const SETTLE_WAIT = 20000;
 
 // A Herdr command through the app's own CLI, which says what it made or why it couldn't.
 async function app(command, args) {
@@ -24,6 +32,16 @@ async function app(command, args) {
   try { out = JSON.parse(result.stdout); } catch {}
   if (result.code !== 0 || !out?.terminal) throw new Error(out?.error || result.stderr.trim() || "Herdr didn't say why");
   return out;
+}
+
+// Herdr's first sentence says what failed; the rest is advice for scripts.
+const reason = (error) => String(error?.message ?? error).split(/(?<=\.)\s/)[0];
+
+// Switches to a chief's tab, or peeks at it when it has none.
+function showChief(terminal) {
+  if (!panes().some((p) => p.terminal === terminal)) return run("terminal.peek", { terminal });
+  if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });
+  run("pane.focus", { terminal });
 }
 
 function find(node, id) {
@@ -51,9 +69,19 @@ export class ChiefStart {
     this.finding = true;
     this.input = InputState.new({ placeholder: `Start ${this.name} chief…` });
     this.input.on("submit", (_e, cx) => this.start(cx));
-    this.input.focus();
-    cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
+    const previous = own.fresh ? null : shared(CHIEF_SESSIONS)?.[this.topic];
+    if (chiefRunning(previous, terminals())) {
+      this.phase = "resuming";
+      showChief(previous.terminal);
+      this.close();
+      return;
+    }
+    if (canResume(previous)) this.resume(previous, cx);
+    else {
+      this.input.focus();
+      cx.timer.after(600, () => this.input.focus());
+    }
     this.load(null, cx);
     cx.spawn(async (cx) => {
       let list = [];
@@ -62,6 +90,7 @@ export class ChiefStart {
       const machine = await factoryMachine(endpoint, list, ssh).catch(() => undefined);
       // Picked meanwhile: keep it.
       if (machine && !this.picked) { this.machine = machine; this.load(machine, cx); }
+      this.factory = machine;
       this.finding = false;
       cx.notify();
     });
@@ -113,6 +142,34 @@ export class ChiefStart {
     cx.notify();
   }
 
+  // The topic's spaces, without its chief spaces, and the chief space it has on the machine, if any.
+  where(machine) {
+    const topic = shared("desk.topics")?.groups?.find((g) => g.id === this.topic) ?? { id: this.topic, name: this.name, spaces: [] };
+    const all = spaces(), mine = all.filter((s) => (topic.spaces ?? []).includes(s.id)), made = shared(CHIEF_SPACES);
+    const own = mine.find((s) => isChiefSpace(s, topic, made) && (s.machine ?? null) === machine);
+    return { all, own, topicSpaces: mine.filter((s) => !isChiefSpace(s, topic, made)) };
+  }
+
+  // Starts the chief as the "chief" tab in the topic's chief space on the machine, made once and
+  // reused, and records its terminal as the topic's latest chief.
+  async place(machine, folder, argv, record) {
+    const { own } = this.where(machine);
+    const made = own
+      ? await app("tab.new", { space: own.id, name: "chief", argv, ...(folder ? { folder } : {}) })
+      : await app("space.new", { name: chiefSpaceName(this.name), tab: "chief", argv, ...(folder ? { folder } : {}), machine: machine ?? "" });
+    if (!own) {
+      const next = intoTopic(shared("desk.topics"), this.topic, made.space);
+      if (next) setShared("desk.topics", next);
+    }
+    setShared(CHIEF_SPACES, { ...shared(CHIEF_SPACES), [own?.id ?? made.space]: this.topic });
+    setShared(CHIEF_SESSIONS, { ...shared(CHIEF_SESSIONS), [this.topic]: { ...record, terminal: made.terminal, started: Date.now() } });
+    // It is the topic's chief from now on: the mark lights and leads to it before it registers.
+    setShared(CHIEFS, { ...shared(CHIEFS), [this.topic]: [{ domain: this.name, terminal: made.terminal }] });
+    // A desk shows its spaces' tabs in its workspace view.
+    if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });
+    return made;
+  }
+
   start(cx) {
     const agent = this.agent;
     if (this.phase !== "ask" || !this.ready()) return;
@@ -123,38 +180,73 @@ export class ChiefStart {
     const machine = this.machine, text = this.input.value();
     cx.spawn(async (cx) => {
       try {
-        const desk = shared("desk.topics");
-        const topic = desk?.groups?.find((g) => g.id === this.topic) ?? { id: this.topic, name: this.name, spaces: [] };
-        const all = spaces(), mine = all.filter((s) => (topic.spaces ?? []).includes(s.id));
+        const { all, topicSpaces } = this.where(machine);
+        const factory = this.finding ? null : { machine: this.factory, root: shared(FACTORY_ROOT) ?? null };
         let folder = "";
-        for (const candidate of chiefFolders(mine, all, machine)) {
+        for (const candidate of chiefFolders(topicSpaces, all, machine, factory)) {
           // The folder is there when a program can start in it.
           if (await exec("git", ["--version"], { cwd: candidate, on: machine }).then((r) => r.code === 0, () => false)) { folder = candidate; break; }
         }
         // Else the machine's home, said outright: left out, Herdr would start in the focused pane's folder.
         if (!folder) folder = machine ? await exec("pwd", [], { on: machine }).then((r) => (r.code === 0 ? r.stdout.trim() : ""), () => "") : home();
-        const argv = chiefArgv(agent, chiefBrief(this.name, text));
-        const own = mine.find((s) => isChiefSpace(s, topic, shared(CHIEF_SPACES)) && (s.machine ?? null) === machine);
-        const made = own
-          ? await app("tab.new", { space: own.id, name: "chief", argv, ...(folder ? { folder } : {}) })
-          : await app("space.new", { name: chiefSpaceName(this.name), tab: "chief", argv, ...(folder ? { folder } : {}), machine: machine ?? "" });
-        if (!own) {
-          const next = intoTopic(shared("desk.topics"), this.topic, made.space);
-          if (next) setShared("desk.topics", next);
-        }
-        setShared(CHIEF_SPACES, { ...shared(CHIEF_SPACES), [own?.id ?? made.space]: this.topic });
+        await this.place(machine, folder, chiefArgv(agent, chiefBrief(this.name, text)), { agent: agent.key, session: null, cwd: folder });
         setShared(LAST, { key: agent.key, name: agent.name, icon: agent.icon, tint: agent.tint, run: agent.run });
-        // A desk shows its spaces' tabs in its workspace view.
-        if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });
         this.close();
       } catch (error) {
         this.phase = "ask";
-        // Herdr's first sentence says what failed; the rest is advice for scripts.
-        this.error = `Couldn't start the chief: ${String(error?.message ?? error).split(/(?<=\.)\s/)[0]}`;
+        this.error = `Couldn't start the chief: ${reason(error)}`;
         this.input.focus();
         cx.notify();
       }
     });
+  }
+
+  // Resumes the topic's last chief session in its own folder, in place of its finished tab. Shows
+  // nothing unless it fails; then the dialog opens with the reason.
+  resume(last, cx) {
+    this.phase = "resuming";
+    cx.spawn(async (cx) => {
+      let made = null;
+      try {
+        const machine = machineOf(last.terminal);
+        const agent = (await knownAgents({ on: machine })).find((a) => a.key === last.agent && a.installed);
+        if (!agent) throw new Error(`${last.agent} isn't installed on ${machine ?? "this computer"}.`);
+        // The finished chief's tab, when that terminal is all it holds and it is in the chief space.
+        const pane = panes().find((p) => p.terminal === last.terminal);
+        const space = pane && spaces().find((s) => s.tabs.some((t) => t.id === pane.tab));
+        const old = space && space.id === this.where(machine).own?.id && space.tabs.find((t) => t.id === pane.tab).panes === 1 ? pane.tab : null;
+        made = await this.place(machine, last.cwd, resumeArgv(agent, last, this.name), last);
+        if (!(await this.settled(made.terminal, last.agent, cx))) throw new Error("it ended right away.");
+        if (old) run("tab.close", { id: old, confirmed: true });
+        this.close();
+      } catch (error) {
+        // A failed resume leaves no tab behind, and the topic its previous chief.
+        if (made) {
+          const tab = panes().find((p) => p.terminal === made.terminal)?.tab;
+          if (tab) run("tab.close", { id: tab, confirmed: true });
+          setShared(CHIEF_SESSIONS, { ...shared(CHIEF_SESSIONS), [this.topic]: last });
+        }
+        this.phase = "ask";
+        this.error = `Couldn't resume the chief: ${reason(error)}`;
+        this.input.focus();
+        cx.notify();
+      }
+    });
+  }
+
+  // Whether the agent took over its terminal and kept running there for a moment.
+  async settled(terminal, key, cx) {
+    let since = null;
+    for (let waited = 0; waited <= SETTLE_WAIT; waited += 500) {
+      const term = terminals().find((k) => k.address === terminal);
+      if (term && term.state !== "live") return false;
+      if (term?.program?.key === key) {
+        since ??= waited;
+        if (waited - since >= SETTLE) return true;
+      } else if (since !== null) return false;
+      await cx.sleep(500);
+    }
+    return false;
   }
 
   agentIcon(a, size) {
@@ -198,6 +290,7 @@ export class ChiefStart {
   }
 
   render() {
+    if (this.phase === "resuming") return div().id("chief-start");
     const t = theme();
     const z = settings().zoom ?? 1;
     this.size = this.measured && { width: this.measured.width / z, height: this.measured.height / z };
@@ -276,13 +369,11 @@ export class ChiefMenu {
   choose(item) {
     if (!item) return;
     closeOverlay(props().overlay);
-    if (item.action === "space") {
-      if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });
-      run("pane.focus", { terminal: this.terminal });
-    } else if (item.action === "composition") {
+    if (item.action === "space") showChief(this.terminal);
+    else if (item.action === "composition") {
       openOverlay({ mod: "desk-compositions", kind: "popup", width: 524, frame: "none", props: { role: "context-menu", tab: "agent", target: { terminal: this.terminal } } });
     } else {
-      openOverlay({ mod: "sympp", kind: "window", frame: "none", width: 1, height: 1, props: { role: "chief", topic: this.topic, name: this.name } });
+      openOverlay({ mod: "sympp", kind: "window", frame: "none", width: 1, height: 1, props: { role: "chief", topic: this.topic, name: this.name, fresh: true } });
     }
   }
 

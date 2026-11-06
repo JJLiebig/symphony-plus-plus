@@ -41,6 +41,7 @@ import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
 import { studioView } from "./studioview.js";
 import { ChiefStart, ChiefMenu } from "./chiefview.js";
+import { CHIEF_SESSIONS, FACTORY_ROOT, chiefSession, chiefRunning } from "./chief.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
@@ -509,15 +510,27 @@ export default class Lens extends View {
     const board = this.net.data;
     if (this.role !== "panel" || this.studio || !board) return;
     const desk = L.deskOf(this.deskTopics(), this.spaceList()), bindings = this.bindingsOf(board);
-    const out = {};
+    const out = {}, list = terminals();
+    // Each topic's running chief's session as Herdr saved it, kept once it stops so it can be resumed.
+    const sessions = { ...shared(CHIEF_SESSIONS) };
     this.chiefWatch = [];
     for (const topic of desk.filter((x) => x.kind === "topic")) {
       const chiefs = this.chiefsOf(topic, board, desk, bindings, now);
       this.chiefWatch.push(...chiefs.flatMap((c) => c.agent.bindings));
       if (chiefs.length) out[topic.id] = chiefs.map(({ chief, agent }) =>
         ({ domain: chief.domain, terminal: agent.state === "live" ? agent.binding.address : null }));
+      // A chief Start chief started is the topic's chief while it runs, registered or not.
+      const latest = sessions[topic.id];
+      if (!out[topic.id]?.some((c) => c.terminal) && chiefRunning(latest, list, now)) {
+        out[topic.id] = [{ domain: topic.name, terminal: latest.terminal }, ...(out[topic.id] ?? [])];
+      }
+      const live = out[topic.id]?.find((c) => c.terminal);
+      const session = live && chiefSession(list.find((k) => k.address === live.terminal));
+      if (session) sessions[topic.id] = session;
     }
     if (JSON.stringify(shared(CHIEFS) ?? {}) !== JSON.stringify(out)) setShared(CHIEFS, out);
+    if (JSON.stringify(shared(CHIEF_SESSIONS) ?? {}) !== JSON.stringify(sessions)) setShared(CHIEF_SESSIONS, sessions);
+    if ((shared(FACTORY_ROOT) ?? null) !== board.reposRoot) setShared(FACTORY_ROOT, board.reposRoot);
   }
 
   withChiefs(watch) {
