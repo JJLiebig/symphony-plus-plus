@@ -57,8 +57,8 @@ async function board() {
   if (!endpoint && env.SYMPP_RUNTIME_FILE && fs.existsSync(env.SYMPP_RUNTIME_FILE)) endpoint = JSON.parse(fs.readFileSync(env.SYMPP_RUNTIME_FILE, "utf8")).backend?.url;
   if (!endpoint) throw new Error("Start the factory, then retry sympp board.");
   const url = new URL("/sympp/board", endpoint);
-  if (env.SYMPP_SERVER_TOKEN_FILE) {
-    const token = fs.readFileSync(env.SYMPP_SERVER_TOKEN_FILE, "utf8").trim();
+  const token = env.SYMPP_SERVER_TOKEN_FILE ? fs.readFileSync(env.SYMPP_SERVER_TOKEN_FILE, "utf8").trim() : "";
+  if (token) {
     const response = await fetch(new URL("/api/v1/sympp/board-sign-in-code", endpoint), {
       method: "POST", headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000),
     }).catch(() => null);

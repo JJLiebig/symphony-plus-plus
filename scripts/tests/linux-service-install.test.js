@@ -138,4 +138,11 @@ test('board opens the saved factory with a private fragment and never logs its c
   assert.equal(url.origin, endpoint); assert.equal(url.pathname, '/sympp/board'); assert.equal(url.search, '');
   assert.equal(new URLSearchParams(url.hash.slice(1)).get('sympp-code'), code);
   assert.equal(result.stdout.includes(token) || result.stderr.includes(token), false);
+  fs.writeFileSync(tokenFile, ''); // Loopback setup saves an empty token file.
+  authorization = null;
+  await require('node:util').promisify(require('node:child_process').execFile)(process.execPath, [path.resolve(__dirname, '../../packages/sympp/scripts/sympp-command.js'), 'board'], {
+    env: { ...process.env, HOME: root, PATH: bin + path.delimiter + process.env.PATH, RECEIPT: receipt }, encoding: 'utf8',
+  });
+  assert.equal(authorization, null);
+  assert.equal(new URL(fs.readFileSync(receipt, 'utf8')).hash, '');
 });
