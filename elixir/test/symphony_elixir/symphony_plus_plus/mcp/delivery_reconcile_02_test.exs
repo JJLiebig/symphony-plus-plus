@@ -506,6 +506,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02Test do
         )
 
       assert get_in(host_checkout_response, ["error", "data", "reason"]) == "target_repo_root_scope_mismatch"
+      assert get_in(host_checkout_response, ["error", "data", "expected_repo"]) == work_request.repo
+      assert get_in(host_checkout_response, ["error", "data", "target_repo_root"]) == host_repo_root
+      assert get_in(host_checkout_response, ["error", "data", "recovery"]) =~ "Pass target_repo_root"
 
       previous_trusted_remotes = Application.get_env(:symphony_elixir, :sympp_repo_identity_trusted_remotes)
 

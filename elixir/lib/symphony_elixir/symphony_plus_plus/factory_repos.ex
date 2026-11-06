@@ -2,6 +2,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   @moduledoc false
 
   alias SymphonyElixir.Config
+  alias SymphonyElixir.SymphonyPlusPlus.GitCheckout
   alias SymphonyElixir.PathSafety
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
@@ -227,7 +228,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   defp clone(remote, checkout) do
     with git when is_binary(git) <- System.find_executable("git"),
          :ok <- File.mkdir_p(Path.dirname(checkout)),
-         {_output, 0} <- System.cmd(git, ["clone", "--", remote, checkout], stderr_to_stdout: true) do
+         {_output, 0} <- GitCheckout.run(git, ["clone", "--", remote, checkout]) do
       {:ok, checkout}
     else
       _ -> {:error, :factory_clone_failed}

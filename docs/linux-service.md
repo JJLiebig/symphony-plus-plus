@@ -101,3 +101,15 @@ For Linux checkout validation, install the locked dashboard dependencies with
 `npm --prefix elixir/assets ci`, then run `just test`. This covers the launcher
 JavaScript, factory access, token persistence, Unix worktree cleanup, and dashboard
 checks. Full repository qualification remains `make -C elixir all`.
+
+Git clones and prepared worktrees use source permissions of `0644` for regular
+files and `0755` for executables and directories. The service retains its private
+`0077` umask for ledger, credential and other state files.
+
+Worktree preparation requires the checkout's `origin` to match the WorkRequest
+repository. An `upstream` match alone is insufficient because preparation fetches
+its base from `origin`. When the default checkout is a fork, pass
+`target_repo_root` pointing to a separate checkout of the requested repository.
+The mismatch error includes the expected repository, selected path and recovery
+hint. In factory repository mode, checkout selection is managed under
+`SYMPP_REPOS_ROOT`; provide a matching origin there instead of a client path.

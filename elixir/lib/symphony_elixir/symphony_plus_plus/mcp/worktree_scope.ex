@@ -50,6 +50,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
     resolve_target_repo_root(nil, work_package, config)
   end
 
+  @spec prepare_target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) ::
+          target_repo_root_result() | {:tool_error, String.t(), map()}
+  def prepare_target_repo_root_argument(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
+    with {:ok, root} <- target_repo_root_argument(explicit_root, work_package, config),
+         :ok <- require_target_repo_root_scope(root, work_package, config) do
+      {:ok, root}
+    else
+      {:tool_error, reason} when reason in ["target_repo_root_scope_mismatch", "target_repo_root_required"] ->
+        details = %{
+          "expected_repo" => work_package.repo,
+          "target_repo_root" => explicit_root || config.repo_root,
+          "recovery" => "Pass target_repo_root pointing to a checkout whose origin matches expected_repo. An upstream remote alone is insufficient: preparation fetches the base from origin."
+        }
+
+        {:tool_error, reason, SymphonyElixir.SymphonyPlusPlus.Planning.Redactor.redact(details)}
+
+      error ->
+        error
+    end
+  end
+
   @spec target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) :: target_repo_root_result()
   def target_repo_root_argument(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
     cond do

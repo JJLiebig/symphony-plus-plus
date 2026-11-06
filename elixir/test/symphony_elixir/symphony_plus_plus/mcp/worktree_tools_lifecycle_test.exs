@@ -9,6 +9,30 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
   @moduletag :ci_slow
 
+  test "fork checkout preparation explains recovery and keeps origin scope" do
+    alias SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope
+    alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-fork-scope")
+    TestSupport.git_output!(fixture.repo_root, ["remote", "set-url", "origin", "https://github.com/fork/project.git"])
+    TestSupport.git_output!(fixture.repo_root, ["remote", "add", "upstream", "https://github.com/owner/project.git"])
+    config = Config.default(repo_root: fixture.repo_root)
+    package = %WorkPackage{repo: "owner/project"}
+
+    for explicit_root <- [nil, fixture.repo_root] do
+      assert {:tool_error, reason, details} = WorktreeScope.prepare_target_repo_root_argument(explicit_root, package, config)
+      assert reason in ["target_repo_root_scope_mismatch", "target_repo_root_required"]
+      assert details["expected_repo"] == "owner/project"
+      assert details["target_repo_root"] == fixture.repo_root
+      assert details["recovery"] =~ "Pass target_repo_root"
+      assert details["recovery"] =~ "origin"
+    end
+
+    TestSupport.git_output!(fixture.repo_root, ["remote", "set-url", "origin", "https://github.com/owner/project.git"])
+    assert {:ok, root} = WorktreeScope.prepare_target_repo_root_argument(nil, package, config)
+    assert root == fixture.repo_root
+  end
+
   test "repo CI signal observes existing checkouts and caches per repo and root" do
     alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
 

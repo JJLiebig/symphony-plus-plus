@@ -28,6 +28,41 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeLifecycleCompatTest do
     :ok
   end
 
+  @tag skip: match?({:win32, _}, :os.type())
+  test "source checkout permissions survive a private factory umask" do
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-checkout-modes")
+    File.write!(Path.join(fixture.repo_root, "tool.sh"), "#!/bin/sh\necho ok\n")
+    TestSupport.git_output!(fixture.repo_root, ["add", "tool.sh"])
+    TestSupport.git_output!(fixture.repo_root, ["update-index", "--chmod=+x", "tool.sh"])
+    TestSupport.git_output!(fixture.repo_root, ["commit", "-m", "Add executable fixture"])
+    TestSupport.git_output!(fixture.repo_root, ["push", "origin", "main"])
+    checkout = Path.join(fixture.root, "clone with spaces")
+    worktree = Path.join(fixture.root, "worktree with spaces")
+    private_file = Path.join(fixture.root, "private-state")
+    helper = Path.expand("lib/symphony_elixir/symphony_plus_plus/git_checkout.ex")
+
+    script = """
+    [origin, checkout, worktree, private_file] = System.argv()
+    git = System.find_executable("git")
+    {_, 0} = SymphonyElixir.SymphonyPlusPlus.GitCheckout.run(git, ["clone", "--", origin, checkout])
+    {_, 0} = SymphonyElixir.SymphonyPlusPlus.GitCheckout.run(git, ["-C", checkout, "worktree", "add", "-b", "test-modes", worktree, "origin/main"])
+    File.write!(private_file, "private")
+    """
+
+    assert {output, 0} =
+             System.cmd("sh", ["-c", "umask 077; exec \"$@\"", "test-checkout", System.find_executable("elixir"), "-r", helper, "-e", script, "--", fixture.origin, checkout, worktree, private_file],
+               stderr_to_stdout: true
+             )
+
+    for root <- [checkout, worktree] do
+      assert Bitwise.band(File.stat!(Path.join(root, "README.md")).mode, 0o777) == 0o644, output
+      assert Bitwise.band(File.stat!(Path.join(root, "tool.sh")).mode, 0o777) == 0o755, output
+      assert Bitwise.band(File.stat!(root).mode, 0o777) == 0o755, output
+    end
+
+    assert Bitwise.band(File.stat!(private_file).mode, 0o777) == 0o600
+  end
+
   test "prepare replays immediately previous managed worktree paths", %{repo: repo} do
     fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-worktree-lifecycle")
     codex_home = Path.join(fixture.root, "codex-home")
