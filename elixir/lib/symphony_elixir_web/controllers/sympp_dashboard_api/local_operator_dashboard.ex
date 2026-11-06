@@ -249,15 +249,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
       Enum.flat_map(detail.work_packages, fn package ->
         requests = Map.get(guidance, package.id, [])
 
-        asks =
-          Enum.map(requests, fn request ->
-            route =
-              if request.status == "human_info_needed" do
-                "/api/v1/sympp/herdr/work-packages/#{URI.encode_www_form(package.id)}/guidance/#{URI.encode_www_form(request.id)}/answer"
-              end
-
-            native_ask(request.id, "guidance", request.question, package.id, route)
-          end)
+        asks = Enum.map(requests, &native_guidance_ask(package.id, &1))
 
         if asks == [] and get_in(package, [:activity_signal, :next_actor]) == "human" do
           [native_ask(package.id, "human_wait", nil, package.id, nil)]
@@ -276,6 +268,15 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
       end
 
     questions ++ packages ++ architect
+  end
+
+  defp native_guidance_ask(package_id, request) do
+    route =
+      if request.status == "human_info_needed" do
+        "/api/v1/sympp/herdr/work-packages/#{URI.encode_www_form(package_id)}/guidance/#{URI.encode_www_form(request.id)}/answer"
+      end
+
+    native_ask(request.id, "guidance", request.question, package_id, route)
   end
 
   defp native_ask(id, kind, text, package_id, route) do
