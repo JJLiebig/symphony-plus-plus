@@ -149,7 +149,7 @@ async function main() {
     if (remote || values['token-file']) delete hosts.local.runtime;
   }
   const connectionWrites = [];
-  if (!values.lab && values.check) {
+  if (!values.lab) {
     const file = join(home, 'shared.json');
     const shared = JSON.parse((await contents(file))?.toString() || '{}');
     if (JSON.stringify(shared['sympp.connection']) !== JSON.stringify(props)) {
@@ -162,7 +162,7 @@ async function main() {
   const writes = files.filter(({ body, existing }) => !existing?.equals(body));
   if (values.check) {
     if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...connectionWrites], [mod])) return 1;
-  } else await write([...panelBackups, ...writes]);
+  } else await write([...panelBackups, ...writes, ...connectionWrites]);
   if (!values.lab) {
     await rm(join(home, 'tools', 'sympp-http.cjs'), { force: true });
     await rm(join(home, 'data', 'sympp-requests'), { recursive: true, force: true });

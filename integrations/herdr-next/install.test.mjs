@@ -65,7 +65,10 @@ test('installs into a home with spaces without replacing personal layout or topi
   const result = install(home, '--endpoint', 'http://127.0.0.1:19999');
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(await readFile(join(home, 'layouts', 'personal.json'), 'utf8'), layout);
-  assert.equal(await readFile(join(home, 'shared.json'), 'utf8'), shared);
+  const published = JSON.parse(await readFile(join(home, 'shared.json'), 'utf8'));
+  assert.equal(published['sympp.connection'].endpoint, 'http://127.0.0.1:19999');
+  delete published['sympp.connection'];
+  assert.deepEqual(published, JSON.parse(shared));
   assert.match(result.stdout, /19999/);
   await assert.rejects(access(join(home, 'tools', 'sympp-http.cjs')));
   await assert.rejects(access(join(home, 'data', 'sympp-requests')));
