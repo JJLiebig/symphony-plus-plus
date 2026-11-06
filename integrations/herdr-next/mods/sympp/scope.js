@@ -15,6 +15,40 @@ export function packageEvidence(pkg, now, needsYou = false) {
   return { pkg, needsYou, issues: [], active: live || (pkg.stage !== "done" && needsYou) };
 }
 
+// The PR's checks as one live signal, apart from the step line: "waiting" before they start, then
+// "running", "passed" or "failed"; "unknown" when the PR's checks can't be read. Checks the PR
+// reports always show. `has_ci` comes from the local checkout's workflows, so it only decides whether
+// a repository keeps an empty slot before then.
+const CHECKS = { pending: "running", passing: "passed", failing: "failed", unavailable: "unknown" };
+const REPORTED = new Set(["running", "passed", "failed"]);
+export function ciOf(pkg) {
+  if (pkg.track === "no_pr" || pkg.stage === "done") return null;
+  const state = CHECKS[pkg.pr.checks] ?? "waiting";
+  return REPORTED.has(state) || pkg.ci === true ? state : null;
+}
+
+// A task's checks at a glance: any failing, else any running, else passed once any passed. A task
+// with CI keeps its slot from the start, so nothing shifts when its first PR opens.
+export function taskCi(packages) {
+  const states = packages.map(ciOf).filter(Boolean);
+  if (!states.length) return null;
+  return ["failed", "running", "passed", "unknown"].find((s) => states.includes(s)) ?? "waiting";
+}
+
+// Where a review stands, in a word or two: GitHub once Review Suite's next action is the GitHub
+// review, else its current step. Names are Review Suite's shipped steps; others keep their own words.
+const PHASES = { "arena-base-review": "base review", "base-signoff": "base sign-off", "arena-deep-review": "deep review", "deep-signoff": "deep sign-off" };
+export function reviewPhase(pkg) {
+  if (pkg.review.nextAction === "github_review") return "GitHub";
+  const step = pkg.review.steps?.find((s) => s.state === "current")?.name ?? pkg.review.step;
+  if (!step) return null;
+  const key = String(step).trim().toLowerCase();
+  return PHASES[key] ?? key.split(/[-_\s]+/).filter(Boolean).slice(0, 2).join(" ");
+}
+
+// A package in Build that no worker has taken yet.
+export const unmanned = (pkg) => pkg.stage === "build" && pkg.dispatchedAt === null && !pkg.run && !pkg.activity.actor;
+
 // A question the panel can answer: the board's own route when it gives one.
 function answerable(job, ask) {
   const known = [...job.questions, ...job.guidance].find((q) => q.id === ask.id);
@@ -60,7 +94,8 @@ export function taskOf(job, now) {
   const evidence = job.packages.filter((pkg) => pkg.outcome !== "dropped").map((pkg) => packageEvidence(pkg, now, asks.some((ask) => ask.pkgId === pkg.id)));
   const unique = [];
   const later = !asks.length && (job.lane === "backlog" || job.lane === "landed" || job.state === "settled");
-  return { job, evidence, asks, issues: unique, strip: stripOf(job), total: evidence.length, later, band: asks.length ? 0 : unique.length ? 1 : 2 };
+  const ci = taskCi(evidence.map((e) => e.pkg));
+  return { job, evidence, asks, issues: unique, strip: stripOf(job), total: evidence.length, ci, later, band: asks.length ? 0 : unique.length ? 1 : 2 };
 }
 
 // The tasks a Topic or Space shows: every task touching it, once, in a stable order. What needs

@@ -275,6 +275,8 @@ function buildPackage(slice, groups, now, runs) {
     dispatchedBy: chiefOf(slice.dispatched_by),
     doneAt: stage === "done" ? observed : null,
     failed: pr.checks?.status === "failing",
+    // Whether the package's repository runs CI at all; null while the board doesn't say.
+    ci: typeof slice.repo_signal?.has_ci === "boolean" ? slice.repo_signal.has_ci : null,
     track: board?.track ?? null,
     // Review Suite counts rounds from zero before the first; older signals carry no count.
     round: Number.isSafeInteger(Number(review.round)) && review.round !== null && review.round !== "" ? Number(review.round) : 1,
@@ -284,6 +286,7 @@ function buildPackage(slice, groups, now, runs) {
       status: review.status ?? null,
       mode: review.mode ?? slice.review?.args?.mode ?? null,
       providerStatus: review.provider_status ?? null,
+      nextAction: review.next_action ?? null,
       step: review.step ?? null,
       current: review.current ?? null,
       total: review.total ?? null,

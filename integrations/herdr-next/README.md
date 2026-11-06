@@ -23,7 +23,7 @@ touching it as its name and a strip of its packages, coloured by stage; a space
 shows the same for the tasks on its repository. Only recorded questions and chief/architect escalations show **Needs you**;
 worker silence, review rounds and failing checks go to the chief first. Questions come first, each with Answer (or Chief,
 when only the topic's chief can take it). A task shows its packages at work on
-the Build ─ PR ─ Checks ─ Review ─ Merge pipeline, with landed and queued work
+the Build ─ PR ─ Review ─ Merge pipeline, the PR's checks as a dot beside it, with landed and queued work
 folded. Click a row, or use ↑/↓ (j/k), Enter and Esc. Each copy remembers
 where it was. A toast appears when something newly needs you; click it to open
 the job's tab.
@@ -46,7 +46,8 @@ node integrations/herdr-next/install.mjs --endpoint $origin --open panel
 
 The panel follows what you focus in its tab: an sympp agent's terminal or a job
 tab shows that job; otherwise the space, or its topic when no sympp work touches
-the space. It never takes focus. Pin (P) keeps it where it is.
+the space. It never takes focus. Pin (P) keeps it where it is. The expand button
+beside the pin opens what the panel shows as a tab, or selects the one already open.
 
 When the factory the view was installed for isn't running, opening sympp starts it. While any sympp
 view is open, sympp counts Herdr as a client, so it stays up after the last agent session closes.

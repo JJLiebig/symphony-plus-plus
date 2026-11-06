@@ -56,6 +56,33 @@ test('what went wrong survives a question, and a quiet worker is named only when
   }
 });
 
+test("a task's checks are one live signal, with a slot from the start only where its repository runs CI", () => {
+  const busy = variantPayload('busy');
+  const ci = (id) => task(busy, id).ci;
+  assert.equal(ci('wr-restore'), 'failed', 'any failing check wins');
+  assert.equal(ci('wr-status'), 'running', 'then any running one, during review too');
+  assert.equal(ci('wr-pr'), 'passed', 'a package with no PR yet does not hold back the ones that passed');
+  assert.equal(ci('wr-cross'), 'waiting', 'a repository with CI keeps the slot before any PR opens');
+  assert.equal(ci('wr-notes'), null, 'a repository without CI has no slot, even with a PR open');
+  const external = variantPayload('busy');
+  external.work_request_details.find((d) => d.work_request.id === 'wr-notes').work_packages[0].pr_signal.checks = { status: 'failing' };
+  assert.equal(task(external, 'wr-notes').ci, 'failed', 'checks the PR reports show even when the checkout has no workflows');
+  assert.equal(ci('wr-nopr'), null, 'nor does work that opens no PR');
+  const unknown = variantPayload('busy');
+  for (const d of unknown.work_request_details) for (const p of d.work_packages ?? []) delete p.repo_signal;
+  assert.equal(task(unknown, 'wr-cross').ci, null, 'without the flag, no slot until checks report');
+  assert.equal(task(unknown, 'wr-restore').ci, 'failed');
+  const unread = (ci) => S.ciOf({ ci, track: 'pr', stage: 'review', pr: { checks: 'unavailable' } });
+  assert.deepEqual([unread(true), unread(null)], ['unknown', null], 'checks that cannot be read keep the slot but claim nothing');
+});
+
+test('a review says where it stands in a word or two, and a Build package no worker took reads as empty', () => {
+  const pkgs = Object.fromEntries(jobsOf(variantPayload('busy')).flatMap((job) => job.packages).map((p) => [p.id, p]));
+  assert.deepEqual(['s-2', 'r-4', 's-1', 'wp-review'].map((id) => S.reviewPhase(pkgs[id])), ['base sign-off', 'deep sign-off', 'GitHub', 'base sign-off']);
+  assert.equal(S.reviewPhase(pkgs['r-7']), null, 'no step reported, no phase');
+  assert.deepEqual(['s-3', 'r-6', 't-1'].map((id) => S.unmanned(pkgs[id])), [true, false, false]);
+});
+
 test("the strip runs the architect's top-level groups in their order, nested groups inside, ungrouped work last", () => {
   const runs = task(variantPayload('busy'), 'wr-restore').strip;
   assert.deepEqual(runs.map((r) => r.pkgs.map((p) => p.id)), [['r-1', 'r-2', 'r-3'], ['r-4', 'r-5', 'r-6'], ['r-7', 'r-8', 'r-9']]);

@@ -6,7 +6,9 @@ import { v_flex, h_flex, Button, Input, Textarea } from "gpui-base";
 
 export const CLEAR = "#00000000";
 export const MONO = "Geist Mono";
-export const icon = (name) => `mods/workspace-chrome/${name}.svg`;
+export const icon = (name) => (name.includes("/") ? name : `mods/workspace-chrome/${name}.svg`);
+// Opens what the panel shows as a tab.
+export const EXPAND = "mods/sympp/expand.svg";
 export const tint = (color, alpha) => (/^#[0-9a-f]{6}$/i.test(color ?? "") ? color + alpha : color);
 
 export function cap(text) {
