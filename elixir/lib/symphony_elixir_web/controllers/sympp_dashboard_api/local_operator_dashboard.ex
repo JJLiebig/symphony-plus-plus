@@ -236,6 +236,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
           :dispatched_by,
           :delivery,
           :board_state,
+          :repo_signal,
           :pr_signal,
           :review_signal,
           :review,

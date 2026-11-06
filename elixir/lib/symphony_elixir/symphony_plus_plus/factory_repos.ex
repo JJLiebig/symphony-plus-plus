@@ -25,6 +25,68 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
     end
   end
 
+  # A board read must never clone a missing repository.
+  @spec repo_signal(String.t(), keyword()) :: map()
+  def repo_signal(repo, opts \\ []) do
+    with {:ok, remote, _name} <- remote(repo),
+         root when is_binary(root) <- Config.factory_repos_root() do
+      table = signal_cache()
+      key = {root, identity(remote)}
+      now = Keyword.get(opts, :now_ms, System.monotonic_time(:millisecond))
+
+      case :ets.lookup(table, key) do
+        [{^key, recorded_at, signal}] when now - recorded_at < 30_000 ->
+          signal
+
+        _ ->
+          signal = local_repo_signal(root, remote)
+          :ets.insert(table, {key, now, signal})
+          signal
+      end
+    else
+      _ -> %{}
+    end
+  end
+
+  defp local_repo_signal(root, remote) do
+    with {:ok, root} <- PathSafety.canonicalize(root),
+         {_depth, [{checkout, _identity}]} <- checkout_matches(discover(root, root, 3), identity(remote), root) do
+      has_ci =
+        checkout
+        |> Path.join(".github/workflows/*.{yml,yaml}")
+        |> Path.wildcard()
+        |> Enum.any?(&File.regular?/1)
+
+      %{has_ci: has_ci}
+    else
+      _ -> %{}
+    end
+  end
+
+  defp signal_cache do
+    table = :sympp_repo_signal_cache
+
+    case :ets.whereis(table) do
+      :undefined ->
+        try do
+          options = [:named_table, :public, read_concurrency: true]
+
+          options =
+            case Process.whereis(SymphonyElixir.Supervisor) do
+              pid when is_pid(pid) -> [{:heir, pid, :repo_signal} | options]
+              _ -> options
+            end
+
+          :ets.new(table, options)
+        rescue
+          _race in ArgumentError -> table
+        end
+
+      _ ->
+        table
+    end
+  end
+
   @spec matches?(String.t(), String.t()) :: boolean()
   def matches?(checkout, expected) do
     with origin when is_binary(origin) <- RepoIdentity.local_git_origin_remote(checkout),
@@ -41,11 +103,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
     checkouts = discover(root, root, 3)
     expected = identity(remote)
 
-    matches =
-      checkouts
-      |> Enum.filter(fn {_path, repo_identity} -> repo_identity == expected end)
-      |> Enum.group_by(fn {path, _identity} -> length(Path.split(Path.relative_to(path, root))) end)
-      |> Enum.min_by(fn {depth, _paths} -> depth end, fn -> nil end)
+    matches = checkout_matches(checkouts, expected, root)
 
     case matches do
       nil ->
@@ -64,6 +122,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
       _ ->
         {:error, :ambiguous_factory_repo_checkout}
     end
+  end
+
+  defp checkout_matches(checkouts, expected, root) do
+    checkouts
+    |> Enum.filter(fn {_path, repo_identity} -> repo_identity == expected end)
+    |> Enum.group_by(fn {path, _identity} -> length(Path.split(Path.relative_to(path, root))) end)
+    |> Enum.min_by(fn {depth, _paths} -> depth end, fn -> nil end)
   end
 
   defp discover(_directory, _root, 0), do: []

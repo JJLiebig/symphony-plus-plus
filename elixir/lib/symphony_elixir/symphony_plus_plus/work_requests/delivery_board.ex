@@ -4,6 +4,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
   import Ecto.Query, only: [from: 2]
 
   alias SymphonyElixir.SymphonyPlusPlus.Dashboard.MetadataProjection
+  alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequestProgress
   alias SymphonyElixir.SymphonyPlusPlus.GuidanceRequests.GuidanceRequest
   alias SymphonyElixir.SymphonyPlusPlus.Lifecycle.Service, as: LifecycleService
@@ -679,6 +680,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
           branch: branch_summary(map_value(metadata, "branch")),
           pr: pr_summary(legacy_pr_metadata(metadata), delivery),
           worker_signal: Map.get(activity, :worker_signal),
+          repo_signal: FactoryRepos.repo_signal(work_package.repo),
           pr_signal: Signals.pr(metadata, delivery),
           review_signal: Signals.review(work_package, metadata, Map.get(context.review_observations, work_package.id)),
           dependency_signal: Signals.dependency(work_package, context),

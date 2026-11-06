@@ -9,6 +9,39 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
   @moduletag :ci_slow
 
+  test "repo CI signal observes existing checkouts and caches per repo and root" do
+    alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+
+    fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-repo-ci")
+    root = Path.join(fixture.root, "factory")
+    checkout = Path.join([root, "example", "project"])
+    previous = System.get_env("SYMPP_REPOS_ROOT")
+    on_exit(fn -> restore_env("SYMPP_REPOS_ROOT", previous) end)
+    System.put_env("SYMPP_REPOS_ROOT", root)
+    File.mkdir_p!(Path.dirname(checkout))
+    {_, 0} = System.cmd("git", ["clone", fixture.origin, checkout], stderr_to_stdout: true)
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", "git@github.com:example/project.git"])
+    workflows = Path.join(checkout, ".github/workflows")
+    File.mkdir_p!(workflows)
+    File.write!(Path.join(workflows, "ci.yml"), "name: CI")
+
+    assert %{has_ci: true} = FactoryRepos.repo_signal("example/project", now_ms: 0)
+    File.rm!(Path.join(workflows, "ci.yml"))
+    assert %{has_ci: true} = FactoryRepos.repo_signal("https://github.com/EXAMPLE/project.git", now_ms: 29_999)
+    File.mkdir_p!(Path.join(workflows, "directory.yml"))
+    File.write!(Path.join(workflows, "README.md"), "no workflows")
+    assert %{has_ci: false} = FactoryRepos.repo_signal("example/project", now_ms: 30_000)
+    File.write!(Path.join(workflows, "ci.yaml"), "name: CI")
+    assert %{has_ci: true} = FactoryRepos.repo_signal("example/project", now_ms: 60_000)
+
+    assert %{} == FactoryRepos.repo_signal("example/missing", now_ms: 60_000)
+    refute File.exists?(Path.join(root, "missing"))
+    System.put_env("SYMPP_REPOS_ROOT", Path.join(fixture.root, "other-factory"))
+    assert %{} == FactoryRepos.repo_signal("example/project", now_ms: 60_001)
+    System.delete_env("SYMPP_REPOS_ROOT")
+    assert %{} == FactoryRepos.repo_signal("example/project", now_ms: 60_001)
+  end
+
   test "factory clone preserves remote paths and uses factory authentication" do
     alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
 
