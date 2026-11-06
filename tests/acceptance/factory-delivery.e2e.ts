@@ -449,6 +449,8 @@ test('architect integration holds gate a ready PR without reopening work or chan
   expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).metadata).toEqual(metadata);
   await architect.reject('append_progress', { work_package_id: wp, summary: 'Ordinary evidence stays frozen.', idempotency_key: 'late-progress' }, 'already_ready');
   const resolution = { work_package_id: wp, blocker_id: 'integration-authority', resolution: 'Decision received.', summary: 'Integration authorized.', idempotency_key: 'integration-resolved' };
+  await architect.reject('resolve_blocker', { ...resolution, payload: { head_sha: head('a'), dependency_inputs: [] } }, 'already_ready');
+  expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(false);
   const resolved = await architect.call('resolve_blocker', resolution);
   expect((await architect.call('resolve_blocker', resolution)).progress_event.id).toBe(resolved.progress_event.id);
   expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(true);
