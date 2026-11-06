@@ -20,7 +20,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   }
 
   @type tool_error :: {:tool_error, String.t() | tuple()}
-  @type target_repo_root_result :: {:ok, String.t() | nil} | tool_error
+  @type target_repo_root_result ::
+          {:ok, String.t() | nil}
+          | tool_error
+          | {:error, atom() | {:target_repo_root_scope_mismatch, String.t()}}
   @type scope_result :: :ok | {:error, atom()} | tool_error
 
   @spec require_local_branch_pattern_scope(WorkPackage.t(), String.t() | nil, keyword()) :: scope_result()
