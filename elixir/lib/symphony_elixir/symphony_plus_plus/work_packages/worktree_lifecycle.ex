@@ -5,8 +5,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
 
   alias SymphonyElixir.Config
   alias SymphonyElixir.PathSafety
-  alias SymphonyElixir.SymphonyPlusPlus.GitCheckout
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
+  alias SymphonyElixir.SymphonyPlusPlus.GitCheckout
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository

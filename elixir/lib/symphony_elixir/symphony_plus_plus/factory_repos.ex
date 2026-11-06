@@ -2,8 +2,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   @moduledoc false
 
   alias SymphonyElixir.Config
-  alias SymphonyElixir.SymphonyPlusPlus.GitCheckout
   alias SymphonyElixir.PathSafety
+  alias SymphonyElixir.SymphonyPlusPlus.GitCheckout
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
 

@@ -20,7 +20,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     package = %WorkPackage{repo: "owner/project"}
 
     for explicit_root <- [nil, fixture.repo_root] do
-      assert {:tool_error, reason, details} = WorktreeScope.prepare_target_repo_root_argument(explicit_root, package, config)
+      assert {:tool_error, reason, details} = WorktreeScope.prepare_target_repo_root(explicit_root, package, config)
       assert reason in ["target_repo_root_scope_mismatch", "target_repo_root_required"]
       assert details["expected_repo"] == "owner/project"
       assert details["target_repo_root"] == fixture.repo_root
@@ -28,8 +28,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
       assert details["recovery"] =~ "origin"
     end
 
+    secret = "ghp_" <> String.duplicate("x", 32)
+    historical_package = %{package | repo: "https://#{secret}@github.com/owner/project.git"}
+    result = WorktreeScope.prepare_target_repo_root(fixture.repo_root, historical_package, config)
+    assert {:tool_error, _, redacted} = result
+    refute Jason.encode!(redacted) =~ secret
+    assert redacted["expected_repo"] =~ "owner/project"
+
     TestSupport.git_output!(fixture.repo_root, ["remote", "set-url", "origin", "https://github.com/owner/project.git"])
-    assert {:ok, root} = WorktreeScope.prepare_target_repo_root_argument(nil, package, config)
+    assert {:ok, root} = WorktreeScope.prepare_target_repo_root(nil, package, config)
     assert root == fixture.repo_root
   end
 

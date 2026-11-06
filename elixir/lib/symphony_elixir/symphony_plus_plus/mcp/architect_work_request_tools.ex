@@ -454,7 +454,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          {:ok, work_package_id} <- required_argument(arguments, "work_package_id"),
          {:ok, work_package, scope} <- scoped_worktree_work_package(config.repo, session, work_package_id),
          {:ok, explicit_root} <- optional_string_argument(arguments, "target_repo_root"),
-         {:ok, target_repo_root} <- WorktreeScope.prepare_target_repo_root_argument(explicit_root, work_package, config),
+         {:ok, target_repo_root} <- WorktreeScope.prepare_target_repo_root(explicit_root, work_package, config),
          {:ok, branch_arg} <- optional_string_argument(arguments, "branch"),
          {:ok, branch} <- WorktreeScope.prepare_branch(work_package, branch_arg),
          {:ok, result} <-

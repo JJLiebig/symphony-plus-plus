@@ -5,6 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
   alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreePath
@@ -50,9 +51,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
     resolve_target_repo_root(nil, work_package, config)
   end
 
-  @spec prepare_target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) ::
+  @spec prepare_target_repo_root(String.t() | nil, WorkPackage.t(), Config.t()) ::
           target_repo_root_result() | {:tool_error, String.t(), map()}
-  def prepare_target_repo_root_argument(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
+  def prepare_target_repo_root(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
     with {:ok, root} <- target_repo_root_argument(explicit_root, work_package, config),
          :ok <- require_target_repo_root_scope(root, work_package, config) do
       {:ok, root}
@@ -64,7 +65,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
           "recovery" => "Pass target_repo_root pointing to a checkout whose origin matches expected_repo. An upstream remote alone is insufficient: preparation fetches the base from origin."
         }
 
-        {:tool_error, reason, SymphonyElixir.SymphonyPlusPlus.Planning.Redactor.redact(details)}
+        {:tool_error, reason, Redactor.redact_output(details)}
 
       error ->
         error
