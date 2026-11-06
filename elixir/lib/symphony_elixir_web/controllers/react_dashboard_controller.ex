@@ -65,6 +65,7 @@ defmodule SymphonyElixirWeb.ReactDashboardController do
   defp inject_dashboard_config(body, conn) do
     config =
       %{
+        "readOnly" => SymphonyElixirWeb.FactoryAccessPlug.board_read_only?(conn),
         "apiBase" => prefixed_path(conn, "/api/v1/sympp/operator"),
         "basePath" => script_name_prefix(conn),
         "logoUrl" => prefixed_path(conn, "/splusplus-logo.png")

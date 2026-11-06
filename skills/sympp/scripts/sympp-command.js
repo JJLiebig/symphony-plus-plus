@@ -48,6 +48,31 @@ async function status() {
   process.stdout.write(`answers: ${answers}\n`);
   if (!answers) process.exitCode = 1;
 }
+async function board() {
+  const file = path.join(os.homedir(), ".local", "share", "sympp", "connection.json");
+  if (!fs.existsSync(file)) throw new Error("Run sympp setup first.");
+  const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  const env = saved.env || saved;
+  let endpoint = env.SYMPP_SERVER_URL;
+  if (!endpoint && env.SYMPP_RUNTIME_FILE && fs.existsSync(env.SYMPP_RUNTIME_FILE)) endpoint = JSON.parse(fs.readFileSync(env.SYMPP_RUNTIME_FILE, "utf8")).backend?.url;
+  if (!endpoint) throw new Error("Start the factory, then retry sympp board.");
+  const url = new URL("/sympp/board", endpoint);
+  const token = env.SYMPP_SERVER_TOKEN_FILE ? fs.readFileSync(env.SYMPP_SERVER_TOKEN_FILE, "utf8").trim() : "";
+  if (token) {
+    const response = await fetch(new URL("/api/v1/sympp/board-sign-in-code", endpoint), {
+      method: "POST", headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+    if (!response?.ok) throw new Error("Could not sign in to the factory. Check your connection and rerun setup if the token changed.");
+    const { code } = await response.json();
+    url.hash = new URLSearchParams({ "sympp-code": code }).toString();
+  }
+  // Never print the URL: its fragment carries a one-time sign-in code, valid for 60 seconds.
+  const result = process.platform === "win32"
+    ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Start-Process $env:SYMPP_BOARD_URL"], { env: { ...process.env, SYMPP_BOARD_URL: url.href }, stdio: "ignore", windowsHide: true })
+    : spawnSync(process.platform === "darwin" ? "open" : "xdg-open", [url.href], { stdio: "ignore" });
+  if (result.error || result.status !== 0) throw new Error("Could not open the board in your default browser.");
+  process.stdout.write("board: opened\n");
+}
 function update() {
   const file = path.join(os.homedir(), '.local', 'share', 'sympp', 'connection.json');
   if (!fs.existsSync(file)) throw new Error('Run sympp setup first.');
@@ -75,7 +100,7 @@ function update() {
   }
 }
 if (require.main === module) {
-  Promise.resolve().then(() => process.argv[2] === "update" ? update() : process.argv[2] === "status" ? status() : require("./setup-sympp.js").main(process.argv.slice(2)))
+  Promise.resolve().then(() => process.argv[2] === "board" ? board() : process.argv[2] === "update" ? update() : process.argv[2] === "status" ? status() : require("./setup-sympp.js").main(process.argv.slice(2)))
     .catch(error => { process.stderr.write(`error: ${JSON.stringify(error.message)}\n`); process.exitCode = 1; });
 }
 module.exports = { installCommand, saveConnection };
