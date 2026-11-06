@@ -511,7 +511,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequestDeliveryReconcilerTest do
       [
         id: ArchitectHandoff.anchor_id_for_work_request(work_request),
         kind: "delegation",
-        title: "Architect handoff: #{work_request.title}",
+        title: "Architect handoff",
         repo: work_request.repo,
         base_branch: work_request.base_branch,
         phase_id: phase_id,

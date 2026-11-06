@@ -7,6 +7,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
 
   alias SymphonyElixir.SymphonyPlusPlus.{BaseBranch, Id}
 
+  alias SymphonyElixir.SymphonyPlusPlus.Title
+
   @primary_key {:id, :string, autogenerate: false}
   @foreign_key_type :string
 
@@ -154,7 +156,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
       :archived_at,
       :archive_reason
     ])
-    |> SymphonyElixir.SymphonyPlusPlus.Title.validate()
+    |> Title.validate()
     |> validate_required([
       :id,
       :title,

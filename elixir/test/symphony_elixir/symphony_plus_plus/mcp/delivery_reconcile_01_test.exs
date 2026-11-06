@@ -12,7 +12,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
       create_work_request!(
         repo,
         id: "WR-MCP-LOCAL-READ",
-        title: "Trusted local ghp_localreadsecret discovery",
+        title: "Local ghp_localreadsecret discovery",
         repo: "https://example.test/repo?token=ghp_localreadsecret",
         base_branch: "feature/raw-secret-localreadbranch",
         status: "ready_for_slicing",
