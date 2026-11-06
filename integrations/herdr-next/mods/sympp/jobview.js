@@ -73,13 +73,8 @@ export function reviewPane(v, t, pkg, ctx, narrow) {
     .when(d.reviewed, (el) => el
       .child(h_flex().gap(narrow ? 18 : 28).items_start()
         .child(stat("This round", d.round, false))
-        .child(stat("Overall", d.overall, d.reslice))
-        .child(stat("Rounds", String(d.total), late)))
-      .when(d.bumps.length > 0, (box) => box.child(h_flex().id(`review-bump-${pkg.id}`).gap(10).px(12).py(9).rounded(6).items_start().bg(tint(t.working, "14"))
-        .child(div().pt(4).flex_none().child(mark(t, "bump")))
-        .child(v_flex().flex_1().min_w(0).gap(3)
-          .child(div().text_size(12.5).font_medium().text_color(t.foreground).child(d.bumps.map((b) => b.text).join(" · ")))
-          .when(d.reslice, (note) => note.child(div().text_size(12).text_color(t.muted).child("Reviews this long often mean the package is too big. Consider reslicing it."))))))
+        .child(stat("Overall", d.overall, false))
+        .child(stat("Rounds", String(d.total), false)))
       .child(ladder(t, d))
       .child(rounds(v, t, pkg, d, ctx)));
 }

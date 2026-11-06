@@ -161,7 +161,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context),
          {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
       guidance = DeliveryBoard.guidance_requests_by_work_package_id(repo, Enum.map(context.work_packages, & &1.id))
-      details = Enum.map(active.work_request_details, &Map.put(&1, :asks, native_asks(&1, guidance)))
+      details = Enum.map(active.work_request_details, &native_attention_detail(&1, guidance))
 
       {:ok,
        active
@@ -171,6 +171,22 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
        |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?(), repos_root: SymphonyElixir.Config.factory_repos_root()})
        |> Map.put(:chiefs, Chiefs.public_current(repo, operator_config))}
     end
+  end
+
+  defp native_attention_detail(detail, guidance) do
+    asks = native_asks(detail, guidance)
+
+    packages =
+      Enum.map(detail.work_packages, fn package ->
+        if get_in(package, [:activity_signal, :next_actor]) == "human" and
+             not Enum.any?(asks, &(&1.work_package_id == package.id)) do
+          put_in(package, [:activity_signal, :next_actor], "architect")
+        else
+          package
+        end
+      end)
+
+    detail |> Map.put(:asks, asks) |> Map.put(:work_packages, packages)
   end
 
   # Keep this projection aligned with parseBoard/buildJob/buildPackage in Herdr's model.js.
@@ -247,15 +263,10 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
     packages =
       Enum.flat_map(detail.work_packages, fn package ->
-        requests = Map.get(guidance, package.id, [])
-
-        asks = Enum.map(requests, &native_guidance_ask(package.id, &1))
-
-        if asks == [] and get_in(package, [:activity_signal, :next_actor]) == "human" do
-          [native_ask(package.id, "human_wait", nil, package.id, nil)]
-        else
-          asks
-        end
+        guidance
+        |> Map.get(package.id, [])
+        |> Enum.filter(&(&1.status == "human_info_needed"))
+        |> Enum.map(&native_guidance_ask(package.id, &1))
       end)
 
     escalation = get_in(detail, [:work_request, :operator_report, "human_escalation"])
@@ -267,7 +278,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
         []
       end
 
-    questions ++ packages ++ architect
+    Enum.filter(questions ++ packages ++ architect, &(is_binary(&1.text) and String.trim(&1.text) != ""))
   end
 
   defp native_guidance_ask(package_id, request) do

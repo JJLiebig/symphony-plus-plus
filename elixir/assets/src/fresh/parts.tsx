@@ -65,7 +65,6 @@ function CurrentStep({ at, view }: { at: number; view: PkgView }) {
   return (
     <span className={`font-semibold ${tone}`}>
       {label}
-      {view.failed ? " failing" : ""}
       {round}
       {view.untimed ? "" : ` · ${span(at - view.since)}`}
     </span>

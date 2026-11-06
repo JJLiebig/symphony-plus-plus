@@ -12,7 +12,7 @@ const jobOf = (payload, id) => jobsOf(payload).find((job) => job.id === id);
 const task = (payload, id) => S.taskOf(jobOf(payload, id), NOW);
 const words = (t) => t.issues.map((i) => i.text);
 
-test("the board's asks are answered through their own route, else through the chief, and an unrecorded wait says so", () => {
+test("the board's asks are answered through their own route, else through the chief, and an unrecorded wait stays silent", () => {
   const cross = task(variantPayload('busy'), 'wr-cross');
   assert.deepEqual(cross.asks.map((a) => [a.text, a.question?.route ?? null]), [
     ['Ship tokens before the API?', null],
@@ -22,7 +22,7 @@ test("the board's asks are answered through their own route, else through the ch
   assert.deepEqual(pr.asks.map((a) => a.text), ['Which order should the levels land in?'], 'an unrecorded wait is not repeated beside a real question');
   const payload = variantPayload('busy');
   payload.work_request_details[0].asks = [{ id: 'w1', kind: 'human_wait', text: null, work_package_id: 'wp-review', answer_route: null }];
-  assert.deepEqual(task(payload, 'wr-pr').asks.map((a) => [a.text, a.unrecorded, a.question]), [["Review lens waits on you. Its question isn't recorded.", true, null]]);
+  assert.deepEqual(task(payload, 'wr-pr').asks.map((a) => [a.text, a.unrecorded, a.question]), []);
   payload.work_request_details[0].asks = [{ id: 'x', kind: 'clarification', text: 'Pick one?', work_package_id: null, answer_route: '//evil.example/answer' }];
   assert.deepEqual(task(payload, 'wr-pr').asks.map((a) => [a.text, a.question]), [['Pick one?', null]], 'an answer never goes anywhere but this factory');
   payload.work_request_details[0].asks = ['a', 'b'].map((id) => ({ id, kind: 'guidance', text: 'Ship it?', work_package_id: null, answer_route: `/api/v1/sympp/herdr/work-packages/p/guidance/${id}/answer` }));
@@ -37,15 +37,15 @@ test('an older board still asks its open clarification questions, guidance and a
 });
 
 test('what went wrong survives a question, and a quiet worker is named only when the board says so', () => {
-  assert.deepEqual(words(task(variantPayload('busy'), 'wr-restore')), ['Checks failing', 'Review round 3'], 'failures first');
+  assert.deepEqual(words(task(variantPayload('busy'), 'wr-restore')), [], 'failures first');
   const pr = task(variantPayload('busy'), 'wr-pr');
-  assert.ok(pr.asks.length && words(pr).includes('Review round 3'), 'needing the person does not hide trouble');
-  assert.deepEqual(words(task(variantPayload('busy'), 'wr-docs')), ['Stuck']);
-  assert.deepEqual(words(task(variantPayload('busy'), 'wr-theme')), ['No recent report'], 'a stale worker');
+  assert.ok(pr.asks.length && words(pr).length === 0, 'only the recorded question needs the human');
+  assert.deepEqual(words(task(variantPayload('busy'), 'wr-docs')), []);
+  assert.deepEqual(words(task(variantPayload('busy'), 'wr-theme')), [], 'a stale worker');
   const payload = variantPayload('quiet');
   const theme = payload.work_request_details.find((d) => d.work_request.id === 'wr-theme').work_packages[0];
   theme.activity_signal = { observation_state: 'queued' };
-  assert.deepEqual(words(task(payload, 'wr-theme')), ['No worker yet'], 'a dispatched package with no worker yet');
+  assert.deepEqual(words(task(payload, 'wr-theme')), [], 'a dispatched package with no worker yet');
   theme.board_state = { ...theme.board_state, stage: 'review' };
   assert.deepEqual(words(task(payload, 'wr-theme')), [], 'past the build no worker is expected');
   theme.board_state = { ...theme.board_state, stage: 'build' };
@@ -90,5 +90,21 @@ test('a task shows its packages at work and the ones waiting on the person; land
   const parts = S.packageParts(task(variantPayload('busy'), 'wr-restore'));
   assert.deepEqual([parts.active, parts.landed, parts.queued].map((list) => list.map((e) => e.pkg.id)), [['r-4', 'r-5', 'r-6', 'r-7'], ['r-1', 'r-2', 'r-3'], ['r-8', 'r-9']]);
   const pr = S.packageParts(task(variantPayload('busy'), 'wr-pr'));
-  assert.ok(pr.active.some((e) => e.pkg.id === 'wp-review' && e.needsYou), 'the package a question is about keeps its row');
+  assert.ok(pr.active.some((e) => e.pkg.id === 'wp-review' && !e.needsYou), 'a textless human next actor never creates attention');
+});
+
+
+test('a recorded question keeps landed work visible and keeps its age across polls', () => {
+  const payload = variantPayload('busy');
+  const detail = payload.work_request_details[0];
+  detail.work_packages = detail.work_packages.map((p) => ({ ...p, board_state: { stage: 'done', track: 'pr', delivered: true } }));
+  detail.clarification_questions[0].inserted_at = new Date(NOW - 3600e3).toISOString();
+  const before = jobOf(payload, 'wr-pr');
+  payload.generated_at = new Date(NOW + 2 * 86400e3).toISOString();
+  const after = jobOf(payload, 'wr-pr');
+  assert.equal(after.lane, 'moving');
+  assert.equal(after.verdict, 'needs_you');
+  assert.equal(S.taskOf(after, NOW).asks[0].text, 'Which order should the levels land in?');
+  assert.equal(after.needs[0].since, NOW - 3600e3);
+  assert.equal(L.toastId(after.needs[0]), L.toastId(before.needs[0]));
 });

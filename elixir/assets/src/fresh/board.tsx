@@ -37,7 +37,7 @@ function settledLane(view: GoalView, at: number): keyof Lanes {
 export function lanesOf(views: GoalView[], at: number): Lanes {
   const lanes: Lanes = { main: [], landed: [], parked: [], dormant: [], backlog: [], settled: [] };
   for (const view of views) lanes[laneOf(view, at)].push(view);
-  const rank = new Map(lanes.main.map((view) => [view.goal.id, RANK[reportFor(view, at).verdict]]));
+  const rank = new Map(lanes.main.map((view) => [view.goal.id, RANK[reportFor(view).verdict]]));
   lanes.main.sort((left, right) => rank.get(left.goal.id)! - rank.get(right.goal.id)!);
   return lanes;
 }
@@ -69,7 +69,7 @@ function Landed({ at, views }: { at: number; views: GoalView[] }) {
               <GoalTitle goal={view.goal} />
             </span>
             <span className="shrink-0 text-[11px] uppercase tracking-[0.12em] text-faint" title={view.goal.repo}>{areaLabel(view.goal.area)}</span>
-            <span className="min-w-0 flex-1 truncate text-dim">{reportFor(view, at).brief}</span>
+            <span className="min-w-0 flex-1 truncate text-dim">{reportFor(view).brief}</span>
             <Deploy at={at} goal={view.goal} />
             <span className="w-24 shrink-0 text-right font-mono text-xs text-faint">{span(at - view.lastMoveAt)} ago</span>
             <GoalActions goal={view.goal} moving={view.live.length} />

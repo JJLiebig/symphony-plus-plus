@@ -26,7 +26,7 @@ export function Briefing({ at, views }: { at: number; views: GoalView[] }) {
 }
 
 function GoalReport({ at, view }: { at: number; view: GoalView }) {
-  const report = reportFor(view, at);
+  const report = reportFor(view);
   const { level, showAll, toggle } = useGoalLevel(report.verdict);
   const total = view.live.length + view.queued.length + view.done.length;
 

@@ -96,7 +96,7 @@ test('a package without a PR or a review says so, and one with a review drills d
 test('round three and three hours in review are road bumps, timed from the review start', () => {
   const job = jobOf('wr-pr');
   assert.deepEqual(M.reviewBumps(pkgOf(job, 'wp-review'), NOW).map((b) => b.text), ['Review is on round 3', 'In review for 3h 20m']);
-  assert.ok(job.bumps.includes('In review for 3h 20m: Review lens'), 'the review start counts, not the latest stage entry');
+  assert.deepEqual(job.bumps, [], 'review timing does not raise human attention');
   const calm = reviewing({ type: 'review_suite', status: 'in_progress', round: 2, started_at: at(179), round_started_at: at(30) });
   assert.deepEqual(M.reviewBumps(calm, NOW), []);
   assert.deepEqual(M.reviewBumps({ ...pkgOf(job, 'wp-review'), stage: 'merge' }, NOW), [], 'a finished review is no longer a bump');

@@ -26,7 +26,7 @@ export function Phases({ at, views }: { at: number; views: GoalView[] }) {
 }
 
 function GoalRoute({ at, view }: { at: number; view: GoalView }) {
-  const report = reportFor(view, at);
+  const report = reportFor(view);
   const { level, showAll, toggle } = useGoalLevel(report.verdict);
   const control = usePhaseControl();
   const phases = phaseStates(view);

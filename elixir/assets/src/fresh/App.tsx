@@ -24,7 +24,7 @@ const DIRECTIONS = [
 ] as const;
 const DENSITIES: Array<{ key: Density; label: string; hint: string }> = [
   { key: "closed", label: "Collapsed", hint: "Headlines only" },
-  { key: "attention", label: "Attention", hint: "Open only the goals with a road bump or a question for you" },
+  { key: "attention", label: "Attention", hint: "Open only the goals that need your answer" },
   { key: "active", label: "Active", hint: "Every goal shows what is moving now" },
   { key: "open", label: "Expanded", hint: "Every goal shows done, now and up next" },
 ];
@@ -83,7 +83,7 @@ export function App() {
     focusGoal(goalId);
   };
   const views = useMemo(() => (data ? viewAt(data.goals, at) : []), [at, data]);
-  const changes = useMemo(() => changesBetween(data ? viewAt(data.goals, since) : [], views, since, at), [at, data, since, views]);
+  const changes = useMemo(() => changesBetween(data ? viewAt(data.goals, since) : [], views), [data, since, views]);
   const areas = useMemo(() => [...new Set(views.filter((view) => view.state !== "settled").map((view) => view.goal.area[0]))], [views]);
   const shown = area ? views.filter((view) => view.goal.area[0] === area) : views;
   // Phases has nothing to add until a goal on the board is grouped, so it is offered only then.

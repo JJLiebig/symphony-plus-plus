@@ -1,7 +1,7 @@
 import { Check, Circle, type LucideIcon } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 
-import { deployAt, span, type Goal, type GoalView, type Pkg, type PkgView, type Stage } from "./model";
+import { span, type Goal, type GoalView, type Pkg, type PkgView, type Stage } from "./model";
 import { GLOW, NUDGE, smoothly, useFlash } from "./motion";
 import { Pip, Track } from "./parts";
 import { sampleReport } from "./samples";
@@ -21,8 +21,6 @@ export type Density = "closed" | "attention" | "active" | "open";
 export type Level = "closed" | "now" | "full";
 export type PhaseControl = { all: boolean; isOpen: (state: PhaseState) => boolean; open: (state: PhaseState) => void; setAll: (all: boolean) => void; toggle: (state: PhaseState) => void };
 
-const LONG_REVIEW = 3 * 3600e3;
-const STALL_AFTER = 2 * 3600e3;
 const FOLD_AFTER = 2;
 const ROW = "grid grid-cols-[10px_minmax(0,1fr)_auto_auto_28px] items-center gap-3 rounded px-2 py-1 odd:bg-white/[0.035]";
 
@@ -41,7 +39,7 @@ export const DensityContext = createContext<Density>("active");
 
 // The verdicts that deviate from plan and should be seen first.
 export function wantsAttention(verdict: Verdict) {
-  return verdict === "needs_you" || verdict === "bump" || verdict === "stalled";
+  return verdict === "needs_you";
 }
 
 function defaultLevel(density: Density, verdict: Verdict): Level {
@@ -83,14 +81,14 @@ export function usePhaseControl(): PhaseControl {
   };
 }
 
-export function reportFor(view: GoalView, at: number): Report {
-  const bumps = [...goalBumps(view, at), ...view.live.flatMap((live) => bumpsFor(live, at))];
-  const verdict = verdictFor(view, bumps, at);
+export function reportFor(view: GoalView): Report {
+  const bumps: string[] = [];
+  const verdict = verdictFor(view);
   const written = view.goal.report;
   if (written?.brief) return { verdict, brief: written.brief.text, briefAt: written.brief.at, eta: written.eta?.text ?? null, sample: false, bumps };
 
   const sample = sampleReport(view.goal.title, verdict === "on_track");
-  return { verdict, brief: sample?.brief ?? draftBrief(view, bumps, at), briefAt: null, eta: written?.eta?.text ?? sample?.eta ?? null, sample: Boolean(sample), bumps };
+  return { verdict, brief: sample?.brief ?? draftBrief(view), briefAt: null, eta: written?.eta?.text ?? sample?.eta ?? null, sample: Boolean(sample), bumps };
 }
 
 // How old the architect's brief is, so a stale one is not read as news.
@@ -99,51 +97,26 @@ export function BriefAge({ at, report }: { at: number; report: Report }) {
   return <span className="ml-2 whitespace-nowrap font-mono text-[11px] text-faint" title="When the architect wrote this">{span(at - report.briefAt)} ago</span>;
 }
 
-// Started, work left, and nothing has moved for a while: nobody is on it.
-function isStalled(view: GoalView, at: number) {
-  return view.state === "resting" && view.done.length > 0 && at - view.lastMoveAt > STALL_AFTER;
-}
-
-function verdictFor(view: GoalView, bumps: string[], at: number): Verdict {
+function verdictFor(view: GoalView): Verdict {
   if (view.ask) return "needs_you";
   if (view.goal.report?.parked) return "parked";
-  if (isStalled(view, at)) return "stalled";
-  if (bumps.length > 0) return "bump";
   if (view.state === "settled") return "settled";
   return view.live.length === 0 ? "idle" : "on_track";
 }
 
-// Road bumps that belong to the goal as a whole rather than to one package.
-function goalBumps(view: GoalView, at: number) {
-  const failed = deployAt(view.goal, at).filter((step) => step.state === "failed").map((step) => (step.at === null ? `${step.env} deploy failed` : `${step.env} deploy failed ${span(at - step.at)} ago`));
-  return isStalled(view, at) && !view.goal.report?.parked ? [...failed, `Nothing has moved for ${span(at - view.lastMoveAt)} with ${view.queued.length} queued`] : failed;
-}
-
-function bumpsFor(live: PkgView, at: number) {
-  const checks: Array<[boolean, string]> = [
-    [live.failed, live.untimed ? "Checks failing" : `Checks failing for ${span(at - live.since)}`],
-    [live.stage === "review" && live.round >= 3, `Review is on round ${live.round}`],
-    [live.stage === "review" && !live.untimed && at - live.since > LONG_REVIEW, `In review for ${span(at - live.since)}`],
-  ];
-  return checks.filter(([hit]) => hit).map(([, text]) => `${text}: ${live.pkg.title}`);
-}
-
 // Fallback wording from ledger counts, used where no architect brief exists.
-function draftBrief(view: GoalView, bumps: string[], at: number) {
+function draftBrief(view: GoalView) {
   if (view.ask) return `Waiting on you: ${view.ask.title}`;
   if (view.goal.report?.parked) return `Parked: ${view.goal.report.parked.text}`;
   const total = view.live.length + view.queued.length + view.done.length;
   if (view.state === "settled") return `All ${total} packages have landed.`;
-  if (view.live.length === 0) return quietBrief(view, total, at);
-  // A road bump is the news; the counts are on the same line already.
-  if (bumps.length > 0) return bumps.length === 1 ? `${bumps[0]}.` : `${bumps[0]}, and ${bumps.length - 1} more.`;
+  if (view.live.length === 0) return quietBrief(view, total);
   return `${view.live.length} of ${total} packages are moving. ${view.done.length} have landed.`;
 }
 
 // A short pause between packages is normal; only a stall is worth a clock.
-function quietBrief(view: GoalView, total: number, at: number) {
-  if (!isStalled(view, at)) return `Between packages: ${view.done.length} of ${total} have landed, ${view.queued.length} up next.`;
-  return `Nothing has moved for ${span(at - view.lastMoveAt)}. ${view.done.length} of ${total} packages have landed.`;
+function quietBrief(view: GoalView, total: number) {
+  return `Between packages: ${view.done.length} of ${total} have landed, ${view.queued.length} up next.`;
 }
 
 // Phases exist only where the architect grouped the work. Nothing is invented for ungrouped goals.

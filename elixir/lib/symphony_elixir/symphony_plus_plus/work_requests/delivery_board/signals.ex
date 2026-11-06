@@ -351,7 +351,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       guidance_wait -> guidance_wait
       dependency_reason -> {dependency_reason, "architect", eligibility[:next_action]}
       Map.get(dependency, :unmet_work_package_ids, []) != [] -> {"unmet_dependencies", "prerequisite_owner", "resolve_dependencies"}
-      get_in(summary, [:blocker_state, :active?]) -> {"active_blocker", nil, "resolve_blocker"}
+      get_in(summary, [:blocker_state, :active?]) -> {"active_blocker", "architect", "resolve_blocker"}
+      get_in(summary, [:pr_signal, :checks, :status]) == "failing" -> {"validation_failed", "architect", "inspect_validation"}
       true -> next_runtime_activity(work_package, review, worker, eligibility)
     end
   end
@@ -361,7 +362,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
     open = Enum.find(guidance, &(&1.status == "open"))
 
     cond do
-      human -> {human.human_info_reason || human.summary, "human", "answer_guidance"}
+      human && is_binary(human.question) && String.trim(human.question) != "" -> {human.human_info_reason || human.summary, "human", "answer_guidance"}
+      human -> {"missing_human_question", "architect", "answer_guidance"}
       open -> {open.summary, "architect", "answer_guidance"}
       true -> nil
     end
@@ -370,7 +372,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
   defp next_runtime_activity(work_package, review, worker, eligibility) do
     cond do
       worker[:status] == "paused" -> {"worker_paused", "worker", "resume"}
-      worker[:status] == "stale" -> {"runtime_stale", nil, "inspect_runtime"}
+      worker[:status] == "stale" -> {"runtime_stale", "architect", "inspect_runtime"}
       review[:next_action] not in [nil, "none"] -> {if(review[:next_action] == "wait", do: "review_in_progress"), "worker", review[:next_action]}
       work_package.status == "ready_for_merge" -> {"awaiting_integration", "architect", eligibility[:next_action]}
       work_package.status == "ci_waiting" -> {"validation_pending", "worker", "check_validation"}
