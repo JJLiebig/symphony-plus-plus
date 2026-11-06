@@ -308,7 +308,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   end
 
   defp recorded_worktree_target_repo_root_candidates(%WorkPackage{} = work_package, %Config{} = config, worktree_path) do
-    [live_worktree_target_repo_root(worktree_path) | target_repo_root_candidates(work_package, config)]
+    recorded = [work_package.worktree_target_repo_root, live_worktree_target_repo_root(worktree_path)]
+
+    (recorded ++ target_repo_root_candidates(work_package, config))
     |> Enum.filter(&is_binary/1)
     |> Enum.flat_map(fn target_repo_root ->
       with {:ok, target_repo_root} <- PathSafety.canonicalize(target_repo_root),

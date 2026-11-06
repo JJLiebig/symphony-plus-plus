@@ -124,7 +124,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     repos_root = Path.join(fixture.root, "factory")
     nested = Path.join([repos_root, "group", Path.basename(fixture.repo_root)])
     File.mkdir_p!(Path.dirname(nested))
-    File.rename!(fixture.repo_root, nested)
+    {_, 0} = System.cmd("git", ["-C", fixture.repo_root, "worktree", "add", "--detach", nested, "beta"], stderr_to_stdout: true)
     fixture = %{fixture | repo_root: nested}
     remote = "https://github.com/factory/#{Path.basename(fixture.repo_root)}.git"
     {_, 0} = System.cmd("git", ["-C", fixture.repo_root, "remote", "set-url", "origin", remote])
