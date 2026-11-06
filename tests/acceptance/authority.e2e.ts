@@ -61,9 +61,12 @@ test('HTTP initialization and local origin checks prevent ambient requests from 
   const nativeBoard = await native.raw(null, {}, 'GET', nativePath);
   expect(nativeBoard.status).toBe(200);
   expect(nativeBoard.body.chiefs).toEqual([]);
-  expect(parseBoard({ ...nativeBoard.body, generated_at: browserBoard.generated_at }))
+  // The native board adds the person's asks to the browser board's canonical content.
+  const shared = nativeBoard.body.work_request_details.map(({ asks: _asks, ...detail }: any) => detail);
+  expect(parseBoard({ ...nativeBoard.body, generated_at: browserBoard.generated_at, work_request_details: shared }))
     .toEqual(parseBoard(browserBoard));
   const detail = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === id);
+  expect(detail.asks).toEqual([]);
   expect(browserBoard.work_request_details.find((entry: any) => entry.work_request.id === id).product_tree.root_work_package_ids).toContain(nativePackage);
   expect(detail.work_packages.find((entry: any) => entry.id === nativePackage).board_state.stage).toBe('build');
   for (const headers of [
