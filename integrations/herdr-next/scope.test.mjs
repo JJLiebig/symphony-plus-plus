@@ -64,6 +64,9 @@ test("a task's checks are one live signal, with a slot from the start only where
   assert.equal(ci('wr-pr'), 'passed', 'a package with no PR yet does not hold back the ones that passed');
   assert.equal(ci('wr-cross'), 'waiting', 'a repository with CI keeps the slot before any PR opens');
   assert.equal(ci('wr-notes'), null, 'a repository without CI has no slot, even with a PR open');
+  const external = variantPayload('busy');
+  external.work_request_details.find((d) => d.work_request.id === 'wr-notes').work_packages[0].pr_signal.checks = { status: 'failing' };
+  assert.equal(task(external, 'wr-notes').ci, 'failed', 'checks the PR reports show even when the checkout has no workflows');
   assert.equal(ci('wr-nopr'), null, 'nor does work that opens no PR');
   const unknown = variantPayload('busy');
   for (const d of unknown.work_request_details) for (const p of d.work_packages ?? []) delete p.repo_signal;

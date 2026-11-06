@@ -246,9 +246,12 @@ export function crumbs(path, desk, jobs) {
 
 // ---------- Following focus ----------
 
+// A tab holding a Topic, Space or the Factory registers this key instead of a job id.
+export const scopeTabKey = (path) => `scope:${path.topic ?? ""}:${path.space ?? ""}`;
+
 // What Herdr's focus shows: an sympp-labelled terminal or a job tab names its job; a mod pane (this
-// panel, a viewer) keeps what is shown; anything else is its space. Labels only pick what to show;
-// they never authorize an agent jump.
+// panel, a viewer, a scope tab) keeps what is shown; anything else is its space. Labels only pick
+// what to show; they never authorize an agent jump.
 export function focusTarget(focus, terminalList, jobTabs, paneList) {
   if (!focus?.space) return null;
   const address = focus.shown ?? focus.terminal;
@@ -257,7 +260,7 @@ export function focusTarget(focus, terminalList, jobTabs, paneList) {
   const pkg = labels["sympp.work_package_id"] || labels["sympp.session_work_package_id"] || null;
   if (job || pkg) return { kind: "job", job, pkg, space: focus.space };
   const tabJob = jobTabs && typeof jobTabs === "object" ? jobTabs[focus.tab] : null;
-  if (typeof tabJob === "string" && tabJob) return { kind: "job", job: tabJob, pkg: null, space: focus.space };
+  if (typeof tabJob === "string" && tabJob && !tabJob.startsWith("scope:")) return { kind: "job", job: tabJob, pkg: null, space: focus.space };
   const pane = (paneList ?? []).find((p) => p.pane === focus.pane);
   if (pane && !pane.terminal && !focus.shown) return null;
   return { kind: "space", space: focus.space };

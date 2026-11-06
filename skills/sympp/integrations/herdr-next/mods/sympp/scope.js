@@ -16,13 +16,15 @@ export function packageEvidence(pkg, now, needsYou = false) {
 }
 
 // The PR's checks as one live signal, apart from the step line: "waiting" before they start, then
-// "running", "passed" or "failed"; "unknown" when the PR's checks can't be read. A repository without
-// CI has no signal; one the board says nothing about shows it once checks report.
+// "running", "passed" or "failed"; "unknown" when the PR's checks can't be read. Checks the PR
+// reports always show. `has_ci` comes from the local checkout's workflows, so it only decides whether
+// a repository keeps an empty slot before then.
 const CHECKS = { pending: "running", passing: "passed", failing: "failed", unavailable: "unknown" };
+const REPORTED = new Set(["running", "passed", "failed"]);
 export function ciOf(pkg) {
-  if (pkg.ci === false || pkg.track === "no_pr" || pkg.stage === "done") return null;
+  if (pkg.track === "no_pr" || pkg.stage === "done") return null;
   const state = CHECKS[pkg.pr.checks] ?? "waiting";
-  return pkg.ci === true || (state !== "waiting" && state !== "unknown") ? state : null;
+  return REPORTED.has(state) || pkg.ci === true ? state : null;
 }
 
 // A task's checks at a glance: any failing, else any running, else passed once any passed. A task

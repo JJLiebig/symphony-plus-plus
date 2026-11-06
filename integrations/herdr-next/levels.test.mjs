@@ -82,6 +82,7 @@ test('the panel follows a job\'s terminal or tab, else the space while it has wo
   assert.deepEqual(follow(focus()), { topic: 't-herdr', space: 's-web', job: 'wr-cross' }, 'an sympp terminal names its job, found by package');
   assert.deepEqual(follow(focus({ pane: 'p3', terminal: null }), { 'tab-web': 'wr-pr' }), { topic: 't-herdr', space: 's-web', job: 'wr-pr' }, 'a job tab names its job');
   assert.equal(follow(focus({ pane: 'p3', terminal: null })), null, 'focusing the panel itself keeps what it shows');
+  assert.equal(follow(focus({ pane: 'p3', terminal: null }), { 'tab-web': L.scopeTabKey({ topic: 't-herdr', space: null }) }), null, 'so does a Topic tab');
   assert.deepEqual(follow(focus({ pane: 'p2', terminal: 't2' })), { topic: 't-herdr', space: 's-web', job: null }, 'a space with work');
   assert.deepEqual(follow(focus({ space: 's-home', pane: 'p2', terminal: 't2' })), { topic: L.UNSORTED, space: 's-home', job: null }, 'an unsorted space without work still shows itself');
   const quiet = jobs.filter((job) => !job.repos.includes('owner/web'));

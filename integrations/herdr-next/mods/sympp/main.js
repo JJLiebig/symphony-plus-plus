@@ -84,7 +84,6 @@ async function removeCopy(name) {
 }
 
 // What a scope tab shows, as its tab registry records it.
-const tabKey = (path) => `scope:${path.topic ?? ""}:${path.space ?? ""}`;
 
 function storedPath() {
   try {
@@ -448,7 +447,7 @@ export default class Lens extends View {
   }
 
   // Herdr draws a mod pane only while its tab is the shown one, so a drawing job or scope tab is the
-  // focused tab. It records what it shows (a job id, or tabKey for a scope) so a panel and toasts can
+  // focused tab. It records what it shows (a job id, or L.scopeTabKey for a scope) so a panel and toasts can
   // find it instead of opening a second.
   registerTab(cx, shows) {
     const f = focused();
@@ -471,7 +470,7 @@ export default class Lens extends View {
     const job = path.job ? this.net.data?.jobs.find((j) => j.id === path.job) : null;
     const tabs = shared("sympp.jobTabs");
     const open = new Set(this.openTabs());
-    const shows = job ? job.id : tabKey(path);
+    const shows = job ? job.id : L.scopeTabKey(path);
     const tab = Object.entries(tabs && typeof tabs === "object" ? tabs : {}).find(([id, value]) => value === shows && open.has(id))?.[0];
     if (tab) return run("tab.select", { id: tab });
     if (job) return run("tab.new", J.jobTabArgs(this.given, job, this.spaceList()));
@@ -1085,7 +1084,7 @@ export default class Lens extends View {
     if (this.role === "panel" && !this.pin) this.follow(board, desk, cx);
     if (this.awaiting && board.jobs.some((job) => job.id === this.awaiting)) this.awaiting = null;
     const path = this.path = L.resolvePath(this.path, desk, board.jobs, this.awaiting);
-    if (this.scoped) this.registerTab(cx, path.job ?? tabKey(path));
+    if (this.scoped) this.registerTab(cx, path.job ?? L.scopeTabKey(path));
     this.level = L.levelOf(path);
     const trail = L.crumbs(path, desk, board.jobs);
     const needs = M.verdictCounts(board.jobs).needs;
