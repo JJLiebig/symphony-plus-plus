@@ -6,7 +6,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
-import { planInstall, planRemoval } from './chrome.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const scripts = resolve(here, '../../scripts');
@@ -16,7 +15,6 @@ const bundled = existsSync(resolve(here, '../../.sympp-install.json'));
 const help = `Install the optional native sympp view into Herdr-app.
 Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [options]
        node integrations/herdr-next/install.mjs --lab [options]
-       node integrations/herdr-next/install.mjs --remove-chrome [--home <folder>] [--app <executable>]
   --server <ssh host>    Connect to an existing factory (or http://127.0.0.1:19998 on the server)
   --lab                  Install the factory-floor lab (sample data, no sympp needed) beside the view
   --home <folder>        Herdr-app home (default: HERDR_APP_HOME or ~/.config/herdr-app)
@@ -24,13 +22,10 @@ Usage: node integrations/herdr-next/install.mjs --endpoint <dashboard-origin> [o
   --app <executable>     Herdr-app executable (default: herdr-app)
   --factory <runtime>    Local factory runtime record (default: SYMPP_RUNTIME_FILE or SYMPP_HOME/runtime/codex-plugin.json)
   --session <name>       Explicit local core session for agent navigation
-  --mark <a|b|c|d>       sympp mark to install (default: a); use --replace to switch
   --replace              Replace a previously installed mod with this version
-  --chrome               Also add an sympp panel button to your desk-tabs bar, sympp badges to your
-                         desk-agents list and chief crowns to your desk-topics (backed up first)
-  --remove-chrome        Restore the desk mods and remove the sympp panel
+  --check                Check the sympp mod with Herdr-app and roll back on failure
   --help                 Show this help
-The sympp backend and your existing layouts, topics and terminals are unchanged.`.split('\n').filter(line => !bundled || !/--lab|--mark/.test(line)).join('\n');
+The sympp backend and your existing layouts, topics and terminals are unchanged.`.split('\n').filter(line => !bundled || !/--lab/.test(line)).join('\n');
 
 function emit(fields) {
   for (const [key, value] of Object.entries(fields)) {
@@ -82,43 +77,22 @@ async function checkedWrite(home, values, files, mods) {
   }
 }
 
-async function removeChrome(values) {
-  const home = resolve(values.home || process.env.HERDR_APP_HOME || join(homedir(), '.config', 'herdr-app'));
-  const plan = await planRemoval(home);
-  if (plan.missing) {
-    emit({ error: 'The sympp chrome was not removed; no files were changed', missing: plan.missing });
-    return 1;
-  }
-  if (plan.writes.length && !await checkedWrite(home, values, plan.writes, [...plan.mods, 'sympp'])) return 1;
-  emit({ chrome: plan.writes.length ? 'removed' : 'not installed', layout: plan.layout });
-  return 0;
-}
-
 async function main() {
   let values;
   try {
     ({ values } = parseArgs({ options: {
       server: { type: 'string' }, endpoint: { type: 'string' }, factory: { type: 'string' }, home: { type: 'string' },
-      open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' }, mark: { type: 'string' },
+      open: { type: 'string' }, app: { type: 'string' }, session: { type: 'string' },
       replace: { type: 'boolean' }, lab: { type: 'boolean' }, help: { type: 'boolean' },
-      chrome: { type: 'boolean' }, 'auto-chrome': { type: 'boolean' }, 'token-file': { type: 'string' }, 'remove-chrome': { type: 'boolean' },
+      check: { type: 'boolean' }, 'token-file': { type: 'string' },
     } }));
   } catch (error) {
     emit({ error: error.message, help });
     return 2;
   }
   if (values.help) { process.stdout.write(`${help}\n`); return 0; }
-  if (bundled && (values.lab || values.mark && values.mark !== 'a')) {
-    emit({ error: 'This skill carries the default sympp panel. Use the repository installer for the lab or alternate marks.' });
-    return 2;
-  }
-  if (values.mark !== undefined && (!['a', 'b', 'c', 'd'].includes(values.mark) || values.lab)) {
-    emit({ error: values.lab ? '--mark selects the sympp view, not the lab' : '--mark must be a, b, c or d', help });
-    return 2;
-  }
-  if (values['remove-chrome']) return removeChrome(values);
-  if (values.chrome && values.lab) {
-    emit({ error: '--chrome adds the sympp view, not the lab', help });
+  if (bundled && values.lab) {
+    emit({ error: 'This skill carries the default sympp panel. Use the repository installer for the lab.' });
     return 2;
   }
   if (values.server && (values.endpoint || values.factory || values.lab)) {
@@ -150,10 +124,9 @@ async function main() {
   const target = join(home, 'mods', mod);
   const helper = join(home, 'tools', 'sympp-herdr.js');
   const source = join(here, 'mods', mod);
-  const markSource = values.mark && values.mark !== 'a' ? join(here, 'marks', values.mark) : source;
   const names = (await readdir(source)).filter(name => name.endsWith('.js') || name === 'mod.json' || name.endsWith('.svg') || name.endsWith('.png'));
   const sources = names.map(name => ({
-    from: join(!values.lab && /^(glyph|mark)[.-]/.test(name) ? markSource : source, name), to: join(target, name),
+    from: join(source, name), to: join(target, name),
   }));
   if (!values.lab) {
     sources.push({ from: join(helperScripts, 'sympp-herdr.js'), to: helper });
@@ -175,14 +148,8 @@ async function main() {
     props = { endpoint, hosts, remote: Boolean(remote || values['token-file']) };
     if (remote || values['token-file']) delete hosts.local.runtime;
   }
-  let chrome = values.chrome || values['auto-chrome'] ? await planInstall(home, { ...props, role: 'panel' }, values.session) : null;
-  if (chrome?.noDesk && values['auto-chrome']) chrome = null;
-  if (chrome?.missing) {
-    emit({ error: 'The sympp chrome needs your desk layout and mods; no files were changed', missing: chrome.missing });
-    return 1;
-  }
   const connectionWrites = [];
-  if (!values.lab && values['auto-chrome'] && !chrome) {
+  if (!values.lab && values.check) {
     const file = join(home, 'shared.json');
     const shared = JSON.parse((await contents(file))?.toString() || '{}');
     if (JSON.stringify(shared['sympp.connection']) !== JSON.stringify(props)) {
@@ -193,10 +160,8 @@ async function main() {
   const backupId = new Date().toISOString().replaceAll(':', '-') + '-' + process.pid;
   const panelBackups = values.replace ? changed.map(file => ({ to: join(home, 'data', 'sympp-panel-backups', backupId, file.to === helper ? 'sympp-herdr.js' : file.to.slice(target.length + 1)), body: file.existing })) : [];
   const writes = files.filter(({ body, existing }) => !existing?.equals(body));
-  if (chrome) {
-    if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...chrome.writes], [...chrome.mods, 'sympp'])) return 1;
-  } else if (values['auto-chrome']) {
-    if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...connectionWrites], ['sympp'])) return 1;
+  if (values.check) {
+    if (!await checkedWrite(home, values, [...panelBackups, ...writes, ...connectionWrites], [mod])) return 1;
   } else await write([...panelBackups, ...writes]);
   if (!values.lab) {
     await rm(join(home, 'tools', 'sympp-http.cjs'), { force: true });
@@ -221,8 +186,7 @@ async function main() {
       return 1;
     }
   }
-  emit({ installed: target, ...(endpoint ? { endpoint, mark: values.mark || 'a' } : {}),
-    ...(chrome ? { chrome: chrome.writes.length ? 'installed' : 'unchanged', layout: chrome.layout, backups: chrome.backups } : {}),
+  emit({ installed: target, ...(endpoint ? { endpoint } : {}),
     ...(values.open ? { opened: values.open } : { command, args: JSON.stringify(args) }) });
   return 0;
 }

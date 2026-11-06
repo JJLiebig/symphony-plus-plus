@@ -86,6 +86,12 @@ test('remote setup registers a launchable bridge in selected Codex and user Clau
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const env = { ...process.env, ...isolatedPathEnv(root), HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), HERDR_APP_HOME: path.join(root, 'herdr'), SYMPP_HOME: path.join(root, 'sympp') };
   fs.mkdirSync(env.SYMPP_HOME, { recursive: true });
+  const desk = path.join(root, 'jjstack-desk');
+  fs.mkdirSync(desk);
+  fs.writeFileSync(path.join(desk, 'main.js'), '// owned desk');
+  fs.mkdirSync(path.join(env.HERDR_APP_HOME, 'mods'), { recursive: true });
+  fs.symlinkSync(desk, path.join(env.HERDR_APP_HOME, 'mods', 'desk-tabs'), process.platform === 'win32' ? 'junction' : 'dir');
+
   fs.writeFileSync(path.join(env.SYMPP_HOME, 'remote-token'), 'server-token-must-survive');
   const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../scripts/setup-sympp.js'), '--host', 'both', '--server', 'http://127.0.0.1:19998'], { env, cwd: root, encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -105,6 +111,8 @@ test('remote setup registers a launchable bridge in selected Codex and user Clau
   });
   assert.equal(second.status, 0, second.stdout + second.stderr);
   assert.equal(fs.readFileSync(claude.env.SYMPP_SERVER_TOKEN_FILE, 'utf8'), 'first-client-credential');
+  assert.equal(fs.readFileSync(path.join(desk, 'main.js'), 'utf8'), '// owned desk');
+
 });
 
 test('update reloads setup, repairs the selected registration, and updates the factory despite client failures', t => {
@@ -119,7 +127,7 @@ cp.spawnSync = (command, args, options) => {
     return { status: process.env.UPDATE_FAIL === 'skill' ? 1 : 0, stdout: ({ check: 'Failed to check skills from JJLiebig/sympp', skipped: '1 skill(s) cannot be checked automatically:', legacy: '1 project skill(s) cannot be updated automatically' })[process.env.UPDATE_FAIL] || '' };
   }
   if (command === process.execPath && args[0].endsWith('setup-sympp.js') && ['panel', 'both'].includes(process.env.UPDATE_FAIL)) {
-    return { status: 1, stdout: 'The sympp chrome needs your desk layout and mods; no files were changed', stderr: 'missing: The sympp lines in desk-agents were edited' };
+    return { status: 1, stdout: 'The mod update failed; all changed files were restored', stderr: 'reason: sympp mod check failed' };
   }
   if (command === 'powershell.exe' && args.some(a => a.includes('SYMPP_COMMAND_BIN'))) return { status: 0 };
   if (command === 'ssh') {
@@ -164,7 +172,7 @@ cp.spawnSync = (command, args, options) => {
     assert.notEqual(result.status, 0);
     if (failure !== 'factory') {
       assert.match(result.stderr, /setup failed/);
-      assert.match(result.stderr, /The sympp lines in desk-agents were edited/);
+      assert.match(result.stderr, /sympp mod check failed/);
       assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
     }
     if (failure !== 'panel') assert.match(result.stderr, /factory failed/);

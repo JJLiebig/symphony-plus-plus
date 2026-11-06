@@ -34,7 +34,7 @@ otherwise the installer follows `HERDR_APP_HOME` or `~/.config/herdr-app`.
 For a nondefault local core, pass `--session <name>`; the installer otherwise
 retains its `HC_SESSION` when set.
 Use `--factory <runtime/codex-plugin.json>` to select the local factory to start;
-it defaults to `SYMPP_RUNTIME_FILE`, then `SYMPP_HOME/runtime/codex-plugin.json`, for the view and `--chrome` panel.
+it defaults to `SYMPP_RUNTIME_FILE`, then `SYMPP_HOME/runtime/codex-plugin.json`, for the view.
 Without `--open`, it installs the files and prints the Herdr command to open
 them later.
 
@@ -58,100 +58,50 @@ settings and terminals intact. Existing edits are protected; use `--replace`
 explicitly to install this version over a differing copy. Close an sympp pane
 with Herdr's ordinary pane or tab controls.
 
-## sympp in your desk tabs and agents
+## Contract for desk mods
 
-On a personal desk layout (its own `desk-tabs` bar and `desk-agents` list),
-`--chrome` adds sympp to them:
+sympp ships its view, `mods/sympp` data publishers and icons. The desk mods are
+owned by jjstack; setup and `sympp update` never patch them or their layouts.
+Old `data/sympp-chrome` backups are left alone. Setup checks only the sympp mod
+and restores changed files on failure. Manual installs can request this with
+`--check` (requires Herdr-app).
 
-```powershell
-node integrations/herdr-next/install.mjs --endpoint $origin --chrome
-```
+The desk mods currently consume:
 
-- **sympp** sits beside Files and Changes and toggles the sympp panel the same way.
-- An agent started for sympp shows a small sympp glyph tucked behind its icon in the
-  Agents list, and after its name its package's stage: build, checks, review with
-  its round (amber from the third), ready to merge or landed, and an orange dot
-  when it needs you. A stage older than about two minutes shows dimmed as last
-  known. Stages arrive from an open sympp view's board reads, the panel included,
-  once it has been shown.
-- A UI studio tab shows the sympp glyph in a small window tucked behind its icon.
-- With a personal `desk-topics` sidebar, each topic header shows the sympp mark. With a running
-  chief, click peeks at it and Shift+click switches to its space and tab. A chief started from the
-  mark counts as running from its start, before it registers. With no running chief the mark is
-  greyed:
-  - When the topic's last chief saved a Codex or Claude session, click resumes that session in its
-    own folder, as the chief tab in the topic's chief space, in place of the finished tab. The
-    resumed chief is told to register again.
-  - Otherwise, or when resuming fails, click opens **Start chief**: pick an agent and a machine (the
-    factory's by default), add anything for the chief to the line, and press Enter. The agent starts
-    as a normal tab in the topic's own "<topic> chief" space on that machine, told to register as the
-    topic's chief. It starts in the folder holding the topic's checkouts, at the same place under that
-    machine's repos root as under theirs; else in that repos root; else in its home. The factory's
-    machine uses the factory's `SYMPP_REPOS_ROOT`; other machines use the folder their spaces'
-    checkouts share. Starting again reuses that space.
-  Right-click the mark for what applies: **Go to chief space**, **Add to composition** and **Start
-  new chief** (always a fresh session; its registration replaces the current chief).
-  The chief space isn't listed in the sidebar; while it's shown, its topic's header is highlighted.
-  A topic shows its header even with no spaces listed.
-  With the sidebar collapsed, a running chief's mark replaces its topic's divider. A chief on another
-  machine shows as running once that machine has the sympp skill installed (`sympp update` there).
-  A desk without `desk-topics` gets the rest; an older `desk-topics` chrome upgrades in place.
+- `shared('sympp.agents')`: map keyed by terminal address, including the machine
+  prefix for remote terminals (for example `vps/t7`). Each entry has `stage`
+  (`build`, `checks`, `review`, `merge`, `landed` or null), `round` (review round,
+  otherwise null), `needs` (boolean), `endpoint` (factory origin) and `at`
+  (Unix milliseconds). Entries refresh after 45 seconds even when unchanged;
+  desk-agents dims stages older than two minutes. Dropped packages have null stage.
+- Terminal labels: `sympp.launch_id` with `sympp.work_package_id` or
+  `sympp.work_request_id`, or `sympp.session_id` with
+  `sympp.session_work_package_id` or `sympp.session_work_request_id`.
+  desk-agents uses these to identify sympp terminals even without board data.
+- `shared('sympp.chiefs')`: map from topic ID to arrays of `{ domain, terminal }`.
+  `terminal` is present only while confirmed running. desk-topics uses it for
+  chief marks and navigation. `shared('sympp.chief.spaces')` maps space IDs to
+  topic IDs so chief spaces can be hidden from ordinary space rows.
+- `shared('workspace.tab_marks')`: array of `{ tab, icon, iconDark?, label }`;
+  sympp publishes its studio marks here. desk-tabs reads the first mark per tab.
+- `shared('sympp.board')`: array of live jobs `{ id, title, stage, needs, failed }`,
+  where stage is the furthest active package stage or null. desk-status renders
+  these and writes `shared('sympp.open')` as `{ job, at }` to select a job in sympp.
+- Icons under `mods/sympp/`: `glyph.svg`, `glyph-dark.svg`,
+  `stage-build.svg`, `stage-checks.svg`, `stage-review.svg`, `stage-merge.svg`,
+  `stage-landed.svg`, `needs.svg`, `glyph-ui.svg`, `glyph-ui-dark.svg`,
+  `mark.svg`, `mark-dark.svg`, `mark.png` and `mark-dark.png`.
+  The glyph pair decorates agents, the UI glyph pair marks studios, and the
+  mark SVG/PNG pairs serve chief marks and the desk-tabs panel button.
 
-The installer backs up the layout and the desk mods under `data/sympp-chrome`, adds
-a `sympp` panel to the layout's `panel-body` stack, and patches the desk mods in
-place; running it again changes nothing. It refuses, listing what is missing,
-when the layout has no `panel-body` stack, uses Herdr's own `tabs` or `agents`
-mod, a desk mod differs from what its patch expects, or its sympp lines were edited.
-Edits made since elsewhere in a desk mod are kept, removal included. Other mods can add
-their panels the same way through
-`shared("workspace.panel_buttons")` entries `{ id, label, icon, iconDark? }`: an
-SVG icon is tinted like Files and Changes; a picture shows as it is, `iconDark`
-on a dark theme. Tabs take marks the same way through `shared("workspace.tab_marks")`
-entries `{ tab, icon, iconDark?, label }`: a tab's first mark sits behind the right
-of its icon with `label` as its tooltip, so draw it 14 px with that icon's ring cut out.
+jjstack's desk-tabs owns the `workspace.panel_buttons` registration for sympp
+(`id`, `label`, `icon`, `iconDark`) and expects a layout child named `sympp` in
+`panel-body`. desk-topics opens sympp overlays with `role: 'chief'` and
+`{ topic, name }`, or `role: 'chief-menu'` and `{ topic, name, terminal }`.
+These entry points remain part of the desk integration.
 
-Chrome installation and removal require `herdr-app` on `PATH` or `--app <executable>`.
-The installer checks both desk mods and sympp after writing them. If a check fails,
-it reports the mod and error and restores every changed file to its previous contents.
-
-```powershell
-node integrations/herdr-next/install.mjs --remove-chrome
-```
-
-restores both mods from their backups and removes the sympp panel from the layout,
-keeping any other layout change made since. A desk with another version of the
-chrome is refused; remove it with the installer that added it, then install again.
-Both patches are now chrome 3 (the new S marks). Upgrade a desk with chrome 2
-using its matching installer to remove it first, then install this checkout:
-
-```powershell
-git worktree add C:/Code/.worktrees/sympp/chrome-2-remove 77ef41d796a2a5e9688bfb97b736212a589b8849
-node C:/Code/.worktrees/sympp/chrome-2-remove/integrations/herdr-next/install.mjs --remove-chrome
-node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace
-git worktree remove C:/Code/.worktrees/sympp/chrome-2-remove
-git worktree prune
-```
-
-For chrome 1, use revision `76846ad8` for the removal worktree instead. Pass
-the same `--home`, `--app` and `--session` selections to both installers when
-using a nondefault desk. Removal and installation check the mods and retain
-their existing rollback behavior.
-
-Four blue-violet marks are available: **A · Cut ribbon**, **B · Open ribbon**,
-**C · Fold**, and **D · Solid**. To switch all three surfaces together:
-
-```powershell
-node integrations/herdr-next/install.mjs --endpoint $origin --chrome --replace --mark a
-```
-
-Use `a`, `b`, `c` or `d`; A is the default. Repeat another choice on later installs.
-Switching marks on chrome 3 needs no removal. The installer keeps its edit
-protection, mod checks and rollback.
-
-Each option has light/dark SVGs for the Agents badge and studio window, with
-the provider icon's ring kept transparent, plus a panel SVG and transparent
-64 px PNG export. B/C/D sources live in `marks/<letter>/`; A uses the default
-assets in `mods/sympp/`.
+Contract changes only add fields. Flag any breaking change to the user before
+it ships so the jjstack desk mods can follow.
 
 ## UI studio
 
