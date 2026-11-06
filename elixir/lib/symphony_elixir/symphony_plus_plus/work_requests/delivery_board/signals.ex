@@ -182,6 +182,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       step: evidence |> signal_value(["step", "stage"]) |> bounded_string(),
       evidence_id: evidence |> signal_value(["evidence_id", "reference", "id"]) |> bounded_string(),
       reviewed_head: evidence |> signal_value(["head_sha", "reviewed_head"]) |> bounded_string(),
+      current_head: observation |> map_value("current_head") |> bounded_string(),
+      validation: observation |> map_value("validation") |> Sanitizer.redacted_json(),
       provider_status: observation |> map_value("provider_status") |> bounded_string(),
       next_action: observation |> map_value("next_action") |> bounded_string(),
       round: observation |> map_value("round") |> integer_value(),
@@ -373,6 +375,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
     cond do
       worker[:status] == "paused" -> {"worker_paused", "worker", "resume"}
       worker[:status] == "stale" -> {"runtime_stale", "architect", "inspect_runtime"}
+      review[:status] == "inspection_needed" -> {"review_head_changed", "architect", "inspect_changed_since_review"}
       review[:next_action] not in [nil, "none"] -> {if(review[:next_action] == "wait", do: "review_in_progress"), "worker", review[:next_action]}
       work_package.status == "ready_for_merge" -> {"awaiting_integration", "architect", eligibility[:next_action]}
       work_package.status == "ci_waiting" -> {"validation_pending", "worker", "check_validation"}

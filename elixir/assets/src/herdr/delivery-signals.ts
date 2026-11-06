@@ -23,12 +23,14 @@ export type WorkPackagePrSignal = {
 export type WorkPackageReviewSignal = {
   type?: string | null;
   args?: Record<string, unknown> | null;
-  status: "pending" | "in_progress" | "passed" | "failed" | "unavailable";
+  status: "pending" | "in_progress" | "passed" | "failed" | "inspection_needed" | "unavailable";
   current?: number | null;
   total?: number | null;
   step?: string | null;
   evidence_id?: string | null;
   reviewed_head?: string | null;
+  current_head?: string | null;
+  validation?: Record<string, string> | null;
   provider_status?: string | null;
   next_action?: string | null;
   round?: string | null;

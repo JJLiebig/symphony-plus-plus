@@ -354,7 +354,7 @@ export function PkgLine({ at, view }: { at: number; view: PkgView }) {
     <div ref={ref} className={ROW}>
       <Pip stage={view.stage} failed={view.failed} />
       <span className="truncate text-sm">{view.pkg.title}</span>
-      <span className="font-mono text-[11px] text-faint">{view.stage === "review" && view.pkg.reviewMode ? `${view.pkg.reviewMode} review` : ""}</span>
+      <span className="font-mono text-[11px] text-faint">{view.pkg.reviewInspectionNeeded ? "Changes since review need inspection" : view.stage === "review" && view.pkg.reviewMode ? `${view.pkg.reviewMode} review` : ""}</span>
       <Track at={at} view={view} />
       <Session at={at} view={view} />
     </div>

@@ -13,6 +13,7 @@ export type Pkg = {
   seq: number;
   short: boolean;
   reviewMode: string | null;
+  reviewInspectionNeeded?: boolean;
   groupId: string | null;
   goalTitle: string;
   area: string[];
@@ -60,7 +61,7 @@ type Slice = {
   operational_state?: { key?: string | null } | null;
   board_state?: BoardState | null;
   pr_signal?: { number?: number | null; url?: string | null; created_at?: string | null; head_changed_at?: string | null; checks?: { status?: string | null; changed_at?: string | null } | null } | null;
-  review_signal?: { mode?: string | null; round?: number | null; started_at?: string | null; round_started_at?: string | null } | null;
+  review_signal?: { status?: string | null; mode?: string | null; round?: number | null; started_at?: string | null; round_started_at?: string | null } | null;
   session_location?: SessionLocation | null;
 };
 type SessionLocation = {
@@ -254,9 +255,9 @@ function boardPkg(slice: Slice, board: BoardState, now: number): Pkg {
   return pkg;
 }
 
-function signalFacts(slice: Slice): Pick<Pkg, "reviewMode" | "prAt" | "prNumber" | "prUrl"> {
+function signalFacts(slice: Slice): Pick<Pkg, "reviewMode" | "reviewInspectionNeeded" | "prAt" | "prNumber" | "prUrl"> {
   const pr = slice.pr_signal ?? {};
-  return { reviewMode: slice.review_signal?.mode ?? slice.review?.args?.mode ?? null, prAt: ms(pr.created_at), prNumber: pr.number ?? null, prUrl: pr.url ?? null };
+  return { reviewInspectionNeeded: slice.review_signal?.status === "inspection_needed", reviewMode: slice.review_signal?.mode ?? slice.review?.args?.mode ?? null, prAt: ms(pr.created_at), prNumber: pr.number ?? null, prUrl: pr.url ?? null };
 }
 
 function boardOutcome(board: BoardState, short: boolean): Outcome | null {

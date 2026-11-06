@@ -192,6 +192,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
          mode: bounded_string(map_value(payload, "mode")),
          status: observed_status(payload),
          provider_status: bounded_string(map_value(payload, "status")),
+         current_head: bounded_string(map_value(payload, "current_head")),
+         validation: validation(map_value(payload, "validation")),
          next_action: bounded_string(map_value(payload, "next_action")),
          round: non_negative_integer(map_value(payload, "rounds")),
          steps: steps(map_value(payload, "steps")),
@@ -211,12 +213,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
 
   defp observed_status(payload) do
     case {map_value(payload, "done"), map_value(payload, "status")} do
-      {_done, status} when status in ["stale", "fix-pending", "failed", "invalidated", "head_changed_after_review"] -> "failed"
+      {_done, "head_changed_after_review"} -> "inspection_needed"
+      {_done, status} when status in ["stale", "fix-pending", "failed", "invalidated"] -> "failed"
       {_done, "done"} -> "passed"
       {true, _status} -> "passed"
       _active -> "in_progress"
     end
   end
+
+  defp validation(value) when is_map(value) do
+    ~w(focused full_suite ci review_green note)
+    |> Map.new(&{&1, bounded_string(map_value(value, &1))})
+    |> reject_nil_values()
+  end
+
+  defp validation(_value), do: nil
 
   defp progress_step(value) when is_binary(value) do
     case Regex.run(~r/^review\s+\d+\/\d+\s+(.+)$/, value) do

@@ -333,7 +333,7 @@ function pipeline(t, pkg) {
     if (i > 0) parts.push(mono(11, i <= at ? t.muted : tint(t.foreground, "3a")).child("─"));
     const current = live && (short ? i === 0 : stage === STEP_OF[pkg.stage]);
     if (current) {
-      const phase = pkg.stage === "review" ? S.reviewPhase(pkg) ?? (pkg.round > 1 ? `round ${pkg.round}` : null) : null;
+      const phase = pkg.review.status === "inspection_needed" ? S.reviewPhase(pkg) : pkg.stage === "review" ? S.reviewPhase(pkg) ?? (pkg.round > 1 ? `round ${pkg.round}` : null) : null;
       parts.push(mono(11, c[pkg.stage] ?? t.foreground).font_semibold().child(phase ? `${label} · ${phase}` : label));
       return;
     }

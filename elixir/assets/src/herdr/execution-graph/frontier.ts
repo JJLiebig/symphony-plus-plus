@@ -202,7 +202,7 @@ function packageIsLive(pkg: WorkRequestExecutionGraphModel["work_packages"][numb
 }
 
 function packageHasLiveDelivery(pkg: WorkRequestExecutionGraphModel["work_packages"][number]) {
-  return pkg.worker_signal?.status === "active" || ["in_progress", "failed"].includes(pkg.review_signal?.status ?? "")
+  return pkg.worker_signal?.status === "active" || ["in_progress", "failed", "inspection_needed"].includes(pkg.review_signal?.status ?? "")
     || ["pending", "failing"].includes(pkg.pr_signal?.checks?.status ?? "");
 }
 

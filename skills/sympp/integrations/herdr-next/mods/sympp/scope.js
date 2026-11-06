@@ -39,6 +39,7 @@ export function taskCi(packages) {
 // review, else its current step. Names are Review Suite's shipped steps; others keep their own words.
 const PHASES = { "arena-base-review": "base review", "base-signoff": "base sign-off", "arena-deep-review": "deep review", "deep-signoff": "deep sign-off" };
 export function reviewPhase(pkg) {
+  if (pkg.review.status === "inspection_needed") return "caller inspection needed";
   if (pkg.review.nextAction === "github_review") return "GitHub";
   const step = pkg.review.steps?.find((s) => s.state === "current")?.name ?? pkg.review.step;
   if (!step) return null;
