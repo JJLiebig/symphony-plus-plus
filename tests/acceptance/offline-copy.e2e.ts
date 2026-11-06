@@ -47,9 +47,12 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
     expect(nativeBoard.status).toBe(200);
     expect(nativeBoard.body.runtime).toEqual({ offline: true, repos_root: null });
     expect(nativeBoard.body.chiefs).toEqual([]);
-    expect(parseBoard({ ...nativeBoard.body, generated_at: browserBoard.generated_at }))
+    // The native board adds the person's asks to the browser board's canonical content.
+    const shared = nativeBoard.body.work_request_details.map(({ asks: _asks, ...detail }: any) => detail);
+    expect(parseBoard({ ...nativeBoard.body, generated_at: browserBoard.generated_at, work_request_details: shared }))
       .toEqual(parseBoard(browserBoard));
     const copiedRequest = nativeBoard.body.work_request_details.find((entry: any) => entry.work_request.id === request);
+    expect(copiedRequest.asks).toEqual([]);
     expect(copiedRequest.work_packages.map((entry: any) => entry.id)).toContain(wp);
     const hydrated = JSON.stringify(browserBoard);
     expect(hydrated).toContain('Synthetic online snapshot');

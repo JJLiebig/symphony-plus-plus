@@ -90,11 +90,6 @@ export function reviewDetail(pkg, now) {
   };
 }
 
-// Packages whose review hit a road bump, for the attention strip.
-export function reviewAlerts(job, now) {
-  return job.packages.map((pkg) => ({ pkg, bumps: reviewBumps(pkg, now) })).filter((a) => a.bumps.length > 0);
-}
-
 // A recorded moment as a local clock time, with the date when it is not today.
 export function clock(at, now) {
   if (at === null || at === undefined) return null;

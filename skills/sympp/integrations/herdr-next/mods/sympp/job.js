@@ -1,50 +1,10 @@
-// Pure Job level: one job's phase, package detail, participating agents and decisions, from canonical
-// sympp state and Herdr's own terminal reports. No GPUI or Herdr imports, so it is tested on its own.
+// Pure task helpers: the agents taking part and their liveness, from canonical sympp state and
+// Herdr's own terminal reports, and opening a task in its own tab. No GPUI or Herdr imports.
 
-import { POLL, ago, shortRepo, stageText, evidenceOf, bindingsFor } from "./model.js";
+import { POLL, ago, shortRepo, bindingsFor } from "./model.js";
 
-export const PHASES = [["shaping", "Shaping"], ["planning", "Planning"], ["executing", "Executing"], ["closing", "Closing"], ["done", "Done"]];
-const SHAPING = new Set(["draft", "ready_for_clarification", "clarifying", "human_info_needed"]);
-const OBSERVATION = { stale: "stale", paused: "paused", unknown: "unknown" };
 // A passed helper check counts as live for two quiet read intervals, then needs checking again.
 export const LIVE_FOR = 2 * POLL.quiet;
-
-// ---------- Phase ----------
-
-// Canonical request status and package delivery only; never a percentage or a guess.
-export function phaseOf(job) {
-  if (job.closedAt !== null || job.executionStatus === "closed") return "done";
-  if (SHAPING.has(job.status)) return "shaping";
-  if (job.status === "ready_for_slicing") return "planning";
-  if (job.status !== "sliced") return null;
-  const required = job.packages.filter((pkg) => pkg.outcome !== "dropped");
-  if (required.length > 0 && required.every((pkg) => pkg.stage === "done")) return "closing";
-  return job.packages.some((pkg) => pkg.dispatchedAt !== null || pkg.stage !== "queued") ? "executing" : "planning";
-}
-
-// ---------- Package detail ----------
-
-// What a package row says when opened, in reading order: plain words from canonical signals.
-export function packageCard(pkg, report, now) {
-  const a = pkg.activity;
-  const observation = OBSERVATION[a.observation] ?? null;
-  const holder = a.actor ? [a.actor.role ? sentence(a.actor.role) : null, a.actor.name].filter(Boolean).join(" · ") : null;
-  return {
-    id: pkg.id,
-    title: pkg.title,
-    stage: pkg.stage === "queued" ? null : stageText(pkg, now),
-    dropped: pkg.outcome === "dropped",
-    failed: pkg.failed,
-    noPr: pkg.track === "no_pr",
-    holder: holder ? { text: holder, observation } : observation && pkg.stage !== "queued" && pkg.stage !== "done" ? { text: "No holder", observation } : null,
-    report,
-    waiting: pkg.stage === "done" ? null : a.waiting,
-    next: pkg.stage === "done" ? null : a.next,
-    needsYou: pkg.stage !== "done" && a.nextActor === "human",
-    evidence: evidenceOf(pkg),
-    after: pkg.stage === "done" ? [] : pkg.after,
-  };
-}
 
 // ---------- Agents ----------
 
@@ -59,11 +19,6 @@ export function agentReport(terminal, now) {
     msg: typeof report?.msg === "string" && report.msg.trim() ? report.msg.trim() : null,
     age: Number.isFinite(at) && at > 0 ? ago(at, now) : null,
   };
-}
-
-export function reportText(report) {
-  if (!report) return null;
-  return `Agent reports ${report.status}${report.kind ? ` (${report.kind})` : ""}${report.msg ? `: ${report.msg}` : ""}${report.age ? ` · ${report.age}` : ""}`;
 }
 
 // The freshest report among a package's or architect's bound terminals.
@@ -125,27 +80,6 @@ export function participants(job, bindings, checks, now) {
   return [...people, ...reviews.values()];
 }
 
-// ---------- Decisions ----------
-
-export function decisionsOf(payload) {
-  if (!payload || typeof payload !== "object" || !Array.isArray(payload.decision_logs)) throw new Error("sympp answered with something other than this job's details.");
-  return payload.decision_logs.filter((d) => d?.id && d.decision).map((d) => ({
-    id: d.id, seq: Number(d.sequence) || 0, text: d.decision, rationale: d.rationale || null,
-    impact: d.scope_impact || null, by: d.created_by || null, at: ms(d.created_at ?? d.inserted_at),
-  })).sort((a, b) => b.seq - a.seq);
-}
-
-export function detailPath(jobId) {
-  return `/api/v1/sympp/herdr/work-requests/${encodeURIComponent(jobId)}`;
-}
-
-// The job's details follow the board's cadence and back off after failures. A new job reads at once.
-export function detailDue(state, jobId, cadence, now) {
-  if (state.jobId !== jobId || state.attemptAt === null) return true;
-  const wait = state.error ? POLL.retry[Math.min(state.failures - 1, POLL.retry.length - 1)] ?? POLL.retry[0] : cadence;
-  return now - state.attemptAt >= wait;
-}
-
 // ---------- Opening a job in its own tab ----------
 
 // The job's local space: one on this machine whose folder is one of the job's repositories,
@@ -170,9 +104,4 @@ export function jobTabArgs(given, job, spaceList) {
 function sentence(code) {
   const text = String(code).replace(/_/g, " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-function ms(value) {
-  const time = Date.parse(value ?? "");
-  return Number.isFinite(time) ? time : null;
 }

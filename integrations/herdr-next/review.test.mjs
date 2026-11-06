@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from './mods/sympp/model.js';
-import * as R from './mods/sympp/rails.js';
 import * as Rv from './mods/sympp/review.js';
 import { NOW, boardPayload } from './fixture.mjs';
 
@@ -94,10 +93,9 @@ test('a package without a PR or a review says so, and one with a review drills d
   assert.deepEqual([reviewed.reviewed, reviewed.rows.length, reviewed.overall], [true, 1, '20m']);
 });
 
-test('round three and three hours in review are road bumps in the rails, the drill-down and the attention strip', () => {
+test('round three and three hours in review are road bumps, timed from the review start', () => {
   const job = jobOf('wr-pr');
-  assert.deepEqual(Rv.reviewAlerts(job, NOW).map((a) => [a.pkg.id, a.bumps.map((b) => b.text)]), [['wp-review', ['Review is on round 3', 'In review for 3h 20m']]]);
-  assert.deepEqual(R.rowsOf(job, NOW).find((row) => row.pkg.id === 'wp-review').bumps.map((b) => b.kind), ['rounds', 'long']);
+  assert.deepEqual(M.reviewBumps(pkgOf(job, 'wp-review'), NOW).map((b) => b.text), ['Review is on round 3', 'In review for 3h 20m']);
   assert.ok(job.bumps.includes('In review for 3h 20m: Review lens'), 'the review start counts, not the latest stage entry');
   const calm = reviewing({ type: 'review_suite', status: 'in_progress', round: 2, started_at: at(179), round_started_at: at(30) });
   assert.deepEqual(M.reviewBumps(calm, NOW), []);

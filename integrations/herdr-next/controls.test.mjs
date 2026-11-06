@@ -43,6 +43,7 @@ test('open questions are answerable detail, while explicit escalation and actual
   assert.equal(urgent.needs[0].id, undefined, 'escalation text must not become a postable question');
   assert.equal(urgent.guidance[0].id, 'g2');
   assert.equal(C.answerPath(urgent.guidance[0]), '/api/v1/sympp/herdr/work-packages/wp2/guidance/g2/answer');
+  assert.equal(C.answerPath({ ...urgent.guidance[0], route: '/api/v1/sympp/herdr/work-requests/w/questions/q/answer' }), '/api/v1/sympp/herdr/work-requests/w/questions/q/answer', 'an ask the board routes answers through its own route');
   assert.equal(L.needsQueue([normal, urgent]).length, 2, 'guidance and its human activity signal must not duplicate');
 });
 

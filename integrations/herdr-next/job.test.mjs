@@ -2,77 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from './mods/sympp/model.js';
 import * as J from './mods/sympp/job.js';
-import { NOW, boardPayload, detailPayload } from './fixture.mjs';
+import { NOW, boardPayload } from './fixture.mjs';
 
 const jobs = () => M.parseBoard(boardPayload()).jobs;
 const jobOf = (id) => jobs().find((job) => job.id === id);
 const withPackages = (job, packages) => ({ ...job, packages });
 
-test('the phase comes only from request status, dispatch and delivery', () => {
-  const job = jobOf('wr-pr');
-  for (const status of ['draft', 'ready_for_clarification', 'clarifying', 'human_info_needed']) assert.equal(J.phaseOf({ ...job, status }), 'shaping');
-  assert.equal(J.phaseOf({ ...job, status: 'ready_for_slicing' }), 'planning');
-  assert.equal(J.phaseOf(job), 'executing');
-  const queuedOnly = job.packages.map((pkg) => ({ ...pkg, stage: 'queued', dispatchedAt: null, outcome: null }));
-  assert.equal(J.phaseOf(withPackages(job, queuedOnly)), 'planning', 'sliced with nothing dispatched is still planning');
-  const delivered = job.packages.map((pkg, i) => ({ ...pkg, stage: 'done', outcome: i === 0 ? 'dropped' : 'merged' }));
-  assert.equal(J.phaseOf(withPackages(job, delivered)), 'closing', 'dropped packages are not required');
-  assert.equal(J.phaseOf({ ...job, closedAt: NOW }), 'done');
-  assert.equal(J.phaseOf({ ...job, status: 'something_new' }), null, 'an unknown status is not guessed');
-});
-
-test('closed execution is Done with dropped scope counted, without inventing completion', () => {
-  const payload = boardPayload();
-  const detail = payload.work_request_details[0];
-  detail.work_request.execution_status = 'closed';
-  detail.work_request.completed_at = null;
-  detail.clarification_questions = [];
-  detail.work_packages = ['pr_merged', 'abandoned', 'superseded', 'skipped'].map((outcome, i) => ({
-    id: `closed-${i}`, title: outcome, repo: 'owner/web', raw_status: outcome === 'skipped' ? 'skipped' : 'closed',
-    delivery: outcome === 'skipped' ? null : { outcome }, operational_state: { key: outcome },
-  }));
-  const job = M.parseBoard(payload).jobs.find((job) => job.id === 'wr-pr');
-  assert.equal(J.phaseOf(job), 'done');
-  assert.equal(job.closedAt, null, 'execution closure does not fabricate fulfilled scope');
-  assert.equal(job.status, 'sliced');
-  assert.equal(job.state, 'settled');
-  assert.equal(job.counts.dropped, 3);
-  assert.equal(job.counts.live, 0);
-  assert.equal(job.brief, '4 packages closed; 3 dropped.');
-  for (const [status, label, dropped] of [['abandoned', 'Dropped', 1], ['closed', 'Closed', 0]]) {
-    detail.work_packages = [{ id: 'missing-closeout', raw_status: status, repo: 'owner/web' }];
-    const raw = M.parseBoard(payload).jobs.find((job) => job.id === 'wr-pr');
-    assert.equal(J.phaseOf(raw), 'done');
-    assert.equal(raw.counts.live, 0);
-    assert.equal(raw.counts.dropped, dropped);
-    assert.equal(M.stageText(raw.packages[0], NOW), label);
-    assert.equal(raw.closedAt, null);
-    assert.doesNotMatch(raw.brief, /landed|finished/);
-  }
-});
-
-test('an opened package says who holds the work, what waits, what is next and the evidence, in plain words', () => {
-  const job = jobOf('wr-pr');
-  const card = (id) => J.packageCard(job.packages.find((pkg) => pkg.id === id), null, NOW);
-  const review = card('wp-review');
-  assert.deepEqual(review.holder, { text: 'Worker · opus-lens', observation: 'stale' });
-  assert.equal(review.waiting, 'Review in progress');
-  assert.equal(review.next, 'You · answer guidance');
-  assert.equal(review.needsYou, true);
-  assert.deepEqual(review.evidence, ['PR #812 open', 'checks passing', 'fast review in progress']);
-  assert.match(review.stage, /^Review · round 3/);
-  const queued = card('wp-queued');
-  assert.equal(queued.stage, null);
-  assert.deepEqual(queued.after, ['Stage board']);
-  assert.deepEqual(card('wp-build').holder, { text: 'Worker · codex-board', observation: null });
-  assert.equal(card('wp-done').next, null);
-});
-
 test("an agent's report is its own OSC status, labelled as such, never terminal text", () => {
   const terminal = { address: 't8', status: 'blocked', status_ms: NOW - 4 * 60e3, report: { kind: 'permission', msg: ' Allow edit? ' }, title: 'I am done!' };
   const report = J.agentReport(terminal, NOW);
   assert.deepEqual(report, { status: 'blocked', kind: 'permission', msg: 'Allow edit?', age: '4m ago' });
-  assert.equal(J.reportText(report), 'Agent reports blocked (permission): Allow edit? · 4m ago');
   assert.equal(J.agentReport({ address: 't9', title: 'working hard' }, NOW), null, 'no OSC status means no report');
   const older = { address: 't7', status: 'idle', status_ms: NOW - 60 * 60e3 };
   assert.equal(J.reportFor([{ address: 't7' }, { address: 't8' }], [older, terminal], NOW).status, 'blocked', 'the freshest report wins');
@@ -97,17 +36,6 @@ test('agents are Live only after a fresh matching helper check, else last seen, 
   const review = people.find((p) => p.role === 'Review');
   assert.deepEqual(review, { key: 'review:review_suite:fast', role: 'Review', provider: 'Review suite · fast', reviewing: 1, state: 'provider' });
   assert.equal(J.participants(jobOf('wr-shaping'), [], {}, NOW)[0].state, 'unknown');
-});
-
-test('decisions come from the native job detail, newest first, and other payloads are refused', () => {
-  assert.deepEqual(J.decisionsOf(detailPayload()).map((d) => [d.id, d.text, d.by]), [['d2', 'Job level first', 'architect'], ['d1', 'One sympp mod for every level', 'architect']]);
-  assert.throws(() => J.decisionsOf({ work_request_details: [] }), /details/);
-  assert.equal(J.detailPath('wr/1'), '/api/v1/sympp/herdr/work-requests/wr%2F1');
-  const read = { jobId: 'wr-pr', attemptAt: NOW, error: null, failures: 0 };
-  assert.equal(J.detailDue(read, 'wr-pr', M.POLL.live, NOW + 1000), false, 'never on every render');
-  assert.equal(J.detailDue(read, 'wr-pr', M.POLL.live, NOW + M.POLL.live), true);
-  assert.equal(J.detailDue(read, 'wr-other', M.POLL.live, NOW + 1000), true, 'a newly shown job reads at once');
-  assert.equal(J.detailDue({ ...read, error: 'down', failures: 3 }, 'wr-pr', M.POLL.live, NOW + 30e3), false, 'failures back off');
 });
 
 test("open in tab targets the job's local space and carries this copy's props", () => {

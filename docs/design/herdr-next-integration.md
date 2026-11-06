@@ -68,40 +68,30 @@ One `sympp` mod draws four levels: **Factory > Topic > Space > Job**.
   every package or equate a package with an agent; architects, workers,
   reviewers and retries have different identities.
 
-The Job level shows, from canonical state only:
+The Job level (the panel's drill-in, or the job's own tab) shows, from canonical
+state only, in the web dashboard's visual language:
 
-- **Phase:** Shaping, Planning, Executing, Closing or Done, from the request
-  status, dispatch and required-package delivery. No percentages.
-- **Needs you:** only what the person can move: escalations and guidance,
-  answerable in place.
-- **Package rails:** one row per package on a shared real-time axis with a now
-  line. Rows that need the person come first, then packages others wait on.
-  Segments start only at recorded moments (creation, dispatch, review start,
-  current stage entry, delivery) and are coloured by who is acting: the agent,
-  CI or the person. Waiting is dimmed; a dependency wait is dotted and names its
-  prerequisite. Stretches where nobody acted fold into a labelled break, and
-  work that landed before the open work began is summarized rather than drawn.
-  Review rounds are R1, R2, R3 chips, amber from round three. Work without a PR
-  is work, then done. Each row gives wall time, time in its stage and time in
-  its review. Narrow and panel widths stack a compact line per package.
-- **Review drill-down:** a round chip, a road bump's Review button or Enter on
-  a reviewed row opens the package's review beside the rails (under its row
-  when narrow); Esc closes it and the rails keep their place. It shows the
-  provider's stage in plain words, its step ladder, the time in this round and
-  overall, and each reported round newest first with lane, step, outcome,
-  start, finish and duration. Rounds older than the reported history are
-  counted; finding counts appear only when recorded. Stale or missing reports
-  say so. Without a ladder or history it shows step x/y and the round count.
-  Round three or more than three hours in review is a road bump in the rails,
-  the drill-down and the attention strip; a long review suggests reslicing,
-  without acting on it.
-- **Agents:** the architect, a worker per package with its active run attempt,
-  and the review provider by type and mode. An agent is Live only after the
-  trusted helper has just verified its exact launch and process; otherwise it
-  shows its last sympp sighting or Unknown. A bound agent's own status report is
-  shown as such, never inferred from terminal text.
-- **Decisions and questions:** the job's recorded decisions, read only while a
-  job view shows, and its clarification questions, answerable in place.
+- **The task's strip and words:** one box per package, run by the architect's
+  top-level groups (landed in a muted merge green, at work in its stage's colour,
+  red while its checks fail, still to come hollow). A word appears only when
+  something went wrong: Checks failing, Stuck, Review round 3 or a long review,
+  Deploy failed, Parked, No recent report.
+- **Asks first:** each outstanding ask from the board's `asks`, with one action:
+  Answer in place when it has an answer route, else the topic's chief (a peek
+  while it runs, otherwise Start chief). An unrecorded wait says its question
+  isn't recorded, and only when no real question exists. A board without
+  `asks` falls back to its escalations, guidance and open clarification
+  questions.
+- **Packages at work:** a row per package at work or waiting on the person, in
+  planned order, with the dashboard's Build ─ PR ─ Checks ─ Review ─ Merge
+  pipeline (work, then done without a PR); the PR step opens the pull request.
+  A worker the board reports stale or not yet there is named; an unknown
+  observation says nothing. Landed and queued packages fold into one mark each,
+  opened on request. Agent, PR, Review and Studio sit behind selecting a row.
+- **Review drill-down:** Review or Enter on a reviewed row opens the package's
+  review under it: the provider's stage in plain words, its step ladder, the time
+  in this round and overall, and each reported round newest first. Stale or
+  missing reports say so.
 
 The levels above a job:
 
@@ -112,25 +102,14 @@ The levels above a job:
   unsorted spaces and work without a space when either has any. Each job has
   one home topic, its own repository's first, so it is counted once; other
   topics it touches name it as shared.
-- **Topic:** work grouped by repository across the topic's spaces, with each
-  space reachable; jobs homed elsewhere appear as references, planned-only
-  jobs fold into a count, and settled work stays in the dashboard. Its agents
-  are the jobs' architects and workers with something known about them and any
-  bound agent in its spaces, with Live, Last seen or Unknown and the agent's own
-  OSC report.
-- **Chief desk:** a topic with a registered chief shows it first: the chief
-  named like the topic (ignoring case), else one whose name leads or ends the
-  topic's (Kraken and Nextide-Kraken), else one whose declared repositories
-  place there as jobs do; several matches are all shown, none picked. The chief
-  is Live only after the helper check of the session it registered from,
-  otherwise Last seen or Unknown, with its own report and Open. Its desk lists
-  the requests and packages attributed to it, newest first with their current
-  phase or stage, the architects' recaps on that work, and what waits on the
-  person there. A topic without a chief says to tell an agent it is that
-  topic's chief. Factory topic rows show chief presence.
-- **Space:** the jobs touching its repository (the folder's leaf) on its
-  machine, each naming its other repositories, and the agents there. A space
-  without sympp work says that ordinary Herdr work stays ordinary.
+- **Topic and Space:** one view. A topic shows every task touching it, once; a
+  space only the tasks on its repository. Each task is its name, its strip and
+  any word for what went wrong, with its asks under it. What asks the person
+  comes first, then what went wrong, then the rest, each by when it opened, so a
+  task never moves just because it advanced. Planned and landed work folds into
+  one shelf, and settled work stays in the dashboard. A chief space that fell out
+  of its topic in `desk.topics` is put back there, where the desk keeps it
+  unlisted.
 
 A breadcrumb (Factory > Topic > Space > Job) and Esc move up a level; rows
 take ↑/↓ and Enter. Each copy keeps its place in its own `localStorage`.
@@ -253,9 +232,10 @@ recovery restores shells rather than restarting the original agent.
 |---|---|---|
 | Native read boundary | Same canonical board projection, local native policy, no reads causing writes; standalone routes unchanged. | Landed in [#757](https://github.com/JJLiebig/sympp/pull/757); 78 API acceptance cases and all required hosted gates passed. |
 | Native working view | Real sympp state, topic/repo/job scope, attention and agent navigation using existing mod APIs. | Native rendering, intake typing and keyboard traversal passed in an isolated Windows home. A real intake and structured answer persisted in the canonical ledger. Agent placement passed through the public app API with an unchanged process; a physical click after that fix, compact layout and light theme remain unqualified. |
-| Job level | Job tab, phase, needs-you strip, package rails, agents, decisions and keyboard, from canonical state; one mod split into flat modules. | Open in [#766](https://github.com/JJLiebig/sympp/pull/766). Node tests cover phase, rails placement/order/axis, liveness, decisions cadence and tab placement; `herdr-app check --print-spec` checks the drawn structure at wide and narrow widths with fixtures. Wide and narrow, dark and light captures in an isolated Windows home and scratch core used a fixture backend. Not yet qualified: real ledger data, a Live agent with a real launch receipt, pointer and keyboard input, and layout switches, which follow window width at the next redraw. |
+| Job level | Job tab, phase, needs-you strip, package rails, agents, decisions and keyboard, from canonical state; one mod split into flat modules. | Replaced by the Track view ([#816](https://github.com/JJLiebig/sympp/pull/816)); Factory chief presence remains. Open in [#766](https://github.com/JJLiebig/sympp/pull/766). Node tests cover phase, rails placement/order/axis, liveness, decisions cadence and tab placement; `herdr-app check --print-spec` checks the drawn structure at wide and narrow widths with fixtures. Wide and narrow, dark and light captures in an isolated Windows home and scratch core used a fixture backend. Not yet qualified: real ledger data, a Live agent with a real launch receipt, pointer and keyboard input, and layout switches, which follow window width at the next redraw. |
 | Levels, panel and toasts | Factory, Topic and Space levels with a breadcrumb, a focus-following panel with a pin, and needs-you toasts, from canonical state and Herdr's own topics, spaces, focus and terminal reports. | Node tests cover placement, ranking, grouping, agents, following, toasts and navigation; `herdr-app check --print-spec` checks each level at wide and panel widths. An isolated Windows home and scratch core with a fixture backend showed the Factory (dark and light), a toast for a newly raised need, and a panel following a space, an sympp-labelled terminal and a topic; a job tab registered itself and `tab.select` reached it across spaces. Not qualified: real ledger data, pointer and keyboard input, and wide Topic and Space layouts in a live window (checked structurally only). |
-| Chief desk | A topic's registered chief, its dispatched work, recaps and waiting decisions, and chief presence on Factory rows, from #773's chiefs and attribution. | Node tests cover topic matching (exact, leading or ending words, repositories, ambiguity), attribution, ordering, recaps, needs and chief liveness; `herdr-app check --print-spec` checks the desk, the no-chief line and Factory marks. An isolated Windows home and scratch core showed the desk, a no-chief topic, the Factory rows and the panel width with fixture data, dark and light. Not qualified: real registrations, a Live chief with a real session receipt, Open, and input. |
+| Track view | Topic, Space and task views in the web dashboard's language: box strips, asks with their own answer route or the topic's chief, words only for problems, stable order, folded landed and queued work, the per-package pipeline; replaces the rails, agents, decisions and chief-desk views. | [#816](https://github.com/JJLiebig/sympp/pull/816), on #819's asks and freshness. Node tests cover asks, freshness, strip grouping, order and folds; `herdr-app check --print-spec` checks the drawn structure wide and narrow. |
+| Chief desk | A topic's registered chief, its dispatched work, recaps and waiting decisions, and chief presence on Factory rows, from #773's chiefs and attribution. | Replaced by the Track view ([#816](https://github.com/JJLiebig/sympp/pull/816)); Factory chief presence remains. Node tests cover topic matching (exact, leading or ending words, repositories, ambiguity), attribution, ordering, recaps, needs and chief liveness; `herdr-app check --print-spec` checks the desk, the no-chief line and Factory marks. An isolated Windows home and scratch core showed the desk, a no-chief topic, the Factory rows and the panel width with fixture data, dark and light. Not qualified: real registrations, a Live chief with a real session receipt, Open, and input. |
 | UI studio | A UI package's tab with its verified worker beside a preview: a published web preview as a link card, or the worktree's own Herdr view live on sample data; a tab glyph through desk-tabs chrome 2. | Node tests cover UI detection, preview addresses, tab placement and hand-over, worker placement, preview choice, sweeping and the builder (sample-only entry, changed-only writes, base gating); `herdr-app check --print-spec` checks the Open UI studio button and each studio state. An isolated Windows home and scratch core, with stand-in workers carrying real launch labels and receipts the helper verified, showed a scripted studio placing a paneless worker on the left, the native preview following a save, the link card, duplicate hand-over, landing cleanup and the chrome 1 to 2 upgrade, dark, light and narrow. Not qualified: a real provider worker, a remote worker, pointer and keyboard input, and Open in a browser. |
 | Native human actions | Intake and persisted question/guidance answers, with browser exclusion and canonical scope/status checks. | Landed in [#758](https://github.com/JJLiebig/sympp/pull/758); API/offline acceptance and all required hosted gates passed. |
 | Native bindings/tooling | Explicit core/terminal/process bindings; optional direct work remains simple; correct focus and stale-state handling. | Landed in [#759](https://github.com/JJLiebig/sympp/pull/759); six controlled-core checks and all required hosted gates passed. Native receipt checks also reject mismatched canonical request/package IDs. |

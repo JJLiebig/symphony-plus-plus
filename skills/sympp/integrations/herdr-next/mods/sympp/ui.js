@@ -65,14 +65,6 @@ export function mark(t, verdict) {
   return div().size(8).flex_none().rounded(4).border(1.5).border_color(t.dim);
 }
 
-// A package's mark: hollow while queued, square when its checks fail, filled while moving or landed.
-export function pip(t, pkg) {
-  const base = div().size(7).flex_none();
-  if (pkg.stage === "done") return base.rounded(4).bg(pkg.outcome === "dropped" ? t.dim : t.ansi2);
-  if (pkg.stage === "queued") return base.rounded(4).border(1.5).border_color(t.dim);
-  if (pkg.failed) return base.rounded(1.5).bg(t.blocked);
-  return base.rounded(4).bg(pkg.stage === "merge" ? t.accent : t.working);
-}
 
 // An agent's liveness: a filled dot only after a verified check, a ring for a last sighting.
 export function presence(t, state) {
@@ -88,9 +80,6 @@ export function section(t, label, count = null, tone = t.dim) {
     .when(count !== null, (el) => el.child(div().text_size(11.5).text_color(t.muted).child(String(count))));
 }
 
-export function age(t, text, tone = t.muted) {
-  return div().flex_none().text_size(11).font_family(MONO).text_color(tone).child(text);
-}
 
 export function message(t, title, body, actions = []) {
   return v_flex().size_full().items_center().justify_center().gap(10).p(24)

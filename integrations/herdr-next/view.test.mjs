@@ -1,5 +1,5 @@
-// Structural checks of the drawn Job level: Herdr's own `check --print-spec` builds the real view
-// with fixture data at a chosen width. This proves element structure and copy, not paint or input.
+// Structural checks of the drawn view: Herdr's own `check --print-spec` builds the real view with
+// fixture data at a chosen width. This proves element structure and copy, not paint or input.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -26,87 +26,6 @@ async function render(t, spec, main = null) {
 
 const skip = { skip: !available && 'herdr-app is not installed' };
 
-test('closed execution draws Done with its dropped count in the job and topic desk', skip, async (t) => {
-  const closedMain = (spec) => previewMain(spec).replace('M.parseBoard(boardPayload())', `M.parseBoard((() => {
-    const board = boardPayload();
-    const detail = board.work_request_details[0];
-    detail.work_request.execution_status = "closed";
-    detail.clarification_questions = [];
-    detail.work_packages = detail.work_packages.map((pkg, i) => ({ ...pkg,
-      board_state: { stage: "done", track: "pr", delivered: true },
-      delivery: { outcome: i === 0 ? "abandoned" : "pr_merged" },
-    }));
-    return board;
-  })())`);
-  const job = await render(t, {}, closedMain({ props: { job: 'wr-pr' }, width: 1400 }));
-  assert.ok(job.text('1 dropped') && job.out.includes('Phase: Done'));
-  const topic = await render(t, {}, closedMain({ path: { topic: 't-herdr' }, width: 1400 }));
-  assert.ok(topic.text('Done · 1 dropped'));
-});
-
-test('a job tab draws package rails on one axis, with agents and decisions beside them', skip, async (t) => {
-  const view = await render(t, { props: { job: 'wr-pr' }, width: 1400, decisionsFor: 'wr-pr' });
-  for (const id of ['lens-job', 'job-view', 'phase-strip', 'attention-strip', 'rails', 'rail-axis', 'rail-legend', 'job-aside', 'job-agents', 'job-decisions',
-    'rail-wp-review', 'rail-wp-build', 'rail-wp-queued', 'rail-wp-done', 'track-wp-build', 'round-wp-review-3'])
-    assert.ok(view.has(id), id);
-  const at = (id) => view.out.indexOf(`:id[Str("rail-${id}")]`);
-  assert.ok(at('wp-review') < at('wp-build') && at('wp-build') < at('wp-queued') && at('wp-queued') < at('wp-done'), 'needs-you first, then blocking work');
-  assert.ok(view.out.includes(':id[Str("axis-break-'), 'the idle stretch folds into a break');
-  assert.ok(view.text('⋯ 5h') && view.text('now') && view.text('Landed 1d ago'));
-  assert.ok(view.text('Queued · after Stage board'), 'a dependency wait names its prerequisite');
-  assert.ok(view.text('R3') && view.text('5h 00m') && view.text('40m') && view.text('3h 20m'));
-  assert.ok(view.text('Executing') && view.text('Job level first'));
-  assert.ok(view.text('Which order should the levels land in?'), 'open questions stay answerable');
-  assert.equal(view.has('open-tab') || view.has('back'), false, 'a job tab has no tab or back control of its own');
-  assert.equal(view.has('stage-board') || view.out.includes('column-'), false, 'no stage columns');
-  assert.doesNotMatch(view.out, /text "[^"]*%/, 'no progress percentages');
-});
-
-test('a round chip opens the review drill-down beside the rails, which stay drawn', skip, async (t) => {
-  const view = await render(t, { props: { job: 'wr-pr' }, width: 1400, review: { jobId: 'wr-pr', pkgId: 'wp-review', round: 2 } });
-  for (const id of ['rails', 'rail-wp-review', 'job-review-wp-review', 'review-wp-review', 'review-close', 'review-ladder', 'review-step-1', 'review-rounds', 'review-round-3', 'review-round-1', 'review-bump-wp-review', 'bump-wp-review'])
-    assert.ok(view.has(id), id);
-  assert.ok(view.out.includes('Button "round-wp-review-3"'), 'round chips are buttons');
-  assert.equal(view.has('job-aside'), false, 'the drill-down takes the side column');
-  assert.ok(view.text('Review · Review Suite · fast') && view.text('Waiting for the worker to decide on findings'));
-  assert.ok(view.text('Tier 1 review · Signoff') && view.text('Findings (4)') && view.text('In progress') && view.text('Signoff'));
-  assert.ok(view.text('Review is on round 3 · In review for 3h 20m') && view.text('Reviews this long often mean the package is too big. Consider reslicing it.'));
-  const order = ['review-round-3', 'review-round-2', 'review-round-1'].map((id) => view.out.indexOf(`:id[Str("${id}")]`));
-  assert.ok(order[0] < order[1] && order[1] < order[2], 'newest round first');
-});
-
-test('narrow views open the drill-down under its row', skip, async (t) => {
-  const view = await render(t, { props: { job: 'wr-pr' }, width: 700, review: { jobId: 'wr-pr', pkgId: 'wp-review', round: null } });
-  assert.ok(view.has('rails-compact') && view.has('review-wp-review') && view.has('review-rounds'));
-  assert.equal(view.has('job-review-wp-review'), false);
-  const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
-  assert.ok(at('rail-wp-review') < at('review-wp-review') && at('review-wp-review') < at('rail-wp-build'), 'inline, under its own row');
-});
-
-test('narrow job tabs stack one compact line per package with the same timings', skip, async (t) => {
-  const view = await render(t, { props: { job: 'wr-pr' }, width: 700, decisionsFor: 'wr-pr' });
-  assert.ok(view.has('job-view-tab') && view.has('rails-compact') && view.has('rail-wp-review'));
-  assert.equal(view.has('rails') || view.has('rail-axis') || view.has('job-aside'), false);
-  assert.ok(view.text('Review · 40m in stage · 3h 20m in review · 5h 00m total'));
-  assert.ok(view.has('job-agents') && view.has('job-decisions'));
-});
-
-test('a job without PRs shows work, then done', skip, async (t) => {
-  const view = await render(t, { props: { job: 'wr-nopr' }, width: 1400 });
-  assert.ok(view.has('rail-np-1') && view.has('rail-np-2') && view.text('Work'));
-  assert.ok(view.text('Reading decisions…'), 'decisions for another job are not shown as this one');
-});
-
-test('missing, empty and stale jobs say so', skip, async (t) => {
-  const missing = await render(t, { props: { job: 'wr-gone' }, width: 1400 });
-  assert.ok(missing.text("This job isn't here"));
-  const shaping = await render(t, { props: { job: 'wr-shaping' }, width: 1400 });
-  assert.ok(shaping.text('Shaping') && shaping.text('Not sliced into packages yet.'));
-  const stale = await render(t, { props: { job: 'wr-pr' }, width: 1400, error: "Can't reach sympp at 127.0.0.1:4000. Check the connection and retry." });
-  assert.ok(stale.has('rails'), 'the last good rails stay on screen');
-  assert.ok(stale.has('read-status') && !stale.out.includes('Connection lost'), 'a failed read is a status mark, not a banner');
-});
-
 test('the factory ranks what needs you and gives one row per Herdr topic', skip, async (t) => {
   const view = await render(t, { props: {}, width: 1400 });
   for (const id of ['lens-overview', 'breadcrumb', 'crumb-factory', 'factory-main', 'factory-aside', 'needs-queue', 'topic-rows',
@@ -122,55 +41,70 @@ test('the factory ranks what needs you and gives one row per Herdr topic', skip,
   assert.ok(narrow.has('factory') && narrow.has('pin') && !narrow.has('factory-aside'), 'the panel stacks and can be pinned');
 });
 
-test('a topic shows its work by repository, references and agents; a space says when it has no sympp work', skip, async (t) => {
-  const topic = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr' } });
-  for (const id of ['crumb-factory', 'crumb-topic', 'topic-main', 'repo-web', 'space-s-web', 'job-wr-pr', 'ref-web-wr-cross', 'planned-t-herdr:web', 'level-agents'])
-    assert.ok(topic.has(id), id);
-  assert.ok(topic.text('from Personal Tools') && topic.text('1 planned'));
-  assert.equal(topic.has('job-wr-shaping'), false, 'planned jobs fold into the count');
-  const space = await render(t, { props: {}, width: 700, path: { topic: 't-herdr', space: 's-web' } });
-  assert.ok(space.has('crumb-space') && space.has('space-facts') && space.has('job-wr-cross') && space.text('also in api · moved 2h 00m ago'));
-  assert.ok(space.text('web · this machine · main'));
+test('a topic puts each question first with one action; other tasks carry only their name, strip and what went wrong', skip, async (t) => {
+  const view = await render(t, { props: { role: 'panel' }, width: 1400, board: 'busy', path: { topic: 't-herdr' } });
+  const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
+  assert.ok(at('group-wr-pr') < at('group-wr-docs') && at('group-wr-cross') < at('group-wr-restore'), 'what asks the person comes first');
+  assert.ok(view.has('answer-ask:q1') && view.has('answer-ask:g-web'), 'a question with an answer route is answered here');
+  assert.ok(view.has('chief-ask:esc-1'), 'one without a route goes to the topic chief');
+  assert.equal(view.has('ask-ask:wait-wp-review'), false, 'an unrecorded wait is not repeated beside a real question');
+  assert.ok(view.text('Stuck') && view.text('Checks failing') && view.text('No recent report'));
+  assert.equal(view.has('issues-wr-pr') && view.has('issues-wr-cross'), false, 'a task with nothing wrong says nothing about itself');
+  assert.ok(view.has('strip-wr-restore-2') && !view.has('strip-wr-restore-3'), 'the strip runs once per top-level group');
+  assert.ok(view.has('later-t-herdr:') && !view.has('task-wr-badges') && !view.has('task-wr-keys'), 'planned and landed work stay folded');
+  assert.ok(view.has('filter-all') && view.has('filter-s-web'), "the topic's spaces are one click away");
+  const quiet = await render(t, { props: { role: 'panel' }, width: 1400, board: 'quiet', path: { topic: 't-herdr' } });
+  assert.equal(quiet.out.includes(':id[Str("issues-') || quiet.out.includes(':id[Str("ask-'), false, 'nothing is said while all is well');
+  assert.doesNotMatch(quiet.out, /text "\d+\/\d+/, 'no counts');
+});
+
+test('a space shows only the tasks on its repository, drawn as its topic draws them', skip, async (t) => {
+  const space = await render(t, { props: {}, width: 700, board: 'busy', path: { topic: 't-tools', space: 'vps/s-api' } });
+  assert.ok(space.text('api') && space.has('task-wr-cross') && space.has('task-wr-restore') && space.has('answer-ask:g-web'));
+  assert.ok(space.has('filter-all') && space.has('filter-vps/s-api'), 'back to the whole topic, or on to another space');
+  assert.equal(space.has('task-wr-pr') || space.has('task-wr-theme'), false);
   const empty = await render(t, { props: {}, width: 1400, path: { topic: 'unsorted', space: 's-home' } });
-  assert.ok(empty.has('space-empty') && empty.text('No sympp work here. Ordinary Herdr work stays ordinary.'));
+  assert.ok(empty.text('Nothing running here'));
 });
 
-test('the Job level sits under the breadcrumb, with its own tab action and no second way back', skip, async (t) => {
-  const full = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr', space: 's-web', job: 'wr-pr' } });
-  assert.ok(full.has('crumb-job') && full.has('crumb-space') && full.has('job-view') && full.has('rails') && full.has('open-tab'));
-  assert.equal(full.has('back') || full.has('new-job'), false);
-  const panel = await render(t, { props: { role: 'panel' }, width: 1400, path: { job: 'wr-pr' }, pin: true });
-  assert.ok(panel.has('job-view-full') && panel.has('rails-compact'), 'the panel role always stacks');
-  assert.ok(panel.has('pin') && !panel.text('Unpin'), 'the panel bar uses an icon button');
+test('a task shows its packages at work on the pipeline and folds landed and queued work', skip, async (t) => {
+  for (const width of [1400, 700]) {
+    const view = await render(t, { props: {}, width, board: 'busy', path: { topic: 't-herdr', job: 'wr-restore' }, pkg: 'r-4' });
+    for (const id of ['strip-wr-restore', 'pkg-r-4', 'pkg-r-5', 'pkg-r-6', 'pkg-r-7', 'fold-Landed:wr-restore', 'fold-Up next:wr-restore', 'pr-step-r-4', 'pr-r-4', 'review-r-4'])
+      assert.ok(view.has(id), `${id} at ${width}`);
+    assert.equal(view.has('pkg-r-1') || view.has('pkg-r-9'), false, 'landed and queued packages are folded');
+    assert.ok(view.text('Checks failing') && view.text('Review · round 3'), 'the current step says what went wrong');
+    const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
+    assert.ok(at('pkg-r-4') < at('pkg-r-5') && at('pkg-r-5') < at('pkg-r-6'), 'packages stay in planned order');
+  }
+  const open = await render(t, { props: {}, width: 1400, board: 'busy', path: { topic: 't-herdr', job: 'wr-restore' }, expanded: ['Landed:wr-restore'] });
+  assert.ok(open.has('pkg-r-1') && !open.has('pkg-r-9'), 'a fold opens on request');
 });
 
-test('a topic with a chief shows its desk first; one without says how to make one; factory rows show chief presence', skip, async (t) => {
-  const topic = await render(t, { props: {}, width: 1400, path: { topic: 't-herdr' } });
-  for (const id of ['chief-herdr', 'chief-needs-herdr', 'chief-sent-herdr', 'sent-herdr-wr-cross:x-api', 'sent-herdr-wr-pr', 'sent-herdr-wr-pr:wp-build', 'chief-recaps-herdr', 'recap-herdr-wr-cross', 'need-herdr:wr-cross:ask'])
-    assert.ok(topic.has(id), id);
-  assert.ok(topic.text('Herdr chief') && topic.text('Last seen build-desk › Terminal: Herdr chief 15m ago') && topic.text('Registered 3d ago · web'));
-  assert.ok(topic.text('Executing · 1/4 landed') && topic.text('Building · 2h 00m') && topic.text('Shared tokens'));
-  assert.ok(topic.text('Token API is building; the UI waits on it and on your call.'));
-  assert.equal(topic.has('open-chief-herdr') || topic.has('chief-none'), false, 'no Open without a passed check');
-  const at = (id) => topic.out.indexOf(`:id[Str("${id}")]`);
-  assert.ok(at('chief-herdr') < at('chief-sent-herdr') && at('chief-sent-herdr') < at('repo-web'), 'the desk comes before the work by repository');
-  assert.ok(at('sent-herdr-wr-cross:x-api') < at('sent-herdr-wr-pr'), 'newest first');
-  assert.ok(at('need-herdr:wr-cross:ask') < at('sent-herdr-wr-cross:x-api'), 'rows draw, and take the keys, in reading order');
-  const none = await render(t, { props: {}, width: 1400, path: { topic: 't-tools' } });
-  assert.ok(none.has('chief-none') && none.text("No chief yet. Tell an agent it's the Personal Tools chief."));
-  assert.equal(none.out.includes(':id[Str("chief-sent-'), false, 'nothing else changes for it');
-  const factory = await render(t, { props: {}, width: 1400 });
-  assert.ok(factory.has('topic-chief-t-herdr') && factory.has('topic-chief-t-live') && !factory.has('topic-chief-t-tools'));
-  const panel = await render(t, { props: { role: 'panel' }, width: 1400, path: { topic: 't-live' } });
-  assert.ok(panel.has('chief-live') && panel.text('Unknown') && panel.text('Nothing dispatched yet.'));
+test('a question tops its task, and its package keeps its stage', skip, async (t) => {
+  const view = await render(t, { props: { role: 'panel' }, width: 1400, board: 'busy', path: { topic: 't-herdr', job: 'wr-pr' }, pkg: 'wp-review', review: { jobId: 'wr-pr', pkgId: 'wp-review', round: null } });
+  const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
+  assert.ok(at('ask-ask:q1') < at('pkg-wp-build') && at('pkg-wp-build') < at('pkg-wp-review'));
+  assert.ok(view.has('answer-ask:q1') && view.has('review-wp-review') && view.has('review-rounds'), 'the review opens under its package');
+});
+
+test("a task's own tab has no way back, and missing or unreadable tasks say so", skip, async (t) => {
+  const tab = await render(t, { props: { job: 'wr-pr' }, width: 1400 });
+  assert.ok(tab.has('lens-bar') && tab.has('pkg-wp-review') && !tab.has('lens-back') && !tab.has('new-job'));
+  const missing = await render(t, { props: { job: 'wr-gone' }, width: 1400 });
+  assert.ok(missing.text("This job isn't here"));
+  const shaping = await render(t, { props: { job: 'wr-shaping' }, width: 1400 });
+  assert.ok(shaping.text('Not sliced into packages yet'));
+  const stale = await render(t, { props: { job: 'wr-pr' }, width: 1400, error: "Can't reach sympp at 127.0.0.1:4000. Check the connection and retry." });
+  assert.ok(stale.has('pkg-wp-review') && stale.has('read-status'), 'the last good read stays, with a status mark');
 });
 
 test('a selected UI package offers its studio; other packages do not', skip, async (t) => {
   for (const width of [1400, 700]) {
-    const ui = await render(t, { props: { job: 'wr-cross' }, width, pkg: 'x-web' });
-    assert.ok(ui.has('studio-x-web') && ui.text('Open UI studio'), `Token UI at ${width}`);
+    const ui = await render(t, { props: { job: 'wr-cross' }, width, pkg: 'x-web', expanded: ['Up next:wr-cross'] });
+    assert.ok(ui.has('studio-x-web'), `Token UI at ${width}`);
     const other = await render(t, { props: { job: 'wr-pr' }, width, pkg: 'wp-build' });
-    assert.equal(other.has('studio-wp-build') || other.text('Open UI studio'), false, `Stage board at ${width}`);
+    assert.equal(other.has('studio-wp-build'), false, `Stage board at ${width}`);
   }
 });
 

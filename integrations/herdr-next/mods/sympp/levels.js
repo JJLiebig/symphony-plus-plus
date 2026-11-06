@@ -3,8 +3,9 @@
 // imports, so every rule here is asserted on its own. Jobs stay canonical sympp jobs: a level only
 // places, ranks and references them; it never copies the backlog.
 
-import { shortRepo, lanesOf, bindingsFor, chiefBindings, stageText } from "./model.js";
+import { shortRepo, lanesOf, chiefBindings } from "./model.js";
 import * as J from "./job.js";
+import { intoTopic } from "./chief.js";
 
 export const UNSORTED = "unsorted";
 export const NOWHERE = "nowhere";
@@ -126,44 +127,6 @@ export function factoryRows(jobs, desk, place) {
 
 // ---------- Topic and space ----------
 
-// Work grouped by repository, in the topic's space order. A job draws in full under its first
-// repository here when this is its home topic; everywhere else it is a reference to that job.
-// Jobs that are only planned collapse to a count.
-export function topicWork(topic, jobs, place) {
-  const groups = new Map();
-  const group = (key, label) => {
-    if (!groups.has(key)) groups.set(key, { key, label, spaces: [], jobs: [], refs: [], planned: [], away: 0 });
-    return groups.get(key);
-  };
-  for (const space of topic.spaces) group(spaceRepo(space) ?? "", spaceRepo(space) ? shortRepo(space.folder) : "Other spaces").spaces.push(space);
-  for (const job of jobs) {
-    const repos = topic.id === NOWHERE ? (place.home(job) === NOWHERE ? [job.repos[0] ?? ""] : []) : place.reposIn(job, topic.id);
-    if (!repos.length) continue;
-    const first = group(keyOf(repos[0]), shortRepo(repos[0]) || "No repository");
-    // Settled and dormant work is counted once, at home, and referenced nowhere.
-    const away = job.lane === "settled" || job.lane === "dormant";
-    if (place.home(job) !== topic.id) {
-      if (!away) first.refs.push({ job, at: first.key, from: place.home(job), via: null });
-      continue;
-    }
-    if (away) {
-      first.away += 1;
-      continue;
-    }
-    if (job.lane === "backlog") first.planned.push(job);
-    else first.jobs.push(job);
-    for (const repo of repos.slice(1)) {
-      const other = group(keyOf(repo), shortRepo(repo));
-      if (other !== first && !other.refs.some((ref) => ref.job === job)) other.refs.push({ job, at: other.key, from: null, via: first.label });
-    }
-  }
-  for (const g of groups.values()) {
-    const lanes = lanesOf(g.jobs);
-    g.jobs = [...lanes.moving, ...lanes.parked, ...lanes.landed];
-  }
-  return [...groups.values()];
-}
-
 // Every job touching the space's repository, each with the job's other repositories as references.
 export function spaceWork(space, jobs) {
   const key = spaceRepo(space);
@@ -178,41 +141,24 @@ export function spaceWork(space, jobs) {
   };
 }
 
-// The space a bound terminal sits in, as Herdr labels it; remote ids carry their machine.
-export function terminalSpace(binding, terminalList) {
-  const terminal = (terminalList ?? []).find((t) => t.address === binding.address);
-  const id = terminal?.labels?.["herdr.space"];
-  if (typeof id !== "string" || !id) return null;
-  return binding.machine ? `${binding.machine}/${id}` : id;
-}
-
-// The sympp agents for some work: each job's architect and workers with something to say about them,
-// and any bound agent whose terminal sits in these spaces. Live, last seen and unknown come from
-// the Job level's own rule; a report is the agent's own OSC status. Review providers are not agents
-// in a space and stay on the Job level.
-export function agentRows(jobs, allJobs, bindings, terminalList, spaceIds, checks, now) {
-  const here = new Set(spaceIds);
-  const inHere = (list) => list.some((b) => here.has(terminalSpace(b, terminalList)));
-  const rows = new Map();
-  const add = (job, person) => {
-    const own = bindingsFor(bindings, job.id, person.pkgId ?? null);
-    if (person.state === "unknown" && !own.length) return;
-    const key = `${job.id}:${person.key}`;
-    if (!rows.has(key)) rows.set(key, { ...person, key, job, here: inHere(own), report: J.reportFor(own, terminalList, now) });
-  };
-  const people = (job) => J.participants(job, bindings, checks, now).filter((p) => p.role !== "Review");
-  for (const job of jobs) for (const person of people(job)) add(job, person);
-  for (const b of bindings) {
-    if (!here.has(terminalSpace(b, terminalList))) continue;
-    const job = allJobs.find((j) => j.id === b.jobId) ?? (b.pkgId ? allJobs.find((j) => j.packages.some((pkg) => pkg.id === b.pkgId)) : null);
-    const person = job && people(job).find((p) => (p.pkgId ?? null) === b.pkgId);
-    if (person) add(job, person);
-  }
-  const order = { live: 0, seen: 1, unknown: 2 };
-  return [...rows.values()].sort((a, b) => order[a.state] - order[b.state] || (b.at ?? 0) - (a.at ?? 0));
-}
-
 // ---------- Chiefs ----------
+
+// A chief space Start chief made for a topic belongs in that topic, where the desk keeps it unlisted.
+// Herdr can drop a space out of its topic; the next desk with each such space back at the end of
+// its topic, folded as it was, or null when every one is home or its space or topic is gone.
+export function homeChiefSpaces(deskTopics, made, spaceIds) {
+  let next = null;
+  for (const [space, topic] of Object.entries(made && typeof made === "object" ? made : {})) {
+    const desk = next ?? deskTopics;
+    const group = desk?.groups?.find((g) => g.id === topic);
+    if (!group || !spaceIds.includes(space) || (group.spaces ?? []).includes(space)) continue;
+    const moved = intoTopic(desk, topic, space);
+    if (!moved) continue;
+    moved.groups.find((g) => g.id === topic).folded = group.folded;
+    next = moved;
+  }
+  return next;
+}
 
 const words = (name) => String(name ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
@@ -253,35 +199,6 @@ export function chiefAgent(chief, bindings, terminalList, checks, now) {
     role: binding?.role ?? null,
     report: J.reportFor(own, terminalList, now),
   };
-}
-
-const newest = (a, b) => (b.at ?? 0) - (a.at ?? 0);
-
-// Where a dispatched request is now: its phase, and how much of it has landed.
-function jobNow(job) {
-  const phase = J.PHASES.find(([key]) => key === J.phaseOf(job))?.[1] ?? null;
-  const landed = job.counts.total && phase !== "Done" ? `${job.counts.done}/${job.counts.total} landed` : null;
-  const dropped = job.counts.dropped ? `${job.counts.dropped} dropped` : null;
-  return [phase, landed, dropped].filter(Boolean).join(" · ") || "Unknown";
-}
-
-// A chief's desk: the requests and packages created or dispatched under its domain, newest first and
-// each where it is now (a request lists its own dispatched packages under it); the architects' recaps
-// on that work; and what waits on the person there.
-export function chiefDesk(chief, jobs, now) {
-  const mine = (by) => typeof by === "string" && by.toLowerCase() === chief.key;
-  const work = [];
-  for (const job of jobs) {
-    const packages = job.packages.filter((pkg) => mine(pkg.dispatchedBy))
-      .map((pkg) => ({ key: `${job.id}:${pkg.id}`, job, pkg, at: pkg.dispatchedAt ?? pkg.createdAt, now: stageText(pkg, now), packages: [] }))
-      .sort(newest);
-    if (mine(job.dispatchedBy)) work.push({ key: job.id, job, pkg: null, at: job.createdAt, now: jobNow(job), packages });
-    else work.push(...packages);
-  }
-  work.sort(newest);
-  const theirs = [...new Set(work.map((item) => item.job))];
-  const recaps = theirs.filter((job) => job.report.brief).map((job) => ({ key: job.id, job, text: job.report.brief.text, at: job.report.brief.at })).sort(newest);
-  return { work, recaps, needs: needsQueue(theirs) };
 }
 
 // ---------- Navigation ----------

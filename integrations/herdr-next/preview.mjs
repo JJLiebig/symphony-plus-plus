@@ -21,8 +21,7 @@ const VIEW = 'integrations/herdr-next/mods';
 export function previewMain(spec = {}) {
   return `import Lens from "./lens.js";
 import * as M from "./model.js";
-import * as J from "./job.js";
-import { NOW, boardPayload, detailPayload, deskFixture } from "./fixture.js";
+import { NOW, boardPayload, variantPayload, deskFixture } from "./fixture.js";
 const CASE = ${JSON.stringify(spec)};
 const SAMPLE = Object.assign(new Error("This preview runs on sample data; nothing is saved."), { userMessage: "This preview runs on sample data; nothing is saved." });
 export default class Preview extends Lens {
@@ -33,12 +32,13 @@ export default class Preview extends Lens {
     this.request = async () => { throw SAMPLE; };
     const now = Date.now();
     this.net = M.fetchSucceeded(this.net, M.parseBoard(boardPayload()), now);
+    if (CASE.board) this.net = M.fetchSucceeded(this.net, M.parseBoard(variantPayload(CASE.board)), now);
     if (CASE.error) this.net = M.fetchFailed(this.net, CASE.error, now);
     if (CASE.path) this.path = { topic: null, space: null, job: null, ...CASE.path };
     if (CASE.pin) this.pin = true;
     if (CASE.pkg) this.pkgSel = CASE.pkg;
     if (CASE.review) this.review = CASE.review;
-    this.detailNet = { ...M.fetchSucceeded(M.initialFetch(), J.decisionsOf(detailPayload()), now), jobId: CASE.decisionsFor ?? null };
+    if (CASE.expanded) this.expanded = new Set(CASE.expanded);
   }
   tick() {}
   openInTab() {}
@@ -52,7 +52,7 @@ export default class Preview extends Lens {
 
 // The copy's files: the view's modules (main.js as lens.js) with its own asset paths pointing at the
 // copy, its pictures, its manifest titled for the pane header, the sample board and the entry above.
-export async function previewFiles(name, root = resolve(here, '../..'), spec = { decisionsFor: 'wr-pr' }) {
+export async function previewFiles(name, root = resolve(here, '../..'), spec = {}) {
   const source = join(root, VIEW, 'sympp');
   const files = new Map();
   for (const file of await readdir(source)) {

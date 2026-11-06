@@ -93,14 +93,78 @@ export function boardPayload() {
   };
 }
 
-export function detailPayload() {
-  return {
-    work_request: { id: 'wr-pr' },
-    decision_logs: [
-      { id: 'd1', sequence: 1, decision: 'One sympp mod for every level', rationale: 'Shared look and state', created_by: 'architect', created_at: at(2000) },
-      { id: 'd2', sequence: 2, decision: 'Job level first', created_by: 'architect', created_at: at(1000) },
-    ],
-  };
+// Board variants for design previews; the default board above stays as the tests know it.
+// "busy" adds tasks of every size: one package in one repository up to many across three, in
+// trouble, stuck, without a recent report, landed and planned. "quiet" is the busy board with
+// nothing waiting on the person and nothing wrong. Live packages report current activity unless a
+// case says otherwise.
+export function variantPayload(variant) {
+  const board = boardPayload();
+  if (variant !== 'busy' && variant !== 'quiet') return board;
+  const quiet = variant === 'quiet';
+  const step = (id, title, sequence, stage, minutes, extra = {}) => pkg(id, title, sequence,
+    { stage, track: 'pr', delivered: stage === 'done', entered_at: at(minutes) },
+    { dispatched_at: at(minutes + 30), activity_signal: { observation_state: 'current' }, ...extra });
+  board.work_request_details.push(
+    {
+      work_request: { id: 'wr-restore', title: 'Restore sessions after a reboot', repo: 'owner/web', status: 'sliced', inserted_at: at(2400) },
+      // The architect's groups: the web board strips each top-level one apart, nested ones inside it.
+      product_tree: { nodes: [
+        { id: 'n-core', title: 'Core', position: 0, parent_id: null }, { id: 'n-recover', title: 'Recovery', position: 1, parent_id: null },
+        { id: 'n-shell', title: 'Shell', position: 0, parent_id: 'n-recover' }, { id: 'n-polish', title: 'Polish', position: 2, parent_id: null },
+      ] },
+      work_packages: [
+        step('r-1', 'Session ledger', 1, 'done', 1500, { product_tree_node_id: 'n-core', repo: 'owner/api' }),
+        step('r-2', 'Holder adoption', 2, 'done', 1200, { product_tree_node_id: 'n-core', repo: 'owner/api' }),
+        step('r-3', 'Resume command table', 3, 'done', 700, { product_tree_node_id: 'n-core' }),
+        step('r-4', 'Recovery toast', 4, 'review', 50, { product_tree_node_id: 'n-recover', pr_signal: { status: 'open', number: 830, url: 'https://github.com/owner/web/pull/830', checks: { status: 'passing' } },
+          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: quiet ? 1 : 3, started_at: at(quiet ? 50 : 260), round_started_at: at(50) } }),
+        step('r-5', 'Shell fallback', 5, 'checks', 35, { product_tree_node_id: 'n-shell', repo: 'owner/notes', pr_signal: { status: 'open', number: 14, checks: { status: quiet ? 'pending' : 'failing' } } }),
+        step('r-6', 'Remote cores', 6, 'build', 25, { product_tree_node_id: 'n-recover', repo: 'owner/api' }),
+        step('r-7', 'Settings toggle', 7, 'merge', 10, { product_tree_node_id: 'n-polish', pr_signal: { status: 'open', number: 829, checks: { status: 'passing' } } }),
+        pkg('r-8', 'Docs and changelog', 8, { stage: 'queued', track: 'pr' }, { product_tree_node_id: 'n-polish', repo: 'owner/notes', dependency_signal: { unmet_work_package_ids: ['r-4'] } }),
+        pkg('r-9', 'Crash replay test', 9, { stage: 'queued', track: 'pr' }, { product_tree_node_id: 'n-polish' }),
+      ],
+    },
+    {
+      work_request: { id: 'wr-theme', title: 'Follow the system theme', repo: 'owner/web', status: 'sliced', inserted_at: at(80) },
+      work_packages: [step('t-1', 'Theme listener', 1, 'build', 40, quiet ? {} : { activity_signal: { observation_state: 'stale' } })],
+    },
+    {
+      work_request: { id: 'wr-docs', title: 'Operator guide refresh', repo: 'owner/web', status: 'sliced', inserted_at: at(3000) },
+      work_packages: quiet
+        ? [step('d-1', 'Outline', 1, 'done', 900), step('d-2', 'Screens', 2, 'done', 600), step('d-3', 'Install chapter', 3, 'build', 20), pkg('d-4', 'Troubleshooting', 4, { stage: 'queued', track: 'pr' })]
+        : [step('d-1', 'Outline', 1, 'done', 900), step('d-2', 'Screens', 2, 'done', 400), pkg('d-3', 'Install chapter', 3, { stage: 'queued', track: 'pr' }), pkg('d-4', 'Troubleshooting', 4, { stage: 'queued', track: 'pr' })],
+    },
+    {
+      work_request: { id: 'wr-badges', title: 'Agent badges in the sidebar', repo: 'owner/web', status: 'sliced', inserted_at: at(1400) },
+      work_packages: [step('b-1', 'Badge art', 1, 'done', 500), step('b-2', 'Badge slot', 2, 'done', 300)],
+    },
+    {
+      work_request: { id: 'wr-keys', title: 'Keyboard map for every level', repo: 'owner/web', status: 'sliced', inserted_at: at(200) },
+      work_packages: [pkg('k-1', 'Key table', 1, { stage: 'queued', track: 'pr' }), pkg('k-2', 'Help overlay', 2, { stage: 'queued', track: 'pr' })],
+    },
+  );
+  // The board's own asks (work_request_details[].asks): answerable ones carry their route.
+  board.work_request_details[0].asks = quiet ? [] : [
+    { id: 'q1', kind: 'clarification', text: 'Which order should the levels land in?', work_package_id: null, answer_route: '/api/v1/sympp/herdr/work-requests/wr-pr/questions/q1/answer' },
+    { id: 'wait-wp-review', kind: 'human_wait', text: null, work_package_id: 'wp-review', answer_route: null },
+  ];
+  board.work_request_details[3].asks = quiet ? [] : [
+    { id: 'esc-1', kind: 'architect', text: 'Ship tokens before the API?', work_package_id: null, answer_route: null },
+    { id: 'g-web', kind: 'guidance', text: 'Which theme tokens?', work_package_id: 'x-web', answer_route: '/api/v1/sympp/herdr/work-packages/x-web/guidance/g-web/answer' },
+  ];
+  const tokenApi = board.work_request_details[3].work_packages.find((p) => p.id === 'x-api');
+  tokenApi.activity_signal = { observation_state: 'current' };
+  if (quiet) {
+    board.guidance_requests.guidance_requests = [];
+    board.work_request_details[0].clarification_questions = [];
+    const review = board.work_request_details[0].work_packages.find((p) => p.id === 'wp-review');
+    review.activity_signal = { current_actor: { role: 'worker', name: 'opus-lens' }, observation_state: 'current', next_actor: 'worker', next_action: 'address_findings' };
+    review.review_signal = { ...review.review_signal, round: 1, started_at: at(40), round_history: [] };
+    delete board.work_request_details[3].work_request.operator_report.human_escalation;
+  }
+  return board;
 }
 
 // Herdr's own grouping for the board above: the web space under Herdr, a remote api space under
