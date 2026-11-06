@@ -233,7 +233,7 @@ function pipeline(t, pkg) {
     if (current) {
       const tone = pkg.failed ? c.fail : c[pkg.stage] ?? t.foreground;
       const round = pkg.stage === "review" && pkg.round > 1 ? ` · round ${pkg.round}` : "";
-      parts.push(mono(11, tone).font_semibold().child(`${label}${pkg.failed ? " failing" : ""}${round}`));
+      parts.push(mono(11, tone).font_semibold().child(`${label}${round}`));
       return;
     }
     const tone = i < at ? t.muted : tint(t.foreground, "48");

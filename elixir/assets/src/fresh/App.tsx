@@ -24,7 +24,7 @@ const DIRECTIONS = [
 ] as const;
 const DENSITIES: Array<{ key: Density; label: string; hint: string }> = [
   { key: "closed", label: "Collapsed", hint: "Headlines only" },
-  { key: "attention", label: "Attention", hint: "Open only the goals with a road bump or a question for you" },
+  { key: "attention", label: "Attention", hint: "Open only the goals that need your answer" },
   { key: "active", label: "Active", hint: "Every goal shows what is moving now" },
   { key: "open", label: "Expanded", hint: "Every goal shows done, now and up next" },
 ];

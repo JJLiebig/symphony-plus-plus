@@ -48,7 +48,7 @@ test('a topic puts each question first with one action; other tasks carry only t
   assert.ok(view.has('answer-ask:q1') && view.has('answer-ask:g-web'), 'a question with an answer route is answered here');
   assert.ok(view.has('chief-ask:esc-1'), 'one without a route goes to the topic chief');
   assert.equal(view.has('ask-ask:wait-wp-review'), false, 'an unrecorded wait is not repeated beside a real question');
-  assert.ok(view.text('Stuck') && view.text('Checks failing') && view.text('No recent report'));
+  assert.ok(!view.text('Stuck') && !view.text('Checks failing') && !view.text('No recent report'));
   assert.equal(view.has('issues-wr-pr') && view.has('issues-wr-cross'), false, 'a task with nothing wrong says nothing about itself');
   assert.ok(view.has('strip-wr-restore-2') && !view.has('strip-wr-restore-3'), 'the strip runs once per top-level group');
   assert.ok(view.has('later-t-herdr:') && !view.has('task-wr-badges') && !view.has('task-wr-keys'), 'planned and landed work stay folded');
@@ -73,7 +73,7 @@ test('a task shows its packages at work on the pipeline and folds landed and que
     for (const id of ['strip-wr-restore', 'pkg-r-4', 'pkg-r-5', 'pkg-r-6', 'pkg-r-7', 'fold-Landed:wr-restore', 'fold-Up next:wr-restore', 'pr-step-r-4', 'pr-r-4', 'review-r-4'])
       assert.ok(view.has(id), `${id} at ${width}`);
     assert.equal(view.has('pkg-r-1') || view.has('pkg-r-9'), false, 'landed and queued packages are folded');
-    assert.ok(view.text('Checks failing') && view.text('Review · round 3'), 'the current step says what went wrong');
+    assert.ok(!view.text('Checks failing') && view.text('Review · round 3'), 'the pipeline shows progress without raising an issue');
     const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
     assert.ok(at('pkg-r-4') < at('pkg-r-5') && at('pkg-r-5') < at('pkg-r-6'), 'packages stay in planned order');
   }

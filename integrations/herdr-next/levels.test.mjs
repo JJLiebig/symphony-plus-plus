@@ -48,8 +48,8 @@ test('needs-you ranks by downstream packages unblocked, then by the longest wait
   const { jobs } = setup();
   const queue = L.needsQueue(jobs);
   assert.deepEqual(queue.map((n) => [n.job.id, n.pkgId, n.unblocks]), [
+    ['wr-pr', null, 3],
     ['wr-cross', null, 2],
-    ['wr-pr', 'wp-review', 1],
     ['wr-cross', 'x-web', 0],
   ], 'an ask holds every unfinished package of its job; guidance holds what comes after it');
   const pr = byId(jobs, 'wr-pr');

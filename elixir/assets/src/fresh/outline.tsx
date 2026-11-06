@@ -12,7 +12,7 @@ import { SinceChip } from "./since";
 // Direction 1: the old dropdown, alive. Goals that want attention come first; the rest are filed by area.
 export function Outline({ at, views }: { at: number; views: GoalView[] }) {
   const lanes = lanesOf(views, at);
-  const urgent = lanes.main.filter((view) => wantsAttention(reportFor(view, at).verdict));
+  const urgent = lanes.main.filter((view) => wantsAttention(reportFor(view).verdict));
   const steady = lanes.main.filter((view) => !urgent.includes(view));
   const areas = [...new Set(steady.map((view) => areaLabel(view.goal.area)))];
 
@@ -41,7 +41,7 @@ function Block({ at, label, tagged, tone, views }: { at: number; label: string; 
 }
 
 function GoalRow({ at, tagged, view }: { at: number; tagged?: boolean; view: GoalView }) {
-  const report = reportFor(view, at);
+  const report = reportFor(view);
   const { level, showAll, toggle } = useGoalLevel(report.verdict);
   const total = view.live.length + view.queued.length + view.done.length;
 

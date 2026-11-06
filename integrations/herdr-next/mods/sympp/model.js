@@ -6,15 +6,14 @@ export const BOARD_PATH = "/api/v1/sympp/herdr/dashboard";
 export const DASHBOARD_PATH = "/sympp";
 export const STAGES = ["queued", "build", "checks", "review", "merge", "done"];
 export const STAGE_LABEL = { queued: "Queued", build: "Building", checks: "Checks", review: "Review", merge: "Ready to merge", done: "Landed" };
-export const VERDICT_LABEL = { needs_you: "Needs you", bump: "Road bump", stalled: "Stalled", on_track: "On track", idle: "Quiet", parked: "Parked", settled: "Done" };
+export const VERDICT_LABEL = { needs_you: "Needs you", on_track: "On track", idle: "Quiet", parked: "Parked", settled: "Done" };
 
 const MINUTE = 60e3;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const LONG_REVIEW = 3 * HOUR;
-const STALL_AFTER = 2 * HOUR;
 const DORMANT_AFTER = 14 * DAY;
-const RANK = { needs_you: 0, bump: 1, stalled: 2, on_track: 3, idle: 4, parked: 5, settled: 6 };
+const RANK = { needs_you: 0, on_track: 3, idle: 4, parked: 5, settled: 6 };
 const OUTCOMES = { pr_merged: "merged", completed_no_pr: "finished", superseded: "dropped", abandoned: "dropped" };
 const TERMINAL_OUTCOMES = { merged: "merged", closed: "closed", abandoned: "dropped", skipped: "dropped" };
 // Packages without a backend stage: their recorded status, read as loosely as the web board does.
@@ -183,15 +182,6 @@ function buildJob(detail, now, guidance, runs) {
   const needs = [
     ...(ask ? [{ key: `${request.id}:ask`, kind: "ask", label: "Architect asks", text: ask.text, since: ask.since, raisedAt: ms(escalation.raised_at), jobId: request.id, pkgId: null }] : []),
     ...guidanceQuestions,
-    ...packages.filter((pkg) => pkg.stage !== "done" && pkg.activity.nextActor === "human" && !guidanceQuestions.some((q) => q.pkgId === pkg.id)).map((pkg) => ({
-      key: `${request.id}:${pkg.id}:guidance`,
-      kind: "guidance",
-      label: "Guidance needs you",
-      text: pkg.activity.waiting || `${pkg.title} is waiting for your answer`,
-      since: pkg.activity.lastUpdateAt,
-      jobId: request.id,
-      pkgId: pkg.id,
-    })),
   ];
 
   const live = packages.filter((pkg) => pkg.stage !== "queued" && pkg.stage !== "done");
@@ -200,6 +190,8 @@ function buildJob(detail, now, guidance, runs) {
   const createdAt = ms(request.inserted_at) ?? now;
   const closedAt = ms(request.completed_at);
   const settled = request.execution_status === "closed" || (closedAt !== null && closedAt <= now) || (packages.length > 0 && done.length === packages.length && needs.length === 0);
+  const recordedAsks = asksOf(detail.asks);
+  const attention = recordedAsks === null ? [...needs, ...questions.filter((q) => q.status === "open").map((q) => ({ ...q, label: "Needs you" }))] : recordedAsks.map((a) => ({ ...a, key: `ask:${a.id}`, label: "Needs you", since: now, jobId: request.id }));
   const job = {
     id: request.id,
     title: request.title || request.id,
@@ -217,7 +209,7 @@ function buildJob(detail, now, guidance, runs) {
     ask,
     questions,
     guidance: guidanceQuestions,
-    needs,
+    needs: attention.filter((a) => a.text?.trim()),
     architect: placeOf(request.architect_session_location),
     dispatchedBy: chiefOf(request.dispatched_by),
     packages,
@@ -243,7 +235,7 @@ function buildJob(detail, now, guidance, runs) {
 // so an answer can only go back to where the board came from.
 function asksOf(list) {
   if (!Array.isArray(list)) return null;
-  return list.filter((ask) => ask && (typeof ask.id === "string" || typeof ask.id === "number")).map((ask) => ({
+  return list.filter((ask) => ask && typeof ask.text === "string" && ask.text.trim() && (typeof ask.id === "string" || typeof ask.id === "number")).map((ask) => ({
     id: String(ask.id),
     kind: typeof ask.kind === "string" ? ask.kind : null,
     text: typeof ask.text === "string" && ask.text.trim() ? ask.text.trim() : null,
@@ -367,19 +359,8 @@ function deployFailed(deployments) {
   return Object.values(deployments ?? {}).some((repo) => repo?.dev?.status === "failed" || repo?.prod?.status === "failed");
 }
 
-function isStalled(job, now) {
-  return job.state === "resting" && job.counts.done > 0 && now - job.lastMoveAt > STALL_AFTER;
-}
-
 function bumpsOf(job, now) {
-  const bumps = job.deployFailed ? ["A deploy failed"] : [];
-  if (isStalled(job, now) && !job.report.parked) bumps.push(`Nothing has moved for ${span(now - job.lastMoveAt)} with ${job.counts.queued} queued`);
-  for (const pkg of job.packages) {
-    if (pkg.stage === "queued" || pkg.stage === "done") continue;
-    if (pkg.failed) bumps.push(`Checks failing${pkg.untimed ? "" : ` for ${span(now - pkg.since)}`}: ${pkg.title}`);
-    for (const bump of reviewBumps(pkg, now)) bumps.push(`${bump.text}: ${pkg.title}`);
-  }
-  return bumps;
+  return [];
 }
 
 // A review in its third round or past three hours is a road bump. Its time runs from the recorded
@@ -396,7 +377,6 @@ export function reviewBumps(pkg, now) {
 function verdictOf(job, now) {
   if (job.needs.length > 0) return "needs_you";
   if (job.report.parked) return "parked";
-  if (isStalled(job, now)) return "stalled";
   if (job.bumps.length > 0) return "bump";
   if (job.state === "settled") return "settled";
   return job.counts.live === 0 ? "idle" : "on_track";
@@ -421,7 +401,7 @@ function draftBrief(job, now) {
   }
   if (total === 0) return "Not sliced into packages yet.";
   if (live === 0) {
-    return isStalled(job, now) ? `Nothing has moved for ${span(now - job.lastMoveAt)}. ${done} of ${total} landed.` : `Between packages: ${done} of ${total} landed, ${queued} up next.`;
+    return `Between packages: ${done} of ${total} landed, ${queued} up next.`;
   }
   if (job.bumps.length > 0) return job.bumps.length === 1 ? `${job.bumps[0]}.` : `${job.bumps[0]}, and ${job.bumps.length - 1} more.`;
   return `${live} of ${total} packages moving. ${done} landed.`;
@@ -450,7 +430,7 @@ export function packageSections(job) {
 export function stageText(pkg, now) {
   if (pkg.stage === "done") return pkg.outcome === "dropped" ? "Dropped" : pkg.outcome === "finished" ? "Finished" : pkg.outcome === "closed" ? "Closed" : "Merged";
   if (pkg.stage === "queued") return pkg.after.length ? `After ${pkg.after.join(", ")}` : "Queued";
-  const label = pkg.failed ? "Checks failing" : pkg.stage === "review" ? `Review${pkg.round > 1 ? ` · round ${pkg.round}` : ""}` : STAGE_LABEL[pkg.stage];
+  const label = pkg.stage === "review" ? `Review${pkg.round > 1 ? ` · round ${pkg.round}` : ""}` : STAGE_LABEL[pkg.stage];
   return pkg.untimed || pkg.since === null ? label : `${label} · ${span(now - pkg.since)}`;
 }
 

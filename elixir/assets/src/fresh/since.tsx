@@ -32,7 +32,7 @@ function goalChanges(then: GoalView | undefined, now: GoalView, since: number, a
   const knownThen = new Set([...doneThen, ...then.live.map((live) => live.pkg.id)]);
   const done = now.done.filter((pkg) => !doneThen.has(pkg.id)).length;
   const started = now.live.filter((live) => !knownThen.has(live.pkg.id)).length;
-  const notes = [verdictNote(reportFor(then, since).verdict, reportFor(now, at).verdict), done > 0 ? `+${done} done` : "", started > 0 ? `+${started} started` : ""];
+  const notes = [verdictNote(reportFor(then).verdict, reportFor(now).verdict), done > 0 ? `+${done} done` : "", started > 0 ? `+${started} started` : ""];
   return { notes: notes.filter(Boolean), done, started };
 }
 

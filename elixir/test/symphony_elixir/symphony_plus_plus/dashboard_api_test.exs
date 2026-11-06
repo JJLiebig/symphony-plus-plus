@@ -2119,7 +2119,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
-  test "native asks preserve unrecorded questions and route architect escalations to the chief" do
+  test "stale workers and failing checks route recovery to the architect" do
+    alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals
+    package = %SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage{status: "implementing"}
+    stale = Signals.activity(package, %{worker_signal: %{status: "stale"}}, %{key: "implementing"}, [], [])
+    assert stale["next_actor"] == "architect"
+    assert stale["next_action"] == "inspect_runtime"
+    failing = Signals.activity(package, %{pr_signal: %{checks: %{status: "failing"}}}, %{key: "implementing"}, [], [])
+    assert failing["next_actor"] == "architect"
+    assert failing["next_action"] == "inspect_validation"
+  end
+
+  test "native asks omit textless waits and architect-routed guidance" do
     detail = %{
       work_request: %{id: "wr-asks", operator_report: %{"human_escalation" => %{"question" => "Approve the scope?", "raised_at" => "2026-11-06T01:00:00Z", "resolved_at" => nil}}},
       clarification_questions: [],
@@ -2127,13 +2138,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     }
 
     assert [
-             %{id: "wp-asks", kind: "human_wait", text: nil, work_package_id: "wp-asks", answer_route: nil},
              %{kind: "architect", text: "Approve the scope?", answer_route: nil}
            ] = asks = LocalOperatorDashboard.native_asks(detail, %{})
 
     assert LocalOperatorDashboard.native_asks(detail, %{}) == asks
     resolved = put_in(detail, [:work_request, :operator_report, "human_escalation", "resolved_at"], "2026-11-06T02:00:00Z")
-    assert [%{kind: "human_wait"}] = LocalOperatorDashboard.native_asks(resolved, %{})
+    assert [] = LocalOperatorDashboard.native_asks(resolved, %{})
+    guidance = %{"wp-asks" => [%{id: "g", status: "open", question: "Chief can answer"}]}
+    assert [] = LocalOperatorDashboard.native_asks(resolved, guidance)
+    escalated = put_in(guidance, ["wp-asks", Access.at(0), :status], "human_info_needed")
+    assert [%{text: "Chief can answer", answer_route: route}] = LocalOperatorDashboard.native_asks(resolved, escalated)
+    assert String.ends_with?(route, "/guidance/g/answer")
   end
 
   test "Herdr board exposes answerable asks and distinguishes prepared, fresh and stale workers", %{repo: repo} do

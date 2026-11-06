@@ -97,3 +97,6 @@ for reporting, require worker receipts, or turn ordinary waits into escalation.
   reconciliation; do not request duplicate worker MCP or review receipts.
 - Merge only when authorized.
 - Summarize PRs/no-PR evidence and follow-ups.
+
+Human attention is **Needs you**, raised only by the chief or architect with one sentence stating the action: a human question or product/policy approval, access only the human can grant, or recovery exhausted after the system tried. Use `human_escalation:{question}` in the architect report, or `escalate_guidance_request` to `human_info_needed` for a recorded guidance question.
+Read `read_delivery_board` for stale workers (`next_actor: architect`, `inspect_runtime`), blockers and validation evidence; handle silent workers, failing checks and quiet tasks before escalating exhausted recovery. Review rounds, running CI, dependencies, queues, architect-routed guidance and worker-parent questions never need human attention by themselves.

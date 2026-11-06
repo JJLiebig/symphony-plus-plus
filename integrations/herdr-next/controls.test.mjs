@@ -36,7 +36,7 @@ test('open questions are answerable detail, while explicit escalation and actual
   const escalated = detail('wr2', 'owner/api', [{ id: 'wp2', repo: 'owner/api', activity_signal: { next_actor: 'human' } }]);
   escalated.work_request.operator_report = { human_escalation: { question: 'Budget decision?', raised_at: '2026-10-25T12:30:00Z' } };
   const [normal, urgent] = board([ordinary, escalated], [{ id: 'g2', work_package_id: 'wp2', question: 'API contract?', status: 'human_info_needed', decision_prompt: prompt }]).jobs;
-  assert.deepEqual(normal.needs, []);
+  assert.equal(normal.needs[0].text, "Which order?");
   assert.equal(normal.questions[0].id, 'q1');
   assert.deepEqual(C.answerBody(normal.questions[0], 'api_first', ''), { answer_choice: 'api_first' });
   assert.equal(urgent.needs.length, 2);
@@ -44,7 +44,7 @@ test('open questions are answerable detail, while explicit escalation and actual
   assert.equal(urgent.guidance[0].id, 'g2');
   assert.equal(C.answerPath(urgent.guidance[0]), '/api/v1/sympp/herdr/work-packages/wp2/guidance/g2/answer');
   assert.equal(C.answerPath({ ...urgent.guidance[0], route: '/api/v1/sympp/herdr/work-requests/w/questions/q/answer' }), '/api/v1/sympp/herdr/work-requests/w/questions/q/answer', 'an ask the board routes answers through its own route');
-  assert.equal(L.needsQueue([normal, urgent]).length, 2, 'guidance and its human activity signal must not duplicate');
+  assert.equal(L.needsQueue([normal, urgent]).length, 3, 'guidance and its human activity signal must not duplicate');
 });
 
 const host = { node: 'C:\\Program Files\\nodejs\\node.exe', helper: 'C:\\Herdr Home\\tools\\sympp-herdr.js', session: 'scratch' };
