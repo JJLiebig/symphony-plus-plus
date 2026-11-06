@@ -579,11 +579,21 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard do
   end
 
   defp merge_eligibility(work_package, context) do
-    context
-    |> get_in([:execution_graphs, work_package.work_request_id])
-    |> case do
-      %{merge_eligibility: entries} -> Enum.find(entries, &(&1.work_package_id == work_package.id)) || %{eligible: false, reason_codes: ["dependencies_unavailable"]}
-      _unavailable -> %{eligible: false, reason_codes: ["dependencies_unavailable"]}
+    eligibility =
+      context
+      |> get_in([:execution_graphs, work_package.work_request_id])
+      |> case do
+        %{merge_eligibility: entries} -> Enum.find(entries, &(&1.work_package_id == work_package.id)) || %{eligible: false, reason_codes: ["dependencies_unavailable"]}
+        _unavailable -> %{eligible: false, reason_codes: ["dependencies_unavailable"]}
+      end
+
+    if get_in(context, [:activity_contexts, work_package.id, :blocker_state, :active?]) == true do
+      eligibility
+      |> Map.put(:eligible, false)
+      |> Map.update!(:reason_codes, &Enum.uniq(["active_blocker" | &1]))
+      |> Map.put(:next_action, "resolve_blocker")
+    else
+      eligibility
     end
   end
 

@@ -144,6 +144,13 @@ Ready packages remain immutable: create and qualify a successor before retiring 
 old candidate, then select that successor and requalify affected wiring. Provider
 review results stay with their provider; input provenance is not a review receipt.
 
+A ready-for-merge package can acquire a new integration blocker without changing
+its readiness or reviewed evidence. The architect declares it with scoped
+`append_progress` and clears it with `resolve_blocker`, following the
+[architect blocker procedure](../packages/sympp/skills/symphony-architect/SKILL.md#guidance).
+An active blocker makes the delivery board's `merge_eligibility.eligible` false.
+Workers route human decisions through the architect or chief.
+
 Before merging, the architect checks the delivery board's `merge_eligibility`,
 current selections, and native checks/review. Backend delivery must precede UI merge,
 and pinned heads must still match after backend delivery. External merges are

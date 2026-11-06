@@ -409,3 +409,49 @@ test('blocked handoff accepts new PR and head observations without reviving an o
   expect(receipts.at(-1).phase).toBe('failure');
   expect(receipts.at(-1).error).toBe(String(disconnected));
 });
+
+
+test('architect integration holds gate a ready PR without reopening work or changing reviewed evidence', async ({ delivery: { factory, provider } }) => {
+  const architect = await factory.client();
+  const request = await architect.request('Final integration authority');
+  const [wp, sibling] = (await architect.call('slice_work_request', { work_packages: [contract('Held delivery'), contract('Independent delivery')] })).work_package_ids;
+  for (const [id, number] of [[wp, 801], [sibling, 802]] as const) {
+    await architect.call('dispatch_work_package', { work_package_id: id });
+    provider.set(number, pr(number, head('a')));
+    await sync(architect, id, number, head('a'));
+  }
+  const before = await row(architect, request, wp);
+  expect(before.raw_status).toBe('ready_for_merge');
+  expect(before.merge_eligibility.eligible).toBe(true);
+  const metadata = (await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).metadata;
+  const hold = {
+    work_package_id: wp, summary: 'Integration requires a final human decision.', idempotency_key: 'integration-hold',
+    payload: { type: 'blocker', active: true, blocker_id: 'integration-authority' },
+  };
+  const outsider = await factory.client();
+  await outsider.request('Unrelated authority');
+  expect((await outsider.rpc('tools/call', { name: 'append_progress', arguments: hold })).error).toBeTruthy();
+  expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(true);
+  const declared = await architect.call('append_progress', hold);
+  expect((await architect.call('append_progress', hold)).progress_event.id).toBe(declared.progress_event.id);
+  const held = await row(architect, request, wp);
+  expect(held.raw_status).toBe('ready_for_merge');
+  expect(held.merge_eligibility.eligible).toBe(false);
+  expect(held.merge_eligibility.reason_codes).toContain('active_blocker');
+  expect(held.merge_eligibility.next_action).toBe('resolve_blocker');
+  expect((await row(architect, request, sibling)).merge_eligibility.eligible).toBe(true);
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).metadata).toEqual(metadata);
+  await architect.reject('append_progress', { work_package_id: wp, summary: 'Ordinary evidence stays frozen.', idempotency_key: 'late-progress' }, 'already_ready');
+  const resolution = { work_package_id: wp, blocker_id: 'integration-authority', resolution: 'Decision received.', summary: 'Integration authorized.', idempotency_key: 'integration-resolved' };
+  const resolved = await architect.call('resolve_blocker', resolution);
+  expect((await architect.call('resolve_blocker', resolution)).progress_event.id).toBe(resolved.progress_event.id);
+  expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(true);
+  expect((await row(architect, request, wp)).raw_status).toBe('ready_for_merge');
+  expect((await architect.inspect(`/api/v1/sympp/operator/work-packages/${wp}`)).metadata).toEqual(metadata);
+  provider.set(801, pr(801, head('a'), { state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: head('f') } }));
+  await architect.call('sync_pr', { work_package_id: wp });
+  expect((await row(architect, request, wp)).raw_status).toBe('merged');
+  const late = await architect.rpc('tools/call', { name: 'append_progress', arguments: { ...hold, idempotency_key: 'after-merge' } });
+  expect(late.error).toBeTruthy();
+  expect((await row(architect, request, wp)).work_package.blocker_state['active?']).toBe(false);
+});
