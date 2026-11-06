@@ -154,6 +154,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest do
       :archived_at,
       :archive_reason
     ])
+    |> SymphonyElixir.SymphonyPlusPlus.Title.validate()
     |> validate_required([
       :id,
       :title,

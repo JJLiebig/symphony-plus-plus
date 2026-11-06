@@ -682,7 +682,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff do
     attrs = %{
       id: anchor_id,
       kind: @anchor_kind,
-      title: "Architect handoff: #{work_request.title}",
+      title: "Architect handoff",
       repo: work_request.repo,
       base_branch: work_request.base_branch,
       branch_pattern: "agent/#{String.downcase(anchor_id)}/architect-handoff",

@@ -32,7 +32,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
       %{
         "repo" => described_string_schema("Git remote URL or owner/name. Remote clients can omit it to infer their checkout origin."),
         "base_branch" => string_schema(),
-        "title" => string_schema(),
+        "title" => task_title_schema(),
         "description" => markdown_string_schema("WorkRequest human-facing description in Markdown."),
         "request_kind" => string_enum_schema(WorkRequest.work_types()),
         "workflow_mode" => string_enum_schema(WorkRequest.dispatch_shapes()),
@@ -889,7 +889,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
   defp work_package_contract_properties do
     %{
       "group_id" => nullable_string_schema(),
-      "title" => nonblank_string_schema(),
+      "title" => task_title_schema(),
       "goal" => nonblank_string_schema(),
       "kind" => Map.put(string_enum_schema(WorkPackage.executable_kinds()), "default", "standard_pr"),
       "repo" => described_string_schema("Optional delivery repo. Defaults to the WorkRequest primary repo."),
@@ -1043,6 +1043,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ToolCatalog.InputSchemas do
         }
       }
     }
+  end
+
+  defp task_title_schema do
+    described_string_schema("Title is the short name: 2–5 words, max 40 characters after trimming, e.g. Board read access. Put detail in the description.")
   end
 
   defp session_description_schema do

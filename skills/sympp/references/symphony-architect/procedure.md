@@ -89,6 +89,8 @@ cycle/topology evidence, and unmet dependencies.
 Design one cohesive PR-sized WorkPackage per worker unless the operator
 approves another shape. Prefer smaller independently reviewable outcomes.
 
+WorkRequest and WorkPackage titles are their short names: 2–5 words, max 40 characters after trimming (e.g. "Board read access"); put detail in the description or body.
+
 Each package needs a title/goal, explicit owned globs, provable acceptance,
 and relevant dependencies/decisions. `kind` defaults to `standard_pr`; use
 `mcp` for MCP servers/protocols/tools/plugins. Repo/base default to the WR's
