@@ -16,7 +16,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
-  @mcp_worker_skill "symphony-plus-plus-mcp:symphony-worker"
+  @mcp_worker_skill "sympp"
   @preferred_worker_skill_set [@mcp_worker_skill]
 
   @type dispatch_result :: %{
@@ -185,7 +185,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackageDispatch do
   defp worker_launch_prompt do
     """
     Read the sibling `assignment` object in this bootstrap; `*_ref` fields are JSON pointers within that assignment.
-    Use `#{@mcp_worker_skill}`. Implement the assignment, run required native checks/review, and return the PR URL, exact head, results, and remaining risks to the parent.
+    Use the installed `#{@mcp_worker_skill}` skill and read `references/symphony-worker/procedure.md` relative to that skill. Implement the assignment, run required native checks/review, and return the PR URL, exact head, results, and remaining risks to the parent.
     No worker MCP calls or duplicate status/review records are required. Ask questions in the conversation; the parent owns coordination, blockers, and delivery reconciliation.
     Stay inside this WorkPackage and never request or expose raw secrets.
     """
