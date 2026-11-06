@@ -1,5 +1,5 @@
 // The Topic, Space and task views, drawn in the web dashboard's visual language: Geist with Geist
-// Mono, its stage colours, its box strip and its Build ─ PR ─ Checks ─ Review ─ Merge pipeline, and
+// Mono, its stage colours, its box strip and its pipeline (Build ─ PR ─ Review ─ Merge, checks as a dot), and
 // its orange for what needs the person. Topic and Space draw the same view; a space only narrows the
 // tasks. A task is its name and its strip; a word appears only when something went wrong, and the
 // person's questions come first with one action each.
