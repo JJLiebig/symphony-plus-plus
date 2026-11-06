@@ -26,7 +26,7 @@ function verdictNote(was: Verdict, is: Verdict) {
   return ARRIVED[is] ?? (is === "on_track" && wantsAttention(was) ? "back on track" : "");
 }
 
-function goalChanges(then: GoalView | undefined, now: GoalView, since: number, at: number) {
+function goalChanges(then: GoalView | undefined, now: GoalView) {
   if (!then) return { notes: ["new"], done: 0, started: 0 };
   const doneThen = new Set(then.done.map((pkg) => pkg.id));
   const knownThen = new Set([...doneThen, ...then.live.map((live) => live.pkg.id)]);
@@ -36,7 +36,7 @@ function goalChanges(then: GoalView | undefined, now: GoalView, since: number, a
   return { notes: notes.filter(Boolean), done, started };
 }
 
-export function changesBetween(before: GoalView[], after: GoalView[], since: number, at: number): Changes {
+export function changesBetween(before: GoalView[], after: GoalView[]): Changes {
   const then = new Map(before.map((view) => [view.goal.id, view]));
   const notes = new Map<string, string[]>();
   const tally = new Map<string, { sum: number; goalIds: string[] }>();
@@ -47,7 +47,7 @@ export function changesBetween(before: GoalView[], after: GoalView[], since: num
   };
 
   for (const view of after) {
-    const entry = goalChanges(then.get(view.goal.id), view, since, at);
+    const entry = goalChanges(then.get(view.goal.id), view);
     if (entry.notes.length > 0) notes.set(view.goal.id, entry.notes);
     entry.notes.filter((note) => !note.startsWith("+")).forEach((note) => count(note, 1, view.goal.id));
     count("done", entry.done, view.goal.id);

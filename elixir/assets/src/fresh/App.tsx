@@ -83,7 +83,7 @@ export function App() {
     focusGoal(goalId);
   };
   const views = useMemo(() => (data ? viewAt(data.goals, at) : []), [at, data]);
-  const changes = useMemo(() => changesBetween(data ? viewAt(data.goals, since) : [], views, since, at), [at, data, since, views]);
+  const changes = useMemo(() => changesBetween(data ? viewAt(data.goals, since) : [], views), [data, since, views]);
   const areas = useMemo(() => [...new Set(views.filter((view) => view.state !== "settled").map((view) => view.goal.area[0]))], [views]);
   const shown = area ? views.filter((view) => view.goal.area[0] === area) : views;
   // Phases has nothing to add until a goal on the board is grouped, so it is offered only then.
