@@ -5,7 +5,7 @@
 
 import { shortRepo, lanesOf, chiefBindings } from "./model.js";
 import * as J from "./job.js";
-import { intoTopic } from "./chief.js";
+import { intoTopic, chiefTerminal, chiefRunning } from "./chief.js";
 
 export const UNSORTED = "unsorted";
 export const NOWHERE = "nowhere";
@@ -184,6 +184,16 @@ export function chiefsFor(topic, chiefs, desk, repoTopics) {
   const named = free.filter((c) => wordMatch(words(c.domain), words(topic.name)));
   if (named.length) return named;
   return free.filter((c) => c.repos.some((repo) => topicsOfRepo(repo, desk, repoTopics).some((t) => t.id === topic.id)));
+}
+
+// The latest started chief and its registration are one entry even before a helper check succeeds.
+// The registered terminal is only an identity for dedupe; liveness still comes from chiefAgent.
+export function chiefEntries(topic, chiefs, latest, machineList, terminalList, now) {
+  const running = chiefRunning(latest, terminalList, now);
+  const entries = chiefs.filter(({ chief, agent }) => !running ||
+    (agent.binding?.address ?? chiefTerminal(chief, machineList, terminalList)) !== latest.terminal)
+    .map(({ chief, agent }) => ({ domain: chief.domain, terminal: agent.state === "live" ? agent.binding.address : null }));
+  return running ? [{ domain: topic.name, terminal: latest.terminal }, ...entries] : entries;
 }
 
 // The chief as an agent, by the Job level's rule: Live only after a helper check of its bound session,

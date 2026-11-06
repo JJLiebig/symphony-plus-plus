@@ -184,3 +184,30 @@ test('a chief space that fell out of its topic goes back to its end, folded as t
   assert.equal(L.homeChiefSpaces(next, { s2: 't-a', s3: 't-b' }, ['s1', 's2', 's3']), null, 'nothing to do once every one is home');
   assert.equal(L.homeChiefSpaces(desk, null, ['s2']), null);
 });
+
+
+test('a remote registration and Start chief share one entry without bypassing verified liveness', () => {
+  const payload = boardPayload();
+  payload.chiefs[0].session_location.machine_id = 'builder-host';
+  payload.chiefs[0].session_location.herdr.terminal_id = 't9';
+  const chief = M.parseBoard(payload).chiefs[0];
+  const topic = { name: chief.domain };
+  const machines = [{ id: 'core-1', name: 'build', host: 'builder-host' }];
+  const term = { address: 'build/t9', state: 'live', program: { key: 'codex' } };
+  const latest = { terminal: 'build/t9', agent: 'codex' };
+  const unchecked = L.chiefAgent(chief, [], [term], {}, NOW);
+  const entries = (list, last, ms = machines, c = chief, agent = unchecked) =>
+    L.chiefEntries(topic, [{ chief: c, agent }], last, ms, list, NOW);
+  const expected = [{ domain: chief.domain, terminal: 'build/t9' }];
+  assert.deepEqual(entries([term]), [{ domain: chief.domain, terminal: null }], 'registration and a live terminal alone never prove a running chief');
+  assert.deepEqual(entries([term], latest), expected, 'dedupe by core and terminal even without session labels or a helper result');
+  assert.deepEqual(entries([term], latest, machines, chief, { state: 'live', binding: { address: term.address } }), expected);
+  assert.equal(entries([term], latest, [{ ...machines[0], id: 'replacement-core' }]).length, 2, 'a different core cannot dedupe by hostname');
+  for (const machineId of ['builder-host', 'build']) {
+    assert.deepEqual(entries([term], latest, machines, { ...chief, session: { ...chief.session, coreId: null, machineId } }), expected);
+  }
+  assert.deepEqual(entries([{ ...term, address: 't9' }], { ...latest, terminal: 't9' }, [{ id: 'core-1', name: null, host: 'builder-host' }]),
+    [{ domain: chief.domain, terminal: 't9' }], 'local core ids resolve without a machine prefix');
+  assert.deepEqual(entries([{ ...term, program: { key: 'shell' } }], latest),
+    [{ domain: chief.domain, terminal: null }], 'a shell left behind is not a running chief');
+});
