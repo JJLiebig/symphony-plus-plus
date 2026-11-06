@@ -44,6 +44,7 @@ defmodule SymphonyElixir.Application do
     [
       {Phoenix.PubSub, name: SymphonyElixir.PubSub},
       {Task.Supervisor, name: SymphonyElixir.TaskSupervisor},
+      SymphonyElixirWeb.BoardLoginCodes,
       SymphonyElixir.SymphonyPlusPlus.OperatorDashboardOpener
     ] ++
       legacy_daemon_children() ++

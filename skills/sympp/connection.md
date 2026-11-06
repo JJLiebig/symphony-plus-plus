@@ -99,3 +99,7 @@ If setup prints `activate` on Linux/macOS, run the printed export in the shell
 where you will type `sympp`; opening a tab in an existing terminal may retain
 its previous PATH. `sympp status` succeeds when the factory answers with a
 reachable ledger.
+
+Run `sympp board` to open the selected factory in your default browser, signed in
+using the token saved by setup. The browser session lasts 30 days; rotating the
+factory token invalidates it. Plain tailnet browser visits are read-only.

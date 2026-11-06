@@ -1,7 +1,7 @@
 import { MoreHorizontal } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-import { api } from "./api";
+import { api, readOnly } from "./api";
 import type { Goal, GoalView } from "./model";
 
 // Called after an action went through, so the board reads the ledger again.
@@ -60,7 +60,7 @@ export function GoalActions({ className, goal, moving = 0 }: { className?: strin
   }, [open]);
 
   // Mock goals are not in the ledger, so there is nothing to act on; the gap keeps rows aligned.
-  if (goal.mock) return <span className={`inline-block size-6 shrink-0 ${className ?? ""}`} />;
+  if (readOnly || goal.mock) return <span className={`inline-block size-6 shrink-0 ${className ?? ""}`} />;
 
   const toggle = () => {
     setOpen(!open);
@@ -114,7 +114,7 @@ export function ShelfCleanup({ at, views }: { at: number; views: GoalView[] }) {
     { key: "stale", label: `older than 30 days (${stale.length})`, picked: stale.length < real.length ? stale : [] },
     { key: "all", label: `all (${real.length})`, picked: real },
   ].filter((choice) => choice.picked.length > 0);
-  if (choices.length === 0) return null;
+  if (readOnly || choices.length === 0) return null;
 
   const pick = async (choice: (typeof choices)[number]) => {
     if (armed !== choice.key) return setArmed(choice.key);

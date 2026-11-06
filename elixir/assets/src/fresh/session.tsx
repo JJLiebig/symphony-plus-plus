@@ -1,6 +1,6 @@
 import { Laptop, Monitor, Server, SquareTerminal, type LucideIcon } from "lucide-react";
 
-import { api } from "./api";
+import { api, readOnly } from "./api";
 import { span, type Goal, type PkgView, type Place } from "./model";
 
 const KIND: Record<string, { kind: string; icon: LucideIcon }> = { desktop: { kind: "Desktop", icon: Monitor }, laptop: { kind: "Laptop", icon: Laptop }, server: { kind: "Server", icon: Server } };
@@ -86,7 +86,7 @@ function PlaceIcon({ place }: { place: Place }) {
 // Where a package's session is: only the machine icon on the line, the full address on hover, the session itself on click.
 export function Session({ at, view }: { at: number; view: PkgView }) {
   const place = view.pkg.location ?? (view.actor ? samplePlace(at, view.pkg.id, view.pkg.area, view.pkg.goalTitle, "worker") : null);
-  if (!place) return <span />;
+  if (readOnly || !place) return <span />;
 
   return (
     <button aria-label={`Session for ${view.pkg.title}`} className="group relative flex size-6 items-center justify-center rounded text-dim hover:bg-line hover:text-ink" type="button" onClick={() => void open(`work-packages/${encodeURIComponent(view.pkg.id)}`, place)}>
@@ -107,6 +107,7 @@ function architectPlace(at: number, goal: Goal) {
 // only the machine icon, and leaves a gap while the address is unknown; on an ask it is spelled out.
 export function FindArchitect({ at, className = "", compact, goal }: { at: number; className?: string; compact?: boolean; goal: Goal }) {
   const place = architectPlace(at, goal);
+  if (readOnly) return null;
   if (compact && !place) return <span className={`size-6 shrink-0 ${className}`} />;
   const shape = compact ? "size-6 justify-center" : "gap-1.5 self-center px-1.5 py-0.5";
   // The spoken name starts with the words on the button, where it has words.
