@@ -353,3 +353,11 @@ This project is licensed under the [Apache License 2.0](../LICENSE).
 Use the [Linux service installer](../docs/linux-service.md) to build a release,
 keep the existing ledger, and serve authenticated clients on the private tailnet.
 The regular local cockpit and Windows launcher retain their current behavior.
+
+### Pending PR checks
+
+The factory rechecks reported pending PR checks every 60 seconds, even when a
+worker has stopped. It uses authenticated conditional requests for check runs
+and commit statuses, with ETags cached per PR and head. Unchanged responses do
+not write observations; completed checks stop polling. Without GitHub credentials
+the backstop skips the pass. Manual PR synchronization remains available.

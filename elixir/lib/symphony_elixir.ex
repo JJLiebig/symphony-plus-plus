@@ -20,6 +20,7 @@ defmodule SymphonyElixir.Application do
   use Application
 
   alias SymphonyElixir.SymphonyPlusPlus.FactoryService
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.ChecksBackstop
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.Repo
@@ -80,6 +81,7 @@ defmodule SymphonyElixir.Application do
       [
         {Repo, Repo.child_options()},
         {WorktreeCleanupQueue, repo: Repo},
+        {ChecksBackstop, repo: Repo},
         {Retention, repo: Repo},
         SymphonyElixir.SymphonyPlusPlus.MCP.HTTPStateStore,
         SymphonyElixir.SymphonyPlusPlus.MCP.ClientLeases,

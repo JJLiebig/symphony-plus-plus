@@ -4,6 +4,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.Client do
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
 
+  @type conditional_response :: {:ok, map(), String.t() | nil} | :not_modified | {:error, term()}
+
   @callback fetch_pull_request(PullRequest.ref(), keyword()) :: {:ok, term()} | {:error, term()}
 
   @spec fetch_pull_request(module(), PullRequest.ref(), keyword()) :: {:ok, term()} | {:error, term()}
@@ -30,6 +32,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.HttpClient do
   @moduledoc false
 
   @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.Client
 
   @default_receive_timeout 5_000
 
@@ -63,6 +67,27 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.HttpClient do
          ) do
       {:ok, %Req.Response{status: 200, body: body}} when is_map(body) -> {:ok, body}
       _unavailable -> {:error, :request_failed}
+    end
+  end
+
+  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: Client.conditional_response()
+  def conditional_json(path, etag, opts) do
+    request_headers = if etag, do: [{"if-none-match", etag} | headers()], else: headers()
+
+    case Req.get("https://api.github.com/" <> path,
+           headers: request_headers,
+           receive_timeout: receive_timeout(opts),
+           connect_options: [timeout: receive_timeout(opts)],
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 304}} ->
+        :not_modified
+
+      {:ok, %Req.Response{status: 200, body: body} = response} when is_map(body) ->
+        {:ok, body, List.first(Req.Response.get_header(response, "etag"))}
+
+      _unavailable ->
+        {:error, :request_failed}
     end
   end
 
@@ -121,6 +146,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
 
   @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
 
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
   @default_timeout 5_000
   @json_fields [
     "id",
@@ -146,7 +173,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
 
   @spec auth_status(keyword()) :: :ok | {:error, atom()}
   def auth_status(opts \\ []) do
-    case run_gh(["auth", "status", "--hostname", "github.com"], opts) do
+    command = if Keyword.get(opts, :local_auth_only?, false), do: "token", else: "status"
+
+    case run_gh(["auth", command, "--hostname", "github.com"], opts) do
       {:ok, _output} -> :ok
       {:error, reason} when reason in [:gh_unauthorized, :gh_unavailable] -> {:error, reason}
       {:error, _reason} -> {:error, :gh_unavailable}
@@ -178,6 +207,47 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
   def get_json("repos/" <> _rest = path, opts) do
     with {:ok, output} <- run_gh(["api", "--hostname", "github.com", "--method", "GET", path], opts) do
       decode_json(output)
+    end
+  end
+
+  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: Client.conditional_response()
+  def conditional_json(path, etag, opts) do
+    args = ["api", "--hostname", "github.com", "--method", "GET", "--include", path]
+    args = if etag, do: args ++ ["--header", "If-None-Match: " <> etag], else: args
+
+    result =
+      case call_runner(command_runner(opts), "gh", args, timeout: timeout(opts)) do
+        {:error, {_status, output}} = error when is_binary(output) ->
+          if Regex.match?(~r/^HTTP\/[^ ]+ 304\b/, output), do: {:ok, output}, else: normalize_command_result(error)
+
+        other ->
+          normalize_command_result(other)
+      end
+
+    with {:ok, output} <- result do
+      case String.split(output, ~r/\r?\n\r?\n/, parts: 2) do
+        [headers, body] -> conditional_response(headers, body)
+        _invalid -> {:error, :invalid_github_response}
+      end
+    end
+  end
+
+  defp conditional_response(headers, body) do
+    cond do
+      Regex.match?(~r/^HTTP\/[^ ]+ 304\b/, headers) ->
+        :not_modified
+
+      Regex.match?(~r/^HTTP\/[^ ]+ 200\b/, headers) ->
+        etag =
+          case Regex.run(~r/^etag:\s*(.+)$/im, headers, capture: :all_but_first) do
+            [value] -> String.trim(value)
+            nil -> nil
+          end
+
+        with {:ok, decoded} <- decode_json(body), do: {:ok, decoded, etag}
+
+      true ->
+        {:error, :request_failed}
     end
   end
 
@@ -335,6 +405,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
 
   @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
 
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{GhCliClient, HttpClient}
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
 
@@ -377,6 +449,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
   def get_json(path, opts) do
     with :ok <- OfflineSandbox.require_online() do
       if HttpClient.authenticated?(), do: HttpClient.get_json(path, opts), else: GhCliClient.get_json(path, opts)
+    end
+  end
+
+  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: Client.conditional_response()
+  def conditional_json(path, etag, opts) do
+    with :ok <- OfflineSandbox.require_online() do
+      if HttpClient.authenticated?(),
+        do: HttpClient.conditional_json(path, etag, opts),
+        else: GhCliClient.conditional_json(path, etag, opts)
     end
   end
 
