@@ -58,7 +58,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile01Test do
     assert list_payload["filters"] == %{"status" => "ready_for_slicing"}
     assert list_payload["total_count"] == 1
     assert [%{"id" => "WR-MCP-LOCAL-READ", "title" => listed_title} = listed] = list_payload["work_requests"]
-    assert listed_title == "Trusted local [REDACTED] discovery"
+    assert listed_title == "Local [REDACTED] discovery"
     assert listed["repo"] == "https://example.test/repo?token=[REDACTED]"
     assert listed["base_branch"] == "feature/[REDACTED]"
     refute inspect(list_response) =~ "ghp_localreadsecret"
