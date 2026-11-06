@@ -107,7 +107,7 @@ test('remote setup registers a launchable bridge in selected Codex and user Clau
   assert.equal(fs.readFileSync(claude.env.SYMPP_SERVER_TOKEN_FILE, 'utf8'), 'first-client-credential');
 });
 
-test('update reloads setup, repairs the selected registration, and stops before later steps on failure', t => {
+test('update reloads setup, repairs the selected registration, and updates the factory despite client failures', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-update-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const log = path.join(root, 'calls.jsonl'), preload = path.join(root, 'update.cjs');
@@ -118,11 +118,14 @@ cp.spawnSync = (command, args, options) => {
     fs.appendFileSync(process.env.UPDATE_LOG, 'skill\\n');
     return { status: process.env.UPDATE_FAIL === 'skill' ? 1 : 0, stdout: ({ check: 'Failed to check skills from JJLiebig/sympp', skipped: '1 skill(s) cannot be checked automatically:', legacy: '1 project skill(s) cannot be updated automatically' })[process.env.UPDATE_FAIL] || '' };
   }
+  if (command === process.execPath && args[0].endsWith('setup-sympp.js') && ['panel', 'both'].includes(process.env.UPDATE_FAIL)) {
+    return { status: 1, stdout: 'The sympp chrome needs your desk layout and mods; no files were changed', stderr: 'missing: The sympp lines in desk-agents were edited' };
+  }
   if (command === 'powershell.exe' && args.some(a => a.includes('SYMPP_COMMAND_BIN'))) return { status: 0 };
   if (command === 'ssh') {
     if (args[0] === '-G') return { status: 0, stdout: 'hostname 100.64.1.2' };
     if (args.at(-1).startsWith('cat ')) return { status: 0, stdout: 'fixture-token' };
-    fs.appendFileSync(process.env.UPDATE_LOG, 'factory\\n'); return { status: 0 };
+    fs.appendFileSync(process.env.UPDATE_LOG, 'factory\\n'); return { status: ['factory', 'both'].includes(process.env.UPDATE_FAIL) ? 1 : 0 };
   }
   return real(command, args, options);
 };`);
@@ -151,7 +154,22 @@ cp.spawnSync = (command, args, options) => {
     result = run('update');
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /skill failed/);
-    assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
+    assert.match(fs.readFileSync(config, 'utf8'), /21783/);
+    assert.match(result.stdout, /factory: updated/);
+    fs.writeFileSync(config, 'untouched');
   }
-  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\nskill\nskill\nskill\nskill\n');
+  for (const failure of ['panel', 'factory', 'both']) {
+    env.UPDATE_FAIL = failure;
+    result = run('update');
+    assert.notEqual(result.status, 0);
+    if (failure !== 'factory') {
+      assert.match(result.stderr, /setup failed/);
+      assert.match(result.stderr, /The sympp lines in desk-agents were edited/);
+      assert.equal(fs.readFileSync(config, 'utf8'), 'untouched');
+    }
+    if (failure !== 'panel') assert.match(result.stderr, /factory failed/);
+    else assert.match(result.stdout, /factory: updated/);
+    fs.writeFileSync(config, 'untouched');
+  }
+  assert.equal(fs.readFileSync(log, 'utf8'), 'skill\nfactory\n'.repeat(8));
 });
