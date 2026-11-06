@@ -44,7 +44,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorktreeLifecycleCompatTest do
     script = """
     [origin, checkout, worktree, private_file] = System.argv()
     git = System.find_executable("git")
-    {_, 0} = SymphonyElixir.SymphonyPlusPlus.GitCheckout.run(git, ["clone", "--", origin, checkout])
+    {_, 0} = SymphonyElixir.SymphonyPlusPlus.GitCheckout.run(git, ["clone", "--branch", "main", "--", origin, checkout])
     {_, 0} = SymphonyElixir.SymphonyPlusPlus.GitCheckout.run(git, ["-C", checkout, "worktree", "add", "-b", "test-modes", worktree, "origin/main"])
     File.write!(private_file, "private")
     """
