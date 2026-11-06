@@ -688,7 +688,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff do
       branch_pattern: "agent/#{String.downcase(anchor_id)}/architect-handoff",
       product_description: work_request.human_description,
       engineering_scope:
-        "Architect anchor for WorkRequest #{work_request.id}. Launch with opt-in sympp MCP loaded, then use the symphony-plus-plus-mcp:symphony-architect skill and WorkRequest MCP tools before slicing.",
+        "Architect anchor for WorkRequest #{work_request.id}. Launch with opt-in sympp MCP loaded, then use the installed sympp skill, its references/symphony-architect/procedure.md, and WorkRequest MCP tools before slicing.",
       acceptance_criteria: [
         "Architect agent can read and update the scoped WorkRequest.",
         "Architect agent can answer or escalate scoped guidance requests.",
@@ -1076,7 +1076,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff do
 
   defp prompt(local_architect_claim, agent_context) when is_binary(agent_context) do
     [
-      "Own this WorkRequest with `symphony-plus-plus-mcp:symphony-architect`.",
+      "Own this WorkRequest with the installed `sympp` skill. Read `references/symphony-architect/procedure.md` relative to that skill.",
       "",
       architect_claim_prompt_line(local_architect_claim),
       "",
@@ -1094,7 +1094,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff do
   end
 
   defp architect_claim_prompt_line(%{}),
-    do: "Claim first with `claim_local_architect_assignment` using `local_architect_claim_arguments`."
+    do: "Claim first with `claim_local_architect_assignment` using `local_architect_claim_arguments`, even if this session already owns another WorkRequest. Creation does not switch the session's claim; explicitly claim the previous WorkRequest again to return to it."
 
   defp architect_claim_prompt_line(nil),
     do: "Use the current MCP assignment or operator repair path; if a WorkRequest tool returns `claim_required`, stop and report it."
