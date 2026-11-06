@@ -163,7 +163,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
        active
        |> Map.take([:generated_at, :work_request_details, :guidance_requests])
        |> Map.put(:work_packages, Enum.map(active.work_packages, &Map.take(&1, [:id, :active_agent_run])))
-       |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?()})
+       |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?(), repos_root: SymphonyElixir.Config.factory_repos_root()})
        |> Map.put(:chiefs, Chiefs.public_current(repo, operator_config))}
     end
   end

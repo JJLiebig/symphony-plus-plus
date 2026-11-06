@@ -1,8 +1,9 @@
-// Start chief: which machine it defaults to, where the chief starts there, its place in the topic and
-// what it is told.
+// Start chief: which machine it defaults to, where the chief starts there, its place in the topic, what
+// it is told, and resuming the topic's last chief.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chiefArgv, chiefBrief, chiefFolders, factoryMachine, intoTopic, isChiefSpace, chiefMenu } from './mods/sympp/chief.js';
+import { chiefArgv, chiefBrief, chiefFolders, factoryMachine, intoTopic, isChiefSpace, chiefMenu,
+  chiefSession, chiefRunning, canResume, resumeArgv } from './mods/sympp/chief.js';
 
 test('the machine defaults to the factory: this computer for loopback, else the machine its address names or reaches', async () => {
   const machines = [
@@ -20,17 +21,54 @@ test('the machine defaults to the factory: this computer for loopback, else the 
   assert.equal(await factoryMachine('http://10.0.0.5:19998', machines, async () => { throw new Error('no ssh'); }), undefined);
 });
 
-test('the chief starts in the topic\'s own checkout on its machine, else that repository or the repos root there', () => {
-  const space = (id, folder, machine = null) => ({ id, folder, machine });
-  const remote = [space('j1', '/srv/jjdev/Code/arena-web', 'jjdev'), space('j2', '/srv/jjdev/Code/codex', 'jjdev'),
-    space('j3', '/srv/jjdev/Code/.worktrees/sympp/x', 'jjdev'), space('j4', '/tmp/scratch', 'jjdev')];
-  const local = [space('l1', 'C:\\Code\\sympp'), space('l2', 'C:\\Code\\.worktrees\\sympp\\chief-start')];
-  const all = [...remote, ...local];
-  assert.deepEqual(chiefFolders([local[0], remote[0]], all, 'jjdev'), ['/srv/jjdev/Code/arena-web']);
-  assert.deepEqual(chiefFolders([local[1], local[0]], all, 'jjdev'), ['/srv/jjdev/Code/sympp', '/srv/jjdev/Code'], 'worktrees never name the repo or root');
-  assert.deepEqual(chiefFolders([local[0]], all, null), ['C:\\Code\\sympp']);
-  assert.deepEqual(chiefFolders([], all, null), ['C:\\Code']);
-  assert.deepEqual(chiefFolders([local[0]], all, 'vps'), [], 'nothing known there: its home');
+test("the chief starts in the folder holding the topic's checkouts, at the same place under its machine's repos root", () => {
+  const space = (id, folder, machine = null, branch = 'main') => ({ id, folder, machine, branch });
+  // This computer keeps its checkouts under D:\src, some in a group folder; box1 under /home/ana/work.
+  const here = [space('a1', 'D:\\src\\acme\\api'), space('a2', 'D:\\src\\acme\\web'), space('t1', 'D:\\src\\tools'),
+    space('w1', 'D:\\src\\.worktrees\\api\\fix'), space('n1', 'D:\\notes', null, null)];
+  const box = [space('b1', '/home/ana/work/acme/api', 'box1'), space('b2', '/home/ana/work/solo', 'box1'), space('b3', '/home/ana', 'box1', null)];
+  const all = [...here, ...box];
+  assert.deepEqual(chiefFolders([here[0], here[1]], all, 'box1'), ['/home/ana/work/acme', '/home/ana/work'], 'one up from the repos, mapped onto the other root');
+  assert.deepEqual(chiefFolders([here[0], here[1], here[3]], all, null), ['D:\\src\\acme', 'D:\\src'], 'worktrees never count');
+  assert.deepEqual(chiefFolders([here[2]], all, 'box1'), ['/home/ana/work'], 'repos right in the root: the root');
+  assert.deepEqual(chiefFolders([here[0], here[2]], all, 'box1'), ['/home/ana/work'], 'checkouts meeting at the root');
+  assert.deepEqual(chiefFolders([box[0]], all, null), ['D:\\src\\acme', 'D:\\src'], 'from another machine onto this one');
+  assert.deepEqual(chiefFolders([here[4]], all, 'box1'), ['/home/ana/work'], 'a folder that is no checkout gives no place');
+  assert.deepEqual(chiefFolders([here[0]], all, 'vps'), [], 'no repos root known there: its home');
+  const factory = { machine: 'vps', root: '/srv/repos' };
+  assert.deepEqual(chiefFolders([here[0], here[1]], all, 'vps', factory), ['/srv/repos/acme', '/srv/repos'], "the factory's own root on its machine");
+  assert.deepEqual(chiefFolders([here[0]], all, 'box1', factory), ['/home/ana/work/acme', '/home/ana/work'], "other machines keep their spaces' root");
+  assert.deepEqual(chiefFolders([here[0]], all, 'box1', { machine: 'box1', root: '/srv/repos' }),
+    ['/srv/repos/acme', '/srv/repos', '/home/ana/work/acme', '/home/ana/work'], "then the root the machine's spaces show, should the factory's be missing");
+  assert.deepEqual(chiefFolders([here[0]], all, 'vps', { machine: undefined, root: '/srv/repos' }), [], 'not while the factory machine is unknown');
+  assert.deepEqual(chiefFolders([here[0], here[1]], all, 'box1', { machine: null, root: 'E:\\factory' }), ['/home/ana/work/acme', '/home/ana/work'],
+    "checkouts outside the factory's root count under the root their machine's spaces show");
+  assert.deepEqual(chiefFolders([here[0]], [here[0]], null), ['D:\\src\\acme'], 'a single checkout: the folder holding it is the root');
+  assert.deepEqual(chiefFolders([box[0]], [box[0], space('x', '/opt/acme', 'box1')], 'box1'), [], 'checkouts meeting only at the top of the file system give no root');
+});
+
+test("a stopped chief's last session resumes with its own agent, told to register again", () => {
+  const term = { address: 'box1/t9', state: 'live', program: { key: 'codex' }, resume_session: 'c0ffee00-0000-7000-8000-000000000001',
+    cwd: '/home/ana', foreground: { cwd: '/home/ana/work/acme' } };
+  const last = chiefSession(term);
+  assert.deepEqual(last, { terminal: 'box1/t9', agent: 'codex', session: 'c0ffee00-0000-7000-8000-000000000001', cwd: '/home/ana/work/acme' });
+  assert.equal(chiefSession({ ...term, resume_session: null }), null, 'no session saved yet');
+  assert.equal(chiefSession({ ...term, program: { key: 'gemini' } }), null, 'an agent without a known resume');
+  assert.equal(canResume(last), true);
+  assert.equal(canResume({ terminal: 'box1/t9', agent: 'codex', session: null }), false, 'started, but never seen saving a session');
+  assert.deepEqual(resumeArgv({ run: ['codex', '--no-daemon'] }, last, 'Acme'), ['codex', '--no-daemon', 'resume', last.session, chiefBrief('Acme')]);
+  assert.deepEqual(resumeArgv({ run: ['claude'] }, { ...last, agent: 'claude' }, 'Acme'), ['claude', '--resume', last.session, chiefBrief('Acme')]);
+});
+
+test('a chief Start chief started counts as running from its start, and stops counting once its agent ends', () => {
+  const last = { terminal: 'box1/t9', agent: 'codex', session: null, started: 1000 };
+  const live = (key, state = 'live') => [{ address: 'box1/t9', state, program: { key } }];
+  assert.equal(chiefRunning(last, live('shell'), 2000), true, 'starting, before its agent shows');
+  assert.equal(chiefRunning(last, live('codex'), 999e3), true, 'its agent runs there');
+  assert.equal(chiefRunning(last, live('shell'), 999e3), false, 'its agent ended; the shell stays');
+  assert.equal(chiefRunning(last, live('codex', 'finished'), 2000), false);
+  assert.equal(chiefRunning({ ...last, started: undefined }, live('shell'), 2000), false, 'recorded by the panel, not just started');
+  assert.equal(chiefRunning(undefined, live('codex')), false);
 });
 
 test('a new chief space joins the end of its topic, which unfolds; a removed topic gets nothing', () => {

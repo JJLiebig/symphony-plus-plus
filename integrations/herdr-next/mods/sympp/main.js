@@ -27,7 +27,7 @@
 import { View } from "gpui-kit";
 import { v_flex, InputState, TextareaState } from "gpui-base";
 import * as fs from "fs/promises";
-import { props, theme, shared, setShared, spaces, panes, terminals, focused, notify, run, window as appWindow, exec, appHome, watchFolder } from "herdr";
+import { props, theme, shared, setShared, spaces, panes, terminals, focused, notify, run, window as appWindow, exec, hc, appHome, watchFolder } from "herdr";
 import * as M from "./model.js";
 import * as L from "./levels.js";
 import * as J from "./job.js";
@@ -41,6 +41,7 @@ import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
 import { studioView } from "./studioview.js";
 import { ChiefStart, ChiefMenu } from "./chiefview.js";
+import { CHIEF_SESSIONS, FACTORY_ROOT, chiefSession, chiefRunning } from "./chief.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
@@ -55,6 +56,8 @@ const OPEN = "sympp.open";
 // For the spaces sidebar's chief button: each Herdr topic's chiefs, { [topic id]: [{ domain,
 // terminal }] }, terminal only while the helper confirms the chief live.
 const CHIEFS = "sympp.chiefs";
+// How often a running chief's saved session is read: until one is known, then once it is.
+const SESSION_READ = [10e3, 60e3];
 const STAGES = ["build", "checks", "review", "merge"];
 const SWEEP = 60e3;
 // A copy starting sympp records when ("sympp.starting"); other copies leave it to that one meanwhile.
@@ -509,15 +512,37 @@ export default class Lens extends View {
     const board = this.net.data;
     if (this.role !== "panel" || this.studio || !board) return;
     const desk = L.deskOf(this.deskTopics(), this.spaceList()), bindings = this.bindingsOf(board);
-    const out = {};
+    const out = {}, list = terminals(), sessions = shared(CHIEF_SESSIONS) ?? {};
     this.chiefWatch = [];
     for (const topic of desk.filter((x) => x.kind === "topic")) {
       const chiefs = this.chiefsOf(topic, board, desk, bindings, now);
       this.chiefWatch.push(...chiefs.flatMap((c) => c.agent.bindings));
       if (chiefs.length) out[topic.id] = chiefs.map(({ chief, agent }) =>
         ({ domain: chief.domain, terminal: agent.state === "live" ? agent.binding.address : null }));
+      // A chief Start chief started is the topic's chief while it runs, registered or not.
+      const latest = sessions[topic.id];
+      if (!out[topic.id]?.some((c) => c.terminal) && chiefRunning(latest, list, now)) {
+        out[topic.id] = [{ domain: topic.name, terminal: latest.terminal }, ...(out[topic.id] ?? [])];
+      }
+      const live = out[topic.id]?.find((c) => c.terminal);
+      if (live) this.readSession(topic.id, live.terminal, now);
     }
     if (JSON.stringify(shared(CHIEFS) ?? {}) !== JSON.stringify(out)) setShared(CHIEFS, out);
+    if ((shared(FACTORY_ROOT) ?? null) !== board.reposRoot) setShared(FACTORY_ROOT, board.reposRoot);
+  }
+
+  // A running chief's session as Herdr saved it, kept once it stops so its mark can resume it. Only
+  // herdr-core's own terminal record carries it.
+  readSession(topic, address, now) {
+    const known = shared(CHIEF_SESSIONS)?.[topic], reads = (this.sessionReads ??= {});
+    if (now - (reads[address] ?? 0) < SESSION_READ[known?.terminal === address && known.session ? 1 : 0]) return;
+    reads[address] = now;
+    hc(["get", address, "--json"]).then((result) => {
+      const program = terminals().find((k) => k.address === address)?.program;
+      const session = chiefSession({ ...JSON.parse(result.stdout), address, program });
+      const all = shared(CHIEF_SESSIONS) ?? {};
+      if (session && JSON.stringify(all[topic]) !== JSON.stringify(session)) setShared(CHIEF_SESSIONS, { ...all, [topic]: session });
+    }).catch(() => {});
   }
 
   withChiefs(watch) {
