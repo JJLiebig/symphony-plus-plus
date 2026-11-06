@@ -183,7 +183,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       evidence_id: evidence |> signal_value(["evidence_id", "reference", "id"]) |> bounded_string(),
       reviewed_head: evidence |> signal_value(["head_sha", "reviewed_head"]) |> bounded_string(),
       current_head: observation |> map_value("current_head") |> bounded_string(),
-      validation: map_value(observation, "validation"),
+      validation: observation |> map_value("validation") |> Sanitizer.redacted_json(),
       provider_status: observation |> map_value("provider_status") |> bounded_string(),
       next_action: observation |> map_value("next_action") |> bounded_string(),
       round: observation |> map_value("round") |> integer_value(),

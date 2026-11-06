@@ -222,7 +222,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservation do
   end
 
   defp validation(value) when is_map(value) do
-    ~w(focused full_suite ci review_green)
+    ~w(focused full_suite ci review_green note)
     |> Map.new(&{&1, bounded_string(map_value(value, &1))})
     |> reject_nil_values()
   end

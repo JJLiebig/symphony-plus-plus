@@ -7,7 +7,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
 
   test "a changed reviewed head needs caller inspection without failing or approving review", %{test: test} do
     %{codex_home: codex_home, plugin: plugin, package: package} = fixture(test)
-    validation = %{full_suite: "passed", ci: "passed", review_green: "passed"}
+    validation = %{full_suite: "waived", ci: "passed", review_green: "passed", note: "Focused checks cover the changed surface"}
 
     for {provider_status, expected} <- [
           {"head_changed_after_review", "inspection_needed"},
