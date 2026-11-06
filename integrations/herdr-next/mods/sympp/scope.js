@@ -41,29 +41,27 @@ const unrecordedText = (job, pkgId) => {
   return `${pkg ? pkg.title : "The architect"} waits on you. Its question isn't recorded.`;
 };
 
-// What the person is asked, each once. From the board's asks when it reports them; from an older
-// board, its architect asks, guidance and open clarification questions, with a package that only
-// waits on the person adding a line of its own only when no real question exists.
+// What the person is asked, each once. From the board's asks when it reports them, each its own ask
+// even where two read alike; from an older board, its architect asks, guidance and open
+// clarification questions, the same question met twice shown once. Either way a package that only
+// waits on the person adds a line of its own only when no real question exists.
 export function asksOf(job) {
-  let asks;
   if (Array.isArray(job.asks)) {
-    // A wait with no recorded question adds a line only when no real question exists.
     const recorded = job.asks.some((ask) => ask.text !== null);
-    asks = job.asks.filter((ask) => ask.text !== null || !recorded).map((ask) => ({
+    return job.asks.filter((ask) => ask.text !== null || !recorded).map((ask) => ({
       key: `ask:${ask.id}`, text: ask.text ?? unrecordedText(job, ask.pkgId), unrecorded: ask.text === null,
       pkgId: ask.pkgId, question: ask.route ? answerable(job, ask) : null,
     }));
-  } else {
-    asks = [];
-    for (const need of job.needs) {
-      if (need.kind === "ask") asks.push({ key: need.key, text: need.text, question: null, pkgId: null });
-      else if (need.id) asks.push({ key: need.key, text: need.text, question: job.guidance.find((q) => q.key === need.key) ?? null, pkgId: need.pkgId });
-    }
-    for (const q of job.questions.filter(isOpen)) asks.push({ key: q.key, text: q.text, question: q, pkgId: null });
-    if (!asks.length) {
-      for (const need of job.needs.filter((n) => n.kind === "guidance" && !n.id)) {
-        asks.push({ key: need.key, text: unrecordedText(job, need.pkgId), question: null, pkgId: need.pkgId, unrecorded: true });
-      }
+  }
+  const asks = [];
+  for (const need of job.needs) {
+    if (need.kind === "ask") asks.push({ key: need.key, text: need.text, question: null, pkgId: null });
+    else if (need.id) asks.push({ key: need.key, text: need.text, question: job.guidance.find((q) => q.key === need.key) ?? null, pkgId: need.pkgId });
+  }
+  for (const q of job.questions.filter(isOpen)) asks.push({ key: q.key, text: q.text, question: q, pkgId: null });
+  if (!asks.length) {
+    for (const need of job.needs.filter((n) => n.kind === "guidance" && !n.id)) {
+      asks.push({ key: need.key, text: unrecordedText(job, need.pkgId), question: null, pkgId: need.pkgId, unrecorded: true });
     }
   }
   const seen = new Set();

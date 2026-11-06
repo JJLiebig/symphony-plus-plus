@@ -160,7 +160,10 @@ function buildJob(detail, now, guidance, runs) {
   };
   const sliceNode = new Map((detail.work_packages ?? []).map((slice) => [slice.work_package_id || slice.id, slice.product_tree_node_id ?? null]));
   for (const pkg of packages) pkg.phase = rootOf(sliceNode.get(pkg.id));
-  const phases = nodes.filter((node) => !node.parent_id || !parents.has(node.parent_id)).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((node) => node.id);
+  // In the architect's order; a board without positions keeps the order its packages are planned in.
+  const firstSeq = (id) => Math.min(Infinity, ...packages.filter((pkg) => pkg.phase === id).map((pkg) => pkg.seq));
+  const phases = nodes.filter((node) => !node.parent_id || !parents.has(node.parent_id))
+    .sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity) || firstSeq(a.id) - firstSeq(b.id)).map((node) => node.id);
   const titles = new Map(packages.map((pkg) => [pkg.id, pkg.title]));
   for (const pkg of packages) pkg.after = pkg.unmet.map((id) => titles.get(id) ?? id);
   const questions = (detail.clarification_questions ?? []).filter((q) => q.id).map((q) => ({

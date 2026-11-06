@@ -8,12 +8,14 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
 import { settings, shared, terminals, run, openOverlay } from "herdr";
 import * as J from "./job.js";
+import * as L from "./levels.js";
 import * as R from "./rails.js";
 import * as St from "./studio.js";
 import * as S from "./scope.js";
 import * as O from "./overview.js";
 import { questionRow, reviewPane } from "./jobview.js";
 import { CLEAR, icon, tint } from "./ui.js";
+import { CHIEF_SPACES, isChiefSpace } from "./chief.js";
 
 const SANS = "Geist";
 const MONO = "Geist Mono";
@@ -249,8 +251,9 @@ function pkgActions(v, t, job, pkg, ctx) {
   const people = J.participants(job, ctx.bindings, v.agentChecks, ctx.now);
   const agent = people.find((p) => p.pkgId === pkg.id && p.state === "live");
   const ui = typeof v.openStudio === "function" && St.uiPackage(job, pkg, ctx.bindings, ctx.terminals);
+  const jump = agent ? v.jumps[agent.binding.address] : null;
   const list = [
-    agent && !ctx.offline ? ghost(t, `agent-${pkg.id}`, "Agent", (cx) => v.focusAgent(agent.binding, cx), { glyph: "terminal", strong: true, tip: "Open its agent" }) : null,
+    agent && !ctx.offline ? ghost(t, `agent-${pkg.id}`, jump?.pending ? "Checking…" : "Agent", (cx) => v.focusAgent(agent.binding, cx), { glyph: "terminal", strong: true, tip: "Open its agent", disabled: Boolean(jump?.pending) }) : null,
     pkg.pr.number ? ghost(t, `pr-${pkg.id}`, `PR ${pkg.pr.number}`, (cx) => { if (pkg.pr.url) cx.open_url(pkg.pr.url); }, { glyph: "git-branch", tip: pkg.pr.url ? "Open the pull request" : "No link recorded", disabled: !pkg.pr.url }) : null,
     R.roundsOf(pkg).length ? ghost(t, `review-${pkg.id}`, "Review", (cx) => (v.review?.pkgId === pkg.id ? v.closeReview(cx) : v.openReview(job.id, pkg.id, null, cx)), { glyph: "message-circle", strong: v.review?.pkgId === pkg.id }) : null,
     ui ? ghost(t, `studio-${pkg.id}`, "Studio", (cx) => v.openStudio(job, pkg, cx), { glyph: "monitor" }) : null,
@@ -259,6 +262,7 @@ function pkgActions(v, t, job, pkg, ctx) {
   if (!action && ctx.review?.id !== pkg.id) return null;
   return v_flex().pl(26).pr(8).pb(10).pt(2).gap(8)
     .when(Boolean(action), (el) => el.child(action))
+    .when(Boolean(jump?.error), (el) => el.child(div().role("alert").text_size(12).text_color(signal().fail).child(jump.error)))
     .when(ctx.review?.id === pkg.id, (el) => el.child(reviewPane(v, t, pkg, ctx, true)));
 }
 
@@ -293,12 +297,15 @@ function pkgRow(v, t, job, e, ctx, wide, odd) {
 }
 
 // Landed and queued packages fold into one mark each: a label and their boxes, opened on request.
+// The keys reach a fold like a package row, and Enter opens it.
 function fold(v, t, job, label, parts, ctx, wide) {
   if (!parts.length) return [];
   const key = `${label}:${job.id}`;
   const open = v.expanded.has(key);
-  const toggle = reach(v, t, h_flex().id(`fold-${key}`).flex_none().mt(6).px(10).py(7).gap(10).items_center(), `fold:${key}`,
-    (cx) => v.toggleExpanded(key, cx), label)
+  const on = v.pkgSel === `fold:${key}` && v.keys.is_focused();
+  const toggle = h_flex().id(`fold-${key}`).flex_none().mt(6).px(10).py(7).gap(10).items_center().cursor_pointer().rounded(6)
+    .border(1).border_color(on ? tint(t.accent, "80") : CLEAR).hover((s) => s.bg(tint(t.foreground, "08")))
+    .accessibility_label(label).on_click((_e, cx) => v.toggleExpanded(key, cx))
     .child(svg(icon(open ? "chevron-down" : "chevron-right")).size(11).flex_none().text_color(t.dim))
     .child(micro(t, label, t.dim))
     .child(strip(t, [{ pkgs: parts.map((e) => e.pkg) }], `fold-strip-${key}`, 8));
@@ -312,8 +319,8 @@ function jobRows(v, t, job, ctx) {
   const task = S.taskOf(job, ctx.now);
   const wide = !v.compact;
   const parts = S.packageParts(task);
-  const drawn = [...parts.active, ...(v.expanded.has(`Landed:${job.id}`) ? parts.landed : []), ...(v.expanded.has(`Up next:${job.id}`) ? parts.queued : [])];
-  v.rowOrder = drawn.map((e) => e.pkg.id);
+  const folded = (label, list) => (list.length ? [`fold:${label}:${job.id}`, ...(v.expanded.has(`${label}:${job.id}`) ? list.map((e) => e.pkg.id) : [])] : []);
+  v.rowOrder = [...parts.active.map((e) => e.pkg.id), ...folded("Landed", parts.landed), ...folded("Up next", parts.queued)];
   if (v.pkgSel && !v.rowOrder.includes(v.pkgSel)) v.pkgSel = null;
   return [
     h_flex().id("task-head").flex_none().px(10).pb(12).gap(16).items_center().flex_wrap()
@@ -342,6 +349,28 @@ export function taskLevel(v, t, job, ctx) {
   return [bar(v, t, job.title, ctx.now, { create: false, back: !ctx.tab }), body(v, "lens-job", jobRows(v, t, job, jctx), 900)];
 }
 
+// The topic's spaces as the dashboard's area filters: All, then each space with a repository, one
+// per repository; a Space is its topic with one of them chosen. Chief spaces are left out.
+function filters(v, t, path, desk) {
+  const topic = desk.find((x) => x.id === path.topic);
+  const made = shared(CHIEF_SPACES);
+  const seen = new Set();
+  const spaces = (topic?.spaces ?? []).filter((s) => {
+    const repo = L.spaceRepo(s);
+    if (!repo || seen.has(repo) || (topic.kind === "topic" && isChiefSpace(s, topic, made))) return false;
+    seen.add(repo);
+    return true;
+  });
+  if (!spaces.length) return null;
+  const pill = (id, label, on, go) => Button.new(id).flex().flex_none().items_center().h(22).px(8).rounded(5).cursor_pointer()
+    .font_family(SANS).text_size(12).bg(on ? tint(t.foreground, "14") : CLEAR).text_color(on ? t.foreground : t.muted)
+    .hover((s) => s.text_color(t.foreground)).focus((s) => s.border(1).border_color(t.accent))
+    .accessibility_label(label).on_click((_e, cx) => { cx.stop_propagation(); go(cx); }).child(label);
+  return h_flex().id("space-filters").flex_none().px(v.compact ? 12 : 20).pt(10).gap(2).flex_wrap()
+    .child(pill("filter-all", "All", !path.space, (cx) => v.openTopic(topic.id, cx)))
+    .children(spaces.map((s) => pill(`filter-${s.id}`, [s.name || L.spaceRepo(s), s.machine].filter(Boolean).join(" · "), path.space === s.id, (cx) => v.openSpace(s.id, topic.id, cx))));
+}
+
 // A Topic or Space: the tasks touching it. ctx: { board, desk, path, bindings, terminals, now }.
 export function scopeLevel(v, t, ctx) {
   const { board, desk, path, now } = ctx;
@@ -349,5 +378,5 @@ export function scopeLevel(v, t, ctx) {
   if (v.intake) return [bar(v, t, title, now), O.intakeForm(v, t)];
   const tasks = S.scopeTasks(path, desk, board.jobs, v.place, now);
   const topic = desk.find((x) => x.id === path.topic && x.kind === "topic") ?? null;
-  return [bar(v, t, title, now), body(v, "lens-scope", scopeRows(v, t, tasks, `${path.topic}:${path.space ?? ""}`, topic), 820)];
+  return [bar(v, t, title, now), filters(v, t, path, desk), body(v, "lens-scope", scopeRows(v, t, tasks, `${path.topic}:${path.space ?? ""}`, topic), 820)];
 }

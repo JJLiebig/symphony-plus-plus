@@ -52,6 +52,7 @@ test('a topic puts each question first with one action; other tasks carry only t
   assert.equal(view.has('issues-wr-pr') && view.has('issues-wr-cross'), false, 'a task with nothing wrong says nothing about itself');
   assert.ok(view.has('strip-wr-restore-2') && !view.has('strip-wr-restore-3'), 'the strip runs once per top-level group');
   assert.ok(view.has('later-t-herdr:') && !view.has('task-wr-badges') && !view.has('task-wr-keys'), 'planned and landed work stay folded');
+  assert.ok(view.has('filter-all') && view.has('filter-s-web'), "the topic's spaces are one click away");
   const quiet = await render(t, { props: { role: 'panel' }, width: 1400, board: 'quiet', path: { topic: 't-herdr' } });
   assert.equal(quiet.out.includes(':id[Str("issues-') || quiet.out.includes(':id[Str("ask-'), false, 'nothing is said while all is well');
   assert.doesNotMatch(quiet.out, /text "\d+\/\d+/, 'no counts');
@@ -60,6 +61,7 @@ test('a topic puts each question first with one action; other tasks carry only t
 test('a space shows only the tasks on its repository, drawn as its topic draws them', skip, async (t) => {
   const space = await render(t, { props: {}, width: 700, board: 'busy', path: { topic: 't-tools', space: 'vps/s-api' } });
   assert.ok(space.text('api') && space.has('task-wr-cross') && space.has('task-wr-restore') && space.has('answer-ask:g-web'));
+  assert.ok(space.has('filter-all') && space.has('filter-vps/s-api'), 'back to the whole topic, or on to another space');
   assert.equal(space.has('task-wr-pr') || space.has('task-wr-theme'), false);
   const empty = await render(t, { props: {}, width: 1400, path: { topic: 'unsorted', space: 's-home' } });
   assert.ok(empty.text('Nothing running here'));

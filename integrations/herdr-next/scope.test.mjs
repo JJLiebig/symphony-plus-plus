@@ -25,6 +25,8 @@ test("the board's asks are answered through their own route, else through the ch
   assert.deepEqual(task(payload, 'wr-pr').asks.map((a) => [a.text, a.unrecorded, a.question]), [["Review lens waits on you. Its question isn't recorded.", true, null]]);
   payload.work_request_details[0].asks = [{ id: 'x', kind: 'clarification', text: 'Pick one?', work_package_id: null, answer_route: '//evil.example/answer' }];
   assert.deepEqual(task(payload, 'wr-pr').asks.map((a) => [a.text, a.question]), [['Pick one?', null]], 'an answer never goes anywhere but this factory');
+  payload.work_request_details[0].asks = ['a', 'b'].map((id) => ({ id, kind: 'guidance', text: 'Ship it?', work_package_id: null, answer_route: `/api/v1/sympp/herdr/work-packages/p/guidance/${id}/answer` }));
+  assert.deepEqual(task(payload, 'wr-pr').asks.map((a) => a.question.route.split('/').at(-2)), ['a', 'b'], 'two asks that read alike are both answerable');
 });
 
 test('an older board still asks its open clarification questions, guidance and architect asks, each once', () => {
@@ -58,6 +60,11 @@ test("the strip runs the architect's top-level groups in their order, nested gro
   const runs = task(variantPayload('busy'), 'wr-restore').strip;
   assert.deepEqual(runs.map((r) => r.pkgs.map((p) => p.id)), [['r-1', 'r-2', 'r-3'], ['r-4', 'r-5', 'r-6'], ['r-7', 'r-8', 'r-9']]);
   assert.deepEqual(task(boardPayload(), 'wr-pr').strip.map((r) => r.pkgs.map((p) => p.id)), [['wp-done', 'wp-build', 'wp-review', 'wp-queued']], 'without groups, one run in planned order');
+  const flat = variantPayload('busy');
+  const tree = flat.work_request_details.find((d) => d.work_request.id === 'wr-restore').product_tree;
+  tree.nodes = [...tree.nodes].reverse().map(({ id, title }) => ({ id, title }));
+  assert.deepEqual(task(flat, 'wr-restore').strip.map((r) => r.pkgs.map((p) => p.id)), [['r-1', 'r-2', 'r-3'], ['r-4', 'r-6'], ['r-5'], ['r-7', 'r-8', 'r-9']],
+    'a board without ancestry or positions runs each group apart, in the order its packages are planned');
 });
 
 test('needs come first, then trouble, then the rest by when they opened; a task does not move when it advances', () => {

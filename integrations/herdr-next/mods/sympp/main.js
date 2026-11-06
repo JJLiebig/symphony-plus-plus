@@ -957,6 +957,7 @@ export default class Lens extends View {
     else if (packages && nav) this.selectPackage(R.moveRow(this.rowOrder, this.pkgSel, nav === "down" ? 1 : -1) ?? this.pkgSel, cx);
     else if (inJob && nav) return;
     else if (nav) this.cursor = R.moveRow(this.rows.map((r) => r.key), this.cursor, nav === "down" ? 1 : -1) ?? this.cursor;
+    else if (key === "enter" && inJob && this.pkgSel?.startsWith("fold:")) this.toggleExpanded(this.pkgSel.slice(5), cx);
     else if (key === "enter" && inJob) { if (!packages || !this.openPackage(cx)) return; }
     else if (key === "enter") {
       const row = this.rows.find((r) => r.key === this.cursor);
