@@ -1,9 +1,10 @@
-// sympp Lens: the shared sympp board, natively in Herdr. Levels run Factory > Topic > Space > Job under a
-// breadcrumb; Esc goes up one. A copy opened with props.job is that job's own tab. A panel copy follows
+// sympp Lens: the shared sympp board, natively in Herdr. Levels run Factory > Topic > Space > Job; Esc
+// goes up one. Topic and Space show the same tasks, a space only those on its repository; a task shows
+// its packages at work. A copy opened with props.job is that job's own tab. A panel copy follows
 // Herdr's focus (a job's terminal or tab, else the space, else its topic) until it is pinned. A toast
 // says when something newly needs the person. Intake and answers persist through sympp; terminal jumps
 // and "Live" both rest on a trusted execution helper's check, never on terminal labels or text. A
-// topic with a registered chief shows that chief's desk. A copy opened with props.studio is one UI
+// copy opened with props.studio is one UI
 // package's studio: its worker's terminal beside a preview, in a tab named after the package. A copy
 // opened with props.role "chief" is the Start chief dialog for props.topic; "chief-menu" is the topic
 // mark's right-click menu.
@@ -18,9 +19,10 @@
 // connection the last connected copy shared ("sympp.connection"), so a scripted studio needs only its ids.
 //
 // Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel
-// following and new needs), job.js (the Job level's pure logic), controls.js (persisted actions),
-// transport.js (native HTTP), ui.js (shared look), overview.js and jobview.js (what each level
-// draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
+// following and new needs), scope.js (what a Topic, Space or task shows), job.js (agents and job
+// tabs), controls.js (persisted actions), transport.js (native HTTP), ui.js (shared look),
+// overview.js (the Factory level) and scopeview.js (the Topic, Space and task views), jobview.js (the
+// answer form and review drill-down), rails.js (review rounds, row moves), chrome.js (what the patched desk agents
 // list shows on sympp agents), studio.js and studioview.js (a UI package's studio), chief.js and
 // chiefview.js (Start chief and the topic mark's menu).
 
@@ -38,11 +40,10 @@ import * as S from "./studio.js";
 import { request, remoteRequest } from "./transport.js";
 import { button, message } from "./ui.js";
 import * as O from "./overview.js";
-import { jobView } from "./jobview.js";
 import * as Lv from "./scopeview.js";
 import { studioView } from "./studioview.js";
 import { ChiefStart, ChiefMenu } from "./chiefview.js";
-import { CHIEF_SESSIONS, FACTORY_ROOT, chiefSession, chiefRunning } from "./chief.js";
+import { CHIEF_SESSIONS, CHIEF_SPACES, FACTORY_ROOT, chiefSession, chiefRunning } from "./chief.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
@@ -114,9 +115,7 @@ export default class Lens extends View {
     this.hosts = given.hosts ?? null;
     this.request = given.remote ? remoteRequest(this.endpoint, async () => JSON.parse(await fs.readFile(`${appHome()}/sympp-remote.json`, "utf8"))) : request;
     this.net = M.initialFetch();
-    this.detailNet = { jobId: null, ...M.initialFetch() };
     this.reading = false;
-    this.detailReading = false;
     this.turn = 0;
     this.companion = false;
     this.pkgSel = null;
@@ -160,8 +159,8 @@ export default class Lens extends View {
     if (job) this.openJob(job, {}, cx);
   }
 
-  // Data timer: the board when due; while a job view shows, its details at the same cadence, and
-  // agent checks for whichever level lists agents. Otherwise it repaints now and then so ages move.
+  // Data timer: the board when due, and agent checks for whichever view has agents to reach.
+  // Otherwise it repaints now and then so ages move.
   tick(cx) {
     if (!this.endpoint) return;
     const now = Date.now();
@@ -170,8 +169,6 @@ export default class Lens extends View {
     const cadence = M.nextDelay(this.net, active);
     let busy = false;
     if (!this.reading && M.fetchDue(this.net, now, active)) { this.read(cx); busy = true; }
-    const shown = this.shown;
-    if (shown && !this.detailReading && J.detailDue(this.detailNet, shown.jobId, cadence, now)) { this.readDetail(shown.jobId, cx); busy = true; }
     this.shareChiefs(now);
     const watch = this.withChiefs(this.agentWatch);
     if (watch && !this.checking && (this.checkedFor !== watch.key || now - this.checkedAt >= cadence)) this.checkAgents(watch, cx);
@@ -343,31 +340,6 @@ export default class Lens extends View {
     return tab ? { name: "tab.select", args: { id: tab } } : { name: "tab.new", args: J.jobTabArgs(this.given, job, this.spaceList()) };
   }
 
-  // The shown job's recorded decisions; the last good list survives a failed read.
-  readDetail(jobId, cx) {
-    this.detailReading = true;
-    const base = this.detailNet.jobId === jobId ? this.detailNet : { jobId, ...M.initialFetch() };
-    this.detailNet = { ...M.fetchStarted(base, Date.now()), jobId };
-    cx.spawn(async (cx) => {
-      let outcome;
-      try {
-        const response = await this.request(`${this.endpoint}${J.detailPath(jobId)}`);
-        if (!response.ok) outcome = { error: response.status === 404 ? "This job's details aren't on this sympp." : M.httpError(response.status) };
-        else {
-          const payload = await response.json().catch(() => null);
-          try { outcome = { decisions: J.decisionsOf(payload) }; } catch (caught) { outcome = { error: caught.message }; }
-        }
-      } catch (caught) {
-        outcome = { error: caught.userMessage || M.networkError(this.endpoint, caught) };
-      }
-      this.detailReading = false;
-      if (this.detailNet.jobId !== jobId) return;
-      const now = Date.now();
-      this.detailNet = { ...(outcome.decisions ? M.fetchSucceeded(this.detailNet, outcome.decisions, now) : M.fetchFailed(this.detailNet, outcome.error, now)), jobId };
-      try { cx.notify(); } catch { /* closed while reading */ }
-    });
-  }
-
   // "Live" means the trusted helper confirmed this exact launch and process just now.
   checkAgents({ key, bindings }, cx) {
     this.checkedFor = key;
@@ -392,7 +364,6 @@ export default class Lens extends View {
       this.buildPreview(cx);
     }
     this.net = { ...this.net, attemptAt: null };
-    this.detailNet = { ...this.detailNet, attemptAt: null };
     this.checkedFor = null;
     this.outage = false;
     if (this.reading) this.refreshAfterRead = true;
@@ -490,14 +461,6 @@ export default class Lens extends View {
     return spaces();
   }
 
-  // The agents a Topic or Space level lists, and the bindings the timer then checks, with any chiefs'.
-  agentsFor(jobs, all, bindings, spaceIds, now, chiefs = []) {
-    const rows = L.agentRows(jobs, all, bindings, terminals(), spaceIds, this.agentChecks, now);
-    this.watch(`${this.level}:${spaceIds.join(",")}:${jobs.map((j) => j.id).join(",")}`,
-      [...rows.flatMap((r) => M.bindingsFor(bindings, r.job.id, r.pkgId ?? null)), ...chiefs.flatMap((c) => c.agent.bindings)]);
-    return rows;
-  }
-
   watch(key, list) {
     this.agentWatch = { key, bindings: list.filter((b, i) => list.findIndex((o) => o.address === b.address) === i) };
   }
@@ -530,6 +493,9 @@ export default class Lens extends View {
       if (live) this.readSession(topic.id, live.terminal, now);
     }
     if (JSON.stringify(shared(CHIEFS) ?? {}) !== JSON.stringify(out)) setShared(CHIEFS, out);
+    // A chief space that fell out of its topic goes back, where the desk keeps it unlisted.
+    const home = L.homeChiefSpaces(this.deskTopics(), shared(CHIEF_SPACES), this.spaceList().map((s) => s.id));
+    if (home) setShared("desk.topics", home);
     if ((shared(FACTORY_ROOT) ?? null) !== board.reposRoot) setShared(FACTORY_ROOT, board.reposRoot);
   }
 
@@ -1029,19 +995,6 @@ export default class Lens extends View {
     return window.viewport_size().width;
   }
 
-  // The Job level for one job; it also records what the timer reads and the keys move through.
-  jobLevel(t, board, job, bindings, place, now) {
-    this.rowOrder = R.railOrder(job).map((pkg) => pkg.id);
-    if (this.pkgSel && !this.rowOrder.includes(this.pkgSel)) this.pkgSel = null;
-    const review = this.review?.jobId === job.id ? job.packages.find((pkg) => pkg.id === this.review.pkgId) ?? null : null;
-    if (!review) this.review = null;
-    this.shown = { jobId: job.id, bindings: J.jobBindings(job, bindings) };
-    this.agentWatch = { key: job.id, bindings: this.shown.bindings };
-    this.currentJob = job;
-    const layout = place !== "side" && !this.compact ? "wide" : "compact";
-    return jobView(this, t, job, { now, bindings, terminals: terminals(), layout, place, offline: board.offline === true, review });
-  }
-
   render(cx) {
     if (this.chief) return this.chief.render();
     this.compact = this.role === "panel" || this.companion || this.viewportWidth() < 1000;
@@ -1077,7 +1030,7 @@ export default class Lens extends View {
           ...(this.dashboard ? [button(t, "dashboard-missing", "Open dashboard", (cx) => this.openDashboard(cx))] : []),
         ]), O.floatingStatus(this, t, now)]);
       }
-      return this.root(t, [this.jobLevel(t, board, job, bindings, "tab", now), O.floatingStatus(this, t, now)]);
+      return this.root(t, Lv.taskLevel(this, t, job, { board, bindings, terminals: terminals(), now, tab: true, topic: null }));
     }
 
     const desk = L.deskOf(this.deskTopics(), this.spaceList());
@@ -1088,32 +1041,20 @@ export default class Lens extends View {
     this.level = L.levelOf(path);
     const trail = L.crumbs(path, desk, board.jobs);
     const needs = M.verdictCounts(board.jobs).needs;
-    const names = new Map(desk.map((topic) => [topic.id, topic.name]));
 
-    // The redesign directions, chosen by the scratch-only `lens` prop, replace Topic, Space and Job.
-    if (this.given.lens && this.level !== "factory") return this.root(t, Lv.lensLevel(this, t, { board, desk, path, bindings, level: this.level, terminals: terminals(), now }));
     if (this.level === "job") {
       const job = board.jobs.find((j) => j.id === path.job);
-      return this.root(t, [O.levelBar(this, t, trail, { now, needs, slim: true }),
-        job ? this.jobLevel(t, board, job, bindings, "full", now) : message(t, "Reading new job…", null)]);
+      if (job) {
+        const home = desk.find((x) => x.id === (path.topic ?? this.place.home(job)) && x.kind === "topic") ?? null;
+        return this.root(t, Lv.taskLevel(this, t, job, { board, bindings, terminals: terminals(), now, topic: home }));
+      }
+      return this.root(t, [O.levelBar(this, t, trail, { now, needs, slim: true }), message(t, "Reading new job…", null)]);
     }
+    if (this.level !== "factory") return this.root(t, Lv.scopeLevel(this, t, { board, desk, path, bindings, terminals: terminals(), now }));
     const top = [O.levelBar(this, t, trail, { now, needs })];
     if (this.intake) return this.root(t, [...top, O.intakeForm(this, t)]);
-    if (this.level === "factory") {
-      const rows = L.factoryRows(board.jobs, desk, this.place).map((row) => ({ ...row, chiefs: this.chiefsOf(row, board, desk, bindings, now) }));
-      this.watch("factory", rows.flatMap((row) => row.chiefs.flatMap((c) => c.agent.bindings)));
-      return this.root(t, [...top, O.factoryLevel(this, t, board.jobs, rows, now)]);
-    }
-    if (this.level === "topic") {
-      const topic = desk.find((x) => x.id === path.topic);
-      const groups = L.topicWork(topic, board.jobs, this.place);
-      const desks = this.chiefsOf(topic, board, desk, bindings, now).map((c) => ({ ...c, desk: L.chiefDesk(c.chief, board.jobs, now) }));
-      const agents = this.agentsFor(groups.flatMap((g) => g.jobs), board.jobs, bindings, topic.spaces.map((s) => s.id), now, desks);
-      return this.root(t, [...top, O.topicLevel(this, t, topic, groups, agents, desks, names, now)]);
-    }
-    const found = L.spaceById(desk, path.space);
-    const work = L.spaceWork(found.space, board.jobs);
-    const agents = this.agentsFor(work.jobs, board.jobs, bindings, [found.space.id], now);
-    return this.root(t, [...top, O.spaceLevel(this, t, found, work, agents, now)]);
+    const rows = L.factoryRows(board.jobs, desk, this.place).map((row) => ({ ...row, chiefs: this.chiefsOf(row, board, desk, bindings, now) }));
+    this.watch("factory", rows.flatMap((row) => row.chiefs.flatMap((c) => c.agent.bindings)));
+    return this.root(t, [...top, O.factoryLevel(this, t, board.jobs, rows, now)]);
   }
 }

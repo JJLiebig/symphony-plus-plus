@@ -1,60 +1,68 @@
-// Pure scope model for the redesigned Topic, Space and task views. Topic and Space are one view; a
-// space only narrows the tasks to its repository. Health comes from one place, each package's own
-// evidence, so a task and its drill-in can never disagree. No GPUI or Herdr imports.
+// Pure scope model for the Topic, Space and task views. Topic and Space are one view; a space only
+// narrows the tasks to its repository. Health comes from one place, each package's own evidence, so a
+// task and its drill-in can never disagree. No GPUI or Herdr imports.
 
 import { reviewBumps, shortRepo } from "./model.js";
 import { NOWHERE, spaceRepo, spaceById } from "./levels.js";
 
-// The drill-in's columns: where a package is, by its recorded stage.
-export const COLUMNS = ["queued", "build", "checks", "review", "merge", "done"];
-export const COLUMN_LABEL = { queued: "Queued", build: "Build", checks: "Checks", review: "Review", merge: "Merge", done: "Landed" };
-
 // The board's own stall threshold (model.js).
 const STALL_AFTER = 2 * 3600e3;
+const LIVE = new Set(["build", "checks", "review", "merge"]);
 const keyOf = (value) => shortRepo(value ?? "").toLowerCase();
 const isOpen = (q) => q.status === "open" || q.status === "human_info_needed";
 
-// Fresh evidence: the package's activity was observed current, or its agent run was seen and isn't stale.
-function fresh(pkg) {
-  return pkg.activity.observation === "current" || Boolean(pkg.run && !pkg.run.stale && pkg.run.lastSeenAt !== null);
-}
-
 // What one package's evidence says. Issues are only what went wrong, in plain words: failures
-// ("fail"), trouble that is not a failure ("warn"), or no fresh evidence ("unknown"). Needing the
-// person never hides an issue; both are kept.
+// ("fail"), trouble that is not a failure ("warn"), or a worker that stopped reporting or never came
+// ("unknown"). An unknown observation proves nothing either way and says nothing. Needing the person
+// never hides an issue; both are kept.
 export function packageEvidence(pkg, now) {
-  const live = pkg.stage !== "queued" && pkg.stage !== "done";
+  const live = LIVE.has(pkg.stage);
   const issues = [];
   if (live && pkg.failed) issues.push({ text: "Checks failing", tone: "fail" });
   if (live) {
     // One review word per package: its round count when that is the trouble, else its length.
     const [bump] = reviewBumps(pkg, now);
     if (bump) issues.push({ text: bump.kind === "rounds" ? `Review round ${pkg.round}` : bump.text, tone: "warn" });
-    if (!fresh(pkg)) issues.push({ text: "No recent report", tone: "unknown" });
+    if (pkg.activity.observation === "stale") issues.push({ text: "No recent report", tone: "unknown" });
+    else if (pkg.activity.observation === "queued") issues.push({ text: "No worker yet", tone: "unknown" });
   }
-  return {
-    pkg,
-    column: COLUMNS.includes(pkg.stage) ? pkg.stage : "build",
-    needsYou: pkg.stage !== "done" && pkg.activity.nextActor === "human",
-    issues,
-    note: pkg.stage === "queued" && pkg.after.length ? `After ${pkg.after.join(", ")}` : null,
-  };
+  return { pkg, needsYou: pkg.stage !== "done" && pkg.activity.nextActor === "human", issues, active: live || (pkg.stage !== "done" && pkg.activity.nextActor === "human") };
 }
 
-// What the person is asked: architect asks, guidance questions and open clarification questions,
-// each once. A package that only says it waits on the person adds a line of its own only when no
-// real question exists, and then says plainly that the question wasn't recorded.
+// A question the panel can answer: the board's own route when it gives one.
+function answerable(job, ask) {
+  const known = [...job.questions, ...job.guidance].find((q) => q.id === ask.id);
+  return { key: `ask:${ask.id}`, id: ask.id, kind: "ask", jobId: job.id, pkgId: ask.pkgId, text: ask.text, prompt: known?.prompt ?? null, status: "open", route: ask.route };
+}
+
+const unrecordedText = (job, pkgId) => {
+  const pkg = pkgId ? job.packages.find((p) => p.id === pkgId) : null;
+  return `${pkg ? pkg.title : "The architect"} waits on you. Its question isn't recorded.`;
+};
+
+// What the person is asked, each once. From the board's asks when it reports them; from an older
+// board, its architect asks, guidance and open clarification questions, with a package that only
+// waits on the person adding a line of its own only when no real question exists.
 export function asksOf(job) {
-  const asks = [];
-  for (const need of job.needs) {
-    if (need.kind === "ask") asks.push({ key: need.key, text: need.text, question: null, pkgId: null });
-    else if (need.id) asks.push({ key: need.key, text: need.text, question: job.guidance.find((q) => q.key === need.key) ?? null, pkgId: need.pkgId });
-  }
-  for (const q of job.questions.filter(isOpen)) asks.push({ key: q.key, text: q.text, question: q, pkgId: null });
-  if (!asks.length) {
-    for (const need of job.needs.filter((n) => n.kind === "guidance" && !n.id)) {
-      const pkg = job.packages.find((p) => p.id === need.pkgId);
-      asks.push({ key: need.key, text: `${pkg?.title ?? "A package"} waits on you. Its question isn't recorded.`, question: null, pkgId: need.pkgId, unrecorded: true });
+  let asks;
+  if (Array.isArray(job.asks)) {
+    // A wait with no recorded question adds a line only when no real question exists.
+    const recorded = job.asks.some((ask) => ask.text !== null);
+    asks = job.asks.filter((ask) => ask.text !== null || !recorded).map((ask) => ({
+      key: `ask:${ask.id}`, text: ask.text ?? unrecordedText(job, ask.pkgId), unrecorded: ask.text === null,
+      pkgId: ask.pkgId, question: ask.route ? answerable(job, ask) : null,
+    }));
+  } else {
+    asks = [];
+    for (const need of job.needs) {
+      if (need.kind === "ask") asks.push({ key: need.key, text: need.text, question: null, pkgId: null });
+      else if (need.id) asks.push({ key: need.key, text: need.text, question: job.guidance.find((q) => q.key === need.key) ?? null, pkgId: need.pkgId });
+    }
+    for (const q of job.questions.filter(isOpen)) asks.push({ key: q.key, text: q.text, question: q, pkgId: null });
+    if (!asks.length) {
+      for (const need of job.needs.filter((n) => n.kind === "guidance" && !n.id)) {
+        asks.push({ key: need.key, text: unrecordedText(job, need.pkgId), question: null, pkgId: need.pkgId, unrecorded: true });
+      }
     }
   }
   const seen = new Set();
@@ -66,11 +74,22 @@ export function asksOf(job) {
   });
 }
 
+// The web board's strip: one box per package, run by the architect's top-level groups in their own
+// order, each run in planned order, packages outside any group last.
+export function stripOf(job) {
+  const counted = job.packages.filter((pkg) => pkg.outcome !== "dropped");
+  const order = [...(job.phases ?? []), null];
+  const runs = order.map((phase) => ({ phase, pkgs: counted.filter((pkg) => (order.includes(pkg.phase ?? null) ? pkg.phase ?? null : null) === phase) }))
+    .filter((run) => run.pkgs.length);
+  for (const run of runs) run.pkgs.sort((a, b) => a.seq - b.seq);
+  return runs;
+}
+
 // A task as the scope shows it: its asks, what went wrong (from its packages' evidence and its own
-// recorded stall or failed deploy), and the share of its packages that landed.
+// recorded stall or failed deploy), its strip, and where it sits.
 export function taskOf(job, now) {
   const evidence = job.packages.filter((pkg) => pkg.outcome !== "dropped").map((pkg) => packageEvidence(pkg, now));
-  const live = evidence.filter((e) => e.pkg.stage !== "queued" && e.pkg.stage !== "done");
+  const live = evidence.filter((e) => LIVE.has(e.pkg.stage));
   const issues = [];
   if (job.deployFailed) issues.push({ text: "Deploy failed", tone: "fail" });
   // The board's stall rule, read here without letting a pending question hide it.
@@ -81,10 +100,8 @@ export function taskOf(job, now) {
   const rank = { fail: 0, warn: 1, unknown: 2 };
   const unique = issues.filter((issue, i) => issues.findIndex((other) => other.text === issue.text) === i).sort((a, b) => rank[a.tone] - rank[b.tone]);
   const asks = asksOf(job);
-  const total = evidence.length;
-  const landed = evidence.filter((e) => e.pkg.stage === "done").length;
   const later = !asks.length && (job.lane === "backlog" || job.lane === "landed" || job.state === "settled");
-  return { job, evidence, asks, issues: unique, landed: total ? landed / total : 0, total, later, band: asks.length ? 0 : unique.length ? 1 : 2 };
+  return { job, evidence, asks, issues: unique, strip: stripOf(job), total: evidence.length, later, band: asks.length ? 0 : unique.length ? 1 : 2 };
 }
 
 // The tasks a Topic or Space shows: every task touching it, once, in a stable order. What needs
@@ -105,6 +122,17 @@ export function scopeTasks(path, desk, jobs, place, now) {
   return touching.filter((job) => job.lane !== "settled" && job.lane !== "dormant")
     .map((job) => taskOf(job, now))
     .sort((a, b) => a.band - b.band || a.job.createdAt - b.job.createdAt || String(a.job.id).localeCompare(String(b.job.id)));
+}
+
+// The drill-in's parts: the packages at work or waiting on the person each get a row, in planned
+// order; landed and queued packages fold into one mark each.
+export function packageParts(task) {
+  const bySeq = (a, b) => a.pkg.seq - b.pkg.seq;
+  return {
+    active: task.evidence.filter((e) => e.active).sort(bySeq),
+    landed: task.evidence.filter((e) => e.pkg.stage === "done").sort(bySeq),
+    queued: task.evidence.filter((e) => !e.active && e.pkg.stage === "queued").sort(bySeq),
+  };
 }
 
 // The scope's name for its bar.

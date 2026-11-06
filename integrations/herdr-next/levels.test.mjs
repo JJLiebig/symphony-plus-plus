@@ -61,30 +61,6 @@ test('needs-you ranks by downstream packages unblocked, then by the longest wait
   assert.deepEqual(L.needsQueue(tie).map((n) => n.key), ['b', 'a']);
 });
 
-test('a topic groups work by repository; other topics\' jobs are references and planned jobs fold to a count', () => {
-  const { jobs, desk, place } = setup();
-  const herdr = L.topicWork(byId(desk, 't-herdr'), jobs, place);
-  assert.deepEqual(herdr.map((g) => g.key), ['web']);
-  const [web] = herdr;
-  assert.deepEqual(ids(web.spaces), ['s-web']);
-  assert.deepEqual(ids(web.jobs), ['wr-pr']);
-  assert.deepEqual(ids(web.planned), ['wr-shaping'], 'shaping work is only planned');
-  assert.deepEqual(web.refs.map((r) => [r.job.id, r.from]), [['wr-cross', 't-tools']]);
-  const tools = L.topicWork(byId(desk, 't-tools'), jobs, place);
-  assert.deepEqual(tools.map((g) => [g.key, ids(g.jobs), g.refs.map((r) => r.via)]), [['api', ['wr-cross'], []]],
-    'its home draws it once; its web package lives in another topic');
-  assert.deepEqual(L.topicWork(byId(desk, 't-live'), jobs, place), []);
-
-  const settled = jobs.map((job) => (job.id === 'wr-cross' ? { ...job, lane: 'settled', state: 'settled' } : job));
-  assert.deepEqual(L.topicWork(byId(desk, 't-herdr'), settled, place)[0].refs, [], 'settled work is not referenced elsewhere');
-  assert.equal(L.topicWork(byId(desk, 't-tools'), settled, place)[0].away, 1, 'it is counted once, at home');
-
-  const wide = { ...byId(jobs, 'wr-pr'), id: 'wide', repos: ['owner/web', 'owner/docs', 'owner/site'] };
-  const many = [{ id: 'g', name: 'G', kind: 'topic', spaces: ['web', 'docs', 'site'].map((name) => ({ id: name, folder: `/code/${name}` })) }];
-  const refs = L.topicWork(many[0], [wide], L.placeJobs([wide], many)).flatMap((g) => g.refs);
-  assert.deepEqual(refs.map((r) => [r.at, r.via]), [['docs', 'web'], ['site', 'web']], 'each repository holds its own reference');
-});
-
 test('a space shows the jobs touching its repository with their other repositories, and empty spaces stay ordinary', () => {
   const { jobs, spaces } = setup();
   const web = L.spaceWork(spaces[0], jobs);
@@ -95,30 +71,6 @@ test('a space shows the jobs touching its repository with their other repositori
   assert.equal(api.jobs[0], byId(jobs, 'wr-cross'), 'a remote space references the same canonical job');
   assert.deepEqual(L.spaceWork(spaces[2], jobs).jobs, []);
   assert.deepEqual(L.spaceWork({ id: 'x', folder: '' }, jobs).jobs, [], 'a space without a folder has no repository');
-});
-
-test('agents on a level are the jobs\' agents and any bound agent there: Live, last seen or unknown, with their own report', () => {
-  const { jobs } = setup();
-  const pr = byId(jobs, 'wr-pr');
-  const terminal = { address: 'vps/t4', status: 'working', status_ms: NOW - 60e3, report: { msg: 'Running tests' }, labels: { 'herdr.space': 's-api' } };
-  const bound = { kind: 'launch', jobId: 'wr-cross', pkgId: 'x-api', address: 'vps/t4', machine: 'vps', role: 'worker', provider: 'Codex', available: true, launchId: 'l1', pid: 7 };
-  const checks = { 'vps/t4': { ok: true, at: NOW - 1000, launchId: 'l1', pid: 7 } };
-  const here = L.agentRows([pr], jobs, [bound], [terminal], ['vps/s-api'], checks, NOW);
-  assert.deepEqual(here.map((a) => [a.job.id, a.subject, a.state]), [
-    ['wr-cross', 'Token API', 'live'],
-    ['wr-pr', 'Stage board', 'seen'],
-    ['wr-pr', null, 'seen'],
-  ], 'Live first, then the latest sighting; a worker with nothing known is left out');
-  const live = here[0];
-  assert.equal(live.here, true);
-  assert.equal(live.report.status, 'working');
-  assert.equal(live.report.msg, 'Running tests');
-  assert.equal(L.terminalSpace(bound, [terminal]), 'vps/s-api', 'remote space ids carry their machine');
-  assert.ok(!here.some((a) => a.role === 'Review'), 'review providers stay on the Job level');
-  const unchecked = L.agentRows([], jobs, [bound], [terminal], ['vps/s-api'], {}, NOW);
-  assert.equal(unchecked[0].state, 'unknown', 'a bound agent without a check or sighting is unknown, never live');
-  assert.deepEqual(L.agentRows([], jobs, [bound], [terminal], ['s-web'], checks, NOW), [], 'an agent elsewhere is not here');
-  assert.ok(!L.agentRows([byId(jobs, 'wr-shaping')], jobs, [], [], [], {}, NOW).length, 'unknown agents without a terminal are not listed');
 });
 
 test('the panel follows a job\'s terminal or tab, else the space while it has work, else its topic', () => {
@@ -202,21 +154,6 @@ test('a topic\'s chief is the one named like it, else one whose name leads or en
   assert.deepEqual(L.chiefsFor(tools, [chief('Platform', ['owner/api'])], desk, { 'owner/api': 't-herdr' }), [], 'explicit repository mappings apply');
 });
 
-test('a chief\'s desk lists what it dispatched where it is now, newest first, with recaps and what waits on the person', () => {
-  const { jobs } = setup();
-  const [herdr, live] = board().chiefs;
-  const desk = L.chiefDesk(herdr, jobs, NOW);
-  assert.deepEqual(desk.work.map((w) => [w.key, w.now, w.packages.map((p) => p.key)]), [
-    ['wr-cross:x-api', 'Building · 2h 00m', []],
-    ['wr-pr', 'Executing · 1/4 landed', ['wr-pr:wp-build']],
-  ], 'a package dispatched in someone else\'s request stands alone; a request lists its own dispatched packages');
-  assert.equal(desk.work[1].packages[0].now, 'Building · 1h 30m');
-  assert.deepEqual(desk.recaps.map((r) => [r.job.id, r.text]), [['wr-cross', 'Token API is building; the UI waits on it and on your call.']]);
-  assert.deepEqual(desk.needs.map((n) => n.key), L.needsQueue([byId(jobs, 'wr-cross'), byId(jobs, 'wr-pr')]).map((n) => n.key), 'what waits on the person there, ranked like the factory queue');
-  assert.equal(desk.needs.length, 3);
-  assert.deepEqual(L.chiefDesk(live, jobs, NOW), { work: [], recaps: [], needs: [] }, 'attribution is by domain, never by topic or repository');
-});
-
 test('a chief is Live only after a helper check of its own registered session, else last seen, else unknown', () => {
   const [herdr, live] = board().chiefs;
   const labels = {
@@ -236,4 +173,14 @@ test('a chief is Live only after a helper check of its own registered session, e
   assert.equal(checked.binding.address, 't7', 'Open goes through the checked binding');
   assert.equal(L.chiefAgent(herdr, bindings, [terminal], { t7: { ...checks.t7, at: NOW - 10 * 60e3 } }, NOW).state, 'seen', 'an old check has expired');
   assert.equal(L.chiefAgent(live, bindings, [terminal], checks, NOW).state, 'unknown', 'no location and no session is unknown');
+});
+
+test('a chief space that fell out of its topic goes back to its end, folded as the topic was; others stay as they are', () => {
+  const desk = { groups: [{ id: 't-a', name: 'A', spaces: ['s1'], folded: true }, { id: 't-b', name: 'B', spaces: ['s3'], folded: false }], unsorted: ['s2', 's4'] };
+  const next = L.homeChiefSpaces(desk, { s2: 't-a', s3: 't-b', s5: 't-a', s4: 't-gone' }, ['s1', 's2', 's3', 's4']);
+  assert.deepEqual(next.groups[0], { id: 't-a', name: 'A', spaces: ['s1', 's2'], folded: true });
+  assert.deepEqual(next.unsorted, ['s4'], 'a space whose topic is gone stays where it is');
+  assert.deepEqual(desk.unsorted, ['s2', 's4'], 'the desk it was given is unchanged');
+  assert.equal(L.homeChiefSpaces(next, { s2: 't-a', s3: 't-b' }, ['s1', 's2', 's3']), null, 'nothing to do once every one is home');
+  assert.equal(L.homeChiefSpaces(desk, null, ['s2']), null);
 });

@@ -18,12 +18,13 @@ node integrations/herdr-next/install.mjs --endpoint $origin --open overview
 ```
 
 The view opens at the Factory: what needs you, ranked by how many packages
-wait on each answer, then one row per Herdr topic. A topic with a chief shows
-the chief's desk first: what it dispatched and where each item is now, recaps,
-and what waits on you; to make one, click the topic's sympp mark in the sidebar
-(below) or tell an agent it is that topic's chief. A topic shows its work by
-repository and its agents; a space shows the work on its repository. Click a
-row or the breadcrumb, or use ↑/↓ (j/k), Enter and Esc. Each copy remembers
+wait on each answer, then one row per Herdr topic. A topic shows each task
+touching it as its name and a strip of its packages, coloured by stage; a space
+shows the same for the tasks on its repository. A word appears only when
+something went wrong, and questions come first, each with Answer (or Chief,
+when only the topic's chief can take it). A task shows its packages at work on
+the Build ─ PR ─ Checks ─ Review ─ Merge pipeline, with landed and queued work
+folded. Click a row, or use ↑/↓ (j/k), Enter and Esc. Each copy remembers
 where it was. A toast appears when something newly needs you; click it to open
 the job's tab.
 
@@ -158,7 +159,7 @@ A UI package gets a studio: a tab named after the package, in the job's local
 space, with its worker's terminal on the left and a preview on the right, like a
 chat beside its canvas. A package is UI work when its title names UI as a word
 ("UI studio tab", "Token UI") or its worker has published a preview. Open it with
-**Open UI studio** under the selected package in a job view, or U. Opening it again
+**Studio** under the selected package in a task view, or U. Opening it again
 selects the open studio. An architect launching a UI worker can open the studio
 with only the ids, once any sympp view has connected:
 

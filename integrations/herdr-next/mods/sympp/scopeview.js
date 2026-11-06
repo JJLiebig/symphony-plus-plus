@@ -1,13 +1,12 @@
-// The redesigned Topic/Space view and task drill-in ("Track"), behind the scratch-only `lens` prop,
-// drawn in the web dashboard's visual language: Geist with Geist Mono for figures and labels, the
-// dashboard's stage colours, square package pips, and its orange for what needs the person.
-// Topic and Space draw the same view; a space only narrows the tasks. Words appear only when
-// something went wrong, and the person's questions come first with an Answer each.
+// The Topic, Space and task views, drawn in the web dashboard's visual language: Geist with Geist
+// Mono, its stage colours, its box strip and its Build ─ PR ─ Checks ─ Review ─ Merge pipeline, and
+// its orange for what needs the person. Topic and Space draw the same view; a space only narrows the
+// tasks. A task is its name and its strip; a word appears only when something went wrong, and the
+// person's questions come first with one action each.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
-import { settings } from "herdr";
-import * as M from "./model.js";
+import { settings, shared, terminals, run, openOverlay } from "herdr";
 import * as J from "./job.js";
 import * as R from "./rails.js";
 import * as St from "./studio.js";
@@ -24,17 +23,14 @@ const DARK = { build: "#6ea8fe", checks: "#e5b454", review: "#b794f6", merge: "#
 const LIGHT = { build: "#2563eb", checks: "#b7791f", review: "#7c3aed", merge: "#15803d", you: "#ea580c", fail: "#dc2626" };
 const signal = () => (settings()?.dark === false ? LIGHT : DARK);
 
-const pct = (x) => `${(Math.max(0, Math.min(1, x)) * 100).toFixed(3)}%`;
-
-// Red for failures, the checks amber for trouble that isn't one, faint for missing evidence.
+// Red for failures, the checks amber for trouble that isn't one, faint for a worker gone quiet.
 const issueTone = (t, tone) => (tone === "fail" ? signal().fail : tone === "warn" ? signal().checks : t.dim);
 
 // GPUI has no letter-spacing; the dashboard's tracked capitals are set with hair spaces instead.
 const tracked = (text) => text.toUpperCase().split("").join(" ");
 
-function micro(t, text, color, id = null) {
-  const el = div().flex_none().text_size(10).font_family(SANS).font_semibold().text_color(color).accessibility_label(text).child(tracked(text));
-  return id ? el.id(id) : el;
+function micro(t, text, color) {
+  return div().flex_none().text_size(10).font_family(SANS).font_semibold().text_color(color).accessibility_label(text).child(tracked(text));
 }
 
 const mono = (size, color) => div().flex_none().font_family(MONO).text_size(size).text_color(color);
@@ -42,10 +38,10 @@ const mono = (size, color) => div().flex_none().font_family(MONO).text_size(size
 // ---------- Controls ----------
 
 // The dashboard's quiet buttons: no border, dim until hovered.
-function ghost(t, id, label, action, { glyph = null, tip = null, tone = null, strong = false, disabled = false } = {}) {
+function ghost(t, id, label, action, { glyph = null, tip = null, strong = false, disabled = false } = {}) {
   return Button.new(id).flex().flex_none().items_center().gap(6).h(24).px(8).rounded(5).cursor_pointer()
     .font_family(SANS).text_size(12).font_medium()
-    .bg(strong ? tint(t.foreground, "14") : CLEAR).text_color(tone ?? (strong ? t.foreground : t.muted))
+    .bg(strong ? tint(t.foreground, "14") : CLEAR).text_color(strong ? t.foreground : t.muted)
     .hover((s) => s.bg(tint(t.foreground, "1a")).text_color(t.foreground))
     .focus((s) => s.border(1).border_color(t.accent))
     .disabled(disabled).when(disabled, (el) => el.opacity(0.45))
@@ -65,8 +61,8 @@ function glyphButton(t, id, glyph, tip, action, { on = false } = {}) {
     .child(svg(icon(glyph)).size(14).flex_none());
 }
 
-// Answer: the person's colour, tinted, so it reads as theirs without shouting.
-function answerButton(t, id, action, tip) {
+// The person's action on a question, in their colour, tinted so it reads as theirs without shouting.
+function youButton(t, id, label, action, tip) {
   const you = signal().you;
   return Button.new(id).flex().flex_none().items_center().h(24).px(10).rounded(5).cursor_pointer()
     .font_family(SANS).text_size(12).font_semibold().text_color(you).bg(tint(you, "1f"))
@@ -74,7 +70,7 @@ function answerButton(t, id, action, tip) {
     .focus((s) => s.border(1).border_color(you))
     .accessibility_label(tip).tooltip(tip)
     .on_click((_e, cx) => { cx.stop_propagation(); action(cx); })
-    .child("Answer");
+    .child(label);
 }
 
 // ---------- Shared ----------
@@ -87,11 +83,12 @@ function reach(v, t, el, key, open, label) {
     .on_click((_e, cx) => open(cx));
 }
 
-function bar(v, t, title, now, { create = true } = {}) {
+// A task's own tab has no level above it, so no way back.
+function bar(v, t, title, now, { create = true, back = true } = {}) {
   return h_flex().id("lens-bar").flex_none().h(44).px(v.compact ? 8 : 16).gap(4).items_center()
     .bg(tint(t.foreground, "05")).border_b(1).border_color(tint(t.foreground, "12"))
-    .child(glyphButton(t, "lens-back", "chevron-left", "Back (Esc)", (cx) => v.goUp(cx)))
-    .child(div().flex_1().min_w(0).pl(2).truncate().font_family(SANS).text_size(13.5).font_semibold().text_color(t.foreground).child(title))
+    .when(back, (el) => el.child(glyphButton(t, "lens-back", "chevron-left", "Back (Esc)", (cx) => v.goUp(cx))))
+    .child(div().flex_1().min_w(0).pl(back ? 2 : 6).truncate().font_family(SANS).text_size(13.5).font_semibold().text_color(t.foreground).child(title))
     .child(O.status(v, t, now))
     .when(create, (el) => el.child(glyphButton(t, "new-job", "plus", "New task", (cx) => v.openIntake(cx))))
     .when(v.role === "panel", (el) => el.child(glyphButton(t, "pin", v.pin ? "pin-off" : "pin",
@@ -109,14 +106,23 @@ function empty(t, text) {
   return div().px(10).py(16).text_size(13).text_color(t.muted).child(text);
 }
 
-// A package's square pip, as on the dashboard: its stage's colour, hollow while queued, red when failing.
-function pip(t, stage, { failed = false, size = 8 } = {}) {
+// One package's box: landed in a muted merge green, at work in its stage's colour (red while its
+// checks fail), still to come hollow.
+function box(t, pkg, size) {
   const c = signal();
   const base = div().size(size).flex_none().rounded(2);
-  if (failed) return base.bg(c.fail);
-  if (stage === "queued") return base.border(1).border_color(tint(t.foreground, "40"));
-  if (stage === "done") return base.bg(tint(c.merge, "66"));
-  return base.bg(c[stage] ?? t.muted);
+  if (pkg.stage === "done") return base.bg(tint(c.merge, "66"));
+  if (pkg.stage === "queued") return base.border(1).border_color(tint(t.foreground, "38"));
+  if (pkg.failed) return base.bg(c.fail);
+  return base.bg(c[pkg.stage] ?? t.muted);
+}
+
+// The dashboard's strip: one box per package, a hairline between the architect's groups.
+function strip(t, runs, id, size = 10) {
+  return h_flex().id(id).flex_wrap().gap_y(4).items_center().min_w(0).children(runs.map((run, i) =>
+    h_flex().id(`${id}-${i}`).flex_none().gap(3).items_center()
+      .when(i > 0, (el) => el.ml(4).pl(5).border_l(1).border_color(tint(t.foreground, "26")))
+      .children(run.pkgs.map((pkg) => box(t, pkg, size).tooltip(pkg.title)))));
 }
 
 // What went wrong, as the dashboard's verdict badge: a small dot and a word in the issue's colour.
@@ -130,44 +136,31 @@ function badges(t, issues, id) {
   }));
 }
 
-// How much has landed: one pip per package in planned order, filled once it landed. Long tasks
-// fold into a single bar so the row keeps its width.
-function landedMarks(t, task, id) {
-  const pkgs = task.evidence.map((e) => e.pkg).sort((a, b) => a.seq - b.seq);
-  const done = tint(signal().merge, "66");
-  if (pkgs.length > 16) {
-    return div().id(id).relative().flex_none().w(96).h(6).rounded(2).bg(tint(t.foreground, "10"))
-      .child(div().absolute().left(0).top(0).h(6).w(pct(task.landed)).rounded(2).bg(done));
-  }
-  return h_flex().id(id).flex_none().gap(3).items_center().children(pkgs.map((pkg) => pkg.stage === "done"
-    ? div().size(8).flex_none().rounded(2).bg(done)
-    : div().size(8).flex_none().rounded(2).border(1).border_color(tint(t.foreground, "30"))));
+// The topic's chief, as the topic mark reaches it: a peek at the chief while it runs (the panel shares
+// it, confirmed live), else sympp's Start chief for the topic.
+function openChief(topic) {
+  const address = (shared("sympp.chiefs")?.[topic.id] ?? []).find((c) => c.terminal)?.terminal;
+  if (address && terminals().some((k) => k.address === address && k.state === "live")) run("terminal.peek", { terminal: address });
+  else openOverlay({ mod: "sympp", kind: "window", frame: "none", width: 1, height: 1, props: { role: "chief", topic: topic.id, name: topic.name } });
 }
 
-// A question as the dashboard's ask: an orange rule, the question in plain ink, who asks and how
-// long ago underneath, and its one Answer.
-function askRow(v, t, job, ask, now, { pkgTitle = null, inset = 10 } = {}) {
+// A question as the dashboard's ask: an orange rule, the question in plain ink, and one action. One
+// with an answer route is answered here; any other goes to the topic's chief, or to the dashboard
+// where the task has no topic.
+function askRow(v, t, ask, topic) {
   const q = ask.question;
   const open = q && v.answers[q.key]?.open;
   const saved = q && v.answers[q.key]?.saved;
-  const you = signal().you;
-  const who = ask.unrecorded ? "Waiting on you" : q?.kind === "question" ? "Question" : q ? "Guidance" : "Architect asks";
-  const since = ask.question?.since ?? job.needs.find((n) => n.key === ask.key)?.since ?? null;
   const action = saved ? mono(11, t.dim).child("saved")
-    : q ? answerButton(t, `answer-${ask.key}`, (cx) => v.openAnswer(q, cx), "Answer here")
-      : ask.unrecorded ? null
-        : v.dashboard ? answerButton(t, `answer-${ask.key}`, (cx) => v.openDashboard(cx), "Answer in the dashboard (O)") : null;
-  return v_flex().id(`ask-${ask.key}`).flex_none().ml(inset).mr(4).mt(2).mb(10)
+    : q ? youButton(t, `answer-${ask.key}`, "Answer", (cx) => v.openAnswer(q, cx), "Answer here")
+      : topic ? youButton(t, `chief-${ask.key}`, "Chief", () => openChief(topic), `Answer through the ${topic.name} chief`)
+        : v.dashboard ? youButton(t, `answer-${ask.key}`, "Answer", (cx) => v.openDashboard(cx), "Answer in the dashboard (O)") : null;
+  return v_flex().id(`ask-${ask.key}`).flex_none().ml(10).mr(4).mt(2).mb(8)
     .child(h_flex().items_start()
-      .child(div().w(2).flex_none().self_stretch().rounded(1).bg(you))
-      .child(v_flex().flex_1().min_w(0).pl(12).py(2).gap(6)
-        .child(div().w_full().text_size(13.5).line_height("19px").text_color(ask.unrecorded ? t.muted : t.foreground).child(ask.text))
-        .child(h_flex().gap(8).items_center().min_w(0)
-          .child(div().flex_none().text_size(12).font_semibold().text_color(you).child(who))
-          .when(Boolean(pkgTitle), (el) => el.child(div().min_w(0).truncate().text_size(12).text_color(t.muted).child(pkgTitle)))
-          .when(since !== null, (el) => el.child(mono(11, t.dim).child(M.ago(since, now))))
-          .child(div().flex_1())
-          .when(Boolean(action) && !open, (el) => el.child(action)))))
+      .child(div().w(2).flex_none().self_stretch().rounded(1).bg(signal().you))
+      .child(h_flex().flex_1().min_w(0).pl(12).gap(10).items_center()
+        .child(div().flex_1().min_w(0).py(3).text_size(13.5).line_height("19px").text_color(ask.unrecorded ? t.muted : t.foreground).child(ask.text))
+        .when(Boolean(action) && !open, (el) => el.child(action))))
     .when(Boolean(open), (el) => el.child(div().pl(14).pt(6).child(questionRow(v, t, q, true))));
 }
 
@@ -177,14 +170,13 @@ function taskRow(v, t, task, wide) {
   const { job } = task;
   const quiet = task.later;
   const title = div().min_w(0).flex_shrink(1).truncate().text_size(13.5).font_medium().text_color(quiet ? t.muted : t.foreground).child(job.title);
-  const marks = task.total > 0 && !quiet ? landedMarks(t, task, `landed-${job.id}`) : null;
   const words = badges(t, task.issues, `issues-${job.id}`);
-  const el = wide || !words
-    ? h_flex().id(`task-${job.id}`).flex_none().px(10).py(quiet ? 6 : 10).gap(14).items_center()
-      .child(title).when(Boolean(words), (x) => x.child(words)).child(div().flex_1()).when(Boolean(marks), (x) => x.child(marks))
-    : v_flex().id(`task-${job.id}`).flex_none().px(10).py(10).gap(6)
-      .child(h_flex().gap(14).items_center().child(title).child(div().flex_1()).when(Boolean(marks), (x) => x.child(marks)))
-      .child(words);
+  const runs = task.total > 0 && !quiet ? strip(t, task.strip, `strip-${job.id}`) : null;
+  const head = h_flex().flex_1().min_w(0).gap(12).items_center().child(title).when(Boolean(words), (x) => x.child(words));
+  const el = wide
+    ? h_flex().id(`task-${job.id}`).flex_none().px(10).py(quiet ? 6 : 11).gap(24).items_center()
+      .child(head).when(Boolean(runs), (x) => x.child(h_flex().w(380).flex_none().justify_end().child(runs)))
+    : v_flex().id(`task-${job.id}`).flex_none().px(10).py(quiet ? 6 : 10).gap(8).child(head).when(Boolean(runs), (x) => x.child(runs));
   return reach(v, t, el, `task:${job.id}`, (cx) => v.openJob(job, { pkg: task.asks.find((a) => a.pkgId)?.pkgId ?? null }, cx), job.title);
 }
 
@@ -199,7 +191,7 @@ function later(v, t, key, tasks, wide) {
   return [toggle, ...(open ? tasks.map((task) => taskRow(v, t, task, wide)) : [])];
 }
 
-function scopeRows(v, t, tasks, key, now) {
+function scopeRows(v, t, tasks, key, topic) {
   const wide = !v.compact;
   if (!tasks.length) return [empty(t, "Nothing running here")];
   const current = tasks.filter((task) => !task.later);
@@ -207,9 +199,9 @@ function scopeRows(v, t, tasks, key, now) {
   const rest = current.filter((task) => !task.asks.length);
   const group = (task) => v_flex().id(`group-${task.job.id}`).flex_none()
     .child(taskRow(v, t, task, wide))
-    .children(task.asks.map((ask) => askRow(v, t, task.job, ask, now)));
+    .children(task.asks.map((ask) => askRow(v, t, ask, topic)));
   return [
-    asking.length ? div().px(10).pb(6).child(micro(t, "Needs you", signal().you, "needs-label")) : null,
+    asking.length ? div().px(10).pb(4).child(micro(t, "Needs you", signal().you)) : null,
     ...asking.map(group),
     asking.length && rest.length ? div().h(14).flex_none() : null,
     ...rest.map(group),
@@ -219,35 +211,37 @@ function scopeRows(v, t, tasks, key, now) {
 
 // ---------- Drill-in ----------
 
-const NAME_W = 280;
-const N = S.COLUMNS.length;
+const STEPS = [["Build", "build"], ["PR", "pr"], ["Checks", "checks"], ["Review", "review"], ["Merge", "merge"]];
+const SHORT = [["Work", "build"], ["Done", "done"]];
+const ORDER = { queued: -1, build: 0, checks: 2, review: 3, merge: 4, done: 5 };
 
-function columnsHead(t, wide) {
-  return h_flex().id("stage-head").flex_none().px(10).pt(14).pb(6).gap(10).items_center()
-    .child(div().w(8).flex_none())
-    .when(wide, (el) => el.child(div().w(NAME_W).flex_none()))
-    .child(h_flex().flex_1().min_w(0).children(S.COLUMNS.map((c) => div().flex_1().min_w(0).flex().justify_center()
-      .child(mono(10.5, t.dim).child(S.COLUMN_LABEL[c])))));
-}
-
-// Where one package is: the dashboard's pipeline as one row of stops. The way it came is drawn in
-// dim, the way ahead faint, and the stop it is on carries its stage's colour in a soft halo.
-function stageTrack(t, e) {
-  const at = S.COLUMNS.indexOf(e.column);
-  const failed = e.issues.some((i) => i.tone === "fail");
-  const c = failed ? signal().fail : e.column === "done" ? signal().merge : signal()[e.column] ?? t.muted;
-  const step = 1 / N;
-  const reached = Math.max(0, at) * step;
-  const current = e.column === "queued" ? pip(t, "queued", { size: 9 })
-    : e.column === "done" ? div().size(9).rounded(2).bg(tint(signal().merge, "66"))
-      : h_flex().size(17).rounded(5).items_center().justify_center().bg(tint(c, "2a")).child(div().size(9).rounded(2).bg(c));
-  return div().relative().flex_1().min_w(0).h(18)
-    .child(div().absolute().top(9).left(pct(step / 2)).h(1).w(pct(1 - step)).bg(tint(t.foreground, "10")))
-    .when(at > 0, (el) => el.child(div().absolute().top(9).left(pct(step / 2)).h(1).w(pct(reached)).bg(tint(t.foreground, "40"))))
-    .child(h_flex().absolute().top(0).left(0).w_full().h(18).children(S.COLUMNS.map((_c, i) =>
-      h_flex().flex_1().min_w(0).h(18).items_center().justify_center()
-        .when(i === at, (el) => el.child(current))
-        .when(i < at, (el) => el.child(div().size(3).rounded(2).bg(tint(t.foreground, "50")))))));
+// The dashboard's pipeline: the way travelled dim, the way ahead faint, the current step in its
+// stage's colour (red and "failing" while checks fail, its round from the second). The PR step opens
+// the pull request once there is one.
+function pipeline(t, pkg) {
+  const short = pkg.track === "no_pr";
+  const steps = short ? SHORT : STEPS;
+  const live = pkg.stage !== "done" && pkg.stage !== "queued";
+  const at = short && live ? 0 : ORDER[pkg.stage] ?? -1;
+  const c = signal();
+  const parts = [];
+  steps.forEach(([label, stage], i) => {
+    if (i > 0) parts.push(mono(11, i <= at ? t.muted : tint(t.foreground, "3a")).child("─"));
+    const current = live && (short ? i === 0 : stage === pkg.stage);
+    if (current) {
+      const tone = pkg.failed ? c.fail : c[pkg.stage] ?? t.foreground;
+      const round = pkg.stage === "review" && pkg.round > 1 ? ` · round ${pkg.round}` : "";
+      parts.push(mono(11, tone).font_semibold().child(`${label}${pkg.failed ? " failing" : ""}${round}`));
+      return;
+    }
+    const tone = i < at ? t.muted : tint(t.foreground, "48");
+    if (stage === "pr" && pkg.pr.url) {
+      parts.push(Button.new(`pr-step-${pkg.id}`).flex_none().cursor_pointer().font_family(MONO).text_size(11).text_color(tone).underline()
+        .hover((s) => s.text_color(t.foreground)).tooltip(`Open PR #${pkg.pr.number ?? ""}`.trim())
+        .on_click((_e, cx) => { cx.stop_propagation(); cx.open_url(pkg.pr.url); }).child(label));
+    } else parts.push(mono(11, tone).child(label));
+  });
+  return h_flex().flex_none().gap(6).items_center().children(parts);
 }
 
 // Behind a click on a package: its agent, its PR, its review, its studio.
@@ -261,75 +255,99 @@ function pkgActions(v, t, job, pkg, ctx) {
     R.roundsOf(pkg).length ? ghost(t, `review-${pkg.id}`, "Review", (cx) => (v.review?.pkgId === pkg.id ? v.closeReview(cx) : v.openReview(job.id, pkg.id, null, cx)), { glyph: "message-circle", strong: v.review?.pkgId === pkg.id }) : null,
     ui ? ghost(t, `studio-${pkg.id}`, "Studio", (cx) => v.openStudio(job, pkg, cx), { glyph: "monitor" }) : null,
   ].filter(Boolean);
+  const action = list.length ? h_flex().gap(2).flex_wrap().children(list) : null;
+  if (!action && ctx.review?.id !== pkg.id) return null;
   return v_flex().pl(26).pr(8).pb(10).pt(2).gap(8)
-    .child(list.length ? h_flex().gap(2).flex_wrap().children(list) : mono(11, t.dim).child("no agent, PR or review yet"))
+    .when(Boolean(action), (el) => el.child(action))
     .when(ctx.review?.id === pkg.id, (el) => el.child(reviewPane(v, t, pkg, ctx, true)));
 }
 
+// A package at work: its box, its name (an orange dot while it waits on the person, a faint word
+// when its worker went quiet) and its pipeline, beside the name when wide and under it when narrow.
 function pkgRow(v, t, job, e, ctx, wide, odd) {
   const { pkg } = e;
   const on = v.pkgSel === pkg.id;
   const focused = on && v.keys.is_focused();
-  const settled = e.column === "done" || e.column === "queued";
-  const failed = e.issues.some((i) => i.tone === "fail");
-  const notes = [...e.issues, ...(e.note ? [{ text: e.note, tone: "note" }] : [])];
-  const name = v_flex().min_w(0).gap(3)
-    .child(h_flex().gap(7).items_center().min_w(0)
-      .child(div().min_w(0).truncate().text_size(13).text_color(settled ? t.muted : t.foreground).child(pkg.title))
-      .when(e.needsYou, (el) => el.child(div().size(6).flex_none().rounded(3).bg(signal().you).tooltip("Waits on you"))))
-    .when(notes.length > 0, (el) => el.child(h_flex().gap(10).min_w(0).children(notes.slice(0, 2).map((n) =>
-      mono(11, n.tone === "note" ? t.dim : issueTone(t, n.tone)).when(n.tone !== "note", (x) => x.font_semibold()).child(n.text)))));
-  const lead = h_flex().w(8).flex_none().justify_center().child(pip(t, e.column, { failed }));
-  const content = wide
-    ? h_flex().flex_1().min_w(0).gap(10).items_center().child(lead).child(name.w(NAME_W).flex_none()).child(stageTrack(t, e))
-    : v_flex().flex_1().min_w(0).gap(6)
-      .child(h_flex().gap(10).items_center().child(lead).child(name.flex_1()))
-      .child(h_flex().gap(10).child(div().w(8).flex_none()).child(stageTrack(t, e)));
-  const row = h_flex().id(`pkg-${pkg.id}`).flex_none().px(10).py(wide ? 6 : 8).items_center().cursor_pointer().rounded(5)
+  const quiet = e.issues.find((i) => i.tone === "unknown");
+  const name = h_flex().flex_1().min_w(0).gap(8).items_center()
+    .child(div().min_w(0).flex_shrink(1).truncate().text_size(13).text_color(pkg.stage === "done" || pkg.stage === "queued" ? t.muted : t.foreground).child(pkg.title))
+    .when(e.needsYou, (el) => el.child(div().size(6).flex_none().rounded(3).bg(signal().you).tooltip("Waits on you")))
+    .when(Boolean(quiet), (el) => el.child(mono(11, t.dim).child(quiet.text)));
+  const lead = h_flex().w(10).flex_none().justify_center().child(box(t, pkg, 8));
+  const live = pkg.stage !== "done" && pkg.stage !== "queued";
+  const content = !live
+    ? h_flex().flex_1().min_w(0).gap(10).items_center().child(lead).child(name)
+    : wide
+      ? h_flex().flex_1().min_w(0).gap(10).items_center().child(lead).child(name).child(pipeline(t, pkg))
+      : v_flex().flex_1().min_w(0).gap(5)
+        .child(h_flex().gap(10).items_center().child(lead).child(name))
+        .child(h_flex().gap(10).child(div().w(10).flex_none()).child(pipeline(t, pkg)));
+  const row = h_flex().id(`pkg-${pkg.id}`).flex_none().px(10).py(wide ? 7 : 8).items_center().cursor_pointer().rounded(5)
     .bg(on ? tint(t.foreground, "12") : odd ? tint(t.foreground, "07") : CLEAR).border(1).border_color(focused ? tint(t.accent, "80") : CLEAR)
     .hover((s) => s.bg(tint(t.foreground, "10")))
-    .accessibility_label(`${pkg.title}, ${S.COLUMN_LABEL[e.column]}${notes.length ? `, ${notes.map((n) => n.text).join(", ")}` : ""}${e.needsYou ? ", waits on you" : ""}`)
+    .accessibility_label(`${pkg.title}${e.issues.length ? `, ${e.issues.map((i) => i.text).join(", ")}` : ""}${e.needsYou ? ", waits on you" : ""}`)
     .on_click((_e, cx) => v.selectPackage(on ? null : pkg.id, cx))
     .child(content);
-  return on ? [row, pkgActions(v, t, job, pkg, ctx)] : [row];
+  const actions = on ? pkgActions(v, t, job, pkg, ctx) : null;
+  return actions ? [row, actions] : [row];
 }
 
-// The task's own words on top (the same ones its row shows), its questions, then every package in
-// planned order, each on its stage. Packages never move when they advance.
+// Landed and queued packages fold into one mark each: a label and their boxes, opened on request.
+function fold(v, t, job, label, parts, ctx, wide) {
+  if (!parts.length) return [];
+  const key = `${label}:${job.id}`;
+  const open = v.expanded.has(key);
+  const toggle = reach(v, t, h_flex().id(`fold-${key}`).flex_none().mt(6).px(10).py(7).gap(10).items_center(), `fold:${key}`,
+    (cx) => v.toggleExpanded(key, cx), label)
+    .child(svg(icon(open ? "chevron-down" : "chevron-right")).size(11).flex_none().text_color(t.dim))
+    .child(micro(t, label, t.dim))
+    .child(strip(t, [{ pkgs: parts.map((e) => e.pkg) }], `fold-strip-${key}`, 8));
+  return [toggle, ...(open ? parts.flatMap((e, i) => pkgRow(v, t, job, e, ctx, wide, i % 2 === 0)) : [])];
+}
+
+// The task's words and strip on top (the same ones its row shows), its questions, then the packages
+// at work in planned order with landed and queued work folded below. Packages never move when they
+// advance.
 function jobRows(v, t, job, ctx) {
   const task = S.taskOf(job, ctx.now);
   const wide = !v.compact;
-  const titles = new Map(job.packages.map((pkg) => [pkg.id, pkg.title]));
-  const evidence = [...task.evidence].sort((a, b) => a.pkg.seq - b.pkg.seq);
+  const parts = S.packageParts(task);
+  const drawn = [...parts.active, ...(v.expanded.has(`Landed:${job.id}`) ? parts.landed : []), ...(v.expanded.has(`Up next:${job.id}`) ? parts.queued : [])];
+  v.rowOrder = drawn.map((e) => e.pkg.id);
+  if (v.pkgSel && !v.rowOrder.includes(v.pkgSel)) v.pkgSel = null;
   return [
-    task.issues.length ? div().px(10).pb(10).child(badges(t, task.issues, `issues-${job.id}`)) : null,
-    task.asks.length ? div().px(10).pb(6).child(micro(t, "Needs you", signal().you, "needs-label")) : null,
-    ...task.asks.map((ask) => askRow(v, t, job, ask, ctx.now, { pkgTitle: ask.pkgId ? titles.get(ask.pkgId) : null })),
-    evidence.length ? columnsHead(t, wide) : empty(t, "Not sliced into packages yet"),
-    ...evidence.flatMap((e, i) => pkgRow(v, t, job, e, ctx, wide, i % 2 === 0)),
+    h_flex().id("task-head").flex_none().px(10).pb(12).gap(16).items_center().flex_wrap()
+      .when(task.total > 0, (el) => el.child(strip(t, task.strip, `strip-${job.id}`, 11)))
+      .when(task.issues.length > 0, (el) => el.child(badges(t, task.issues, `issues-${job.id}`))),
+    task.asks.length ? div().px(10).pb(4).child(micro(t, "Needs you", signal().you)) : null,
+    ...task.asks.map((ask) => askRow(v, t, ask, ctx.topic)),
+    !task.total ? empty(t, "Not sliced into packages yet") : null,
+    task.asks.length && parts.active.length ? div().h(8).flex_none() : null,
+    ...parts.active.flatMap((e, i) => pkgRow(v, t, job, e, ctx, wide, i % 2 === 0)),
+    ...fold(v, t, job, "Landed", parts.landed, ctx, wide),
+    ...fold(v, t, job, "Up next", parts.queued, ctx, wide),
   ];
 }
 
 // ---------- Levels ----------
 
-// ctx: { board, desk, path, bindings, terminals, level, now }. Returns the root's children.
-export function lensLevel(v, t, ctx) {
-  const { board, desk, path, bindings, now } = ctx;
-  if (ctx.level === "job") {
-    const job = board.jobs.find((j) => j.id === path.job);
-    if (!job) return [bar(v, t, "New task", now, { create: false }), empty(t, "Reading the new task…")];
-    v.rowOrder = job.packages.filter((pkg) => pkg.outcome !== "dropped").sort((a, b) => a.seq - b.seq).map((pkg) => pkg.id);
-    if (v.pkgSel && !v.rowOrder.includes(v.pkgSel)) v.pkgSel = null;
-    const review = v.review?.jobId === job.id ? job.packages.find((pkg) => pkg.id === v.review.pkgId) ?? null : null;
-    if (!review) v.review = null;
-    v.shown = { jobId: job.id, bindings: J.jobBindings(job, bindings) };
-    v.agentWatch = { key: job.id, bindings: v.shown.bindings };
-    v.currentJob = job;
-    const jctx = { now, bindings, terminals: ctx.terminals, offline: board.offline === true, review };
-    return [bar(v, t, job.title, now, { create: false }), body(v, "lens-job", jobRows(v, t, job, jctx), 900)];
-  }
+// One task, as the panel's drill-in or as the task's own tab (`tab`: no way back, no new task).
+export function taskLevel(v, t, job, ctx) {
+  const review = v.review?.jobId === job.id ? job.packages.find((pkg) => pkg.id === v.review.pkgId) ?? null : null;
+  if (!review) v.review = null;
+  v.shown = { jobId: job.id, bindings: J.jobBindings(job, ctx.bindings) };
+  v.agentWatch = { key: job.id, bindings: v.shown.bindings };
+  v.currentJob = job;
+  const jctx = { ...ctx, offline: ctx.board.offline === true, review };
+  return [bar(v, t, job.title, ctx.now, { create: false, back: !ctx.tab }), body(v, "lens-job", jobRows(v, t, job, jctx), 900)];
+}
+
+// A Topic or Space: the tasks touching it. ctx: { board, desk, path, bindings, terminals, now }.
+export function scopeLevel(v, t, ctx) {
+  const { board, desk, path, now } = ctx;
   const title = S.scopeTitle(path, desk);
   if (v.intake) return [bar(v, t, title, now), O.intakeForm(v, t)];
   const tasks = S.scopeTasks(path, desk, board.jobs, v.place, now);
-  return [bar(v, t, title, now), body(v, "lens-scope", scopeRows(v, t, tasks, `${path.topic}:${path.space ?? ""}`, now), 760)];
+  const topic = desk.find((x) => x.id === path.topic && x.kind === "topic") ?? null;
+  return [bar(v, t, title, now), body(v, "lens-scope", scopeRows(v, t, tasks, `${path.topic}:${path.space ?? ""}`, topic), 820)];
 }

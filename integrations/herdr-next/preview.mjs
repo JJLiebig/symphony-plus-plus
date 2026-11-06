@@ -21,8 +21,7 @@ const VIEW = 'integrations/herdr-next/mods';
 export function previewMain(spec = {}) {
   return `import Lens from "./lens.js";
 import * as M from "./model.js";
-import * as J from "./job.js";
-import { NOW, boardPayload, variantPayload, detailPayload, deskFixture } from "./fixture.js";
+import { NOW, boardPayload, variantPayload, deskFixture } from "./fixture.js";
 const CASE = ${JSON.stringify(spec)};
 const SAMPLE = Object.assign(new Error("This preview runs on sample data; nothing is saved."), { userMessage: "This preview runs on sample data; nothing is saved." });
 export default class Preview extends Lens {
@@ -39,7 +38,7 @@ export default class Preview extends Lens {
     if (CASE.pin) this.pin = true;
     if (CASE.pkg) this.pkgSel = CASE.pkg;
     if (CASE.review) this.review = CASE.review;
-    this.detailNet = { ...M.fetchSucceeded(M.initialFetch(), J.decisionsOf(detailPayload()), now), jobId: CASE.decisionsFor ?? null };
+    if (CASE.expanded) this.expanded = new Set(CASE.expanded);
   }
   tick() {}
   openInTab() {}
@@ -53,7 +52,7 @@ export default class Preview extends Lens {
 
 // The copy's files: the view's modules (main.js as lens.js) with its own asset paths pointing at the
 // copy, its pictures, its manifest titled for the pane header, the sample board and the entry above.
-export async function previewFiles(name, root = resolve(here, '../..'), spec = { decisionsFor: 'wr-pr' }) {
+export async function previewFiles(name, root = resolve(here, '../..'), spec = {}) {
   const source = join(root, VIEW, 'sympp');
   const files = new Map();
   for (const file of await readdir(source)) {

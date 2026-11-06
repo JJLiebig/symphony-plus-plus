@@ -145,8 +145,22 @@ function buildJob(detail, now, guidance, runs) {
   const repo = request.repo_display || request.repo || "";
   const repoShort = shortRepo(repo);
   const area = Array.isArray(request.area_path) && request.area_path.length ? request.area_path : ["Unfiled", repoShort || "Unknown"];
-  const groups = new Map((detail.product_tree?.nodes ?? []).map((node) => [node.id, node.title || "Untitled"]));
+  const nodes = (detail.product_tree?.nodes ?? []).filter((node) => node?.id);
+  const groups = new Map(nodes.map((node) => [node.id, node.title || "Untitled"]));
   const packages = (detail.work_packages ?? []).map((slice) => buildPackage(slice, groups, now, runs)).sort((a, b) => a.seq - b.seq);
+  // Each package's top-level group, the architect's phase, as the web board strips them.
+  const parents = new Map(nodes.map((node) => [node.id, node.parent_id ?? null]));
+  const rootOf = (id) => {
+    for (let at = id, seen = 0; at && seen <= parents.size; seen += 1) {
+      const up = parents.get(at);
+      if (!up || !parents.has(up)) return parents.has(at) ? at : null;
+      at = up;
+    }
+    return null;
+  };
+  const sliceNode = new Map((detail.work_packages ?? []).map((slice) => [slice.work_package_id || slice.id, slice.product_tree_node_id ?? null]));
+  for (const pkg of packages) pkg.phase = rootOf(sliceNode.get(pkg.id));
+  const phases = nodes.filter((node) => !node.parent_id || !parents.has(node.parent_id)).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((node) => node.id);
   const titles = new Map(packages.map((pkg) => [pkg.id, pkg.title]));
   for (const pkg of packages) pkg.after = pkg.unmet.map((id) => titles.get(id) ?? id);
   const questions = (detail.clarification_questions ?? []).filter((q) => q.id).map((q) => ({
@@ -211,12 +225,28 @@ function buildJob(detail, now, guidance, runs) {
     state: settled ? "settled" : live.length > 0 || needs.length > 0 ? "live" : "resting",
     lastMoveAt: Math.max(createdAt, ...packages.map((pkg) => pkg.since ?? 0)),
     deployFailed: deployFailed(request.deployments),
+    phases,
+    // The board's outstanding asks, when it reports them; null from a board that predates them.
+    asks: asksOf(detail.asks),
   };
   job.bumps = bumpsOf(job, now);
   job.verdict = verdictOf(job, now);
   job.lane = laneOf(job, now);
   job.brief = report.brief ? report.brief.text : draftBrief(job, now);
   return job;
+}
+
+// Each ask answers through its own native route; anything but a plain path on this factory is dropped,
+// so an answer can only go back to where the board came from.
+function asksOf(list) {
+  if (!Array.isArray(list)) return null;
+  return list.filter((ask) => ask && (typeof ask.id === "string" || typeof ask.id === "number")).map((ask) => ({
+    id: String(ask.id),
+    kind: typeof ask.kind === "string" ? ask.kind : null,
+    text: typeof ask.text === "string" && ask.text.trim() ? ask.text.trim() : null,
+    pkgId: ask.work_package_id ?? null,
+    route: typeof ask.answer_route === "string" && /^\/[^/\\]/.test(ask.answer_route) ? ask.answer_route : null,
+  }));
 }
 
 function buildPackage(slice, groups, now, runs) {
