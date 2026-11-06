@@ -62,13 +62,70 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     end
   end
 
-  test "factory resolves by remote, refuses a different owner, and owns prepare, replay and cleanup", %{repo: repo} do
+  test "factory prefers shallow matches and refuses equally shallow checkouts" do
+    alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+    fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-ambiguity")
+    root = Path.join(fixture.root, "factory")
+    remote = "https://github.com/example/project.git"
+    previous = System.get_env("SYMPP_REPOS_ROOT")
+    System.put_env("SYMPP_REPOS_ROOT", root)
+    on_exit(fn -> restore_env("SYMPP_REPOS_ROOT", previous) end)
+
+    for group <- ["one", "two", ".worktrees/ignored"] do
+      path = Path.join([root, group, "project"])
+      File.mkdir_p!(Path.dirname(path))
+      {_, 0} = System.cmd("git", ["clone", fixture.origin, path], stderr_to_stdout: true)
+      {_, 0} = System.cmd("git", ["-C", path, "remote", "set-url", "origin", remote])
+    end
+
+    assert {:error, :ambiguous_factory_repo_checkout} = FactoryRepos.resolve("example/project")
+    shallow = Path.join(root, "project")
+    {_, 0} = System.cmd("git", ["clone", fixture.origin, shallow], stderr_to_stdout: true)
+    {_, 0} = System.cmd("git", ["-C", shallow, "remote", "set-url", "origin", remote])
+    assert {:ok, ^shallow} = FactoryRepos.resolve("git@github.com:EXAMPLE/project.git")
+  end
+
+  test "factory clones missing repositories beside owner siblings and serializes resolves" do
+    alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
+    fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-siblings")
+    root = Path.join(fixture.root, "factory")
+    sibling = Path.join([root, "group", "sibling"])
+    File.mkdir_p!(Path.dirname(sibling))
+    {_, 0} = System.cmd("git", ["clone", fixture.origin, sibling], stderr_to_stdout: true)
+    {_, 0} = System.cmd("git", ["-C", sibling, "remote", "set-url", "origin", "git@github.com:example/sibling.git"])
+    peer = Path.join(fixture.root, "ssh-peer.js")
+
+    File.write!(peer, """
+    const {spawnSync} = require("node:child_process");
+    const result = spawnSync("git", ["upload-pack", #{Jason.encode!(fixture.origin)}], {stdio: "inherit"});
+    process.exit(result.status ?? 1);
+    """)
+
+    node = System.find_executable("node")
+    command = Enum.map_join([node, peer], " ", fn value -> "'" <> String.replace(value, "'", "'\"'\"'") <> "'" end)
+    keys = ["SYMPP_REPOS_ROOT", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"]
+    previous = Map.new(keys, &{&1, System.get_env(&1)})
+    on_exit(fn -> Enum.each(previous, fn {key, value} -> restore_env(key, value) end) end)
+    System.put_env("SYMPP_REPOS_ROOT", root)
+    System.put_env("GIT_SSH_COMMAND", command)
+    System.put_env("GIT_SSH_VARIANT", "ssh")
+    expected = Path.join([root, "group", "missing"])
+    tasks = for _ <- 1..2, do: Task.async(fn -> FactoryRepos.resolve("git@github.com:example/missing.git") end)
+    assert Enum.map(tasks, &Task.await(&1, 15_000)) == [{:ok, expected}, {:ok, expected}]
+    refute File.exists?(Path.join(root, "missing"))
+  end
+
+  test "nested factory checkout is reused and owns prepare, replay and cleanup", %{repo: repo} do
     alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
     alias SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope
     alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle
 
     fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-factory-repos")
-    repos_root = Path.dirname(fixture.repo_root)
+    repos_root = Path.join(fixture.root, "factory")
+    nested = Path.join([repos_root, "group", Path.basename(fixture.repo_root)])
+    File.mkdir_p!(Path.dirname(nested))
+    {_, 0} = System.cmd("git", ["-C", fixture.repo_root, "worktree", "add", "--detach", nested, "beta"], stderr_to_stdout: true)
+    fixture = %{fixture | repo_root: nested}
     remote = "https://github.com/factory/#{Path.basename(fixture.repo_root)}.git"
     {_, 0} = System.cmd("git", ["-C", fixture.repo_root, "remote", "set-url", "origin", remote])
     previous = System.get_env("SYMPP_REPOS_ROOT")
@@ -113,6 +170,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     end
 
     {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", remote])
+    File.mkdir_p!(Path.join(repos_root, name))
     refute FactoryRepos.matches?(checkout, String.replace(remote, "/factory/", "/other/"))
     assert {:error, :target_repo_root_scope_mismatch} = FactoryRepos.resolve(String.replace(remote, "/factory/", "/other/"))
     assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("C:\\Code\\client")
@@ -126,6 +184,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     assert {:ok, prepared} = WorktreeLifecycle.prepare(repo, package.id, attrs)
     assert Path.dirname(prepared.worktree_path) == Path.join([repos_root, ".worktrees", Path.basename(checkout)])
     assert Path.basename(prepared.worktree_path) =~ "fix-login-"
+    # A later shallow duplicate must not redirect an already prepared package.
+    flat = Path.join(repos_root, name)
+    {_, 0} = System.cmd("git", ["clone", fixture.origin, flat], stderr_to_stdout: true)
+
+    for path <- [flat, checkout] do
+      {_, 0} = System.cmd("git", ["-C", path, "remote", "set-url", "origin", remote])
+    end
+
+    assert {:ok, ^flat} = FactoryRepos.resolve(remote)
+    assert {:ok, recorded} = WorkPackageRepository.get(repo, package.id)
+    assert {:ok, ^checkout} = WorktreeScope.target_repo_root_argument(nil, recorded, config)
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", fixture.origin])
     assert {:ok, replay} = WorktreeLifecycle.prepare(repo, package.id, attrs)
     assert replay.worktree_path == prepared.worktree_path
     assert {:ok, _} = WorktreeLifecycle.cleanup(repo, package.id, target_repo_root: checkout)

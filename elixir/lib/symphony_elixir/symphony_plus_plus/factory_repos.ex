@@ -16,10 +16,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
     with :ok <- OfflineSandbox.require_online(),
          {:ok, remote, name} <- remote(repo),
          root when is_binary(root) <- Config.factory_repos_root(),
-         {:ok, root} <- PathSafety.canonicalize(root),
-         {:ok, checkout} <- PathSafety.canonicalize(Path.join(root, name)),
-         true <- Path.dirname(checkout) == root do
-      :global.trans({{__MODULE__, checkout}, self()}, fn -> checkout(remote, checkout) end)
+         {:ok, root} <- PathSafety.canonicalize(root) do
+      :global.trans({{__MODULE__, root, identity(remote)}, self()}, fn ->
+        resolve_checkout(root, remote, name)
+      end)
     else
       _ -> {:error, :invalid_target_repo_root}
     end
@@ -35,6 +35,100 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
       _ -> false
     end
   end
+
+  # Search three levels below the root, stopping at checkouts.
+  defp resolve_checkout(root, remote, name) do
+    checkouts = discover(root, root, 3)
+    expected = identity(remote)
+
+    matches =
+      checkouts
+      |> Enum.filter(fn {_path, repo_identity} -> repo_identity == expected end)
+      |> Enum.group_by(fn {path, _identity} -> length(Path.split(Path.relative_to(path, root))) end)
+      |> Enum.min_by(fn {depth, _paths} -> depth end, fn -> nil end)
+
+    case matches do
+      nil ->
+        parent = clone_parent(checkouts, expected, root)
+
+        with {:ok, checkout} <- PathSafety.canonicalize(Path.join(parent, name)),
+             true <- inside_root?(checkout, root) do
+          checkout(remote, checkout)
+        else
+          _ -> {:error, :invalid_target_repo_root}
+        end
+
+      {_depth, [{path, _identity}]} ->
+        {:ok, path}
+
+      _ ->
+        {:error, :ambiguous_factory_repo_checkout}
+    end
+  end
+
+  defp discover(_directory, _root, 0), do: []
+
+  defp discover(directory, root, depth) do
+    case File.ls(directory) do
+      {:ok, names} ->
+        names
+        |> Enum.reject(&(&1 in [".git", ".worktrees"]))
+        |> Enum.flat_map(fn name -> discover_child(Path.join(directory, name), root, depth) end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp discover_child(path, root, depth) do
+    # Skip symlinks to avoid escapes and cycles.
+    with {:ok, %File.Stat{type: :directory}} <- File.lstat(path),
+         {:ok, path} <- PathSafety.canonicalize(path),
+         true <- inside_root?(path, root) do
+      if File.exists?(Path.join(path, ".git")) do
+        discovered_checkout(path)
+      else
+        discover(path, root, depth - 1)
+      end
+    else
+      _ -> []
+    end
+  end
+
+  defp discovered_checkout(path) do
+    case remote(RepoIdentity.local_git_origin_remote(path)) do
+      {:ok, origin, _name} -> [{path, identity(origin)}]
+      _ -> []
+    end
+  end
+
+  defp clone_parent(checkouts, expected, root) do
+    case github_owner(expected) do
+      nil ->
+        root
+
+      owner ->
+        checkouts
+        |> Enum.filter(fn {_path, repo_identity} -> github_owner(repo_identity) == owner end)
+        |> Enum.map(fn {path, _identity} -> Path.dirname(path) end)
+        |> Enum.uniq()
+        |> case do
+          [parent] -> parent
+          _ -> root
+        end
+    end
+  end
+
+  defp github_owner({:github, path}) do
+    case String.split(path, "/") do
+      [owner, _name] -> owner
+      _ -> nil
+    end
+  end
+
+  defp github_owner(_identity), do: nil
+
+  defp inside_root?(path, root), do: String.starts_with?(path, String.trim_trailing(root, "/") <> "/")
 
   defp checkout(remote, checkout) do
     if File.exists?(checkout) do

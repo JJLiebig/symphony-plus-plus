@@ -52,10 +52,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
 
   @spec target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) :: target_repo_root_result()
   def target_repo_root_argument(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
-    if FactoryRepos.enabled?() do
-      FactoryRepos.resolve(work_package.repo)
-    else
-      resolve_target_repo_root(explicit_root, work_package, config)
+    cond do
+      FactoryRepos.enabled?() and is_binary(work_package.worktree_path) ->
+        resolve_target_repo_root(nil, work_package, config)
+
+      FactoryRepos.enabled?() ->
+        FactoryRepos.resolve(work_package.repo)
+
+      true ->
+        resolve_target_repo_root(explicit_root, work_package, config)
     end
   end
 
@@ -303,7 +308,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   end
 
   defp recorded_worktree_target_repo_root_candidates(%WorkPackage{} = work_package, %Config{} = config, worktree_path) do
-    [live_worktree_target_repo_root(worktree_path) | target_repo_root_candidates(work_package, config)]
+    recorded = [work_package.worktree_target_repo_root, live_worktree_target_repo_root(worktree_path)]
+
+    (recorded ++ target_repo_root_candidates(work_package, config))
     |> Enum.filter(&is_binary/1)
     |> Enum.flat_map(fn target_repo_root ->
       with {:ok, target_repo_root} <- PathSafety.canonicalize(target_repo_root),
