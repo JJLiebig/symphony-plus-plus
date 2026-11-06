@@ -81,10 +81,15 @@ function update() {
   const env = { ...process.env };
   for (const key of ['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE', 'SYMPP_BACKEND_PORT', 'SYMPP_LOG_DIR', 'SYMPP_OPEN_DASHBOARD']) delete env[key];
   Object.assign(env, saved.env, saved.setup.homes, saved.setup.remote);
+  const failures = [];
   const step = (label, command, args, options = {}) => {
     const result = spawnSync(command, args, { env, encoding: 'utf8', windowsHide: true, ...options });
     const skillCheckFailed = label === 'skill' && /Failed to check skills|No installed skills found|No global skills tracked|No project skills|cannot be (?:checked|updated) automatically|Skipped/i.test((result.stdout || '') + (result.stderr || ''));
-    if (result.error || result.status !== 0 || skillCheckFailed) throw new Error(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp -g, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Run the factory installer over SSH to inspect the build or service error, then retry sympp update.'}`);
+    if (result.error || result.status !== 0 || skillCheckFailed) {
+      process.stderr.write((result.stdout || '') + (result.stderr || ''));
+      failures.push(`${label} failed. ${label === 'skill' ? 'Run npx skills update sympp -g, then retry sympp update.' : label === 'setup' ? 'Run sympp setup again with your original server and host selection.' : 'Run the factory installer over SSH to inspect the build or service error, then retry sympp update.'}`);
+      return;
+    }
     process.stdout.write(`${label}: updated\n`);
   };
   if (process.platform === 'win32') step('skill', 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '& npx.cmd skills update sympp -g; exit $LASTEXITCODE'], { cwd: os.homedir() });
@@ -98,6 +103,7 @@ function update() {
     if (!/^[a-zA-Z0-9_-]+$/.test(service)) throw new Error('Invalid remote service name. Run sympp setup again.');
     step('factory', 'ssh', ['-o', 'BatchMode=yes', saved.setup.server, `bash -s -- ${quote(service)}`], { input: script });
   }
+  if (failures.length) throw new Error(failures.join(' '));
 }
 if (require.main === module) {
   Promise.resolve().then(() => process.argv[2] === "board" ? board() : process.argv[2] === "update" ? update() : process.argv[2] === "status" ? status() : require("./setup-sympp.js").main(process.argv.slice(2)))

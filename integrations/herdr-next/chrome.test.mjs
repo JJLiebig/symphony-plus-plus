@@ -178,6 +178,31 @@ test('a desk without desk-topics gets the rest of the chrome, and removing it le
   assert.equal((await readdir(join(home, 'mods'))).includes('desk-topics'), false);
 });
 
+test('original and cached desk-agents chrome 3 upgrade without losing personal edits', async t => {
+  for (const cached of [false, true]) {
+    const home = await deskHome(t);
+    const file = join(home, 'mods', 'desk-agents', 'main.js');
+    const plain = await readFile(file, 'utf8') + '// a later personal edit\n';
+    const chrome3 = deskAgents.previous.find(p => p.mark === 'sympp chrome 3');
+    let old = applyPatch(plain, chrome3);
+    if (cached) {
+      const block = await readFile(join(here, 'chrome', 'fixtures', 'desk-agents-cached-block.txt'), 'utf8');
+      old = old.replace(chrome3.edits[0].replace, block + chrome3.edits[0].find)
+        .replace('    const all = terminals();\n', '    const all = terminals();\n    symppBegin(all, t);\n');
+    }
+    await writeFile(file, old);
+    const result = install(home, ...ENDPOINT, '--chrome');
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(await readFile(file, 'utf8'), applyPatch(plain, deskAgents));
+    assert.equal(await readFile(join(home, 'data', 'sympp-chrome', 'desk-agents.main.js'), 'utf8'), plain);
+    const again = await snapshot(home);
+    assert.equal(install(home, ...ENDPOINT, '--chrome').status, 0);
+    assert.deepEqual(await snapshot(home), again);
+    assert.equal(install(home, '--remove-chrome').status, 0);
+    assert.equal(await readFile(file, 'utf8'), plain);
+  }
+});
+
 test('an older desk-topics chrome upgrades in place and keeps later edits', async t => {
   const header = '    return h_flex().id(`topic-${id ?? "other"}`).h(26).flex_none().mt(8).px(8).gap(4).items_center().rounded(5)';
   for (const older of deskTopics.previous.filter((p) => p.mark.startsWith('sympp'))) {
