@@ -746,6 +746,50 @@ test('worker plan updates are atomic and native evidence history remains complet
   }
 });
 
+deliveryTest('worker CI transitions reach the native dashboard with stable per-head change times', async ({ delivery: { factory, provider } }) => {
+  const architect = await factory.client();
+  const request = await architect.request('Worker CI reporting');
+  const [wp] = (await architect.call('slice_work_request', { work_packages: [contract('CI reporting', {
+    kind: 'mcp', branch_pattern: 'feature/authority',
+  })] })).work_package_ids;
+  await architect.call('dispatch_work_package', { work_package_id: wp });
+  const client = await worker(factory, wp);
+  await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('a') });
+  await client.call('attach_pr', { url: prUrl(303), head_sha: head('a') });
+  const signal = async () => {
+    const dashboard = await architect.inspect('/api/v1/sympp/operator/dashboard/hydrated');
+    const detail = dashboard.work_request_details.find((item: any) => item.work_request.id === request);
+    return detail.work_packages.find((item: any) => item.id === wp).pr_signal;
+  };
+  let previous: any;
+  for (const [index, status] of ['pending', 'passing', 'pending', 'failing', 'pending', 'passing'].entries()) {
+    const checks = status === 'pending'
+      ? [{ status: 'IN_PROGRESS', conclusion: null }]
+      : [{ status: 'COMPLETED', conclusion: status === 'passing' ? 'SUCCESS' : 'FAILURE' }];
+    provider.set(303, pr(303, head('a'), { headRefName: 'feature/authority', statusCheckRollup: checks }));
+    await client.call('sync_pr', { idempotency_key: `ci-transition-${index}` });
+    const current = await signal();
+    expect(current.checks.status).toBe(status);
+    expect(Number.isFinite(Date.parse(current.checks.changed_at))).toBe(true);
+    if (previous) {
+      expect(current.checks.changed_at).not.toBe(previous.checks.changed_at);
+      expect(current.head_changed_at).toBe(previous.head_changed_at);
+    }
+    await client.call('sync_pr', { idempotency_key: `ci-repeat-${index}` });
+    expect((await signal()).checks).toEqual(current.checks);
+    previous = current;
+  }
+  // A review push starts a new CI run even when its status stays passing.
+  await client.call('attach_branch', { branch: 'feature/authority', head_sha: head('b') });
+  provider.set(303, pr(303, head('b'), { headRefName: 'feature/authority' }));
+  await client.call('sync_pr', { idempotency_key: 'ci-review-push' });
+  const pushed = await signal();
+  expect(pushed.head_sha).toBe(head('b'));
+  expect(pushed.checks.status).toBe('passing');
+  expect(pushed.checks.changed_at).not.toBe(previous.checks.changed_at);
+  expect(pushed.head_changed_at).not.toBe(previous.head_changed_at);
+});
+
 deliveryTest('worker provider evidence resists spoofing mismatch failure and replay while preserving ready state', async ({ delivery: { factory, provider } }) => {
   const architect = await factory.client();
   const request = await architect.request('Worker provider evidence');
