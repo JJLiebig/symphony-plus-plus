@@ -60,7 +60,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
     else
       {:tool_error, reason} when reason in ["target_repo_root_scope_mismatch", "target_repo_root_required"] ->
         details = %{
-          "expected_repo" => work_package.repo,
+          "expected_repo" => public_repo_label(work_package.repo),
           "target_repo_root" => explicit_root || config.repo_root,
           "recovery" => "Pass target_repo_root pointing to a checkout whose origin matches expected_repo. An upstream remote alone is insufficient: preparation fetches the base from origin."
         }
@@ -70,6 +70,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
       error ->
         error
     end
+  end
+
+  defp public_repo_label(repo) do
+    case URI.parse(repo) do
+      %URI{host: host} = uri when is_binary(host) ->
+        URI.to_string(%{uri | userinfo: nil, query: nil, fragment: nil})
+
+      _uri ->
+        String.replace(repo, ~r/\A[^@\s]+@([^:]+:)/, "\\1")
+    end
+  rescue
+    _error in [URI.Error, ArgumentError] -> nil
   end
 
   @spec target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) :: target_repo_root_result()

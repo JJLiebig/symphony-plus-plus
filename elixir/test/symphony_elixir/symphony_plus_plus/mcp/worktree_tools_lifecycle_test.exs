@@ -28,12 +28,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
       assert details["recovery"] =~ "origin"
     end
 
-    secret = "ghp_" <> String.duplicate("x", 32)
-    historical_package = %{package | repo: "https://#{secret}@github.com/owner/project.git"}
-    result = WorktreeScope.prepare_target_repo_root(fixture.repo_root, historical_package, config)
-    assert {:tool_error, _, redacted} = result
-    refute Jason.encode!(redacted) =~ secret
-    assert redacted["expected_repo"] =~ "owner/project"
+    for {secret, remote} <- [
+          {"ghp_" <> String.duplicate("x", 32), "https://%s@github.com/owner/project.git"},
+          {"unrecognized-password", "https://oauth2:%s@gitlab.com/owner/project.git"},
+          {"private-user", "https://%s@example.org/owner/project.git?access_token=private-query"},
+          {"private-ssh-user", "%s@example.org:owner/project.git"}
+        ] do
+      historical_package = %{package | repo: String.replace(remote, "%s", secret)}
+      result = WorktreeScope.prepare_target_repo_root(fixture.repo_root, historical_package, config)
+      assert {:tool_error, _, redacted} = result
+      refute Jason.encode!(redacted) =~ secret
+      refute Jason.encode!(redacted) =~ "private-query"
+      assert redacted["expected_repo"] =~ "owner/project"
+    end
 
     TestSupport.git_output!(fixture.repo_root, ["remote", "set-url", "origin", "https://github.com/owner/project.git"])
     assert {:ok, root} = WorktreeScope.prepare_target_repo_root(nil, package, config)
