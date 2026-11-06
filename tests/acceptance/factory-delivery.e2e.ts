@@ -432,6 +432,12 @@ test('architect integration holds gate a ready PR without reopening work or chan
   await outsider.request('Unrelated authority');
   expect((await outsider.rpc('tools/call', { name: 'append_progress', arguments: hold })).error).toBeTruthy();
   expect((await row(architect, request, wp)).merge_eligibility.eligible).toBe(true);
+  for (const blocker_id of ['', '   ', 42]) {
+    await architect.reject('append_progress', { ...hold, payload: { ...hold.payload, blocker_id } }, 'invalid_blocker_id');
+  }
+  await architect.reject('append_progress', {
+    ...hold, payload: { ...hold.payload, head_sha: head('a'), dependency_inputs: [] },
+  }, 'already_ready');
   const declared = await architect.call('append_progress', hold);
   expect((await architect.call('append_progress', hold)).progress_event.id).toBe(declared.progress_event.id);
   const held = await row(architect, request, wp);

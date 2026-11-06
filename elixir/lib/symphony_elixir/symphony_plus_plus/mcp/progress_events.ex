@@ -244,9 +244,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
          %WorkPackage{status: "ready_for_merge"},
          %Session{assignment: %{grant_role: "architect"}},
          "append_progress",
-         %{"payload" => %{"type" => "blocker", "source_tool" => "report_blocker", "active" => true}}
-       ),
-       do: :ok
+         %{"payload" => %{"type" => "blocker", "source_tool" => "report_blocker", "active" => true} = payload}
+       ) do
+    blocker_id = Map.get(payload, "blocker_id")
+
+    cond do
+      Map.has_key?(payload, "dependency_inputs") -> {:tool_error, "already_ready"}
+      is_nil(blocker_id) -> :ok
+      is_binary(blocker_id) and String.trim(blocker_id) != "" -> :ok
+      true -> {:tool_error, "invalid_blocker_id"}
+    end
+  end
 
   defp reject_ready_work_package(%WorkPackage{status: "ready_for_merge"}, _session, _tool, _attrs) do
     {:tool_error, "already_ready"}
