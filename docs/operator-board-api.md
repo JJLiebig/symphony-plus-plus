@@ -141,6 +141,7 @@ response. Existing fields retain their meaning. Read each entry of
 | `board_state.track` | `pr` when a PR exists or the package contract requires merging; otherwise `no_pr`. |
 | `board_state.outcome` | Canonical recorded delivery outcome, when present. |
 | `board_state.delivered` | Whether the package merged or completed without a PR. |
+| `repo_signal.has_ci` | `true` when the factory checkout has a `.github/workflows/*.yml` or `*.yaml` file; `false` without one. Omitted when no checkout can be resolved. |
 | `pr_signal.created_at` | GitHub PR creation time, when available. |
 | `pr_signal.updated_at` | GitHub PR update time; this is not a stage-change time. |
 | `pr_signal.observed_at` | Stored provider snapshot observation time, when available. |
@@ -151,6 +152,11 @@ response. Existing fields retain their meaning. Read each entry of
 | `review_signal.provider_status` | Review Suite's raw stage; `status` keeps its existing normalized meaning. |
 | `review_signal.steps` | Optional ordered ladder of `{index, name, state}` entries (`done`, `current`, or `pending`). |
 | `review_signal.round_history` | Optional oldest-first list of the latest 20 provider rounds. |
+
+Repository signals use only existing local checkouts under the factory repos root,
+with the same identity and ambiguity rules as checkout resolution. They never
+clone or call GitHub. Results (including unresolved checkouts) are cached per
+repository in a shared repos-root inventory for 30 seconds.
 
 Review progress remains in `review_signal.step`, `current`, `total`, `round`,
 `evidence_id`, `reviewed_head`, `started_at`, `round_started_at`, `observed_at` and
