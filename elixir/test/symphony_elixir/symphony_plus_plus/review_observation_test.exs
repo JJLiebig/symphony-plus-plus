@@ -5,6 +5,52 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals
 
+  test "a changed reviewed head needs caller inspection without failing or approving review", %{test: test} do
+    %{codex_home: codex_home, plugin: plugin, package: package} = fixture(test)
+    validation = %{full_suite: "passed", ci: "passed", review_green: "passed"}
+
+    for {provider_status, expected} <- [
+          {"head_changed_after_review", "inspection_needed"},
+          {"failed", "failed"},
+          {"invalidated", "failed"},
+          {"fix-pending", "failed"},
+          {"done", "passed"}
+        ] do
+      runner = fn
+        _, ["plugin", "list", "--json"], _, _ -> {:ok, plugin_json(plugin)}
+        _, [_script, "--status" | _args], _, _ ->
+          {:ok,
+           Jason.encode!(%{
+             review: "rvw_descendant",
+             status: provider_status,
+             done: false,
+             reviewed_head: "reviewed",
+             current_head: "descendant",
+             validation: validation,
+             next_action: "validation"
+           })}
+      end
+
+      observation = ReviewObservation.observe([package], test_opts(runner, codex_home))[package.id]
+      signal = Signals.review(package, %{}, observation)
+      assert signal.status == expected
+      assert signal.reviewed_head == "reviewed"
+      assert signal.current_head == "descendant"
+      assert signal.validation == Map.new(validation, fn {key, value} -> {Atom.to_string(key), value} end)
+
+      if expected == "inspection_needed" do
+        assert signal.observation_state == "stale"
+        qualified = %{package | status: "ready_for_merge"}
+        eligibility = %{eligible: true, reason_codes: [], next_action: "verify_native_checks_and_review_then_merge"}
+        summary = %{review_signal: signal, merge_eligibility: eligibility}
+        activity = Signals.activity(qualified, summary, %{key: "merge_ready"}, [], [])
+        assert activity["next_actor"] == "architect"
+        assert activity["next_action"] == "inspect_changed_since_review"
+        assert Signals.board_state(qualified, summary, nil).stage == "merge"
+      end
+    end
+  end
+
   test "skills bundle in the user home supplies review status when no marketplace plugin is enabled", %{test: test} do
     %{codex_home: codex_home, plugin: plugin, package: package} = fixture(test)
     script = portable_script(codex_home)

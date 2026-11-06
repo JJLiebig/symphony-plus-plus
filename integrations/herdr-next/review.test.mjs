@@ -106,3 +106,12 @@ test('recorded moments read as clock times, with the date once they are not toda
   assert.match(Rv.clock(NOW - 40 * MIN, NOW), /^\d\d:\d\d$/);
   assert.match(Rv.clock(NOW - 3 * 24 * 60 * MIN, NOW), /^[A-Z][a-z]{2} \d{1,2} \d\d:\d\d$/);
 });
+
+test('a reviewed descendant awaits caller inspection even when the package is at merge', () => {
+  const pkg = reviewing({ status: 'inspection_needed', provider_status: 'head_changed_after_review', observation_state: 'stale' }, { stage: 'merge', track: 'pr' });
+  const d = Rv.reviewDetail(pkg, NOW);
+  assert.deepEqual(d.stage, { code: 'head_changed_after_review', text: 'Head changed since review; caller inspection needed', tone: 'waiting' });
+  assert.equal(d.observation, 'stale');
+  assert.equal(pkg.stage, 'merge');
+  assert.equal(Rv.stageOf({ status: 'failed' }).tone, 'bad');
+});

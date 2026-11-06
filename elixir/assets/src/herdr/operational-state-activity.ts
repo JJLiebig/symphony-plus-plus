@@ -15,6 +15,7 @@ const WAITING_LABELS: Record<string, string> = {
   dependency_inputs_stale: "Requalification on current inputs",
   dependency_not_delivered: "Prerequisite delivery",
   review_in_progress: "Review in progress",
+  review_head_changed: "Changes since review need inspection",
   runtime_stale: "Fresh runtime observation",
   unmet_dependencies: "Prerequisite work",
   validation_pending: "Checks",
@@ -27,6 +28,7 @@ const ACTION_LABELS: Record<string, string> = {
   finish_worker_qualification: "finish qualification",
   fix_findings: "fix review findings",
   inspect_runtime: "inspect runtime",
+  inspect_changed_since_review: "inspect and validate changes since review",
   resolve_blocker: "resolve blocker",
   resolve_delivery_order_violation: "resolve delivery order",
   resolve_dependencies: "resolve dependencies",
@@ -130,9 +132,11 @@ export function workActivityFacts(activity?: WorkPackageActivitySignal | null, r
 function reviewFacts(review?: WorkPackageReviewSignal | null) {
   if (!review) return [];
   return [
-    { label: "Review status", value: formatStatus(review.provider_status || review.status) },
+    { label: "Review status", value: review.status === "inspection_needed" ? "Head changed since review; caller inspection needed" : formatStatus(review.provider_status || review.status) },
     { label: "Review observation", value: formatStatus(review.observation_state || "unknown") },
     { label: "Review next", value: review.next_action ? formatStatus(review.next_action) : null },
+    { label: "Reviewed head", value: review.reviewed_head },
+    { label: "Current head", value: review.current_head },
     { label: "Review observed", value: review.observed_at },
   ];
 }

@@ -455,3 +455,23 @@ Focusing sends no input and does not register a location, refresh its timestamp,
 write ledger/audit state, or publish a dashboard invalidation. The offline
 sandbox returns HTTP 403 before any ledger read or Herdr probe. Authorization
 failures retain the operator API's HTTP 401 response.
+
+## Review descendants
+
+A Review Suite `head_changed_after_review` observation becomes
+`review_signal.status: "inspection_needed"`, with the original provider status
+and stale observation preserved. It means the reviewed head changed and the caller
+must inspect the delta; it is neither a failed review nor exact-head approval.
+The signal retains `reviewed_head`, `current_head` and the provider's validation
+summary when supplied. The web board and Herdr show the inspection needed state
+even when a qualified package is already awaiting integration.
+
+For an eligible no-repeat descendant, the architect records acceptance of the
+reviewed/current head pair, inspected delta and validation evidence in the package
+handoff. Follow the installed Review Suite recovery procedure to decide whether
+a repeat is needed; file extensions alone do not establish eligibility. This
+acceptance does not rewrite the native verdict or fabricate a passed exact-head
+review: the board continues to show inspection needed while the provider reports
+it. Merge eligibility remains a separate canonical gate, including current input
+and qualification requirements. Behavioral changes retain their required review
+and validation.
