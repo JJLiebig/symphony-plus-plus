@@ -392,7 +392,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.GuidanceTools do
   end
 
   defp append_architect_blocker_resolution(repo, %Session{} = session, work_package_id, attrs) do
-    with {:ok, event} <-
+    with {:ok, work_package} <- WorkPackageRepository.get(repo, work_package_id),
+         :ok <- reject_ready_blocker_provenance(work_package, attrs),
+         {:ok, event} <-
            PlanningRepository.append_audit_progress_event_for_work_package(
              repo,
              session.assignment,
@@ -403,6 +405,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.GuidanceTools do
       {:ok, ToolResult.tool_result(%{"progress_event" => ProgressEvents.payload(event)})}
     end
   end
+
+  defp reject_ready_blocker_provenance(%WorkPackage{status: "ready_for_merge"}, %{"payload" => payload})
+       when is_map_key(payload, "dependency_inputs"),
+       do: {:tool_error, "already_ready"}
+
+  defp reject_ready_blocker_provenance(_work_package, _attrs), do: :ok
 
   defp run_architect_transaction(repo, fun) do
     case repo.transaction(fn -> rollback_architect_transaction_result(repo, fun.()) end) do

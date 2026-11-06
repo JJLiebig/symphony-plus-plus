@@ -49,7 +49,11 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorkerToolsReadyGateTest do
             "method" => "tools/call",
             "params" => %{
               "name" => "append_progress",
-              "arguments" => %{"summary" => "Must remain rejected", "idempotency_key" => "ready-guard-bounded"}
+              "arguments" => %{
+                "summary" => "Worker cannot declare a ready integration hold",
+                "idempotency_key" => "ready-guard-bounded",
+                "payload" => %{"type" => "blocker", "source_tool" => "report_blocker", "active" => true, "blocker_id" => "integration"}
+              }
             }
           },
           repo: repo,

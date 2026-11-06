@@ -180,7 +180,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
   defp append_new_or_replay(repo, %Session{} = session, work_package_id, attrs, idempotency_key, tool) do
     transaction_fun = fn ->
       with :ok <- PlanningService.require_valid_assignment(repo, session.assignment),
-           :ok <- reject_ready_evidence_mutation(repo, session, work_package_id, tool),
+           :ok <- reject_ready_evidence_mutation(repo, session, work_package_id, tool, attrs),
            :ok <- DependencyInputs.validate_progress(repo, work_package_id, attrs) do
         PlanningService.append_authenticated_progress_event_for_work_package(
           repo,
@@ -225,20 +225,42 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ProgressEvents do
   @spec reject_ready_evidence_mutation(repo(), Session.t(), String.t(), String.t()) ::
           :ok | {:tool_error, term()} | {:error, term()}
   def reject_ready_evidence_mutation(repo, %Session{} = session, work_package_id, tool) when tool in @ready_evidence_tools do
-    with :ok <- lock_work_package(repo, work_package_id),
-         {:ok, work_package} <- WorkPackageRepository.get(repo, work_package_id),
-         :ok <- reject_terminal_architect_target(session.assignment, work_package) do
-      reject_ready_work_package(work_package)
-    end
+    reject_ready_evidence_mutation(repo, session, work_package_id, tool, %{})
   end
 
   def reject_ready_evidence_mutation(_repo, %Session{}, _work_package_id, _tool), do: :ok
 
-  defp reject_ready_work_package(%WorkPackage{status: "ready_for_merge"}) do
+  defp reject_ready_evidence_mutation(repo, session, work_package_id, tool, attrs) when tool in @ready_evidence_tools do
+    with :ok <- lock_work_package(repo, work_package_id),
+         {:ok, work_package} <- WorkPackageRepository.get(repo, work_package_id),
+         :ok <- reject_terminal_architect_target(session.assignment, work_package) do
+      reject_ready_work_package(work_package, session, tool, attrs)
+    end
+  end
+
+  defp reject_ready_evidence_mutation(_repo, _session, _work_package_id, _tool, _attrs), do: :ok
+
+  defp reject_ready_work_package(
+         %WorkPackage{status: "ready_for_merge"},
+         %Session{assignment: %{grant_role: "architect"}},
+         "append_progress",
+         %{"payload" => %{"type" => "blocker", "source_tool" => "report_blocker", "active" => true} = payload}
+       ) do
+    blocker_id = Map.get(payload, "blocker_id")
+
+    cond do
+      Map.has_key?(payload, "dependency_inputs") -> {:tool_error, "already_ready"}
+      is_nil(blocker_id) -> :ok
+      is_binary(blocker_id) and String.trim(blocker_id) != "" -> :ok
+      true -> {:tool_error, "invalid_blocker_id"}
+    end
+  end
+
+  defp reject_ready_work_package(%WorkPackage{status: "ready_for_merge"}, _session, _tool, _attrs) do
     {:tool_error, "already_ready"}
   end
 
-  defp reject_ready_work_package(%WorkPackage{}), do: :ok
+  defp reject_ready_work_package(%WorkPackage{}, _session, _tool, _attrs), do: :ok
 
   defp reject_terminal_architect_target(
          %{grant_role: "architect"},
