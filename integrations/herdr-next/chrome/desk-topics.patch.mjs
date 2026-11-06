@@ -195,10 +195,11 @@ export default {
 `,
       replace: `// sympp chrome 4: each topic header shows the sympp mark for that topic's sympp chief, from the chiefs the
 // sympp panel shares per topic (shared("sympp.chiefs"), terminal only while confirmed running). Click
-// peeks at a running chief; shift-click switches to its space and tab. Right-click adds it to a
-// composition. Greyed while the topic has no chief, dimmed while its chief isn't running; click then
-// opens sympp's Start chief dialog. A topic's chief spaces aren't listed: the mark leads there, a topic
-// holding one keeps its header, and the header is highlighted while one is shown.
+// peeks at a running chief; shift-click switches to its space and tab. Right-click opens sympp's chief
+// menu. Greyed while the topic has no chief, dimmed while its chief isn't running; click then opens
+// sympp's Start chief dialog. A topic's chief spaces aren't listed: the mark leads there, a topic
+// holding one keeps its header, and the header is highlighted while one is shown. With the sidebar
+// collapsed, a running chief's mark takes the place of its topic's divider.
 import { div as symppDiv, image as symppImage } from "gpui-kit";
 import { h_flex as symppRow } from "gpui-base";
 import { shared as symppShared, terminals as symppTerminals, panes as symppPanes, run as symppRun, openOverlay as symppOverlay, theme as symppTheme, spaces as symppSpaces, layout as symppLayout } from "herdr";
@@ -234,14 +235,15 @@ function symppInside(topic) {
   const shown = symppSpaces().find((s) => s.active);
   return Boolean(topic && shown && symppChiefSpaces().get(shown.id) === topic && symppDesk(symppLayout()));
 }
-function symppChief(topics, topic, name, t, workspace) {
+function symppChief(topics, topic, name, t, workspace, compact = false) {
   if (!topic) return [];
   const chiefs = symppShared("sympp.chiefs")?.[topic] ?? [];
   const chief = chiefs.find((c) => c.terminal) ?? chiefs[0];
   const term = chief?.terminal && symppTerminals().find((k) => k.address === chief.terminal && k.state === "live");
+  if (compact && !term) return [];
   const label = !chief ? \`\${name} has no chief yet\` : term ? \`\${chief.domain} chief\` : \`\${chief.domain} chief isn't running\`;
   const stop = (_e, cx) => { topics.clearDrag(); cx.stop_propagation(); };
-  return [symppDiv().flex_1(), symppRow().id(\`sympp-chief-\${topic}\`).flex_none().h(20).px(3).gap(3).items_center().rounded(4)
+  return [...(compact ? [] : [symppDiv().flex_1()]), symppRow().id(\`sympp-chief-\${topic}\`).flex_none().h(20).px(3).gap(3).items_center().rounded(4)
     .tooltip(label).accessibility_label(label)
     .when(!term, (el) => el.opacity(chief ? 0.55 : 0.3))
     .cursor_pointer().hover((s) => s.bg(t.hover))
@@ -249,7 +251,7 @@ function symppChief(topics, topic, name, t, workspace) {
     .on_mouse_up("left", (_e, cx) => cx.stop_propagation())
     .on_mouse_down("right", (e, cx) => {
       stop(e, cx);
-      if (term) symppOverlay({ mod: "desk-compositions", kind: "popup", width: 524, frame: "none", props: { role: "context-menu", tab: "agent", target: { terminal: term.address } } });
+      symppOverlay({ mod: "sympp", kind: "popup", width: 240, frame: "none", props: { role: "chief-menu", topic, name, terminal: term?.address ?? null } });
     })
     .on_click((e, cx) => {
       cx.stop_propagation();
@@ -282,6 +284,15 @@ export default class Topics extends Spaces {
 `,
       replace: `        .when(Boolean(group?.folded), (el) => el.child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)))
         .children(symppChief(this, group ? id : null, group?.name, t, workspace)));
+`,
+    },
+    {
+      find: `      .when(collapsed, (el) => el.justify_center().child(div().w(14).h(1).bg(t.border)))
+`,
+      replace: `      .when(collapsed, (el) => {
+        const chief = symppChief(this, group ? id : null, group?.name, t, workspace, true);
+        return el.justify_center().children(chief.length ? chief : [div().w(14).h(1).bg(t.border)]);
+      })
 `,
     },
     {

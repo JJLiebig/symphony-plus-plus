@@ -6,9 +6,9 @@
 // the topic's sympp mark leads there. A failure keeps the dialog and its text and says what failed.
 
 import { div, svg, image } from "gpui-kit";
-import { h_flex, v_flex, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, knownAgents, machines, spaces, shared, setShared, exec, hc, home, layout, run, settings } from "herdr";
-import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic, isChiefSpace, CHIEF_SPACES } from "./chief.js";
+import { h_flex, v_flex, InputState, Input, Button } from "gpui-base";
+import { theme, props, closeOverlay, openOverlay, knownAgents, machines, spaces, terminals, panes, shared, setShared, exec, hc, home, layout, run, settings } from "herdr";
+import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic, isChiefSpace, CHIEF_SPACES, chiefMenu } from "./chief.js";
 
 const W = 560;
 const H = 46;
@@ -251,5 +251,61 @@ export class ChiefStart {
       .when(Boolean(box), (el) => el.child(box))
       .when(Boolean(error), (el) => el.child(error))
       .when(Boolean(list), (el) => el.child(list));
+  }
+}
+
+const MENU_ICONS = { space: "terminal", composition: "layers", start: "plus" };
+
+// The topic mark's right-click menu (props.terminal: its running chief), drawn like the desk's context
+// menus. Add to composition opens the desk's own composition menu for the chief, as the mark's
+// right-click did before.
+export class ChiefMenu {
+  constructor(own, cx) {
+    this.topic = own.topic;
+    this.name = typeof own.name === "string" && own.name ? own.name : "Topic";
+    this.terminal = typeof own.terminal === "string" && own.terminal ? own.terminal : null;
+    this.at = 0;
+    this.handle = cx.focus_handle();
+    this.handle.focus();
+  }
+
+  items() {
+    return chiefMenu(this.terminal, terminals(), panes());
+  }
+
+  choose(item) {
+    if (!item) return;
+    closeOverlay(props().overlay);
+    if (item.action === "space") {
+      if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });
+      run("pane.focus", { terminal: this.terminal });
+    } else if (item.action === "composition") {
+      openOverlay({ mod: "desk-compositions", kind: "popup", width: 524, frame: "none", props: { role: "context-menu", tab: "agent", target: { terminal: this.terminal } } });
+    } else {
+      openOverlay({ mod: "sympp", kind: "window", frame: "none", width: 1, height: 1, props: { role: "chief", topic: this.topic, name: this.name } });
+    }
+  }
+
+  render() {
+    const t = theme(), list = this.items();
+    this.at = Math.min(this.at, list.length - 1);
+    return v_flex().id("chief-menu").track_focus(this.handle).w_full().min_h(0).p(5).rounded(8).border(1).border_color(t.border)
+      .bg(t.popover).text_size(12.8).text_color(t.foreground).role("menu")
+      .on_key_down((e, cx) => {
+        if (e.key === "down") this.at = (this.at + 1) % list.length;
+        else if (e.key === "up") this.at = (this.at + list.length - 1) % list.length;
+        else if (e.key === "enter") this.choose(list[this.at]);
+        else if (e.key === "escape") closeOverlay(props().overlay);
+        else return;
+        cx.stop_propagation();
+        cx.notify();
+      })
+      .children(list.map((item, i) => v_flex().id(`chief-menu-${item.action}-hover`)
+        .on_hover((on, cx) => { if (on && this.at !== i) { this.at = i; cx.notify(); } })
+        .child(Button.new(`chief-menu-${item.action}`).flex().w_full().h(31).px(8).gap(9).rounded(6).items_center().role("menu_item")
+          .bg(i === this.at ? t.selected : t.popover).hover((s) => s.bg(t.hover)).cursor_pointer()
+          .on_click((_e, cx) => { cx.stop_propagation(); this.choose(item); })
+          .child(svg(`mods/workspace-chrome/${MENU_ICONS[item.action]}.svg`).size(14).flex_none().text_color(t.muted))
+          .child(div().flex_1().child(item.label)))));
   }
 }

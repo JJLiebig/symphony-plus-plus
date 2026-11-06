@@ -79,3 +79,14 @@ export function intoTopic(deskTopics, topic, space) {
   group.folded = false;
   return next;
 }
+
+// The topic mark's right-click menu, only what applies: a running chief's space (when it has a pane
+// there) and adding it to a composition, then starting a new chief, whose registration replaces it.
+export function chiefMenu(terminal, terminalList, paneList) {
+  const live = Boolean(terminal) && terminalList.some((k) => k.address === terminal && k.state === "live");
+  return [
+    ...(live && paneList.some((p) => p.terminal === terminal) ? [{ label: "Go to chief space", action: "space" }] : []),
+    ...(live ? [{ label: "Add to composition", action: "composition" }] : []),
+    { label: "Start new chief", action: "start" },
+  ];
+}

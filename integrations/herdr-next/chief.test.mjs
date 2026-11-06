@@ -2,7 +2,7 @@
 // what it is told.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chiefArgv, chiefBrief, chiefFolders, factoryMachine, intoTopic, isChiefSpace } from './mods/sympp/chief.js';
+import { chiefArgv, chiefBrief, chiefFolders, factoryMachine, intoTopic, isChiefSpace, chiefMenu } from './mods/sympp/chief.js';
 
 test('the machine defaults to the factory: this computer for loopback, else the machine its address names or reaches', async () => {
   const machines = [
@@ -60,4 +60,13 @@ test('the chief is told its topic is its domain, then the person\'s words, in ea
   assert.equal(chiefBrief('Kraken', ' '), chiefBrief('Kraken'));
   assert.deepEqual(chiefArgv({ key: 'codex', run: ['codex'] }, 'go'), ['codex', 'go']);
   assert.deepEqual(chiefArgv({ key: 'gemini', run: ['gemini'] }, 'go'), ['gemini', '-i', 'go']);
+});
+
+test("the mark's menu offers only what applies: a running chief's space and composition, then a new chief", () => {
+  const labels = (terminal, terminals, panes) => chiefMenu(terminal, terminals, panes).map((i) => i.label);
+  const live = [{ address: 'jjdev/t7w', state: 'live' }];
+  assert.deepEqual(labels('jjdev/t7w', live, [{ pane: 'p1', terminal: 'jjdev/t7w' }]), ['Go to chief space', 'Add to composition', 'Start new chief']);
+  assert.deepEqual(labels('jjdev/t7w', live, []), ['Add to composition', 'Start new chief'], 'no pane to go to');
+  assert.deepEqual(labels('jjdev/t7w', [{ address: 'jjdev/t7w', state: 'finished' }], [{ pane: 'p1', terminal: 'jjdev/t7w' }]), ['Start new chief']);
+  assert.deepEqual(labels(null, live, []), ['Start new chief']);
 });
