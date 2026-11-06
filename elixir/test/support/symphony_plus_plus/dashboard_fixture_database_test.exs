@@ -121,7 +121,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
   end
 
   defp seed_recovery!(repo) do
-    work_request = request!(repo, "WR-FIXTURE-RECOVERY", "Fictional recovery, skip, and successor history")
+    work_request = request!(repo, "WR-FIXTURE-RECOVERY", "Fictional recovery history")
     history = group!(repo, work_request.id, "GROUP-RECOVERY-HISTORY", "History", 1)
     retry = group!(repo, work_request.id, "GROUP-RECOVERY-RETRY", "Retry", 2)
 
