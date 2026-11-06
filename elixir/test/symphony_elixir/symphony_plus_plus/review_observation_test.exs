@@ -17,7 +17,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.ReviewObservationTest do
           {"done", "passed"}
         ] do
       runner = fn
-        _, ["plugin", "list", "--json"], _, _ -> {:ok, plugin_json(plugin)}
+        _, ["plugin", "list", "--json"], _, _ ->
+          {:ok, plugin_json(plugin)}
+
         _, [_script, "--status" | _args], _, _ ->
           {:ok,
            Jason.encode!(%{
