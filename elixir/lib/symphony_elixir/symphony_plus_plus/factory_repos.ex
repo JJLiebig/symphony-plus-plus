@@ -49,22 +49,23 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   end
 
   defp local_repo_signals(root) do
-    with {:ok, root} <- PathSafety.canonicalize(root) do
-      checkouts = discover(root, root, 3)
+    case PathSafety.canonicalize(root) do
+      {:ok, root} ->
+        root
+        |> discover(root, 3)
+        |> Enum.group_by(fn {_path, repo_identity} -> repo_identity end)
+        |> Map.new(fn {repo_identity, checkouts} ->
+          {repo_identity, checkout_signal(checkouts, repo_identity, root)}
+        end)
 
-      checkouts
-      |> Enum.map(fn {_path, repo_identity} -> repo_identity end)
-      |> Enum.uniq()
-      |> Map.new(fn repo_identity ->
-        signal =
-          case checkout_matches(checkouts, repo_identity, root) do
-            {_depth, [{checkout, _identity}]} -> %{has_ci: has_workflows?(checkout)}
-            _ -> %{}
-          end
+      _ ->
+        %{}
+    end
+  end
 
-        {repo_identity, signal}
-      end)
-    else
+  defp checkout_signal(checkouts, repo_identity, root) do
+    case checkout_matches(checkouts, repo_identity, root) do
+      {_depth, [{checkout, _identity}]} -> %{has_ci: has_workflows?(checkout)}
       _ -> %{}
     end
   end
