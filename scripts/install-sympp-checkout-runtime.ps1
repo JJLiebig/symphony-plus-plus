@@ -145,14 +145,6 @@ $legacyPin = Join-Path $pluginRoot '.sympp-runtime-artifacts.json'
 [void](Assert-InstallPath $pinFile)
 Assert-InHome $runtimeFile $SymppHome
 $nativeArgs = @('--factory', $runtimeFile)
-$installedMark = Join-Path $HerdrAppHome 'mods/sympp/mark.png'
-if (Test-Path -LiteralPath $installedMark) {
-  foreach ($mark in @('b', 'c', 'd')) {
-    if ((Get-FileSha256 $installedMark) -eq (Get-FileSha256 (Join-Path $repoRoot "integrations/herdr-next/marks/$mark/mark.png"))) { $nativeArgs += @('--mark', $mark); break }
-  }
-}
-$tabs = Join-Path $HerdrAppHome 'mods/desk-tabs/main.js'
-if ((Test-Path -LiteralPath $tabs) -and (Get-Content -LiteralPath $tabs -Raw).Contains('sympp chrome')) { $nativeArgs += '--chrome' }
 $stage = Join-Path $SymppHome ('runtime/checkout-install-' + [guid]::NewGuid().ToString('N'))
 $candidateBundle = Join-Path $stage 'bundle'
 $bundleBackup = Join-Path $stage 'previous-skills'

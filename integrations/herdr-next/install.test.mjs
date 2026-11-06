@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, access, rm, cp } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, access, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,53 +10,33 @@ const here = dirname(fileURLToPath(import.meta.url));
 const install = (home, ...args) => spawnSync(process.execPath,
   [join(here, 'install.mjs'), '--home', home, ...args], { encoding: 'utf8', windowsHide: true });
 
-test('factory selection reaches plain view and chrome panel props', async t => {
+test('factory selection reaches view props', async t => {
   const root = await mkdtemp(join(tmpdir(), 'spp factory install '));
   t.after(() => rm(root, { recursive: true, force: true }));
   const selected = join(root, 'selected factory', 'runtime', 'codex-plugin.json');
   const fallbackHome = join(root, 'fallback factory');
-  for (const chrome of [false, true]) {
-    const home = join(root, chrome ? 'chrome' : 'plain');
-    if (chrome) {
-      await mkdir(join(home, 'layouts'), { recursive: true });
-      await writeFile(join(home, 'shared.json'), JSON.stringify({ layout: 'desk' }));
-      await writeFile(join(home, 'layouts', 'desk.json'), JSON.stringify({ id: 'root', children: [
-        { content: { mod: 'desk-tabs' } }, { content: { mod: 'desk-agents' } },
-        { id: 'panel-body', type: 'stack', children: [{ id: 'sympp', type: 'block', content: { mod: 'sympp', props: { hosts: { local: { session: 'personal-core' }, remote: { machine: 'my-server' } } } } }] },
-      ] }));
-      for (const mod of ['desk-tabs', 'desk-agents']) {
-        await cp(join(here, 'chrome', 'fixtures', mod), join(home, 'mods', mod), { recursive: true });
-      }
-    }
-    for (const [explicit, runtimeEnv, homeEnv, expected] of [
-      [selected, 'ignored', fallbackHome, selected],
-      [null, selected, fallbackHome, selected],
-      [null, null, fallbackHome, join(fallbackHome, 'runtime', 'codex-plugin.json')],
-      [null, null, null, undefined],
-    ]) {
-      const env = { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(join(here, 'chrome', 'fixtures', 'check.cjs'))}` };
-      delete env.SYMPP_RUNTIME_FILE;
-      delete env.SYMPP_HOME;
-      env.HC_SESSION = 'another-core';
-      if (runtimeEnv) env.SYMPP_RUNTIME_FILE = runtimeEnv;
-      if (homeEnv) env.SYMPP_HOME = homeEnv;
-      const result = spawnSync(process.execPath, [join(here, 'install.mjs'), '--home', home,
-        '--endpoint', 'http://127.0.0.1:21345', '--app', process.execPath,
-        ...(explicit ? ['--factory', explicit] : []), ...(chrome ? ['--chrome'] : [])],
-        { env, encoding: 'utf8', windowsHide: true });
-      assert.equal(result.status, 0, result.stdout + result.stderr);
-      const line = result.stdout.split('\n').find(line => line.startsWith('args: '));
-      const props = JSON.parse(JSON.parse(line.slice(6))).props;
-      assert.equal(props.hosts.local.runtime, expected);
-      assert.equal(props.hosts.local.node, process.execPath);
-      assert.equal(props.hosts.local.helper, join(home, 'tools', 'sympp-herdr.js'));
-      if (chrome) {
-        const layout = JSON.parse(await readFile(join(home, 'layouts', 'desk.json'), 'utf8'));
-        assert.equal(layout.children[2].children[0].content.props.hosts.local.runtime, expected);
-        assert.equal(layout.children[2].children[0].content.props.hosts.local.session, 'personal-core');
-        assert.equal(layout.children[2].children[0].content.props.hosts.remote.machine, 'my-server');
-      }
-    }
+  const home = join(root, 'plain');
+  for (const [explicit, runtimeEnv, homeEnv, expected] of [
+    [selected, 'ignored', fallbackHome, selected],
+    [null, selected, fallbackHome, selected],
+    [null, null, fallbackHome, join(fallbackHome, 'runtime', 'codex-plugin.json')],
+    [null, null, null, undefined],
+  ]) {
+    const env = { ...process.env };
+    delete env.SYMPP_RUNTIME_FILE;
+    delete env.SYMPP_HOME;
+    env.HC_SESSION = 'another-core';
+    if (runtimeEnv) env.SYMPP_RUNTIME_FILE = runtimeEnv;
+    if (homeEnv) env.SYMPP_HOME = homeEnv;
+    const result = spawnSync(process.execPath, [join(here, 'install.mjs'), '--home', home,
+      '--endpoint', 'http://127.0.0.1:21345', ...(explicit ? ['--factory', explicit] : [])],
+      { env, encoding: 'utf8', windowsHide: true });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const line = result.stdout.split('\n').find(line => line.startsWith('args: '));
+    const props = JSON.parse(JSON.parse(line.slice(6))).props;
+    assert.equal(props.hosts.local.runtime, expected);
+    assert.equal(props.hosts.local.node, process.execPath);
+    assert.equal(props.hosts.local.helper, join(home, 'tools', 'sympp-herdr.js'));
   }
 });
 
@@ -72,10 +52,23 @@ test('installs into a home with spaces without replacing personal layout or topi
   await mkdir(join(home, 'data', 'sympp-requests'), { recursive: true });
   await writeFile(join(home, 'tools', 'sympp-http.cjs'), '// obsolete bridge');
   await writeFile(join(home, 'data', 'sympp-requests', 'old.json'), '{}');
+  const desk = join(home, 'owned-desk');
+  await mkdir(desk);
+  await writeFile(join(desk, 'main.js'), '// personal desk');
+  await mkdir(join(home, 'mods'), { recursive: true });
+  for (const name of ['desk-tabs', 'desk-agents', 'desk-topics']) {
+    await symlink(desk, join(home, 'mods', name), process.platform === 'win32' ? 'junction' : 'dir');
+  }
+  const backup = join(home, 'data', 'sympp-chrome', 'old.json');
+  await mkdir(dirname(backup), { recursive: true });
+  await writeFile(backup, 'old backup');
   const result = install(home, '--endpoint', 'http://127.0.0.1:19999');
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(await readFile(join(home, 'layouts', 'personal.json'), 'utf8'), layout);
-  assert.equal(await readFile(join(home, 'shared.json'), 'utf8'), shared);
+  const published = JSON.parse(await readFile(join(home, 'shared.json'), 'utf8'));
+  assert.equal(published['sympp.connection'].endpoint, 'http://127.0.0.1:19999');
+  delete published['sympp.connection'];
+  assert.deepEqual(published, JSON.parse(shared));
   assert.match(result.stdout, /19999/);
   await assert.rejects(access(join(home, 'tools', 'sympp-http.cjs')));
   await assert.rejects(access(join(home, 'data', 'sympp-requests')));
@@ -93,6 +86,9 @@ test('installs into a home with spaces without replacing personal layout or topi
   assert.equal(await readFile(join(home, 'mods', 'sympp', 'model.js'), 'utf8'), beforeModel);
   assert.equal(install(home, '--endpoint', 'http://127.0.0.1:19999', '--replace').status, 0);
   assert.notEqual(await readFile(join(home, 'mods', 'sympp', 'main.js'), 'utf8'), edited);
+  assert.equal(await readFile(join(desk, 'main.js'), 'utf8'), '// personal desk');
+  assert.equal(await readFile(backup, 'utf8'), 'old backup');
+
 });
 
 test('installs the lab beside the view without an endpoint or touching the view', async t => {
@@ -126,10 +122,39 @@ test('rejects credentials, unknown flags and invalid open mode before changing a
     ['--endpoint', 'http://localhost:19998', '--open', 'bogus'],
     ['--endpoint', 'http://localhost:19998', '--mark', '../mods/sympp'],
     ['--lab', '--mark', 'a'],
+    ['--chrome'],
+    ['--auto-chrome'],
+    ['--remove-chrome'],
   ]) {
     const result = install(home, ...args);
     assert.equal(result.status, 2, result.stdout + result.stderr);
     assert.doesNotMatch(result.stdout, /person:private/);
     await assert.rejects(access(home));
   }
+});
+
+test('checked updates publish the connection and restore it and the mod after a failed check', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'sympp checked install '));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const preload = join(home, 'check.cjs');
+  await writeFile(preload, `const cp = require('node:child_process');
+cp.spawnSync = (_app, args, options) => {
+  if (options.env.HERDR_APP_HOME !== ${JSON.stringify(home)}) throw new Error('wrong home');
+  if (args[0] === '--version') return { status: 0 };
+  if (args[0] !== 'check' || args[1] !== ${JSON.stringify(join(home, 'mods', 'sympp'))}) throw new Error('checked another mod');
+  return { status: process.env.FAIL_CHECK ? 1 : 0, stderr: 'invalid mod' };
+};`);
+  const run = (endpoint, fail = false) => spawnSync(process.execPath,
+    [join(here, 'install.mjs'), '--home', home, '--endpoint', endpoint, '--check', '--replace'],
+    { env: { ...process.env, NODE_OPTIONS: '--require ' + JSON.stringify(preload), FAIL_CHECK: fail ? '1' : '' }, encoding: 'utf8', windowsHide: true });
+  assert.equal(run('http://127.0.0.1:19999').status, 0);
+  const shared = await readFile(join(home, 'shared.json'), 'utf8');
+  assert.equal(JSON.parse(shared)['sympp.connection'].endpoint, 'http://127.0.0.1:19999');
+  const edited = '// my edited sympp';
+  await writeFile(join(home, 'mods', 'sympp', 'main.js'), edited);
+  const failed = run('http://127.0.0.1:21345', true);
+  assert.equal(failed.status, 1, failed.stdout + failed.stderr);
+  assert.match(failed.stdout, /all changed files were restored/);
+  assert.equal(await readFile(join(home, 'shared.json'), 'utf8'), shared);
+  assert.equal(await readFile(join(home, 'mods', 'sympp', 'main.js'), 'utf8'), edited);
 });

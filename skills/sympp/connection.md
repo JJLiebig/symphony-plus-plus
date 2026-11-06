@@ -86,7 +86,7 @@ On the factory machine itself, use `--server http://127.0.0.1:19998` (no token o
 SSH needed). Remote client setup and the bridge support Windows and Linux.
 
 For the optional Herdr panel, run
-`node integrations/herdr-next/install.mjs --server jjdev --chrome --replace`.
+`node integrations/herdr-next/install.mjs --server jjdev --check --replace`.
 The panel uses the same remote factory and does not start it when unreachable.
 Rerun setup or panel installation after rotating the server token.
 

@@ -50,9 +50,8 @@ async function panelFiles(directory, prefix = '') {
     else outputs.set(resolve(bundle, 'integrations/herdr-next', name), await panelBody(resolve(directory, entry.name)));
   }
 }
-for (const name of ['install.mjs', 'chrome.mjs']) outputs.set(resolve(bundle, 'integrations/herdr-next', name), await panelBody(resolve(repo, 'integrations/herdr-next', name)));
+for (const name of ['install.mjs']) outputs.set(resolve(bundle, 'integrations/herdr-next', name), await panelBody(resolve(repo, 'integrations/herdr-next', name)));
 await panelFiles(resolve(repo, 'integrations/herdr-next/mods/sympp'), 'mods/sympp/');
-for (const name of (await readdir(resolve(repo, 'integrations/herdr-next/chrome'))).filter(name => name.endsWith('.mjs'))) outputs.set(resolve(bundle, 'integrations/herdr-next/chrome', name), await panelBody(resolve(repo, 'integrations/herdr-next/chrome', name)));
 
 for (const name of runtimeFiles.sort()) {
   const body = (await readFile(resolve(plugin, name), 'utf8')).replace(/\r\n/g, '\n');

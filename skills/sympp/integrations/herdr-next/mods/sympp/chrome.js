@@ -1,6 +1,4 @@
-// What sympp shares for the patched desk agents list once the sympp chrome is installed (install.mjs
-// --chrome): per-agent decorations. The patched mod only reads them; sympp writes them outside render,
-// and only when something differs.
+// Per-agent data published for desk mods. Only sympp writes this map, outside render.
 
 import { discoverBindings } from "./model.js";
 

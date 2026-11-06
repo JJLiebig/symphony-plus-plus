@@ -18,7 +18,7 @@ It uses the toolchain in `elixir/mise.toml`, builds current files including unco
 changes, regenerates Skills, and replaces the runtime on the same endpoint and ledger.
 The previous runtime is retained for rollback. Herdr and agent sessions stay running;
 open fresh agent sessions only when the command reports a Skills/contract change.
-`HERDR_APP_HOME` selects a non-default Herdr home; existing chrome is retained.
+`HERDR_APP_HOME` selects a non-default Herdr home; setup leaves desk mods and layouts untouched.
 
 The checkout build stays selected through idle shutdown and reboot. Its commit,
 dirty flag, install time and Skills bundle hash appear in `artifact.checkout` and

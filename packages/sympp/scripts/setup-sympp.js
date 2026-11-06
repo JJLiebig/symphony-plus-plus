@@ -175,9 +175,9 @@ function main(args) {
   if (!probe.error && probe.status === 0) {
     const runtime = fs.existsSync(env.SYMPP_RUNTIME_FILE || '') ? JSON.parse(fs.readFileSync(env.SYMPP_RUNTIME_FILE, 'utf8')) : null;
     const endpoint = remote?.endpoint || runtime?.backend?.url || `http://127.0.0.1:${Number(env.SYMPP_BACKEND_PORT) || '19998'}`;
-    const result = spawnSync(process.execPath, [panel, '--endpoint', endpoint, '--home', herdrHome, '--replace', '--auto-chrome',
+    const result = spawnSync(process.execPath, [panel, '--endpoint', endpoint, '--home', herdrHome, '--replace', '--check',
       ...(remote ? ['--token-file', env.SYMPP_SERVER_TOKEN_FILE] : ['--factory', env.SYMPP_RUNTIME_FILE])], { encoding: 'utf8', windowsHide: true });
-    if (result.error || result.status !== 0) throw new Error('Herdr panel setup failed. Run the installed integrations/herdr-next/install.mjs with --chrome to inspect the desk, then retry sympp setup. ' + (result.stdout || '').trim());
+    if (result.error || result.status !== 0) throw new Error('Herdr panel setup failed. Run the installed integrations/herdr-next/install.mjs with --check to inspect the mod, then retry sympp setup. ' + (result.stdout || '').trim());
     emit('herdr', 'configured');
   }
   require("./sympp-command.js").saveConnection({ env, setup: { cwd: os.homedir(), homes: Object.fromEntries(['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'HERDR_APP_HOME'].map(key => [key, process.env[key] ? path.resolve(process.env[key]) : ''])), hosts: selection, ...(server ? { server } : {}), remote: Object.fromEntries(['SYMPP_REMOTE_HOME', 'SYMPP_REMOTE_PORT', 'SYMPP_REMOTE_SERVICE'].map(key => [key, process.env[key] || ''])) } });
