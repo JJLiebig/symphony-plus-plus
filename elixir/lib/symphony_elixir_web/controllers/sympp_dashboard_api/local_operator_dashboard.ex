@@ -233,15 +233,16 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
     |> Map.update!(:product_tree, &native_product_tree/1)
   end
 
-  defp native_asks(detail, guidance) do
+  @doc false
+  @spec native_asks(map(), map()) :: [map()]
+  def native_asks(detail, guidance) do
     request_id = detail.work_request.id
 
     questions =
       detail.clarification_questions
       |> Enum.filter(&(&1.status == "open"))
       |> Enum.map(fn question ->
-        native_ask(question.id, "clarification", question.question, nil,
-          "/api/v1/sympp/herdr/work-requests/#{URI.encode_www_form(request_id)}/questions/#{URI.encode_www_form(question.id)}/answer")
+        native_ask(question.id, "clarification", question.question, nil, "/api/v1/sympp/herdr/work-requests/#{URI.encode_www_form(request_id)}/questions/#{URI.encode_www_form(question.id)}/answer")
       end)
 
     packages =
