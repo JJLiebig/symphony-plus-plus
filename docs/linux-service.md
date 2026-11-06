@@ -42,7 +42,11 @@ recorded worktrees must remain under the root used to create them.
 Set `SYMPP_REPOS_ROOT` at installation to the server's checkout directory
 (default `$HOME/Code`; on jjdev `/srv/jjdev/Code`). Repositories are selected by
 remote URL or `owner/name`. The factory reuses a matching checkout or clones it
-once, using the service user's Git credentials. A same-name checkout with a
+once, using the service user's Git credentials. Discovery searches three directory
+levels below the root, skips `.worktrees` and directory symlinks, and stops at Git
+checkouts. The shallowest matching checkout wins; equally shallow matches return
+an ambiguity error. New repositories go beside checkouts of the same GitHub owner
+when those checkouts share one parent, otherwise directly under the root. A same-name checkout with a
 different remote is refused. Worktrees live under
 `<repos root>/.worktrees/<repo>/<branch slug>-<package hash>`.
 Clients never prepare local worktrees. The bridge resolves client paths to their
