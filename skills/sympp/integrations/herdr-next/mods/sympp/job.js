@@ -95,7 +95,7 @@ export function jobSpace(job, spaceList) {
 
 // The new tab gets this copy's props plus the job. A panel's narrow role does not follow it there.
 export function jobTabArgs(given, job, spaceList) {
-  const { role: _role, job: _job, ...rest } = given ?? {};
+  const { role: _role, job: _job, scope: _scope, ...rest } = given ?? {};
   const space = jobSpace(job, spaceList);
   const name = job.title.length > 32 ? `${job.title.slice(0, 31)}…` : job.title;
   return { name, ...(space ? { space: space.id } : {}), mod: "sympp", props: { ...rest, job: job.id } };

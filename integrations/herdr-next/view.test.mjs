@@ -73,7 +73,8 @@ test('a task shows its packages at work on the pipeline and folds landed and que
     for (const id of ['strip-wr-restore', 'pkg-r-4', 'pkg-r-5', 'pkg-r-6', 'pkg-r-7', 'fold-Landed:wr-restore', 'fold-Up next:wr-restore', 'pr-step-r-4', 'pr-r-4', 'review-r-4'])
       assert.ok(view.has(id), `${id} at ${width}`);
     assert.equal(view.has('pkg-r-1') || view.has('pkg-r-9'), false, 'landed and queued packages are folded');
-    assert.ok(!view.text('Checks failing') && view.text('Review · round 3'), 'the pipeline shows progress without raising an issue');
+    assert.ok(!view.text('Checks failing') && view.text('Review · deep sign-off'), 'the pipeline shows progress without raising an issue');
+    assert.ok(!view.text('Checks') && view.has('ci-r-4') && view.has('ci-r-6'), 'checks are a signal beside the steps, not a step');
     const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
     assert.ok(at('pkg-r-4') < at('pkg-r-5') && at('pkg-r-5') < at('pkg-r-6'), 'packages stay in planned order');
   }
@@ -86,6 +87,13 @@ test('a question tops its task, and its package keeps its stage', skip, async (t
   const at = (id) => view.out.indexOf(`:id[Str("${id}")]`);
   assert.ok(at('ask-ask:q1') < at('pkg-wp-build') && at('pkg-wp-build') < at('pkg-wp-review'));
   assert.ok(view.has('answer-ask:q1') && view.has('review-wp-review') && view.has('review-rounds'), 'the review opens under its package');
+});
+
+test('the panel opens what it shows as a big tab, which draws the same scope wide', skip, async (t) => {
+  const panel = await render(t, { props: { role: 'panel' }, width: 1400, board: 'busy', path: { topic: 't-herdr' } });
+  assert.ok(panel.has('open-big') && panel.has('ci-wr-restore') && panel.has('ci-wr-cross'));
+  const tab = await render(t, { props: { scope: { topic: 't-herdr', space: null } }, width: 1400, board: 'busy' });
+  assert.ok(tab.has('task-wr-restore') && tab.has('task-wr-status') && !tab.has('open-big'));
 });
 
 test("a task's own tab has no way back, and missing or unreadable tasks say so", skip, async (t) => {

@@ -9,7 +9,10 @@
 // opened with props.role "chief" is the Start chief dialog for props.topic; "chief-menu" is the topic
 // mark's right-click menu.
 //
+// A copy opened with props.scope is that Topic or Space, or the Factory, as its own big tab.
+//
 // Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel" | "chief" | "chief-menu", job?: "<work request id>",
+//   scope?: { topic: "<desk topic id>" | null, space: "<space id>" | null },
 //   studio?: { job: "<work request id>", pkg: "<work package id>" },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session?, runtime? }, "machine": { node, helper, session? } } }
@@ -37,6 +40,7 @@ import * as R from "./rails.js";
 import * as C from "./controls.js";
 import * as Chrome from "./chrome.js";
 import * as S from "./studio.js";
+import { scopeTitle } from "./scope.js";
 import { request, remoteRequest } from "./transport.js";
 import { button, message } from "./ui.js";
 import * as O from "./overview.js";
@@ -79,6 +83,9 @@ async function removeCopy(name) {
   await fs.rmdir(dir);
 }
 
+// What a scope tab shows, as its tab registry records it.
+const tabKey = (path) => `scope:${path.topic ?? ""}:${path.space ?? ""}`;
+
 function storedPath() {
   try {
     const path = JSON.parse(localStorage.getItem("path") ?? "null");
@@ -108,6 +115,8 @@ export default class Lens extends View {
     this.ended = !this.studio;
     this.sweptAt = 0;
     this.role = given.role === "panel" ? "panel" : "overview";
+    const scope = own.scope && typeof own.scope === "object" ? own.scope : null;
+    this.scoped = Boolean(scope);
     this.pinned = typeof given.job === "string" && given.job ? given.job : null;
     this.endpoint = M.normalizeEndpoint(given.endpoint);
     this.dashboard = M.dashboardUrl(this.endpoint, given.dashboardUrl);
@@ -127,7 +136,7 @@ export default class Lens extends View {
     this.checkedFor = null;
     this.checkedAt = 0;
     // Where this copy is: its own across restarts. A panel's pin stops it following focus.
-    this.path = storedPath();
+    this.path = scope ? { ...TOP, topic: scope.topic ?? null, space: scope.space ?? null } : storedPath();
     this.pin = localStorage.getItem("pin") === "1";
     this.lastFocus = null;
     this.cursor = null;
@@ -384,7 +393,7 @@ export default class Lens extends View {
     this.cursor = null;
     this.pkgSel = pkg;
     this.review = null;
-    try { localStorage.setItem("path", JSON.stringify(this.path)); } catch { /* storage is a convenience */ }
+    if (!this.scoped) try { localStorage.setItem("path", JSON.stringify(this.path)); } catch { /* storage is a convenience */ }
     if (follow) return;
     this.keys.focus();
     cx.notify();
@@ -438,19 +447,37 @@ export default class Lens extends View {
     if (next && JSON.stringify(next) !== JSON.stringify(this.path)) this.go(next, cx, { follow: true });
   }
 
-  // Herdr draws a mod pane only while its tab is the shown one, so a drawing job tab is the focused
-  // tab. It records itself so a panel and toasts can find the job's tab.
-  registerTab(cx) {
+  // Herdr draws a mod pane only while its tab is the shown one, so a drawing job or scope tab is the
+  // focused tab. It records what it shows (a job id, or tabKey for a scope) so a panel and toasts can
+  // find it instead of opening a second.
+  registerTab(cx, shows) {
     const f = focused();
-    if (!f?.tab || this.registered === f.tab || !panes().some((p) => p.tab === f.tab && !p.terminal)) return;
+    if (!f?.tab || (this.registered === f.tab && this.registeredAs === shows) || !panes().some((p) => p.tab === f.tab && !p.terminal)) return;
     this.registered = f.tab;
+    this.registeredAs = shows;
     const before = shared("sympp.jobTabs");
     const current = before && typeof before === "object" ? before : {};
-    if (current[f.tab] === this.pinned) return;
-    const open = new Set(this.spaceList().flatMap((s) => (s.tabs ?? []).map((tab) => tab.id)));
+    if (current[f.tab] === shows) return;
+    const open = new Set(this.openTabs());
     const next = Object.fromEntries(Object.entries(current).filter(([id]) => open.has(id)));
-    next[f.tab] = this.pinned;
+    next[f.tab] = shows;
     cx.spawn(async () => setShared("sympp.jobTabs", next));
+  }
+
+  // The panel's level as a big tab: the task's own tab, else one holding this Topic, Space or the
+  // Factory. One already open is selected instead of a second; it closes like any tab.
+  openBig(_cx) {
+    const path = this.path;
+    const job = path.job ? this.net.data?.jobs.find((j) => j.id === path.job) : null;
+    const tabs = shared("sympp.jobTabs");
+    const open = new Set(this.openTabs());
+    const shows = job ? job.id : tabKey(path);
+    const tab = Object.entries(tabs && typeof tabs === "object" ? tabs : {}).find(([id, value]) => value === shows && open.has(id))?.[0];
+    if (tab) return run("tab.select", { id: tab });
+    if (job) return run("tab.new", J.jobTabArgs(this.given, job, this.spaceList()));
+    const { role: _role, job: _job, studio: _studio, scope: _scope, ...rest } = this.given;
+    const name = path.topic ? scopeTitle(path, L.deskOf(this.deskTopics(), this.spaceList())) : "Factory";
+    run("tab.new", { name, mod: "sympp", props: { ...rest, scope: { topic: path.topic, space: path.space } } });
   }
 
   // Herdr's own topics and spaces; the drawn-structure tests substitute fixtures here.
@@ -1007,7 +1034,15 @@ export default class Lens extends View {
     return window.viewport_size().width;
   }
 
+  // Each render may start a fade (scopeview.js); its next step is a one-shot wake, never a loop.
   render(cx) {
+    const drawn = this.draw(cx);
+    const wait = Lv.motionStep(this);
+    if (wait !== null) cx.timer.after(wait, (cx) => { Lv.advanceMotion(this); cx.notify(); });
+    return drawn;
+  }
+
+  draw(cx) {
     if (this.chief) return this.chief.render();
     this.compact = this.role === "panel" || this.companion || this.viewportWidth() < 1000;
     const t = theme();
@@ -1034,7 +1069,7 @@ export default class Lens extends View {
     if (this.studio) return this.studioLevel(t, board, bindings, now, cx);
 
     if (this.pinned) {
-      this.registerTab(cx);
+      this.registerTab(cx, this.pinned);
       const job = board.jobs.find((j) => j.id === this.pinned);
       if (!job) {
         return this.root(t, [message(t, "This job isn't here", "It isn't on this sympp board. It may have been archived, or this tab belongs to another factory.", [
@@ -1050,6 +1085,7 @@ export default class Lens extends View {
     if (this.role === "panel" && !this.pin) this.follow(board, desk, cx);
     if (this.awaiting && board.jobs.some((job) => job.id === this.awaiting)) this.awaiting = null;
     const path = this.path = L.resolvePath(this.path, desk, board.jobs, this.awaiting);
+    if (this.scoped) this.registerTab(cx, path.job ?? tabKey(path));
     this.level = L.levelOf(path);
     const trail = L.crumbs(path, desk, board.jobs);
     const needs = M.verdictCounts(board.jobs).needs;

@@ -46,7 +46,8 @@ node integrations/herdr-next/install.mjs --endpoint $origin --open panel
 
 The panel follows what you focus in its tab: an sympp agent's terminal or a job
 tab shows that job; otherwise the space, or its topic when no sympp work touches
-the space. It never takes focus. Pin (P) keeps it where it is.
+the space. It never takes focus. Pin (P) keeps it where it is. The expand button
+beside the pin opens what the panel shows as a tab, or selects the one already open.
 
 When the factory the view was installed for isn't running, opening sympp starts it. While any sympp
 view is open, sympp counts Herdr as a client, so it stays up after the last agent session closes.

@@ -95,9 +95,18 @@ export function boardPayload() {
 
 // Board variants for design previews; the default board above stays as the tests know it.
 // "busy" adds tasks of every size: one package in one repository up to many across three, in
-// trouble, stuck, without a recent report, landed and planned. "quiet" is the busy board with
-// nothing waiting on the person and nothing wrong. Live packages report current activity unless a
-// case says otherwise.
+// trouble, stuck, without a recent report, landed and planned; PR checks not started, running,
+// passed and failed; reviews in each Review Suite step; a repository without CI; and a package no
+// worker has taken. "quiet" is the busy board with nothing waiting on the person and nothing wrong.
+// Live packages report current activity unless a case says otherwise. `repo_signal.has_ci` is
+// proposed: whether the package's repository runs CI at all.
+const CI = { 'owner/web': true, 'owner/api': true, 'owner/notes': false };
+const reviewSteps = (current) => {
+  const names = ['broad-discovery', 'deep-signoff', 'github'];
+  const at = names.indexOf(current);
+  return names.map((name, index) => ({ index, name, state: index < at ? 'done' : index === at ? 'current' : 'pending' }));
+};
+
 export function variantPayload(variant) {
   const board = boardPayload();
   if (variant !== 'busy' && variant !== 'quiet') return board;
@@ -118,8 +127,8 @@ export function variantPayload(variant) {
         step('r-2', 'Holder adoption', 2, 'done', 1200, { product_tree_node_id: 'n-core', repo: 'owner/api' }),
         step('r-3', 'Resume command table', 3, 'done', 700, { product_tree_node_id: 'n-core' }),
         step('r-4', 'Recovery toast', 4, 'review', 50, { product_tree_node_id: 'n-recover', pr_signal: { status: 'open', number: 830, url: 'https://github.com/owner/web/pull/830', checks: { status: 'passing' } },
-          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: quiet ? 1 : 3, started_at: at(quiet ? 50 : 260), round_started_at: at(50) } }),
-        step('r-5', 'Shell fallback', 5, 'checks', 35, { product_tree_node_id: 'n-shell', repo: 'owner/notes', pr_signal: { status: 'open', number: 14, checks: { status: quiet ? 'pending' : 'failing' } } }),
+          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: quiet ? 1 : 3, started_at: at(quiet ? 50 : 260), round_started_at: at(50), steps: reviewSteps('deep-signoff') } }),
+        step('r-5', 'Shell fallback', 5, 'checks', 35, { product_tree_node_id: 'n-shell', repo: 'owner/api', pr_signal: { status: 'open', number: 14, checks: { status: quiet ? 'pending' : 'failing' } } }),
         step('r-6', 'Remote cores', 6, 'build', 25, { product_tree_node_id: 'n-recover', repo: 'owner/api' }),
         step('r-7', 'Settings toggle', 7, 'merge', 10, { product_tree_node_id: 'n-polish', pr_signal: { status: 'open', number: 829, checks: { status: 'passing' } } }),
         pkg('r-8', 'Docs and changelog', 8, { stage: 'queued', track: 'pr' }, { product_tree_node_id: 'n-polish', repo: 'owner/notes', dependency_signal: { unmet_work_package_ids: ['r-4'] } }),
@@ -128,7 +137,25 @@ export function variantPayload(variant) {
     },
     {
       work_request: { id: 'wr-theme', title: 'Follow the system theme', repo: 'owner/web', status: 'sliced', inserted_at: at(80) },
-      work_packages: [step('t-1', 'Theme listener', 1, 'build', 40, quiet ? {} : { activity_signal: { observation_state: 'stale' } })],
+      work_packages: [step('t-1', 'Theme listener', 1, 'build', 40, {
+        pr_signal: { status: 'open', number: 833, checks: { status: 'pending' } }, ...(quiet ? {} : { activity_signal: { observation_state: 'stale' } }),
+      })],
+    },
+    {
+      work_request: { id: 'wr-status', title: 'Quieter status bar', repo: 'owner/web', status: 'sliced', inserted_at: at(150) },
+      work_packages: [
+        step('s-1', 'Status colours', 1, 'review', 30, { pr_signal: { status: 'open', number: 835, checks: { status: 'passing' } },
+          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: 2, started_at: at(90), round_started_at: at(12), steps: reviewSteps('github') } }),
+        // Pushed during review: its checks run again.
+        step('s-2', 'Bar layout', 2, 'review', 20, { pr_signal: { status: 'open', number: 836, checks: { status: 'pending' } },
+          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: 1, started_at: at(20), round_started_at: at(20), steps: reviewSteps('broad-discovery') } }),
+        // Dispatched to Build, but no worker has taken it yet.
+        pkg('s-3', 'Status tooltip', 3, { stage: 'build', track: 'pr', entered_at: at(5) }),
+      ],
+    },
+    {
+      work_request: { id: 'wr-notes', title: 'Release notes template', repo: 'owner/notes', status: 'sliced', inserted_at: at(100) },
+      work_packages: [step('n-1', 'Template', 1, 'build', 15, { repo: 'owner/notes', pr_signal: { status: 'open', number: 21 } })],
     },
     {
       work_request: { id: 'wr-docs', title: 'Operator guide refresh', repo: 'owner/web', status: 'sliced', inserted_at: at(3000) },
@@ -154,6 +181,9 @@ export function variantPayload(variant) {
     { id: 'esc-1', kind: 'architect', text: 'Ship tokens before the API?', work_package_id: null, answer_route: null },
     { id: 'g-web', kind: 'guidance', text: 'Which theme tokens?', work_package_id: 'x-web', answer_route: '/api/v1/sympp/herdr/work-packages/x-web/guidance/g-web/answer' },
   ];
+  for (const detail of board.work_request_details) {
+    for (const p of detail.work_packages ?? []) p.repo_signal = { has_ci: CI[p.repo] };
+  }
   const tokenApi = board.work_request_details[3].work_packages.find((p) => p.id === 'x-api');
   tokenApi.activity_signal = { observation_state: 'current' };
   if (quiet) {

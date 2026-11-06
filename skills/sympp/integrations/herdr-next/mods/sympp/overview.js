@@ -6,7 +6,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
 import * as M from "./model.js";
 import * as L from "./levels.js";
-import { CLEAR, MONO, icon, tint, button, iconButton, field, mark, presence, section } from "./ui.js";
+import { CLEAR, EXPAND, MONO, icon, tint, button, iconButton, field, mark, presence, section } from "./ui.js";
 
 // ---------- Bar ----------
 
@@ -41,6 +41,7 @@ export function levelBar(v, t, trail, { now, needs, slim = false }) {
     const actions = h_flex().gap(2).items_center().flex_none()
       .child(iconButton(t, "new-job", "plus", "New job", (cx) => v.openIntake(cx)))
       .when(Boolean(v.dashboard), (el) => el.child(iconButton(t, "dashboard", "monitor", "Open the sympp dashboard (O)", (cx) => v.openDashboard(cx))))
+      .when(v.role === "panel", (el) => el.child(iconButton(t, "open-big", EXPAND, "Open as a tab", (cx) => v.openBig(cx))))
       .when(Boolean(pin), (el) => el.child(pin));
     return v_flex().flex_none().px(12).py(6).gap(4).border_b(1).border_color(t.border)
       .child(h_flex().gap(6).items_center().child(path).child(status(v, t, now)).child(actions))
