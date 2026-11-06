@@ -2,7 +2,7 @@
 
 One Linux factory owns the ledger. Agents and Herdr on the owner's devices connect
 over HTTP on a private tailnet. The service listens on both `127.0.0.1:19998` and
-the configured tailnet IPv4 address. Remote requests require the factory token;
+the configured tailnet IPv4 address. The board is readable without a token from the tailnet; all other remote requests require the factory token;
 loopback access keeps the existing local trust rules. The token grants the same
 operator access as a local client. Assignment grants and scope checks still apply.
 
@@ -76,8 +76,8 @@ custom checkout once with `just install` before updating it from a client.
 
 Clients send `Authorization: Bearer <token>` on every remote HTTP request,
 including MCP, readiness, leases and dashboard API calls. Missing or incorrect
-credentials return `401`. Forwarded requests remain rejected. A browser URL alone
-does not supply this header; use an authenticated client. No proxy, SSH tunnel or
+credentials return `401` except for board reads from the tailnet. Forwarded requests remain rejected.
+A plain tailnet browser can read the board; `sympp board` signs in with the saved token for editing. No proxy, SSH tunnel or
 TLS endpoint is required on the private tailnet.
 
 The service stays running with zero clients and restarts on process failure.

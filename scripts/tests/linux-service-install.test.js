@@ -109,3 +109,23 @@ test('client update rebuilds the saved checkout with its factory repository root
   assert.equal(fs.readFileSync(receipt, 'utf8').trim(), reposRoot);
   assert.equal(git('-C', checkout, 'rev-parse', 'HEAD'), expectedHead);
 });
+
+test('board opens the saved factory with a private fragment and never logs its credential', { skip: process.platform !== 'linux' }, t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sympp-board-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin'), config = path.join(root, '.local/share/sympp/connection.json');
+  fs.mkdirSync(bin); fs.mkdirSync(path.dirname(config), { recursive: true });
+  const token = require('node:crypto').randomBytes(32).toString('base64url');
+  const tokenFile = path.join(root, 'token'), receipt = path.join(root, 'opened');
+  fs.writeFileSync(tokenFile, token, { mode: 0o600 });
+  fs.writeFileSync(config, JSON.stringify({ env: { SYMPP_SERVER_URL: 'http://100.64.0.2:22088', SYMPP_SERVER_TOKEN_FILE: tokenFile } }));
+  fs.writeFileSync(path.join(bin, 'xdg-open'), '#!/bin/sh\nprintf "%s" "$1" > "$RECEIPT"\n', { mode: 0o755 });
+  const result = spawnSync(process.execPath, [path.resolve(__dirname, '../../packages/sympp/scripts/sympp-command.js'), 'board'], {
+    env: { ...process.env, HOME: root, PATH: bin + path.delimiter + process.env.PATH, RECEIPT: receipt }, encoding: 'utf8',
+  });
+  assert.equal(result.status, 0);
+  const url = new URL(fs.readFileSync(receipt, 'utf8'));
+  assert.equal(url.origin, 'http://100.64.0.2:22088'); assert.equal(url.pathname, '/sympp/board'); assert.equal(url.search, '');
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('sympp-token'), token);
+  assert.equal(result.stdout.includes(token) || result.stderr.includes(token), false);
+});

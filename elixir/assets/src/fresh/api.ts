@@ -1,6 +1,7 @@
 declare global {
   interface Window {
     SYMPP_DASHBOARD_CONFIG?: {
+      readOnly?: boolean;
       apiBase?: string;
       basePath?: string;
       logoUrl?: string;
@@ -19,3 +20,5 @@ export function api(path: string) {
 export function asset(url: string) {
   return `${config?.basePath || ""}${url}`;
 }
+
+export const readOnly = config?.readOnly === true;

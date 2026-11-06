@@ -197,15 +197,71 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
       %{remote: [remote_ip: {100, 64, 0, 2}, host: "100.123.207.19"], headers: [{"authorization", "Bearer " <> token}]}
     end
 
-    test "all remote entrypoints require the token before routing or parsing", %{remote: remote} do
+    test "remote non-board entrypoints require the token before routing or parsing", %{remote: remote} do
       for headers <- [[], [{"authorization", "Bearer wrong"}], [{"authorization", "Basic wrong"}]] do
-        for path <- ["/mcp", "/mcp/readiness", "/mcp/client-lease", "/sympp/board", "/assets/index.js", "/api/v1/sympp/herdr/dashboard", "/api/v1/sympp/operator/dashboard"] do
+        for path <- ["/mcp", "/mcp/readiness", "/mcp/client-lease", "/api/v1/sympp/herdr/dashboard", "/api/v1/sympp/operator/dashboard"] do
           assert get_local(path, headers, remote).status == 401
         end
 
         assert post_raw("not json", headers, remote).status == 401
         assert post_raw("not json", headers, Keyword.put(remote, :path, "/api/v1/sympp/herdr/work-requests")).status == 401
       end
+    end
+
+    test "direct tailnet peers can read only the board without credentials", %{remote: remote} do
+      for ip <- [{100, 64, 0, 0}, {100, 127, 255, 255}, {0xFD7A, 0x115C, 0xA1E0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 65_535, 0x6440, 2}] do
+        opts = Keyword.put(remote, :remote_ip, ip)
+        assert get_local("/api/v1/sympp/operator/dashboard/hydrated", [], opts) |> json_response(200) |> Map.has_key?("work_request_details")
+
+        for path <- ["/", "/sympp", "/sympp/board", "/assets/index.js", "/favicon.ico", "/splusplus-logo.png", "/api/v1/sympp/operator/dashboard/events"] do
+          conn = Plug.Test.conn("GET", path) |> Map.put(:remote_ip, ip) |> SymphonyElixirWeb.FactoryAccessPlug.call([])
+          refute conn.halted
+          assert SymphonyElixirWeb.FactoryAccessPlug.board_read_only?(conn)
+          refute SymphonyElixirWeb.FactoryAccessPlug.authenticated?(conn)
+        end
+      end
+
+      for ip <- [{100, 63, 255, 255}, {100, 128, 0, 0}, {192, 168, 1, 5}, {8, 8, 8, 8}, {0xFD7A, 0x115C, 0xA1E1, 0, 0, 0, 0, 1}] do
+        assert get_local("/api/v1/sympp/operator/dashboard/hydrated", [], Keyword.put(remote, :remote_ip, ip)).status == 401
+        assert get_local("/sympp", [], Keyword.put(remote, :remote_ip, ip)).status == 401
+      end
+
+      for header <- ["forwarded", "x-real-ip", "x-forwarded-for", "x-forwarded-custom"] do
+        assert get_local("/api/v1/sympp/operator/dashboard/hydrated", [{header, "127.0.0.1"}], remote).status == 401
+      end
+
+      for path <- ["/api/v1/sympp/operator/dashboard/hydrated", "/sympp/board", "/assets/index.js"] do
+        assert get_local(path, [{"authorization", "Bearer wrong"}], remote).status == 401
+      end
+
+      for path <- ["/api/v1/sympp/operator/settings", "/api/v1/sympp/operator/work-requests/example/archive", "/api/v1/sympp/operator/work-requests/example/focus", "/mcp/client-lease"] do
+        assert post_json(%{}, [], Keyword.put(remote, :path, path)).status == 401
+      end
+    end
+
+    test "browser sign-in authorizes board writes but never MCP and token rotation revokes it", %{remote: remote, headers: headers} do
+      login_path = "/api/v1/sympp/board-session"
+      assert post_json(%{}, [], Keyword.put(remote, :path, login_path)).status == 401
+      login = post_json(%{}, headers, Keyword.put(remote, :path, login_path))
+      assert login.status == 204
+      [set_cookie] = get_resp_header(login, "set-cookie")
+      assert set_cookie =~ "HttpOnly"
+      assert set_cookie =~ "SameSite=Strict"
+      assert set_cookie =~ "max-age=2592000"
+      cookie = hd(String.split(set_cookie, ";"))
+      browser = [{"cookie", cookie}, {"origin", "http://100.123.207.19:4000"}]
+      path = "/api/v1/sympp/operator/settings"
+      result = post_json(%{"capture_failed_mcp_calls" => true}, browser, Keyword.put(remote, :path, path)) |> json_response(200)
+      assert result["settings"]["capture_failed_mcp_calls"] == true
+      assert get_local("/api/v1/sympp/operator/dashboard/hydrated", browser, remote).status == 200
+      assert get_local("/mcp/readiness", browser, remote).status == 401
+      assert post_json(initialize_request("cookie-mcp"), browser, remote).status == 401
+      assert post_json(%{}, [{"cookie", cookie}, {"origin", "http://evil.example"}], Keyword.put(remote, :path, path)).status == 401
+      assert post_json(%{}, [{"cookie", cookie}], Keyword.put(remote, :path, path)).status == 401
+      assert post_json(%{}, [{"x-forwarded-for", "127.0.0.1"} | browser], Keyword.put(remote, :path, path)).status == 403
+      assert post_json(%{}, [{"cookie", cookie <> "tampered"} | tl(browser)], Keyword.put(remote, :path, path)).status == 401
+      Application.put_env(:symphony_elixir, :sympp_remote_token_hash, :crypto.strong_rand_bytes(32))
+      assert post_json(%{}, browser, Keyword.put(remote, :path, path)).status == 401
     end
 
     test "remote token grants the existing MCP operator session and dashboard access", %{remote: remote, headers: headers} do
