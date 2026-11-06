@@ -102,20 +102,23 @@ export function reposRoot(spaceList, machine) {
 // Where the chief starts on its machine, best first: the folder holding the topic's checkouts (where
 // those folders meet, on whichever machines they are), at the same place under the chief machine's
 // repos root as under their own; else that repos root. Empty: the machine's home. A machine's repos
-// root is the factory's own (factory: { machine, root }) on the factory's machine when it reports one,
-// else the one its spaces show. topicSpaces leaves out the topic's chief spaces.
+// roots, best first: the factory's own (factory: { machine, root }) on the factory's machine when it
+// reports one, then the one its spaces show; a checkout counts under the first that holds it.
+// topicSpaces leaves out the topic's chief spaces.
 export function chiefFolders(topicSpaces, allSpaces, machine, factory = null) {
-  const rootOf = (m) => (factory?.root && factory.machine !== undefined && (factory.machine ?? null) === m ? factory.root : reposRoot(allSpaces, m));
-  const target = rootOf(machine);
-  if (!target) return [];
+  const own = (m) => (factory?.root && factory.machine !== undefined && (factory.machine ?? null) === m ? [factory.root] : []);
+  const roots = (m) => [...own(m), reposRoot(allSpaces, m)].filter(Boolean);
+  const targets = roots(machine);
+  if (!targets.length) return [];
   const places = [];
   for (const s of topicSpaces.filter(checkout)) {
-    const root = rootOf(s.machine ?? null), holder = parts(parent(s.folder));
-    const base = root ? parts(root) : null;
-    if (base && holder.length >= base.length && base.every((p, i) => p === holder[i])) places.push(holder.slice(base.length));
+    const holder = parts(parent(s.folder));
+    const base = roots(s.machine ?? null).map(parts).find((b) => holder.length >= b.length && b.every((p, i) => p === holder[i]));
+    if (base) places.push(holder.slice(base.length));
   }
   const place = places.length ? common(places) : [];
-  return place.length ? [joined([...parts(target), ...place], target), target] : [target];
+  const folders = targets.flatMap((root) => (place.length ? [joined([...parts(root), ...place], root), root] : [root]));
+  return folders.filter((f, i) => folders.indexOf(f) === i);
 }
 
 // Herdr's topics with the space added to the end of the topic and the topic unfolded; null when the

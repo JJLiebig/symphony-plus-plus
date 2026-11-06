@@ -519,10 +519,11 @@ export default class Lens extends View {
       this.chiefWatch.push(...chiefs.flatMap((c) => c.agent.bindings));
       if (chiefs.length) out[topic.id] = chiefs.map(({ chief, agent }) =>
         ({ domain: chief.domain, terminal: agent.state === "live" ? agent.binding.address : null }));
-      // A chief Start chief started is the topic's chief while it runs, registered or not.
+      // The chief Start chief started last is the topic's chief while it runs, registered or not, and
+      // ahead of an older registration still running.
       const latest = sessions[topic.id];
-      if (!out[topic.id]?.some((c) => c.terminal) && chiefRunning(latest, list, now)) {
-        out[topic.id] = [{ domain: topic.name, terminal: latest.terminal }, ...(out[topic.id] ?? [])];
+      if (chiefRunning(latest, list, now)) {
+        out[topic.id] = [{ domain: topic.name, terminal: latest.terminal }, ...(out[topic.id] ?? []).filter((c) => c.terminal !== latest.terminal)];
       }
       const live = out[topic.id]?.find((c) => c.terminal);
       if (live) this.readSession(topic.id, live.terminal, now);
@@ -540,8 +541,10 @@ export default class Lens extends View {
     hc(["get", address, "--json"]).then((result) => {
       const program = terminals().find((k) => k.address === address)?.program;
       const session = chiefSession({ ...JSON.parse(result.stdout), address, program });
-      const all = shared(CHIEF_SESSIONS) ?? {};
-      if (session && JSON.stringify(all[topic]) !== JSON.stringify(session)) setShared(CHIEF_SESSIONS, { ...all, [topic]: session });
+      const all = shared(CHIEF_SESSIONS) ?? {}, current = all[topic];
+      // Never in place of another chief started since and running.
+      if (current && current.terminal !== address && chiefRunning(current, terminals())) return;
+      if (session && JSON.stringify(current) !== JSON.stringify(session)) setShared(CHIEF_SESSIONS, { ...all, [topic]: session });
     }).catch(() => {});
   }
 

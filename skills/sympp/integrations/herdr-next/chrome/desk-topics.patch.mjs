@@ -311,11 +311,30 @@ export default class Topics extends Spaces {
   ],
 };
 
+// Chrome 4 in a desk-topics whose own later rework changed two lines chrome 4 edits: the header's
+// pointer (only while not dragging) and the empty-topic rule (its drag state in a local). Kept so an
+// install upgrades such a desk in place too.
+const HEADER = "    return h_flex().id(`topic-${id ?? \"other\"}`).h(26).flex_none().mt(8).px(8).gap(4).items_center().rounded(5)\n";
+const chrome4Reworked = {
+  ...chrome4,
+  edits: chrome4.edits.map((edit) => {
+    if (edit.find.includes(".rounded(5).cursor_pointer()")) {
+      const find = `${HEADER}      .when(!this.drag, (el) => el.cursor_pointer())\n`;
+      return { find, replace: `${find}      .when(symppInside(id), (el) => el.bg(t.selected))\n` };
+    }
+    if (edit.find.includes("if (!rows.length")) {
+      return { find: "      if (!rows.length && !drag) return [];\n",
+        replace: "      if (!rows.length && !drag && ![...symppChiefSpaces().values()].includes(id)) return [];\n" };
+    }
+    return edit;
+  }),
+};
+
 export default {
   mark: 'sympp chrome 5',
   mod: 'desk-topics',
   optional: true,
-  previous: [chrome4, chrome3, chrome2, chrome1, legacy],
+  previous: [chrome4, chrome4Reworked, chrome3, chrome2, chrome1, legacy],
   edits: [
     {
       find: `export default class Topics extends Spaces {
@@ -400,11 +419,8 @@ export default class Topics extends Spaces {
 `,
     },
     {
-      find: `    return h_flex().id(\`topic-\${id ?? "other"}\`).h(26).flex_none().mt(8).px(8).gap(4).items_center().rounded(5).cursor_pointer()
-`,
-      replace: `    return h_flex().id(\`topic-\${id ?? "other"}\`).h(26).flex_none().mt(8).px(8).gap(4).items_center().rounded(5).cursor_pointer()
-      .when(symppInside(id), (el) => el.bg(t.selected))
-`,
+      find: `    return h_flex().id(\`topic-\${id ?? "other"}\`).h(26).flex_none().mt(8).px(8).gap(4).items_center().rounded(5)`,
+      replace: `    return h_flex().id(\`topic-\${id ?? "other"}\`).h(26).flex_none().mt(8).px(8).gap(4).items_center().rounded(5).when(symppInside(id), (el) => el.bg(t.selected))`,
     },
     {
       find: `        .when(Boolean(group?.folded), (el) => el.child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim))));
@@ -423,17 +439,12 @@ export default class Topics extends Spaces {
 `,
     },
     {
-      find: `    // An empty topic shows only while dragging, to drop a space into it.
-    const section = (g) => {
-      const rows = this.rowsFor(g?.id, all);
-      if (!rows.length && !this.drag) return [];
-`,
-      replace: `    // A topic always shows its header. Other spaces shows only with spaces, or while dragging, to drop
-    // a space into it.
-    const section = (g) => {
-      const rows = this.rowsFor(g?.id, all);
-      if (!g && !rows.length && !this.drag) return [];
-`,
+      find: `// An empty topic shows only while dragging, to drop a space into it.`,
+      replace: `// A topic always shows its label; Other spaces only with spaces, or while dragging.`,
+    },
+    {
+      find: `      if (!rows.length && !`,
+      replace: `      if (!g && !rows.length && !`,
     },
     {
       find: `    const ordered = super.ordered();
