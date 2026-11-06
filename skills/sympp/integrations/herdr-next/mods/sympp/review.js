@@ -16,11 +16,12 @@ const STAGE = {
   "retry-requested": ["A retry was requested", "waiting"],
   dismissed: ["Dismissed", "quiet"],
   aborted: ["Aborted", "quiet"],
+  head_changed_after_review: ["Head changed since review; caller inspection needed", "waiting"],
   stale: ["Out of date: the code changed after this review", "bad"],
   done: ["Done", "good"],
 };
 // sympp's summary, when the provider reported no stage of its own.
-const STATUS = { in_progress: ["In progress", "active"], passed: ["Passed", "good"], failed: ["Failed", "bad"], pending: ["Not started", "quiet"] };
+const STATUS = { inspection_needed: ["Head changed since review; caller inspection needed", "waiting"], in_progress: ["In progress", "active"], passed: ["Passed", "good"], failed: ["Failed", "bad"], pending: ["Not started", "quiet"] };
 const OUTCOME = { findings: "Findings", clean: "Clean", blocked: "Blocked" };
 const LANES = { "review-followup": "Follow-up", "review-github": "GitHub review", "review-deslop": "Simplification", "review-recovery": "Recovery" };
 const PROVIDERS = { review_suite: "Review Suite" };
