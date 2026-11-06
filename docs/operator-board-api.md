@@ -156,7 +156,7 @@ response. Existing fields retain their meaning. Read each entry of
 Repository signals use only existing local checkouts under the factory repos root,
 with the same identity and ambiguity rules as checkout resolution. They never
 clone or call GitHub. Results (including unresolved checkouts) are cached per
-repository and repos root for 30 seconds.
+repository in a shared repos-root inventory for 30 seconds.
 
 Review progress remains in `review_signal.step`, `current`, `total`, `round`,
 `evidence_id`, `reviewed_head`, `started_at`, `round_started_at`, `observed_at` and

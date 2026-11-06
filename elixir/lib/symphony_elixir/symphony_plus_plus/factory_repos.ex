@@ -31,35 +31,55 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
     with {:ok, remote, _name} <- remote(repo),
          root when is_binary(root) <- Config.factory_repos_root() do
       table = signal_cache()
-      key = {root, identity(remote)}
+      key = root
       now = Keyword.get(opts, :now_ms, System.monotonic_time(:millisecond))
 
       case :ets.lookup(table, key) do
-        [{^key, recorded_at, signal}] when now - recorded_at < 30_000 ->
-          signal
+        [{^key, recorded_at, signals}] when now - recorded_at < 30_000 ->
+          Map.get(signals, identity(remote), %{})
 
         _ ->
-          signal = local_repo_signal(root, remote)
-          :ets.insert(table, {key, now, signal})
-          signal
+          signals = local_repo_signals(root)
+          :ets.insert(table, {key, now, signals})
+          Map.get(signals, identity(remote), %{})
       end
     else
       _ -> %{}
     end
   end
 
-  defp local_repo_signal(root, remote) do
-    with {:ok, root} <- PathSafety.canonicalize(root),
-         {_depth, [{checkout, _identity}]} <- checkout_matches(discover(root, root, 3), identity(remote), root) do
-      has_ci =
-        checkout
-        |> Path.join(".github/workflows/*.{yml,yaml}")
-        |> Path.wildcard()
-        |> Enum.any?(&File.regular?/1)
+  defp local_repo_signals(root) do
+    with {:ok, root} <- PathSafety.canonicalize(root) do
+      checkouts = discover(root, root, 3)
 
-      %{has_ci: has_ci}
+      checkouts
+      |> Enum.map(fn {_path, repo_identity} -> repo_identity end)
+      |> Enum.uniq()
+      |> Map.new(fn repo_identity ->
+        signal =
+          case checkout_matches(checkouts, repo_identity, root) do
+            {_depth, [{checkout, _identity}]} -> %{has_ci: has_workflows?(checkout)}
+            _ -> %{}
+          end
+
+        {repo_identity, signal}
+      end)
     else
       _ -> %{}
+    end
+  end
+
+  defp has_workflows?(checkout) do
+    directory = Path.join(checkout, ".github/workflows")
+
+    case File.ls(directory) do
+      {:ok, names} ->
+        Enum.any?(names, fn name ->
+          Path.extname(name) in [".yml", ".yaml"] and File.regular?(Path.join(directory, name))
+        end)
+
+      _ ->
+        false
     end
   end
 

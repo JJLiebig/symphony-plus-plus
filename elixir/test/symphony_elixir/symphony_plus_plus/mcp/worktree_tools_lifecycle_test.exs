@@ -13,7 +13,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
 
     fixture = TestSupport.git_repo_fixture!("beta", prefix: "sympp-repo-ci")
-    root = Path.join(fixture.root, "factory")
+    root = Path.join(fixture.root, "factory[ci]")
     checkout = Path.join([root, "example", "project"])
     previous = System.get_env("SYMPP_REPOS_ROOT")
     on_exit(fn -> restore_env("SYMPP_REPOS_ROOT", previous) end)
