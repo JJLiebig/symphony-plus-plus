@@ -21,6 +21,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
   alias SymphonyElixir.SymphonyPlusPlus.ReviewObservation
   alias SymphonyElixir.SymphonyPlusPlus.SessionLocations
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+  alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.Repository, as: WorkRequestRepository
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
 
@@ -159,8 +160,12 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
          context = Map.put(context, :operator_config, operator_config),
          {:ok, projection_context} <- operator_projection_context(repo, work_requests, context),
          {:ok, active} <- execution_dashboard_payload(repo, context, work_requests, projection_context) do
+      guidance = DeliveryBoard.guidance_requests_by_work_package_id(repo, Enum.map(context.work_packages, & &1.id))
+      details = Enum.map(active.work_request_details, &Map.put(&1, :asks, native_asks(&1, guidance)))
+
       {:ok,
        active
+       |> Map.put(:work_request_details, details)
        |> Map.take([:generated_at, :work_request_details, :guidance_requests])
        |> Map.put(:work_packages, Enum.map(active.work_packages, &Map.take(&1, [:id, :active_agent_run])))
        |> Map.put(:runtime, %{offline: OfflineSandbox.enabled?(), repos_root: SymphonyElixir.Config.factory_repos_root()})
@@ -176,7 +181,7 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
 
   defp native_detail(detail) do
     detail
-    |> Map.take([:work_request, :work_packages, :clarification_questions, :product_tree])
+    |> Map.take([:work_request, :work_packages, :clarification_questions, :product_tree, :asks])
     |> Map.update!(
       :work_request,
       &Map.take(&1, [
@@ -226,6 +231,54 @@ defmodule SymphonyElixirWeb.SymppDashboardAPI.LocalOperatorDashboard do
       )
     end)
     |> Map.update!(:product_tree, &native_product_tree/1)
+  end
+
+  defp native_asks(detail, guidance) do
+    request_id = detail.work_request.id
+
+    questions =
+      detail.clarification_questions
+      |> Enum.filter(&(&1.status == "open"))
+      |> Enum.map(fn question ->
+        native_ask(question.id, "clarification", question.question, nil,
+          "/api/v1/sympp/herdr/work-requests/#{URI.encode_www_form(request_id)}/questions/#{URI.encode_www_form(question.id)}/answer")
+      end)
+
+    packages =
+      Enum.flat_map(detail.work_packages, fn package ->
+        requests = Map.get(guidance, package.id, [])
+
+        asks =
+          Enum.map(requests, fn request ->
+            route =
+              if request.status == "human_info_needed" do
+                "/api/v1/sympp/herdr/work-packages/#{URI.encode_www_form(package.id)}/guidance/#{URI.encode_www_form(request.id)}/answer"
+              end
+
+            native_ask(request.id, "guidance", request.question, package.id, route)
+          end)
+
+        if asks == [] and get_in(package, [:activity_signal, :next_actor]) == "human" do
+          [native_ask(package.id, "human_wait", nil, package.id, nil)]
+        else
+          asks
+        end
+      end)
+
+    escalation = get_in(detail, [:work_request, :operator_report, "human_escalation"])
+
+    architect =
+      if escalation && escalation["question"] && is_nil(escalation["resolved_at"]) do
+        [native_ask("#{request_id}:escalation:#{escalation["raised_at"]}", "architect", escalation["question"], nil, nil)]
+      else
+        []
+      end
+
+    questions ++ packages ++ architect
+  end
+
+  defp native_ask(id, kind, text, package_id, route) do
+    %{id: id, kind: kind, text: Sanitizer.redacted_text(text), work_package_id: package_id, answer_route: route}
   end
 
   defp native_product_tree(tree) do

@@ -6,6 +6,27 @@ canonical product tree, attention, package/delivery signals and sanitized sessio
 locations; locations remain last observed addresses, not proof of live agents.
 The normal standalone web board and its authorization are unchanged.
 
+Each `work_request_details[]` includes `asks`, the outstanding clarification,
+guidance and architect questions plus packages waiting for a human. Each ask has
+`{id, kind, text, work_package_id, answer_route}`. `kind` is `clarification`,
+`guidance`, `architect`, or `human_wait`. IDs remain stable while the ask is open;
+a reopened architect escalation has a new ID. `text` is `null` when no question
+was recorded. Request-level asks have `work_package_id: null`. `answer_route`
+is the existing native POST path, accepting `{answer: "..."}` and the other
+answer fields documented below. Only clarification and human-escalated guidance
+are answerable there. Ordinary open guidance belongs to the architect and has
+`answer_route: null`; architect escalations and unrecorded questions also have
+no native answer route. Send those to the topic's chief. Answered/resolved asks
+leave the list on the next read. No new answer endpoint is introduced.
+
+Package `activity_signal.observation_state` distinguishes `queued` (planned,
+created or prepared, without a current worker observation), `current` (current
+agent run or claim), and `stale` (expired worker heartbeat/claim). `paused` and
+`unknown` remain available for paused workers and packages without conclusive
+runtime evidence. A prepared grant alone is not a live worker. Worker freshness
+uses the existing runtime heartbeat policy, independent of actor display labels;
+package edits and dispatch timestamps do not prove a fresh worker.
+
 The native dashboard also includes `chiefs: [{domain, repos, registered_at,
 session_location}]` for current optional domain chiefs. Locations use the existing
 sanitized shape with `role: "chief"`; absent locations are `null`, and a recorded

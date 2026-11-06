@@ -303,7 +303,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
       next_action: next_action,
       last_update_at: latest_timestamp([work_package.updated_at, map_value(latest_event, "created_at"), worker[:last_activity]]),
       last_update: latest_event |> map_value("summary") |> bounded_string(),
-      observation_state: observation_state(runtime),
+      observation_state: observation_state(runtime, work_package),
       observed_at: review[:observed_at]
     }
     |> reject_nil_values()
@@ -378,10 +378,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.DeliveryBoard.Signals do
     end
   end
 
-  defp observation_state(%{stale?: true}), do: "stale"
-  defp observation_state(%{paused?: true}), do: "paused"
-  defp observation_state(%{current_actor: actor}) when is_map(actor), do: "current"
-  defp observation_state(_worker), do: "unknown"
+  defp observation_state(%{stale?: true}, _package), do: "stale"
+  defp observation_state(%{paused?: true}, _package), do: "paused"
+  defp observation_state(%{active_agent_run_ids: [_ | _]}, _package), do: "current"
+  defp observation_state(%{current_actor: actor}, _package) when is_map(actor), do: "current"
+
+  defp observation_state(_runtime, %{status: status})
+       when status in ["planned", "created", "ready_for_worker"] do
+    "queued"
+  end
+
+  defp observation_state(_runtime, _package), do: "unknown"
 
   @spec dependency_context(map()) :: map()
   def dependency_context(execution_graphs) when is_map(execution_graphs) do
