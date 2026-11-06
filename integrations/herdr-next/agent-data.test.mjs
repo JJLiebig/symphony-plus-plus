@@ -19,7 +19,7 @@ test('each sympp terminal on the board gets its stage, review round and need; ot
   const endpoint = 'http://a';
   assert.deepEqual(map, {
     t1: { stage: 'build', round: null, needs: false, endpoint, at: NOW },
-    t2: { stage: 'review', round: 3, needs: true, endpoint, at: NOW },
+    t2: { stage: 'review', round: 3, needs: false, endpoint, at: NOW },
     t3: { stage: null, round: null, needs: true, endpoint, at: NOW },
     'vps/t4': { stage: 'landed', round: null, needs: false, endpoint, at: NOW },
   });
