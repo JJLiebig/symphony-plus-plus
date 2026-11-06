@@ -18,7 +18,7 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
     const before = await architect.call('read_work_request', { detail: 'full', work_request_id: request });
     const sourceBoard = await architect.raw(null, {}, 'GET', '/api/v1/sympp/herdr/dashboard');
     expect(sourceBoard.status).toBe(200);
-    expect(sourceBoard.body.runtime).toEqual({ offline: false });
+    expect(sourceBoard.body.runtime).toEqual({ offline: false, repos_root: null });
     const sourceBytes = await readFile(source.database);
     const walBytes = await readFile(source.database + '-wal');
     expect((await copy.snapshot(source)).code).toBe(0);
@@ -45,7 +45,7 @@ if (process.env.SYMPP_OFFLINE_ACCEPTANCE === '1') {
     const browserBoard = await viewer.inspect('/api/v1/sympp/operator/dashboard/hydrated');
     const nativeBoard = await viewer.raw(null, {}, 'GET', '/api/v1/sympp/herdr/dashboard');
     expect(nativeBoard.status).toBe(200);
-    expect(nativeBoard.body.runtime).toEqual({ offline: true });
+    expect(nativeBoard.body.runtime).toEqual({ offline: true, repos_root: null });
     expect(nativeBoard.body.chiefs).toEqual([]);
     expect(parseBoard({ ...nativeBoard.body, generated_at: browserBoard.generated_at }))
       .toEqual(parseBoard(browserBoard));
