@@ -5,6 +5,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   alias SymphonyElixir.SymphonyPlusPlus.BranchPattern
   alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
   alias SymphonyElixir.SymphonyPlusPlus.MCP.Config
+  alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreePath
@@ -19,7 +20,10 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
   }
 
   @type tool_error :: {:tool_error, String.t() | tuple()}
-  @type target_repo_root_result :: {:ok, String.t() | nil} | tool_error
+  @type target_repo_root_result ::
+          {:ok, String.t() | nil}
+          | tool_error
+          | {:error, atom() | {:target_repo_root_scope_mismatch, String.t()}}
   @type scope_result :: :ok | {:error, atom()} | tool_error
 
   @spec require_local_branch_pattern_scope(WorkPackage.t(), String.t() | nil, keyword()) :: scope_result()
@@ -48,6 +52,48 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
 
   def cleanup_target_repo_root(nil, %WorkPackage{} = work_package, %Config{} = config) do
     resolve_target_repo_root(nil, work_package, config)
+  end
+
+  @spec prepare_target_repo_root(String.t() | nil, WorkPackage.t(), Config.t()) ::
+          target_repo_root_result() | {:tool_error, String.t(), map()}
+  def prepare_target_repo_root(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
+    with {:ok, root} <- target_repo_root_argument(explicit_root, work_package, config),
+         :ok <- require_target_repo_root_scope(root, work_package, config) do
+      {:ok, root}
+    else
+      {:tool_error, reason} when reason in ["target_repo_root_scope_mismatch", "target_repo_root_required"] ->
+        prepare_scope_error(reason, work_package.repo, explicit_root || config.repo_root)
+
+      {:error, {:target_repo_root_scope_mismatch, root}} ->
+        prepare_scope_error("target_repo_root_scope_mismatch", work_package.repo, root)
+
+      error ->
+        error
+    end
+  end
+
+  defp prepare_scope_error(reason, repo, root) do
+    recovery =
+      if FactoryRepos.enabled?() do
+        "Use a checkout under SYMPP_REPOS_ROOT whose origin matches expected_repo. Factory mode selects the checkout on the server; target_repo_root does not override it."
+      else
+        "Pass target_repo_root pointing to a checkout whose origin matches expected_repo. An upstream remote alone is insufficient: preparation fetches the base from origin."
+      end
+
+    details = %{"expected_repo" => public_repo_label(repo), "target_repo_root" => root, "recovery" => recovery}
+    {:tool_error, reason, Redactor.redact_output(details)}
+  end
+
+  defp public_repo_label(repo) do
+    case URI.parse(repo) do
+      %URI{host: host} = uri when is_binary(host) ->
+        URI.to_string(%{uri | userinfo: nil, query: nil, fragment: nil})
+
+      _uri ->
+        String.replace(repo, ~r/\A[^@\s]+@([^:]+:)/, "\\1")
+    end
+  rescue
+    _error in [URI.Error, ArgumentError] -> nil
   end
 
   @spec target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) :: target_repo_root_result()

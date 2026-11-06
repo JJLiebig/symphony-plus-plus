@@ -9,6 +9,44 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
 
   @moduletag :ci_slow
 
+  test "fork checkout preparation explains recovery and keeps origin scope" do
+    alias SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope
+    alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage
+
+    fixture = TestSupport.git_repo_fixture!("main", prefix: "sympp-fork-scope")
+    TestSupport.git_output!(fixture.repo_root, ["remote", "set-url", "origin", "https://github.com/fork/project.git"])
+    TestSupport.git_output!(fixture.repo_root, ["remote", "add", "upstream", "https://github.com/owner/project.git"])
+    config = Config.default(repo_root: fixture.repo_root)
+    package = %WorkPackage{repo: "owner/project"}
+
+    for explicit_root <- [nil, fixture.repo_root] do
+      assert {:tool_error, reason, details} = WorktreeScope.prepare_target_repo_root(explicit_root, package, config)
+      assert reason in ["target_repo_root_scope_mismatch", "target_repo_root_required"]
+      assert details["expected_repo"] == "owner/project"
+      assert details["target_repo_root"] == fixture.repo_root
+      assert details["recovery"] =~ "Pass target_repo_root"
+      assert details["recovery"] =~ "origin"
+    end
+
+    for {secret, remote} <- [
+          {"ghp_" <> String.duplicate("x", 32), "https://%s@github.com/owner/project.git"},
+          {"unrecognized-password", "https://oauth2:%s@gitlab.com/owner/project.git"},
+          {"private-user", "https://%s@example.org/owner/project.git?access_token=private-query"},
+          {"private-ssh-user", "%s@example.org:owner/project.git"}
+        ] do
+      historical_package = %{package | repo: String.replace(remote, "%s", secret)}
+      result = WorktreeScope.prepare_target_repo_root(fixture.repo_root, historical_package, config)
+      assert {:tool_error, _, redacted} = result
+      refute Jason.encode!(redacted) =~ secret
+      refute Jason.encode!(redacted) =~ "private-query"
+      assert redacted["expected_repo"] =~ "owner/project"
+    end
+
+    TestSupport.git_output!(fixture.repo_root, ["remote", "set-url", "origin", "https://github.com/owner/project.git"])
+    assert {:ok, root} = WorktreeScope.prepare_target_repo_root(nil, package, config)
+    assert root == fixture.repo_root
+  end
+
   test "repo CI signal observes existing checkouts and caches per repo and root" do
     alias SymphonyElixir.SymphonyPlusPlus.FactoryRepos
 
@@ -205,7 +243,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", remote])
     File.mkdir_p!(Path.join(repos_root, name))
     refute FactoryRepos.matches?(checkout, String.replace(remote, "/factory/", "/other/"))
-    assert {:error, :target_repo_root_scope_mismatch} = FactoryRepos.resolve(String.replace(remote, "/factory/", "/other/"))
+    conflicting_remote = String.replace(remote, "/factory/", "/other/")
+    conflicting_root = Path.join(repos_root, name)
+    assert {:error, {:target_repo_root_scope_mismatch, ^conflicting_root}} = FactoryRepos.resolve(conflicting_remote)
+    conflict_package = %SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage{repo: conflicting_remote}
+
+    assert {:tool_error, "target_repo_root_scope_mismatch", details} =
+             WorktreeScope.prepare_target_repo_root(nil, conflict_package, Config.default(repo: repo))
+
+    assert details["expected_repo"] == conflicting_remote
+    assert details["target_repo_root"] == conflicting_root
+    assert details["recovery"] =~ "SYMPP_REPOS_ROOT"
+    assert details["recovery"] =~ "does not override"
+
     assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("C:\\Code\\client")
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(repo: remote, base_branch: "beta"))
     config = Config.default(repo: repo)

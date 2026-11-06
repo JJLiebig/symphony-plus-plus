@@ -3,6 +3,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
 
   alias SymphonyElixir.Config
   alias SymphonyElixir.PathSafety
+  alias SymphonyElixir.SymphonyPlusPlus.GitCheckout
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.RepoIdentity
 
@@ -11,7 +12,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   @spec enabled?() :: boolean()
   def enabled?, do: is_binary(Config.factory_repos_root())
 
-  @spec resolve(String.t()) :: {:ok, String.t()} | {:error, atom()}
+  @spec resolve(String.t()) :: {:ok, String.t()} | {:error, atom() | {:target_repo_root_scope_mismatch, String.t()}}
   def resolve(repo) do
     with :ok <- OfflineSandbox.require_online(),
          {:ok, remote, name} <- remote(repo),
@@ -218,7 +219,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
 
   defp checkout(remote, checkout) do
     if File.exists?(checkout) do
-      if matches?(checkout, remote), do: {:ok, checkout}, else: {:error, :target_repo_root_scope_mismatch}
+      if matches?(checkout, remote), do: {:ok, checkout}, else: {:error, {:target_repo_root_scope_mismatch, checkout}}
     else
       clone(remote, checkout)
     end
@@ -227,7 +228,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
   defp clone(remote, checkout) do
     with git when is_binary(git) <- System.find_executable("git"),
          :ok <- File.mkdir_p(Path.dirname(checkout)),
-         {_output, 0} <- System.cmd(git, ["clone", "--", remote, checkout], stderr_to_stdout: true) do
+         {_output, 0} <- GitCheckout.run(git, ["clone", "--", remote, checkout]) do
       {:ok, checkout}
     else
       _ -> {:error, :factory_clone_failed}

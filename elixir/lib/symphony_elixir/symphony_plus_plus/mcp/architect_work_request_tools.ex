@@ -454,10 +454,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          {:ok, work_package_id} <- required_argument(arguments, "work_package_id"),
          {:ok, work_package, scope} <- scoped_worktree_work_package(config.repo, session, work_package_id),
          {:ok, explicit_root} <- optional_string_argument(arguments, "target_repo_root"),
-         {:ok, target_repo_root} <- WorktreeScope.target_repo_root_argument(explicit_root, work_package, config),
+         {:ok, target_repo_root} <- WorktreeScope.prepare_target_repo_root(explicit_root, work_package, config),
          {:ok, branch_arg} <- optional_string_argument(arguments, "branch"),
          {:ok, branch} <- WorktreeScope.prepare_branch(work_package, branch_arg),
-         :ok <- WorktreeScope.require_target_repo_root_scope(target_repo_root, work_package, config),
          {:ok, result} <-
            WorkPackageService.prepare_worktree(
              config.repo,
@@ -471,9 +470,17 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.ArchitectWorkRequestTools do
          {:ok, audit_event} <- append_worktree_lifecycle_audit(config.repo, session, work_package_id, "prepare_work_package_worktree", result) do
       {:ok, ToolResult.tool_result(worktree_lifecycle_payload(result, scope, audit_event))}
     else
-      {:tool_error, reason} -> {:error, -32_602, "Invalid params", %{"tool" => "prepare_work_package_worktree", "reason" => reason}}
-      {:error, :not_found} -> not_found_error("prepare_work_package_worktree")
-      {:error, reason} -> architect_error(reason, "prepare_work_package_worktree")
+      {:tool_error, reason, details} ->
+        {:error, -32_602, "Invalid params", Map.merge(details, %{"tool" => "prepare_work_package_worktree", "reason" => reason})}
+
+      {:tool_error, reason} ->
+        {:error, -32_602, "Invalid params", %{"tool" => "prepare_work_package_worktree", "reason" => reason}}
+
+      {:error, :not_found} ->
+        not_found_error("prepare_work_package_worktree")
+
+      {:error, reason} ->
+        architect_error(reason, "prepare_work_package_worktree")
     end
   end
 

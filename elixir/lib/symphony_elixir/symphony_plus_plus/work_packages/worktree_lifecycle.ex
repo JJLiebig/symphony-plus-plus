@@ -6,6 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   alias SymphonyElixir.Config
   alias SymphonyElixir.PathSafety
   alias SymphonyElixir.SymphonyPlusPlus.BaseBranch
+  alias SymphonyElixir.SymphonyPlusPlus.GitCheckout
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.Planning.Redactor
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.Repository
@@ -1177,6 +1178,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorktreeLifecycle do
   end
 
   defp run_git(git, repo_root, args) when is_function(git, 2), do: git.(repo_root, args)
+  defp run_git(git, repo_root, ["worktree", "add" | _] = args), do: GitCheckout.run(git, ["-C", repo_root | args])
   defp run_git(git, repo_root, args), do: System.cmd(git, ["-C", repo_root | args], stderr_to_stdout: true)
 
   defp git_context_opts(opts, target_repo_root, worktree_path, branch, base_branch) do
