@@ -16,6 +16,14 @@ export const chiefArgv = (agent, brief) => [...agent.run, ...(MESSAGE[agent.key]
 
 export const chiefSpaceName = (name) => `${name} chief`;
 
+// Where Start chief records the spaces it made: { [space id]: topic id }.
+export const CHIEF_SPACES = "sympp.chief.spaces";
+
+// A topic's chief space: one Start chief made for it, or one named as it names them (spaces made before
+// it kept a record). Reached from the topic's sympp mark, never listed; the desk-topics chrome keeps
+// the same rule.
+export const isChiefSpace = (space, topic, made) => made?.[space.id] === topic.id || space.name === chiefSpaceName(topic.name);
+
 export function endpointHost(endpoint) {
   const host = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]+\]|[^/:?#]+)/i.exec(endpoint ?? "")?.[1];
   return host ? host.replace(/^\[|\]$/g, "").toLowerCase() : null;
@@ -70,4 +78,15 @@ export function intoTopic(deskTopics, topic, space) {
   group.spaces.push(space);
   group.folded = false;
   return next;
+}
+
+// The topic mark's right-click menu, only what applies: a running chief's space (when it has a pane
+// there) and adding it to a composition, then starting a new chief, whose registration replaces it.
+export function chiefMenu(terminal, terminalList, paneList) {
+  const live = Boolean(terminal) && terminalList.some((k) => k.address === terminal && k.state === "live");
+  return [
+    ...(live && paneList.some((p) => p.terminal === terminal) ? [{ label: "Go to chief space", action: "space" }] : []),
+    ...(live ? [{ label: "Add to composition", action: "composition" }] : []),
+    { label: "Start new chief", action: "start" },
+  ];
 }

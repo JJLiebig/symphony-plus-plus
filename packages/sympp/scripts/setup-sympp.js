@@ -62,8 +62,11 @@ function codexConfig(config, registration) {
     throw new Error("Codex already has an unmanaged sympp MCP registration. Remove it explicitly before setup.");
   }
   if (/^\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*=/m.test(syntax)) throw new Error("This Codex configuration uses an inline MCP table that setup cannot safely extend. Use a separate CODEX_HOME with standard server tables.");
+  // Codex passes an MCP server only the variables it lists. The bridge needs the agent's Herdr terminal
+  // to bind it, so a chief or worker can be found and checked.
   const lines = [begin, `[mcp_servers.${name}]`, `command = ${JSON.stringify(registration.command)}`,
-    `args = ${JSON.stringify(registration.args)}`, "startup_timeout_sec = 360", "tool_timeout_sec = 300", "",
+    `args = ${JSON.stringify(registration.args)}`, "startup_timeout_sec = 360", "tool_timeout_sec = 300",
+    'env_vars = ["HC_TERMINAL_ID", "HC_TERMINAL_SOCKET"]', "",
     `[mcp_servers.${name}.env]`, ...Object.entries(registration.env).map(([key, value]) => `${key} = ${JSON.stringify(value)}`), end, ""];
   const block = lines.join("\n");
   if (matches.length) {

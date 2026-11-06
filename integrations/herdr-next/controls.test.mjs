@@ -70,7 +70,11 @@ test('agent jumps require trusted host configuration, a live receipt and unchang
     assert.equal(M.checkedBinding(binding, checked(), []), false);
     assert.equal(M.checkedBinding(binding, { code: 1, stdout: checked().stdout }, [term]), false);
     assert.equal(M.checkedBinding(binding, { code: 0, stdout: '{}' }, [term]), false);
-    assert.equal(M.discoverBindings({}, [term])[0].available, false);
+    // Another machine without configured hosts uses the helper of the sympp skill installed there.
+    const unconfigured = M.discoverBindings({}, [term])[0];
+    assert.equal(unconfigured.available, remote);
+    if (remote) assert.deepEqual([unconfigured.host.node, ...M.bindingCheckArgs(unconfigured)],
+      ['node', '.agents/skills/sympp/scripts/sympp-herdr.js', 'check', '--receipt', '/home/me/launch.json', '--json']);
     assert.equal(M.discoverBindings({ [remote ? 'build' : 'local']: host }, [{ ...term, labels: { ...term.labels, 'sympp.receipt': 'relative.json' } }])[0].available, false);
   }
 });

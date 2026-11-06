@@ -5,14 +5,16 @@
 // and "Live" both rest on a trusted execution helper's check, never on terminal labels or text. A
 // topic with a registered chief shows that chief's desk. A copy opened with props.studio is one UI
 // package's studio: its worker's terminal beside a preview, in a tab named after the package. A copy
-// opened with props.role "chief" is the Start chief dialog for props.topic.
+// opened with props.role "chief" is the Start chief dialog for props.topic; "chief-menu" is the topic
+// mark's right-click menu.
 //
-// Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel" | "chief", job?: "<work request id>",
+// Block props: { endpoint: "http://127.0.0.1:<port>", role?: "overview" | "panel" | "chief" | "chief-menu", job?: "<work request id>",
 //   studio?: { job: "<work request id>", pkg: "<work package id>" },
 //   dashboardUrl?, repoTopics?: { "owner/repo" | "repo": "<desk topic id or name>" },
 //   hosts?: { local: { node, helper, session?, runtime? }, "machine": { node, helper, session? } } }
 // With local.runtime (the factory's runtime record) a view starts that sympp when it doesn't answer.
-// Hosts may also be configured explicitly in shared("sympp.hosts"). A copy without an endpoint uses the
+// Hosts may also be configured explicitly in shared("sympp.hosts"). Another machine without a host runs
+// the sympp skill's helper installed there (model.js). A copy without an endpoint uses the
 // connection the last connected copy shared ("sympp.connection"), so a scripted studio needs only its ids.
 //
 // Modules: model.js (board in, view data out), levels.js (Factory, Topic and Space placement, panel
@@ -20,7 +22,7 @@
 // transport.js (native HTTP), ui.js (shared look), overview.js and jobview.js (what each level
 // draws), rails.js (package rails on a shared time axis), chrome.js (what the patched desk agents
 // list shows on sympp agents), studio.js and studioview.js (a UI package's studio), chief.js and
-// chiefview.js (Start chief).
+// chiefview.js (Start chief and the topic mark's menu).
 
 import { View } from "gpui-kit";
 import { v_flex, InputState, TextareaState } from "gpui-base";
@@ -38,7 +40,7 @@ import { button, message } from "./ui.js";
 import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
 import { studioView } from "./studioview.js";
-import { ChiefStart } from "./chiefview.js";
+import { ChiefStart, ChiefMenu } from "./chiefview.js";
 
 const TICK = 5000;
 const REPAINT = 30000;
@@ -86,8 +88,8 @@ export default class Lens extends View {
     const own = p ?? props() ?? {};
     const stored = own.endpoint ? null : shared(CONNECTION);
     const given = stored && typeof stored === "object" ? { ...stored, ...own } : own;
-    if (own.role === "chief") {
-      this.chief = new ChiefStart(own, given.endpoint, cx);
+    if (own.role === "chief" || own.role === "chief-menu") {
+      this.chief = own.role === "chief" ? new ChiefStart(own, given.endpoint, cx) : new ChiefMenu(own, cx);
       return;
     }
     this.given = given;

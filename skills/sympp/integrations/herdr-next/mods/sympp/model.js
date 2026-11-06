@@ -446,7 +446,12 @@ export function verdictCounts(jobs) {
 
 // ---------- Terminal bindings ----------
 
-// Labels identify candidates, never proof. Only trusted host configuration chooses executable paths.
+// Another machine's agents are checked by the helper of the sympp skill setup installed there, with
+// that machine's node. Its commands start in its home, on its core session.
+export const INSTALLED_HELPER = { node: "node", helper: ".agents/skills/sympp/scripts/sympp-herdr.js" };
+
+// Labels identify candidates, never proof. Only trusted host configuration, or the installed helper on
+// another machine, chooses executable paths.
 export function discoverBindings(hosts, terminalList) {
   return (terminalList ?? []).flatMap((terminal) => ["launch", "session"].flatMap(kind => {
     const labels = terminal.labels ?? {};
@@ -461,7 +466,7 @@ export function discoverBindings(hosts, terminalList) {
     const split = address.indexOf("/");
     const machine = split < 0 ? null : address.slice(0, split);
     const terminalId = split < 0 ? address : address.slice(split + 1);
-    const host = hosts?.[machine ?? "local"];
+    const host = hosts?.[machine ?? "local"] ?? (machine ? INSTALLED_HELPER : null);
     const pid = Number(labels[`${prefix}pid`]);
     const processId = kind === "session" ? Number(labels[`${prefix}process_id`]) : null;
     const receipt = labels[`${prefix}receipt`];

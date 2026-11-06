@@ -2,13 +2,13 @@
 // the topic has no running chief. Modelled on Herdr's Change anything (app.ask): an agent chip (the
 // last one started comes first), a machine chip that starts on the factory's machine, and the line,
 // whose text is added to the chief's brief. Enter starts the agent as a normal tab in the topic's own
-// "<topic> chief" space on that machine, made once and reused, so the chief stays in its topic like
-// any other space. A failure keeps the dialog and its text and says what failed.
+// "<topic> chief" space on that machine, made once and reused. The space stays in its topic, unlisted:
+// the topic's sympp mark leads there. A failure keeps the dialog and its text and says what failed.
 
 import { div, svg, image } from "gpui-kit";
-import { h_flex, v_flex, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, knownAgents, machines, spaces, shared, setShared, exec, hc, home, layout, run, settings } from "herdr";
-import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic } from "./chief.js";
+import { h_flex, v_flex, InputState, Input, Button } from "gpui-base";
+import { theme, props, closeOverlay, openOverlay, knownAgents, machines, spaces, terminals, panes, shared, setShared, exec, hc, home, layout, run, settings } from "herdr";
+import { chiefBrief, chiefArgv, chiefSpaceName, factoryMachine, chiefFolders, intoTopic, isChiefSpace, CHIEF_SPACES, chiefMenu } from "./chief.js";
 
 const W = 560;
 const H = 46;
@@ -124,8 +124,8 @@ export class ChiefStart {
     cx.spawn(async (cx) => {
       try {
         const desk = shared("desk.topics");
-        const all = spaces(), ids = desk?.groups?.find((g) => g.id === this.topic)?.spaces ?? [];
-        const mine = all.filter((s) => ids.includes(s.id));
+        const topic = desk?.groups?.find((g) => g.id === this.topic) ?? { id: this.topic, name: this.name, spaces: [] };
+        const all = spaces(), mine = all.filter((s) => (topic.spaces ?? []).includes(s.id));
         let folder = "";
         for (const candidate of chiefFolders(mine, all, machine)) {
           // The folder is there when a program can start in it.
@@ -134,7 +134,7 @@ export class ChiefStart {
         // Else the machine's home, said outright: left out, Herdr would start in the focused pane's folder.
         if (!folder) folder = machine ? await exec("pwd", [], { on: machine }).then((r) => (r.code === 0 ? r.stdout.trim() : ""), () => "") : home();
         const argv = chiefArgv(agent, chiefBrief(this.name, text));
-        const own = mine.find((s) => s.name === chiefSpaceName(this.name) && (s.machine ?? null) === machine);
+        const own = mine.find((s) => isChiefSpace(s, topic, shared(CHIEF_SPACES)) && (s.machine ?? null) === machine);
         const made = own
           ? await app("tab.new", { space: own.id, name: "chief", argv, ...(folder ? { folder } : {}) })
           : await app("space.new", { name: chiefSpaceName(this.name), tab: "chief", argv, ...(folder ? { folder } : {}), machine: machine ?? "" });
@@ -142,6 +142,7 @@ export class ChiefStart {
           const next = intoTopic(shared("desk.topics"), this.topic, made.space);
           if (next) setShared("desk.topics", next);
         }
+        setShared(CHIEF_SPACES, { ...shared(CHIEF_SPACES), [own?.id ?? made.space]: this.topic });
         setShared(LAST, { key: agent.key, name: agent.name, icon: agent.icon, tint: agent.tint, run: agent.run });
         // A desk shows its spaces' tabs in its workspace view.
         if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });
@@ -250,5 +251,61 @@ export class ChiefStart {
       .when(Boolean(box), (el) => el.child(box))
       .when(Boolean(error), (el) => el.child(error))
       .when(Boolean(list), (el) => el.child(list));
+  }
+}
+
+const MENU_ICONS = { space: "terminal", composition: "layers", start: "plus" };
+
+// The topic mark's right-click menu (props.terminal: its running chief), drawn like the desk's context
+// menus. Add to composition opens the desk's own composition menu for the chief, as the mark's
+// right-click did before.
+export class ChiefMenu {
+  constructor(own, cx) {
+    this.topic = own.topic;
+    this.name = typeof own.name === "string" && own.name ? own.name : "Topic";
+    this.terminal = typeof own.terminal === "string" && own.terminal ? own.terminal : null;
+    this.at = 0;
+    this.handle = cx.focus_handle();
+    this.handle.focus();
+  }
+
+  items() {
+    return chiefMenu(this.terminal, terminals(), panes());
+  }
+
+  choose(item) {
+    if (!item) return;
+    closeOverlay(props().overlay);
+    if (item.action === "space") {
+      if (find(layout(), "desk-views")) run("layout.select", { stack: "desk-views", child: "desk-workspace" });
+      run("pane.focus", { terminal: this.terminal });
+    } else if (item.action === "composition") {
+      openOverlay({ mod: "desk-compositions", kind: "popup", width: 524, frame: "none", props: { role: "context-menu", tab: "agent", target: { terminal: this.terminal } } });
+    } else {
+      openOverlay({ mod: "sympp", kind: "window", frame: "none", width: 1, height: 1, props: { role: "chief", topic: this.topic, name: this.name } });
+    }
+  }
+
+  render() {
+    const t = theme(), list = this.items();
+    this.at = Math.min(this.at, list.length - 1);
+    return v_flex().id("chief-menu").track_focus(this.handle).w_full().min_h(0).p(5).rounded(8).border(1).border_color(t.border)
+      .bg(t.popover).text_size(12.8).text_color(t.foreground).role("menu")
+      .on_key_down((e, cx) => {
+        if (e.key === "down") this.at = (this.at + 1) % list.length;
+        else if (e.key === "up") this.at = (this.at + list.length - 1) % list.length;
+        else if (e.key === "enter") this.choose(list[this.at]);
+        else if (e.key === "escape") closeOverlay(props().overlay);
+        else return;
+        cx.stop_propagation();
+        cx.notify();
+      })
+      .children(list.map((item, i) => v_flex().id(`chief-menu-${item.action}-hover`)
+        .on_hover((on, cx) => { if (on && this.at !== i) { this.at = i; cx.notify(); } })
+        .child(Button.new(`chief-menu-${item.action}`).flex().w_full().h(31).px(8).gap(9).rounded(6).items_center().role("menu_item")
+          .bg(i === this.at ? t.selected : t.popover).hover((s) => s.bg(t.hover)).cursor_pointer()
+          .on_click((_e, cx) => { cx.stop_propagation(); this.choose(item); })
+          .child(svg(`mods/workspace-chrome/${MENU_ICONS[item.action]}.svg`).size(14).flex_none().text_color(t.muted))
+          .child(div().flex_1().child(item.label)))));
   }
 }

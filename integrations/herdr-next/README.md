@@ -75,12 +75,18 @@ node integrations/herdr-next/install.mjs --endpoint $origin --chrome
   once it has been shown.
 - A UI studio tab shows the sympp glyph in a small window tucked behind its icon.
 - With a personal `desk-topics` sidebar, each topic header shows the sympp mark. With a running
-  chief, click opens the chief (its pane, else a peek) and right-click adds it to a composition.
-  Without one (greyed, or dimmed while a registered chief isn't running), click opens **Start chief**:
-  pick an agent and a machine (the factory's by default), add anything for the chief to the line, and
-  press Enter. The agent starts as a normal tab in the topic's own "<topic> chief" space on that
-  machine, in the topic's checkout there (else its repos folder or home), told to register as the
-  topic's chief. Starting again reuses that space. A desk without `desk-topics` gets the rest.
+  chief, click peeks at it and Shift+click switches to its space and tab. Without one (greyed, or
+  dimmed while a registered chief isn't running), click opens **Start chief**: pick an agent and a
+  machine (the factory's by default), add anything for the chief to the line, and press Enter. The
+  agent starts as a normal tab in the topic's own "<topic> chief" space on that machine, in the
+  topic's checkout there (else its repos folder or home), told to register as the topic's chief.
+  Starting again reuses that space.
+  Right-click the mark for what applies: **Go to chief space**, **Add to composition** and **Start
+  new chief** (its registration replaces the current chief).
+  The chief space isn't listed in the sidebar; while it's shown, its topic's header is highlighted.
+  With the sidebar collapsed, a running chief's mark replaces its topic's divider. A chief on another
+  machine shows as running once that machine has the sympp skill installed (`sympp update` there).
+  A desk without `desk-topics` gets the rest; an older `desk-topics` chrome upgrades in place.
 
 The installer backs up the layout and the desk mods under `data/sympp-chrome`, adds
 a `sympp` panel to the layout's `panel-body` stack, and patches the desk mods in

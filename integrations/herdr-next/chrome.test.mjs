@@ -358,3 +358,84 @@ test('pre-rename chrome upgrades preserving personal edits and backing up the ol
   const backups = await snapshot(join(home, 'data', 'sympp-panel-backups'));
   assert.ok(Object.values(backups).some(body => body.toString() === '// old panel'));
 });
+
+// The desk-topics chrome's own code, run against stand-ins for Herdr and GPUI.
+function topicsChrome(state) {
+  const code = deskTopics.edits[0].replace.replace(/export default class Topics extends Spaces \{\n$/, '')
+    .replace(/import \{([^}]+)\} from "([^"]+)";/g, (_m, names, from) => `const {${names.replaceAll(' as ', ': ')}} = stubs[${JSON.stringify(from)}];`);
+  // An element takes any style or handler; it keeps its click and mouse-down handlers and applies `when`.
+  const build = () => {
+    const handlers = {};
+    const el = new Proxy({}, { get: (_t, key) => key === 'handlers' ? handlers
+      : key === 'when' ? (cond, f) => (cond ? f(el) : el)
+      : key === 'on_click' ? (f) => { handlers.click = f; return el; }
+      : key === 'on_mouse_down' ? (button, f) => { handlers[button] = f; return el; }
+      : () => el });
+    return el;
+  };
+  const stubs = {
+    'gpui-kit': { div: build, image: build },
+    'gpui-base': { h_flex: build },
+    herdr: {
+      shared: (key) => state.shared[key], terminals: () => state.terminals, panes: () => state.panes ?? [], spaces: () => state.spaces ?? [],
+      layout: () => state.layout ?? null, theme: () => ({ chrome: '#ffffff' }),
+      run: (command, args) => state.ran.push([command, args]), openOverlay: (o) => state.ran.push(['overlay', o.props]),
+    },
+  };
+  return new Function('stubs', `${code}\nreturn { symppChief, symppUnlisted, symppInside };`)(stubs);
+}
+
+test('the topic mark peeks at a running chief, switches to it on shift, otherwise starts one, and right-click opens its menu', () => {
+  const state = { shared: {}, terminals: [{ address: 'jjdev/t7w', state: 'live', status: 'idle' }], ran: [] };
+  const { symppChief } = topicsChrome(state);
+  const click = (shift) => {
+    state.ran = [];
+    const [, mark] = symppChief({ clearDrag() {}, status() {} }, 'topic-k', 'Kraken', {}, () => state.ran.push(['workspace']));
+    mark.handlers.click({ modifiers: { shift } }, { stop_propagation() {} });
+    return state.ran;
+  };
+  const start = [['overlay', { role: 'chief', topic: 'topic-k', name: 'Kraken' }]];
+  const menu = () => {
+    state.ran = [];
+    const [, mark] = symppChief({ clearDrag() {}, status() {} }, 'topic-k', 'Kraken', {}, () => {});
+    mark.handlers.right({}, { stop_propagation() {} });
+    return state.ran;
+  };
+  assert.deepEqual(menu(), [['overlay', { role: 'chief-menu', topic: 'topic-k', name: 'Kraken', terminal: null }]]);
+  assert.deepEqual(click(false), start, 'no chief');
+  state.shared['sympp.chiefs'] = { 'topic-k': [{ domain: 'Kraken', terminal: null }] };
+  assert.deepEqual(click(true), start, 'a registered chief that isn\'t running');
+  const compact = () => symppChief({ clearDrag() {}, status() {} }, 'topic-k', 'Kraken', {}, () => {}, true);
+  assert.deepEqual(compact(), [], 'a collapsed sidebar keeps the divider without a running chief');
+  state.shared['sympp.chiefs'] = { 'topic-k': [{ domain: 'Kraken', terminal: 'jjdev/t7w' }] };
+  assert.deepEqual(click(false), [['terminal.peek', { terminal: 'jjdev/t7w' }]]);
+  assert.deepEqual(click(true), [['terminal.peek', { terminal: 'jjdev/t7w' }]], 'shift without a pane to switch to');
+  assert.deepEqual(menu(), [['overlay', { role: 'chief-menu', topic: 'topic-k', name: 'Kraken', terminal: 'jjdev/t7w' }]]);
+  const [collapsed, ...rest] = compact();
+  assert.equal(rest.length, 0, 'a collapsed sidebar shows only the mark, in place of the divider');
+  state.ran = [];
+  collapsed.handlers.click({ modifiers: { shift: false } }, { stop_propagation() {} });
+  assert.deepEqual(state.ran, [['terminal.peek', { terminal: 'jjdev/t7w' }]]);
+  state.panes = [{ pane: 'p1', terminal: 'jjdev/t7w' }];
+  assert.deepEqual(click(true), [['workspace'], ['pane.focus', { terminal: 'jjdev/t7w' }]]);
+  assert.deepEqual(click(false), [['terminal.peek', { terminal: 'jjdev/t7w' }]]);
+});
+
+test('a topic\'s chief spaces are left out of the sidebar, and its header shows while one is open', () => {
+  const state = { ran: [], terminals: [],
+    shared: { 'desk.topics': { groups: [{ id: 'topic-k', name: 'Kraken', spaces: ['api', 'chief', 'made', 'web'] }, { id: 'topic-o', name: 'Other', spaces: ['elsewhere'] }] },
+      'sympp.chief.spaces': { made: 'topic-k', elsewhere: 'topic-k' } },
+    spaces: [{ id: 'api', name: 'api' }, { id: 'chief', name: 'Kraken chief' }, { id: 'made', name: 'renamed' }, { id: 'tree', name: 'fix' },
+      { id: 'web', name: 'web' }, { id: 'elsewhere', name: 'moved' }],
+    layout: { id: 'root', children: [{ id: 'desk-views', active: 'desk-workspace' }] } };
+  const { symppUnlisted, symppInside } = topicsChrome(state);
+  const row = (id, tree = null) => ({ w: { id }, tree });
+  assert.deepEqual(symppUnlisted([row('api'), row('chief'), row('tree', '└─'), row('made'), row('web'), row('elsewhere')]),
+    [row('api'), row('tree'), row('web'), row('elsewhere')], 'a worktree listed under a chief space stays, on its own; a space recorded for another topic stays');
+  assert.equal(symppInside('topic-k'), false);
+  state.spaces.find((s) => s.id === 'chief').active = true;
+  assert.equal(symppInside('topic-k'), true);
+  assert.equal(symppInside('topic-o'), false);
+  state.layout.children[0].active = 'desk-board';
+  assert.equal(symppInside('topic-k'), false, 'not while the desk shows something else');
+});
