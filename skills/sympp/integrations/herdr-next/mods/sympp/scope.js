@@ -16,13 +16,13 @@ export function packageEvidence(pkg, now, needsYou = false) {
 }
 
 // The PR's checks as one live signal, apart from the step line: "waiting" before they start, then
-// "running", "passed" or "failed". A repository without CI has no signal; one the board says nothing
-// about shows it once checks report.
-const CHECKS = { pending: "running", passing: "passed", failing: "failed" };
+// "running", "passed" or "failed"; "unknown" when the PR's checks can't be read. A repository without
+// CI has no signal; one the board says nothing about shows it once checks report.
+const CHECKS = { pending: "running", passing: "passed", failing: "failed", unavailable: "unknown" };
 export function ciOf(pkg) {
   if (pkg.ci === false || pkg.track === "no_pr" || pkg.stage === "done") return null;
   const state = CHECKS[pkg.pr.checks] ?? "waiting";
-  return pkg.ci === true || state !== "waiting" ? state : null;
+  return pkg.ci === true || (state !== "waiting" && state !== "unknown") ? state : null;
 }
 
 // A task's checks at a glance: any failing, else any running, else passed once any passed. A task
@@ -30,12 +30,14 @@ export function ciOf(pkg) {
 export function taskCi(packages) {
   const states = packages.map(ciOf).filter(Boolean);
   if (!states.length) return null;
-  return ["failed", "running", "passed"].find((s) => states.includes(s)) ?? "waiting";
+  return ["failed", "running", "passed", "unknown"].find((s) => states.includes(s)) ?? "waiting";
 }
 
-// Where a review stands, in a word or two, from the provider's current step.
-const PHASES = { "deep-signoff": "deep sign-off", signoff: "sign-off", "sign-off": "sign-off", github: "GitHub", "broad-discovery": "discovery" };
+// Where a review stands, in a word or two: GitHub once Review Suite's next action is the GitHub
+// review, else its current step. Names are Review Suite's shipped steps; others keep their own words.
+const PHASES = { "arena-base-review": "base review", "base-signoff": "base sign-off", "arena-deep-review": "deep review", "deep-signoff": "deep sign-off" };
 export function reviewPhase(pkg) {
+  if (pkg.review.nextAction === "github_review") return "GitHub";
   const step = pkg.review.steps?.find((s) => s.state === "current")?.name ?? pkg.review.step;
   if (!step) return null;
   const key = String(step).trim().toLowerCase();

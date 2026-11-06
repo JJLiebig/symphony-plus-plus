@@ -286,6 +286,7 @@ function buildPackage(slice, groups, now, runs) {
       status: review.status ?? null,
       mode: review.mode ?? slice.review?.args?.mode ?? null,
       providerStatus: review.provider_status ?? null,
+      nextAction: review.next_action ?? null,
       step: review.step ?? null,
       current: review.current ?? null,
       total: review.total ?? null,

@@ -51,11 +51,11 @@ export function boardPayload() {
             review_signal: {
               type: 'review_suite', mode: 'fast', status: 'in_progress', provider_status: 'decision-pending', round: 3,
               started_at: at(200), round_started_at: at(40), observed_at: at(2), observation_state: 'current',
-              steps: [{ index: 0, name: 'broad-discovery', state: 'done' }, { index: 1, name: 'signoff', state: 'current' }, { index: 2, name: 'github', state: 'pending' }],
+              steps: [{ index: 0, name: 'arena-base-review', state: 'done' }, { index: 1, name: 'base-signoff', state: 'current' }],
               round_history: [
-                { number: 1, lane: 'review_t1', step: 'broad-discovery', status: 'decided', started_at: at(200), finished_at: at(150), outcome: 'findings', findings: 4 },
+                { number: 1, lane: 'review_t1', step: 'arena-base-review', status: 'decided', started_at: at(200), finished_at: at(150), outcome: 'findings', findings: 4 },
                 { number: 2, lane: 'review-followup', step: null, status: 'decided', started_at: at(120), finished_at: at(60), outcome: 'findings', findings: 2 },
-                { number: 3, lane: 'review_t1', step: 'signoff', status: 'decision-pending', started_at: at(40), finished_at: null, outcome: null, findings: null },
+                { number: 3, lane: 'review_t1', step: 'base-signoff', status: 'decision-pending', started_at: at(40), finished_at: null, outcome: null, findings: null },
               ],
             },
             activity_signal: { current_actor: { role: 'worker', name: 'opus-lens' }, observation_state: 'stale', waiting_reason: 'review_in_progress', next_actor: 'human', next_action: 'answer_guidance', last_update_at: at(25) },
@@ -98,12 +98,13 @@ export function boardPayload() {
 // trouble, stuck, without a recent report, landed and planned; PR checks not started, running,
 // passed and failed; reviews in each Review Suite step; a repository without CI; and a package no
 // worker has taken. "quiet" is the busy board with nothing waiting on the person and nothing wrong.
-// Live packages report current activity unless a case says otherwise. `repo_signal.has_ci` is
-// proposed: whether the package's repository runs CI at all.
+// Live packages report current activity unless a case says otherwise. `repo_signal.has_ci` says
+// whether the package's repository runs CI at all. Review steps are Review Suite's deep profile; a
+// review past its last step waits on the GitHub review.
 const CI = { 'owner/web': true, 'owner/api': true, 'owner/notes': false };
 const reviewSteps = (current) => {
-  const names = ['broad-discovery', 'deep-signoff', 'github'];
-  const at = names.indexOf(current);
+  const names = ['base-signoff', 'arena-deep-review', 'deep-signoff'];
+  const at = current === null ? names.length : names.indexOf(current);
   return names.map((name, index) => ({ index, name, state: index < at ? 'done' : index === at ? 'current' : 'pending' }));
 };
 
@@ -145,10 +146,10 @@ export function variantPayload(variant) {
       work_request: { id: 'wr-status', title: 'Quieter status bar', repo: 'owner/web', status: 'sliced', inserted_at: at(150) },
       work_packages: [
         step('s-1', 'Status colours', 1, 'review', 30, { pr_signal: { status: 'open', number: 835, checks: { status: 'passing' } },
-          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: 2, started_at: at(90), round_started_at: at(12), steps: reviewSteps('github') } }),
+          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: 2, started_at: at(90), round_started_at: at(12), steps: reviewSteps(null), next_action: 'github_review' } }),
         // Pushed during review: its checks run again.
         step('s-2', 'Bar layout', 2, 'review', 20, { pr_signal: { status: 'open', number: 836, checks: { status: 'pending' } },
-          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: 1, started_at: at(20), round_started_at: at(20), steps: reviewSteps('broad-discovery') } }),
+          review_signal: { type: 'review_suite', mode: 'fast', status: 'in_progress', round: 1, started_at: at(20), round_started_at: at(20), steps: reviewSteps('base-signoff') } }),
         // Dispatched to Build, but no worker has taken it yet.
         pkg('s-3', 'Status tooltip', 3, { stage: 'build', track: 'pr', entered_at: at(5) }),
       ],

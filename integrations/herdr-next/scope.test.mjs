@@ -69,11 +69,13 @@ test("a task's checks are one live signal, with a slot from the start only where
   for (const d of unknown.work_request_details) for (const p of d.work_packages ?? []) delete p.repo_signal;
   assert.equal(task(unknown, 'wr-cross').ci, null, 'without the flag, no slot until checks report');
   assert.equal(task(unknown, 'wr-restore').ci, 'failed');
+  const unread = (ci) => S.ciOf({ ci, track: 'pr', stage: 'review', pr: { checks: 'unavailable' } });
+  assert.deepEqual([unread(true), unread(null)], ['unknown', null], 'checks that cannot be read keep the slot but claim nothing');
 });
 
 test('a review says where it stands in a word or two, and a Build package no worker took reads as empty', () => {
   const pkgs = Object.fromEntries(jobsOf(variantPayload('busy')).flatMap((job) => job.packages).map((p) => [p.id, p]));
-  assert.deepEqual(['s-2', 'r-4', 's-1', 'wp-review'].map((id) => S.reviewPhase(pkgs[id])), ['discovery', 'deep sign-off', 'GitHub', 'sign-off']);
+  assert.deepEqual(['s-2', 'r-4', 's-1', 'wp-review'].map((id) => S.reviewPhase(pkgs[id])), ['base sign-off', 'deep sign-off', 'GitHub', 'base sign-off']);
   assert.equal(S.reviewPhase(pkgs['r-7']), null, 'no step reported, no phase');
   assert.deepEqual(['s-3', 'r-6', 't-1'].map((id) => S.unmanned(pkgs[id])), [true, false, false]);
 });

@@ -13,6 +13,7 @@ import * as R from "./rails.js";
 import * as St from "./studio.js";
 import * as S from "./scope.js";
 import * as O from "./overview.js";
+import { ago } from "./model.js";
 import { questionRow, reviewPane } from "./jobview.js";
 import { CLEAR, EXPAND, icon, tint } from "./ui.js";
 import { CHIEF_SPACES, isChiefSpace } from "./chief.js";
@@ -192,17 +193,19 @@ function drawBox(t, look, size) {
 
 // The PR's checks: a hollow ring before they start, a solid amber dot with a pulsing amber halo while
 // they run, green once passed, red when failed. No words; the tooltip names it.
-const CI_TIP = { waiting: "Checks not started", running: "Checks running", passed: "Checks passed", failed: "Checks failed" };
-function ciDot(v, t, key, state, id) {
+// A package's dot also says, on hover, when its checks last changed.
+const CI_TIP = { waiting: "Checks not started", running: "Checks running", passed: "Checks passed", failed: "Checks failed", unknown: "Checks unavailable" };
+function ciDot(v, t, key, state, id, since = null) {
   if (!state) return null;
-  return h_flex().id(id).w(8).h(8).flex_none().items_center().justify_center().tooltip(CI_TIP[state]).accessibility_label(CI_TIP[state])
+  const tip = since === null || state === "waiting" ? CI_TIP[state] : `${CI_TIP[state]} · ${since}`;
+  return h_flex().id(id).w(8).h(8).flex_none().items_center().justify_center().tooltip(tip).accessibility_label(tip)
     .child(marked(v, `ci:${key}`, state, (s) => drawCi(t, s), `${id}-mark`));
 }
 
 function drawCi(t, state) {
   const c = signal();
   const base = div().size(8).flex_none().rounded(4);
-  if (state === "waiting") return base.border(1.5).border_color(tint(t.foreground, "55"));
+  if (state === "waiting" || state === "unknown") return base.border(1.5).border_color(tint(t.foreground, "55"));
   if (state === "running") return div().relative().size(8).flex_none()
     .child(div().absolute().top(-3).left(-3).size(14).rounded(7).border(1.5).border_color(c.checks)
       .loop("opacity", { from: 0, to: 0.9, period: 1600 }))
@@ -379,7 +382,7 @@ function pkgRow(v, t, job, e, ctx, wide, odd) {
     .when(Boolean(quiet), (el) => el.child(mono(11, t.dim).child(quiet.text)));
   const lead = h_flex().id(`lead-${pkg.id}`).w(10).flex_none().justify_center().child(box(v, t, pkg, 8, `lead-${pkg.id}`));
   const live = pkg.stage !== "done" && pkg.stage !== "queued";
-  const ci = ciDot(v, t, pkg.id, S.ciOf(pkg), `ci-${pkg.id}`);
+  const ci = ciDot(v, t, pkg.id, S.ciOf(pkg), `ci-${pkg.id}`, ago(pkg.pr.checksAt, ctx.now));
   const content = !live
     ? h_flex().flex_1().min_w(0).gap(10).items_center().child(lead).child(name).when(Boolean(ci), (x) => x.child(ci))
     : wide

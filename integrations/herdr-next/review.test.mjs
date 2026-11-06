@@ -21,12 +21,12 @@ test('a churning review reads as its stage, step ladder and rounds, newest first
   const d = Rv.reviewDetail(pkgOf(jobOf('wr-pr'), 'wp-review'), NOW);
   assert.equal(d.provider, 'Review Suite · fast');
   assert.deepEqual(d.stage, { code: 'decision-pending', text: 'Waiting for the worker to decide on findings', tone: 'waiting' });
-  assert.deepEqual(d.ladder, [{ name: 'Broad discovery', state: 'done' }, { name: 'Signoff', state: 'current' }, { name: 'Github', state: 'pending' }]);
+  assert.deepEqual(d.ladder, [{ name: 'Arena base review', state: 'done' }, { name: 'Base signoff', state: 'current' }]);
   assert.equal(d.progress, null);
   assert.deepEqual(rows(d), [
-    [3, 'Tier 1 review', 'Signoff', 'In progress', null, '40m', true],
+    [3, 'Tier 1 review', 'Base signoff', 'In progress', null, '40m', true],
     [2, 'Follow-up', null, 'Findings', 2, '1h 00m', false],
-    [1, 'Tier 1 review', 'Broad discovery', 'Findings', 4, '50m', false],
+    [1, 'Tier 1 review', 'Arena base review', 'Findings', 4, '50m', false],
   ]);
   assert.deepEqual([d.round, d.overall, d.total, d.omitted, d.observation, d.observedAt], ['40m', '3h 20m', 3, 0, null, NOW - 2 * MIN]);
   const waiting = reviewing({ ...boardPayload().work_request_details[0].work_packages.find((p) => p.id === 'wp-review').review_signal, provider_status: 'followup-pending',
