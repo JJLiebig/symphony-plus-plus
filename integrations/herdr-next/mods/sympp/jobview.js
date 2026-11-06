@@ -53,7 +53,7 @@ function stageTone(t, tone) {
 export function reviewPane(v, t, pkg, ctx, narrow) {
   const d = Rv.reviewDetail(pkg, ctx.now);
   const late = d.total >= 3 && pkg.stage === "review";
-  const stat = (label, value, hot) => v_flex().gap(2).min_w(0)
+  const stat = (label, value, hot) => v_flex().flex_none().gap(2)
     .child(div().text_size(11).text_color(t.muted).child(label))
     .child(div().text_size(narrow ? 15 : 18).font_family(MONO).font_medium().text_color(value === null ? t.dim : hot ? t.working : t.foreground).child(value ?? "—"));
   const observed = d.observation === "stale" ? "Stale: this may no longer match the code"
