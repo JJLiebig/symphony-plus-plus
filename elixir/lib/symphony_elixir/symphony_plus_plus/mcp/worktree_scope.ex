@@ -52,10 +52,15 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
 
   @spec target_repo_root_argument(String.t() | nil, WorkPackage.t(), Config.t()) :: target_repo_root_result()
   def target_repo_root_argument(explicit_root, %WorkPackage{} = work_package, %Config{} = config) do
-    if FactoryRepos.enabled?() do
-      FactoryRepos.resolve(work_package.repo)
-    else
-      resolve_target_repo_root(explicit_root, work_package, config)
+    cond do
+      FactoryRepos.enabled?() and is_binary(work_package.worktree_path) ->
+        resolve_target_repo_root(nil, work_package, config)
+
+      FactoryRepos.enabled?() ->
+        FactoryRepos.resolve(work_package.repo)
+
+      true ->
+        resolve_target_repo_root(explicit_root, work_package, config)
     end
   end
 

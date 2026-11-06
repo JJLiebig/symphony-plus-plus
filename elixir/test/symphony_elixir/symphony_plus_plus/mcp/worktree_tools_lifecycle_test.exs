@@ -101,7 +101,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     process.exit(result.status ?? 1);
     """)
 
-    command = Enum.map_join([System.find_executable("node"), peer], " ", fn value -> "'" <> String.replace(value, "'", "'\"'\"'") <> "'" end)
+    node = System.find_executable("node")
+    command = Enum.map_join([node, peer], " ", fn value -> "'" <> String.replace(value, "'", "'\"'\"'") <> "'" end)
     keys = ["SYMPP_REPOS_ROOT", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"]
     previous = Map.new(keys, &{&1, System.get_env(&1)})
     on_exit(fn -> Enum.each(previous, fn {key, value} -> restore_env(key, value) end) end)
@@ -183,6 +184,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     assert {:ok, prepared} = WorktreeLifecycle.prepare(repo, package.id, attrs)
     assert Path.dirname(prepared.worktree_path) == Path.join([repos_root, ".worktrees", Path.basename(checkout)])
     assert Path.basename(prepared.worktree_path) =~ "fix-login-"
+    # A later shallow duplicate must not redirect an already prepared package.
+    flat = Path.join(repos_root, name)
+    {_, 0} = System.cmd("git", ["clone", fixture.origin, flat], stderr_to_stdout: true)
+
+    for path <- [flat, checkout] do
+      {_, 0} = System.cmd("git", ["-C", path, "remote", "set-url", "origin", remote])
+    end
+
+    assert {:ok, ^flat} = FactoryRepos.resolve(remote)
+    assert {:ok, recorded} = WorkPackageRepository.get(repo, package.id)
+    assert {:ok, ^checkout} = WorktreeScope.target_repo_root_argument(nil, recorded, config)
+    {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", fixture.origin])
     assert {:ok, replay} = WorktreeLifecycle.prepare(repo, package.id, attrs)
     assert replay.worktree_path == prepared.worktree_path
     assert {:ok, _} = WorktreeLifecycle.cleanup(repo, package.id, target_repo_root: checkout)

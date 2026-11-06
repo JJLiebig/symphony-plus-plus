@@ -86,14 +86,18 @@ defmodule SymphonyElixir.SymphonyPlusPlus.FactoryRepos do
          {:ok, path} <- PathSafety.canonicalize(path),
          true <- inside_root?(path, root) do
       if File.exists?(Path.join(path, ".git")) do
-        case remote(RepoIdentity.local_git_origin_remote(path)) do
-          {:ok, origin, _name} -> [{path, identity(origin)}]
-          _ -> []
-        end
+        discovered_checkout(path)
       else
         discover(path, root, depth - 1)
       end
     else
+      _ -> []
+    end
+  end
+
+  defp discovered_checkout(path) do
+    case remote(RepoIdentity.local_git_origin_remote(path)) do
+      {:ok, origin, _name} -> [{path, identity(origin)}]
       _ -> []
     end
   end
