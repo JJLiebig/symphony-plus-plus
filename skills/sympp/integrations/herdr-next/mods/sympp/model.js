@@ -129,7 +129,8 @@ function chiefsOf(list) {
       repos: (Array.isArray(c.repos) ? c.repos : []).filter((repo) => typeof repo === "string" && repo),
       registeredAt: ms(c.registered_at),
       location: placeOf(c.session_location),
-      session: typeof herdr?.client_id === "string" && herdr.client_id ? { clientId: herdr.client_id, coreId: herdr.core_id ?? null } : null,
+      session: herdr ? { clientId: herdr.client_id ?? null, coreId: herdr.core_id ?? null,
+        terminalId: herdr.terminal_id ?? null, machineId: c.session_location.machine_id ?? null } : null,
     };
   });
 }
@@ -511,7 +512,7 @@ export function bindingsFor(bindings, jobId, pkgId) {
 // when it registered. They still need the helper check before anything says Live.
 export function chiefBindings(bindings, chief) {
   const session = chief?.session;
-  if (!session) return [];
+  if (!session?.clientId) return [];
   return bindings.filter((b) => b.kind === "session" && b.launchId === session.clientId && (!session.coreId || b.coreId === session.coreId))
     .filter((b, index, matches) => matches.findIndex((other) => other.address === b.address) === index);
 }

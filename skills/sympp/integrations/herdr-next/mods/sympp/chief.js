@@ -78,6 +78,19 @@ export async function factoryMachine(endpoint, list, resolve) {
   return undefined;
 }
 
+// A registration locates a terminal, independently of its MCP helper's process lifetime.
+// Core ids disambiguate equal terminal ids; names and hostnames cover registrations without one.
+export function chiefTerminal(chief, machineList, terminalList) {
+  const session = chief.session;
+  if (!session?.terminalId) return null;
+  const same = (a, b) => typeof a === "string" && Boolean(a) && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
+  const machine = machineList.find((m) => session.coreId ? m.id === session.coreId
+    : same(m.name, session.machineId) || same(m.host, session.machineId));
+  if (!machine) return null;
+  const address = machine.name ? `${machine.name}/${session.terminalId}` : session.terminalId;
+  return terminalList.find((t) => t.address === address && t.state === "live")?.address ?? null;
+}
+
 const trimmed = (path) => path.replace(/[\\/]+$/, "");
 const parent = (path) => (/[\\/]/.test(trimmed(path)) ? trimmed(path).replace(/[\\/][^\\/]*$/, "") : "");
 const worktree = (path) => /[\\/]\.worktrees([\\/]|$)/.test(path);
