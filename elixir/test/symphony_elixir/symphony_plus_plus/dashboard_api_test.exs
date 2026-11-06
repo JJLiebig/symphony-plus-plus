@@ -2130,6 +2130,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
              %{id: "wp-asks", kind: "human_wait", text: nil, work_package_id: "wp-asks", answer_route: nil},
              %{kind: "architect", text: "Approve the scope?", answer_route: nil}
            ] = asks = LocalOperatorDashboard.native_asks(detail, %{})
+
     assert LocalOperatorDashboard.native_asks(detail, %{}) == asks
     resolved = put_in(detail, [:work_request, :operator_report, "human_escalation", "resolved_at"], "2026-11-06T02:00:00Z")
     assert [%{kind: "human_wait"}] = LocalOperatorDashboard.native_asks(resolved, %{})
