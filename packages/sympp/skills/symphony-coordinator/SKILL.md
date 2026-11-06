@@ -44,6 +44,8 @@ automatically inside Herdr. Ordinary coordination requires no extra MCP call.
 
 ## Slice
 
+WorkRequest and WorkPackage titles are their short names: 2–5 words, max 40 characters after trimming (e.g. "Board read access"); put detail in the description or body.
+
 - Prefer one PR-sized slice per worker.
 - Use isolated worktrees/branches for implementation or conflicting parallel
   work. Read-only scouts may use the existing checkout.

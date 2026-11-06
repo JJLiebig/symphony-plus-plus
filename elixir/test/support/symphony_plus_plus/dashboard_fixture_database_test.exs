@@ -121,7 +121,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
   end
 
   defp seed_recovery!(repo) do
-    work_request = request!(repo, "WR-FIXTURE-RECOVERY", "Fictional recovery, skip, and successor history")
+    work_request = request!(repo, "WR-FIXTURE-RECOVERY", "Fictional recovery history")
     history = group!(repo, work_request.id, "GROUP-RECOVERY-HISTORY", "History", 1)
     retry = group!(repo, work_request.id, "GROUP-RECOVERY-RETRY", "Retry", 2)
 
@@ -230,7 +230,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
 
   defp seed_kraken_scale!(repo) do
     work_request =
-      request!(repo, "WR-FIXTURE-KRAKEN-SCALE", "Kraken-scale storage, provenance, and migration rollout", repo: "JJLiebig/nextide-saas-vod-kraken")
+      request!(repo, "WR-FIXTURE-KRAKEN-SCALE", "Kraken storage rollout", repo: "JJLiebig/nextide-saas-vod-kraken")
+
+    # Reproduce pre-limit stored titles so dashboard journeys keep exercising legacy rows.
+    repo.query!("UPDATE sympp_work_requests SET title = ? WHERE id = ?", [
+      "Kraken-scale storage, provenance, and migration rollout",
+      work_request.id
+    ])
 
     groups =
       [
@@ -256,7 +262,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardFixtureDatabase do
         id = "WP-KRAKEN-#{String.pad_leading(to_string(sequence), 2, "0")}"
 
         work_package =
-          package!(repo, work_request, id, title, status, groups[group].id, sequence, repo: package_repo)
+          package!(repo, work_request, id, "Kraken package #{sequence}", status, groups[group].id, sequence, repo: package_repo)
+
+        repo.query!("UPDATE sympp_work_packages SET title = ? WHERE id = ?", [title, id])
 
         if pr_number do
           head_sha = "kraken-fixture-head-#{sequence}"

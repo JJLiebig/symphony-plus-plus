@@ -63,7 +63,7 @@ export function reviewPane(v, t, pkg, ctx, narrow) {
       .child(h_flex().gap(8).items_center()
         .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(["Review", d.provider].filter(Boolean).join(" · ")))
         .child(button(t, "review-close", narrow ? null : "Close", (cx) => v.closeReview(cx), { glyph: "x", tip: "Back to the rails (Esc)" })))
-      .when(!narrow, (el) => el.child(div().w_full().text_size(15).font_semibold().text_color(t.foreground).child(pkg.title)))
+      .when(!narrow, (el) => el.child(div().w_full().truncate().text_size(15).font_semibold().text_color(t.foreground).child(pkg.title)))
       .child(h_flex().gap(7).items_center().pt(2)
         .child(stageMark(t, d.stage))
         .child(div().flex_1().min_w(0).text_size(13).font_medium().text_color(d.stage ? stageTone(t, d.stage.tone) : t.muted)

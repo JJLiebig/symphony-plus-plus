@@ -269,7 +269,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.CommentsGuidanceTest do
                WorkPackageFactory.attrs(
                  id: anchor_id,
                  kind: "delegation",
-                 title: "Architect handoff: #{first_work_request.title}",
+                 title: "Architect handoff",
                  repo: first_work_request.repo,
                  base_branch: first_work_request.base_branch,
                  phase_id: phase_id,

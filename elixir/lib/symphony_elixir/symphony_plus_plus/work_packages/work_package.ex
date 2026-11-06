@@ -10,6 +10,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage do
   alias SymphonyElixir.SymphonyPlusPlus.ReviewRequirement
   alias SymphonyElixir.SymphonyPlusPlus.WorkPackages.StringList
 
+  alias SymphonyElixir.SymphonyPlusPlus.Title
+
   @primary_key {:id, :string, autogenerate: false}
   @foreign_key_type :string
 
@@ -180,6 +182,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage do
       :contract_revision,
       :dispatched_at
     ])
+    |> Title.validate()
     |> validate_required([:id, :kind, :title, :repo, :base_branch, :acceptance_criteria, :status])
     |> validate_inclusion(:kind, @kinds)
     |> validate_inclusion(:status, @statuses)

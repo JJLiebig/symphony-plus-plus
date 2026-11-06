@@ -67,7 +67,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02Test do
                work_request.id,
                work_request_work_package_attrs(
                  id: "WRS-MCP-WORKTREE-DELIVERY-BASE",
-                 title: "Prepare integration delivery-base worktree",
+                 title: "Prepare delivery-base worktree",
                  base_branch: delivery_base,
                  branch_pattern: "feat/delivery-base-worktree",
                  allowed_file_globs: ["elixir/lib/symphony_elixir/symphony_plus_plus/work_packages/**"],
@@ -460,7 +460,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.DeliveryReconcile02Test do
                work_request.id,
                work_request_work_package_attrs(
                  id: "WRS-MCP-WORKTREE-HOST-CONFLICT",
-                 title: "Prepare bare repo target without host conflicts",
+                 title: "Prepare bare repo target",
                  base_branch: anchor.base_branch,
                  branch_pattern: "feat/bare-host-conflict-worktree",
                  allowed_file_globs: ["elixir/lib/symphony_elixir/symphony_plus_plus/mcp/server.ex"],
