@@ -12,9 +12,10 @@ const keyOf = (value) => shortRepo(value ?? "").toLowerCase();
 const isOpen = (q) => q.status === "open" || q.status === "human_info_needed";
 
 // What one package's evidence says. Issues are only what went wrong, in plain words: failures
-// ("fail"), trouble that is not a failure ("warn"), or a worker that stopped reporting or never came
-// ("unknown"). An unknown observation proves nothing either way and says nothing. Needing the person
-// never hides an issue; both are kept.
+// ("fail"), trouble that is not a failure ("warn"), or, while it is being built, a worker that stopped
+// reporting or never came ("unknown"). Past the build, CI, the reviewer or the integrator acts, so no
+// worker is expected. An unknown observation proves nothing either way and says nothing. Needing the
+// person never hides an issue; both are kept.
 export function packageEvidence(pkg, now) {
   const live = LIVE.has(pkg.stage);
   const issues = [];
@@ -23,8 +24,8 @@ export function packageEvidence(pkg, now) {
     // One review word per package: its round count when that is the trouble, else its length.
     const [bump] = reviewBumps(pkg, now);
     if (bump) issues.push({ text: bump.kind === "rounds" ? `Review round ${pkg.round}` : bump.text, tone: "warn" });
-    if (pkg.activity.observation === "stale") issues.push({ text: "No recent report", tone: "unknown" });
-    else if (pkg.activity.observation === "queued") issues.push({ text: "No worker yet", tone: "unknown" });
+    if (pkg.stage === "build" && pkg.activity.observation === "stale") issues.push({ text: "No recent report", tone: "unknown" });
+    else if (pkg.stage === "build" && pkg.activity.observation === "queued") issues.push({ text: "No worker yet", tone: "unknown" });
   }
   return { pkg, needsYou: pkg.stage !== "done" && pkg.activity.nextActor === "human", issues, active: live || (pkg.stage !== "done" && pkg.activity.nextActor === "human") };
 }
@@ -96,7 +97,9 @@ export function taskOf(job, now) {
   if (job.counts.live === 0 && job.counts.done > 0 && job.state !== "settled" && !job.report.parked && now - job.lastMoveAt > STALL_AFTER) issues.push({ text: "Stuck", tone: "warn" });
   if (job.report.parked) issues.push({ text: "Parked", tone: "unknown" });
   for (const e of live) for (const issue of e.issues) if (issue.tone !== "unknown") issues.push(issue);
-  if (live.length && live.every((e) => e.issues.some((i) => i.tone === "unknown"))) issues.push({ text: "No recent report", tone: "unknown" });
+  // Nothing at work anywhere in the task: its own word, the packages' when they agree.
+  const quiet = live.map((e) => e.issues.find((i) => i.tone === "unknown")?.text);
+  if (quiet.length && quiet.every(Boolean)) issues.push({ text: quiet.every((q) => q === quiet[0]) ? quiet[0] : "No recent report", tone: "unknown" });
   const rank = { fail: 0, warn: 1, unknown: 2 };
   const unique = issues.filter((issue, i) => issues.findIndex((other) => other.text === issue.text) === i).sort((a, b) => rank[a.tone] - rank[b.tone]);
   const asks = asksOf(job);

@@ -43,8 +43,10 @@ test('what went wrong survives a question, and a quiet worker is named only when
   const payload = variantPayload('quiet');
   const theme = payload.work_request_details.find((d) => d.work_request.id === 'wr-theme').work_packages[0];
   theme.activity_signal = { observation_state: 'queued' };
-  assert.deepEqual(words(task(payload, 'wr-theme')), ['No recent report'], 'a dispatched package with no worker yet');
-  assert.deepEqual(task(payload, 'wr-theme').evidence[0].issues.map((i) => i.text), ['No worker yet']);
+  assert.deepEqual(words(task(payload, 'wr-theme')), ['No worker yet'], 'a dispatched package with no worker yet');
+  theme.board_state = { ...theme.board_state, stage: 'review' };
+  assert.deepEqual(words(task(payload, 'wr-theme')), [], 'past the build no worker is expected');
+  theme.board_state = { ...theme.board_state, stage: 'build' };
   theme.activity_signal = { observation_state: 'unknown' };
   assert.deepEqual(words(task(payload, 'wr-theme')), [], 'an unknown observation proves nothing either way');
   for (const job of jobsOf(variantPayload('quiet'))) {
