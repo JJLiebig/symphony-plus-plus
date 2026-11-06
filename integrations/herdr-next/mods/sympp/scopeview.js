@@ -1,41 +1,28 @@
-// Redesigned Topic/Space view and task drill-in, in three directions chosen by the scratch-only
-// `lens` prop ("a" Skyline, "b" Track, "c" Sections). Topic and Space draw the same view; a space
-// only narrows the tasks. Health and progress are read from shape, position and colour; words
-// are kept to task titles and what the person is asked.
+// The redesigned Topic/Space view and task drill-in ("Track"), behind the scratch-only `lens` prop.
+// Topic and Space draw the same view; a space only narrows the tasks. Each task is a title and one
+// quiet line that fills as its packages land. Nothing is said while all is well: a word appears
+// only when something went wrong, and the person's questions come first with an Answer each.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import * as M from "./model.js";
 import * as J from "./job.js";
 import * as R from "./rails.js";
 import * as St from "./studio.js";
 import * as S from "./scope.js";
 import * as O from "./overview.js";
 import { questionRow, reviewPane } from "./jobview.js";
-import { CLEAR, MONO, icon, tint, button, iconButton } from "./ui.js";
-
-export const DIRECTIONS = { a: "Skyline", b: "Track", c: "Sections" };
-
-// One colour per health, from Herdr's theme: red only for the person, amber for trouble, the
-// accent for work moving, Herdr's done green for landed work.
-// A traffic light: green moving, amber slowing, grey stuck, red for the person. Landed work takes
-// Herdr's own done blue and recedes.
-function tone(t, h) {
-  return { needs: t.blocked, stuck: t.muted, slowing: t.working, moving: t.ansi2, resting: t.dim, queued: t.dim, landed: t.done }[h] ?? t.dim;
-}
-
-// Direction C speaks Herdr's Agents list exactly: amber while working, blue when done.
-function nativeTone(t, h) {
-  return { needs: t.blocked, stuck: t.muted, slowing: t.working, moving: t.working, resting: t.dim, queued: t.dim, landed: t.done }[h] ?? t.dim;
-}
+import { CLEAR, icon, tint, button, iconButton } from "./ui.js";
 
 const pct = (x) => `${(Math.max(0, Math.min(1, x)) * 100).toFixed(3)}%`;
 
+// Red only for failures; amber for trouble that isn't one; grey for missing evidence.
+const issueTone = (t, tone) => (tone === "fail" ? t.blocked : tone === "warn" ? t.working : t.muted);
+
 // ---------- Shared ----------
 
-function reach(v, t, el, key, open, label, base = CLEAR) {
+function reach(v, t, el, key, open, label) {
   const on = v.row(key, open);
-  return el.cursor_pointer().rounded(8).bg(on ? t.selected : base).border(1).border_color(on ? t.ring : CLEAR)
+  return el.cursor_pointer().rounded(8).bg(on ? t.selected : CLEAR).border(1).border_color(on ? t.ring : CLEAR)
     .hover((s) => s.bg(on ? t.selected : t.hover))
     .accessibility_label(label)
     .on_click((_e, cx) => open(cx));
@@ -51,290 +38,188 @@ function bar(v, t, title, now, { create = true } = {}) {
       v.pin ? "Follow Herdr's focus again (P)" : "Stay here instead of following focus (P)", (cx) => v.togglePin(cx), { strong: v.pin })));
 }
 
-function body(v, id, rows) {
+function body(v, id, rows, width) {
   return v_flex().id(id).flex_1().min_h(0).overflow_y_scrollbar().mode("hover")
     .child(h_flex().w_full().justify_center()
-      .child(v_flex().w_full().max_w(v.compact ? 10000 : 880).px(v.compact ? 6 : 16).pt(v.compact ? 8 : 20).pb(24).gap(2).children(rows.filter(Boolean))));
+      .child(v_flex().w_full().max_w(v.compact ? 10000 : width).px(v.compact ? 6 : 16).pt(v.compact ? 8 : 20).pb(24).gap(2).children(rows.filter(Boolean))));
 }
 
 function empty(t, text) {
   return div().px(12).py(16).text_size(12.5).text_color(t.muted).child(text);
 }
 
-// What the person is asked, one line per ask, in their own colour. The only text a task row adds.
-function asks(t, job, inset) {
-  return job.needs.map((need) => div().id(`ask-${need.key}`).w_full().pl(inset).text_size(12.5).text_color(t.blocked).child(S.askText(job, need)));
+// The person's mark: a small accent dot, the same on a question and on the package it concerns.
+function askMark(t) {
+  return div().size(6).flex_none().rounded(3).bg(t.accent);
 }
 
-// A task's own glyph: Herdr's grammar. Moving turns, slowing is an amber square, stuck a still
-// hollow ring, needs a red dot, resting a dash, landed a check.
-function glyph(t, h) {
-  if (h === "moving") return svg(icon("spinner")).size(12).flex_none().text_color(tone(t, h)).spin(1400);
-  if (h === "needs") return div().size(8).flex_none().rounded(4).bg(t.blocked);
-  if (h === "slowing") return div().size(8).flex_none().rounded(1.5).bg(tone(t, h));
-  if (h === "stuck") return div().size(9).flex_none().rounded(5).border(1.5).border_color(t.muted);
-  if (h === "landed") return svg(icon("check")).size(12).flex_none().text_color(tone(t, h));
-  if (h === "queued") return div().size(7).flex_none().rounded(4).border(1.5).border_color(t.dim);
-  return div().w(8).h(1.5).flex_none().bg(t.dim);
+function issueWords(t, issues, id) {
+  if (!issues.length) return null;
+  return h_flex().id(id).flex_none().gap(8).items_center().children(issues.slice(0, 2).map((issue) =>
+    div().flex_none().text_size(12).font_medium().text_color(issueTone(t, issue.tone)).child(issue.text)));
 }
 
-function glyphSlot(t, h) {
-  return h_flex().w(14).flex_none().items_center().justify_center().child(glyph(t, h));
+// One quiet line: the share of packages that landed. No line for work not yet sliced.
+function line(t, id, share, width) {
+  return div().id(id).relative().flex_none().w(width).h(4).rounded(2).bg(tint(t.foreground, "14"))
+    .when(share > 0, (el) => el.child(div().absolute().left(0).top(0).h(4).w(pct(share)).rounded(2).bg(tint(t.foreground, "70"))));
 }
 
-// The person's answers sit on top of the drill-in; everything else needs a click.
-function needsBlock(v, t, job) {
-  return job.needs.map((need) => {
-    const question = need.id ? job.guidance.find((q) => q.key === need.key) : null;
-    const open = question && v.answers[question.key]?.open;
-    const action = question ? button(t, `need-answer-${need.key}`, "Answer", (cx) => v.openAnswer(question, cx), { strong: true })
-      : v.dashboard ? button(t, `need-dashboard-${need.key}`, "Answer", (cx) => v.openDashboard(cx), { strong: true, tip: "Answer in the dashboard (O)" }) : null;
-    return v_flex().id(`need-${need.key}`).flex_none().mx(4).mb(8).px(12).py(10).gap(8).rounded(8).bg(tint(t.blocked, "12"))
-      .child(h_flex().gap(10).items_start()
-        .child(div().pt(5).flex_none().child(glyph(t, "needs")))
-        .child(div().flex_1().min_w(0).text_size(13.5).text_color(t.foreground).child(S.askText(job, need)))
-        .when(Boolean(action) && !open, (el) => el.child(action)))
-      .when(Boolean(open), (el) => el.child(questionRow(v, t, question, true)));
-  });
+// A question, readable, with its one Answer. Questions sympp can answer here open in place; an
+// architect's ask goes to the dashboard; an unrecorded one can only be looked at in its task.
+function askRow(v, t, job, ask, { pkgTitle = null } = {}) {
+  const q = ask.question;
+  const open = q && v.answers[q.key]?.open;
+  const saved = q && v.answers[q.key]?.saved;
+  const action = saved ? div().flex_none().text_size(12).text_color(t.muted).child("Saved")
+    : q ? button(t, `answer-${ask.key}`, "Answer", (cx) => v.openAnswer(q, cx), { strong: true })
+      : ask.unrecorded ? null
+        : v.dashboard ? button(t, `answer-${ask.key}`, "Answer", (cx) => v.openDashboard(cx), { strong: true, tip: "Answer in the dashboard (O)" }) : null;
+  return v_flex().id(`ask-${ask.key}`).flex_none().pl(12).pr(8).py(5).gap(8)
+    .child(h_flex().gap(10).items_start()
+      .child(div().pt(7).flex_none().child(askMark(t)))
+      .child(v_flex().flex_1().min_w(0).gap(2)
+        .child(div().w_full().text_size(13).text_color(ask.unrecorded ? t.muted : t.foreground).child(ask.text))
+        .when(Boolean(pkgTitle), (el) => el.child(div().truncate().text_size(11.5).text_color(t.muted).child(pkgTitle))))
+      .when(Boolean(action) && !open, (el) => el.child(action)))
+    .when(Boolean(open), (el) => el.child(div().pl(16).child(questionRow(v, t, q, true))));
 }
 
-// Behind a click on a package: its agent, its PR, its review, its studio. Never shown inline.
-function pkgActions(v, t, job, pkg, ctx, inset) {
+// ---------- Topic and Space ----------
+
+function taskRow(v, t, task, wide) {
+  const { job } = task;
+  const quiet = task.later;
+  const title = div().min_w(0).flex_shrink(1).truncate().text_size(13).font_medium().text_color(quiet ? t.muted : t.foreground).child(job.title);
+  const words = issueWords(t, task.issues, `issues-${job.id}`);
+  const head = wide
+    ? h_flex().flex_1().min_w(0).gap(12).items_center().child(title).when(Boolean(words), (el) => el.child(words))
+    : v_flex().flex_1().min_w(0).gap(2).child(title).when(Boolean(words), (el) => el.child(words));
+  const el = h_flex().id(`task-${job.id}`).flex_none().px(12).py(quiet ? 6 : 9).gap(16).items_center()
+    .child(head)
+    .when(task.total > 0 && !quiet, (x) => x.child(line(t, `line-${job.id}`, task.landed, wide ? 200 : 72)));
+  return reach(v, t, el, `task:${job.id}`, (cx) => v.openJob(job, { pkg: task.asks.find((a) => a.pkgId)?.pkgId ?? null }, cx), job.title);
+}
+
+// Planned and landed work: one collapsed row, opened on request.
+function later(v, t, key, tasks, wide) {
+  if (!tasks.length) return [];
+  const open = v.expanded.has(key);
+  const toggle = reach(v, t, h_flex().id(`later-${key}`).flex_none().mt(6).px(12).py(7).gap(8).items_center(), `later:${key}`,
+    (cx) => v.toggleExpanded(key, cx), "Planned and landed")
+    .child(svg(icon(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.dim))
+    .child(div().text_size(12).text_color(t.muted).child("Planned and landed"));
+  return [toggle, ...(open ? tasks.map((task) => taskRow(v, t, task, wide)) : [])];
+}
+
+function scopeRows(v, t, tasks, key) {
+  const wide = !v.compact;
+  if (!tasks.length) return [empty(t, "Nothing running here")];
+  const current = tasks.filter((task) => !task.later);
+  const rows = current.map((task, i) => v_flex().id(`group-${task.job.id}`).flex_none()
+    .when(task.asks.length > 0 && current[i + 1] && !current[i + 1].asks.length, (el) => el.mb(10))
+    .child(taskRow(v, t, task, wide))
+    .children(task.asks.map((ask) => askRow(v, t, task.job, ask))));
+  return [...rows, ...later(v, t, key, tasks.filter((task) => task.later), wide)];
+}
+
+// ---------- Drill-in ----------
+
+// The stage names once, over equal columns. Wide views keep a name column on the left; narrow
+// ones give the columns the full width under each package's name.
+const NAME_W = 260;
+const N = S.COLUMNS.length;
+
+function columns(t, cells) {
+  return h_flex().flex_1().min_w(0).children(cells);
+}
+
+function columnsHead(t, wide) {
+  return h_flex().id("stage-head").flex_none().px(12).pt(10).pb(4).gap(10).items_center()
+    .child(div().w(10).flex_none())
+    .when(wide, (el) => el.child(div().w(NAME_W).flex_none()))
+    .child(columns(t, S.COLUMNS.map((c) => div().flex_1().min_w(0).flex().justify_center()
+      .text_size(11).font_medium().text_color(t.muted).child(S.COLUMN_LABEL[c]))));
+}
+
+// One marker per package, in its stage's column, over a faint guide.
+function stageTrack(t, e) {
+  const at = S.COLUMNS.indexOf(e.column);
+  const worst = e.issues.find((i) => i.tone === "fail") ?? e.issues.find((i) => i.tone === "warn");
+  const marker = e.column === "queued" ? div().size(9).rounded(5).border(1.5).border_color(t.dim)
+    : e.column === "done" ? div().size(8).rounded(4).bg(t.muted)
+      : div().size(10).rounded(5).bg(worst ? issueTone(t, worst.tone) : t.foreground);
+  return div().relative().flex_1().min_w(0).h(16)
+    .child(div().absolute().top(8).left(pct(0.5 / N)).h(1).w(pct((N - 1) / N)).bg(tint(t.foreground, "14")))
+    .child(h_flex().absolute().top(0).left(0).w_full().h(16).children(S.COLUMNS.map((_c, i) =>
+      h_flex().flex_1().min_w(0).h(16).items_center().justify_center().when(i === at, (el) => el.child(marker)))));
+}
+
+// Behind a click on a package: its agent, its PR, its review, its studio.
+function pkgActions(v, t, job, pkg, ctx) {
   const people = J.participants(job, ctx.bindings, v.agentChecks, ctx.now);
   const agent = people.find((p) => p.pkgId === pkg.id && p.state === "live");
-  const rounds = R.roundsOf(pkg);
   const ui = typeof v.openStudio === "function" && St.uiPackage(job, pkg, ctx.bindings, ctx.terminals);
   const list = [
     agent && !ctx.offline ? button(t, `agent-${pkg.id}`, "Agent", (cx) => v.focusAgent(agent.binding, cx), { strong: true, glyph: "terminal", tip: "Open its agent" }) : null,
     pkg.pr.number ? button(t, `pr-${pkg.id}`, `PR ${pkg.pr.number}`, (cx) => { if (pkg.pr.url) cx.open_url(pkg.pr.url); }, { glyph: "git-branch", tip: pkg.pr.url ? "Open the pull request" : "No link recorded", disabled: !pkg.pr.url }) : null,
-    rounds.length ? button(t, `review-${pkg.id}`, "Review", (cx) => (v.review?.pkgId === pkg.id ? v.closeReview(cx) : v.openReview(job.id, pkg.id, null, cx)), { glyph: "message-circle", strong: v.review?.pkgId === pkg.id }) : null,
+    R.roundsOf(pkg).length ? button(t, `review-${pkg.id}`, "Review", (cx) => (v.review?.pkgId === pkg.id ? v.closeReview(cx) : v.openReview(job.id, pkg.id, null, cx)), { glyph: "message-circle", strong: v.review?.pkgId === pkg.id }) : null,
     ui ? button(t, `studio-${pkg.id}`, "Studio", (cx) => v.openStudio(job, pkg, cx), { glyph: "monitor" }) : null,
   ].filter(Boolean);
-  return v_flex().pl(inset).pr(8).pb(8).pt(2).gap(8)
+  return v_flex().pl(32).pr(8).pb(8).pt(2).gap(8)
     .child(list.length ? h_flex().gap(4).flex_wrap().children(list) : div().text_size(12).text_color(t.dim).child("No agent, PR or review yet"))
     .when(ctx.review?.id === pkg.id, (el) => el.child(reviewPane(v, t, pkg, ctx, true)));
 }
 
-function pkgRow(v, t, job, item, ctx, draw, inset) {
-  const { pkg, health: h } = item;
+function pkgRow(v, t, job, e, ctx, wide) {
+  const { pkg } = e;
   const on = v.pkgSel === pkg.id;
   const focused = on && v.keys.is_focused();
-  const row = draw(pkg, h)
-    .id(`pkg-${pkg.id}`).cursor_pointer().rounded(8)
+  const settled = e.column === "done" || e.column === "queued";
+  const notes = [...e.issues, ...(e.note ? [{ text: e.note, tone: "note" }] : [])];
+  const name = v_flex().min_w(0).gap(2)
+    .child(div().truncate().text_size(12.5).text_color(settled ? t.muted : t.foreground).child(pkg.title))
+    .when(notes.length > 0, (el) => el.child(h_flex().gap(8).min_w(0).children(notes.slice(0, 2).map((n) =>
+      div().flex_none().text_size(11.5).text_color(n.tone === "note" ? t.muted : issueTone(t, n.tone)).child(n.text)))));
+  const mark = h_flex().w(10).flex_none().justify_center().when(e.needsYou, (el) => el.child(askMark(t)));
+  const content = wide
+    ? h_flex().flex_1().min_w(0).gap(10).items_center().child(mark).child(name.w(NAME_W).flex_none()).child(stageTrack(t, e))
+    : v_flex().flex_1().min_w(0).gap(5)
+      .child(h_flex().gap(10).items_center().child(mark).child(name.flex_1()))
+      .child(h_flex().gap(10).child(div().w(10).flex_none()).child(stageTrack(t, e)));
+  const row = h_flex().id(`pkg-${pkg.id}`).flex_none().px(12).py(7).items_center().cursor_pointer().rounded(8)
     .bg(on ? t.selected : CLEAR).border(1).border_color(focused ? t.ring : CLEAR)
     .hover((s) => s.bg(on ? t.selected : t.hover))
-    .accessibility_label(`${pkg.title}, ${M.stageText(pkg, ctx.now)}`)
-    .tooltip(M.stageText(pkg, ctx.now))
-    .on_click((_e, cx) => v.selectPackage(on ? null : pkg.id, cx));
-  return on ? [row, pkgActions(v, t, job, pkg, ctx, inset)] : [row];
+    .accessibility_label(`${pkg.title}, ${S.COLUMN_LABEL[e.column]}${notes.length ? `, ${notes.map((n) => n.text).join(", ")}` : ""}${e.needsYou ? ", waits on you" : ""}`)
+    .on_click((_e, cx) => v.selectPackage(on ? null : pkg.id, cx))
+    .child(content);
+  return on ? [row, pkgActions(v, t, job, pkg, ctx)] : [row];
 }
 
-// ---------- A · Skyline ----------
-// One column per package, tallest (furthest along) first: the task's progress is the shape's
-// mass, its health the colour of what still stands in flight.
-
-const SKY_H = 18;
-
-function skyline(t, job, now) {
-  const items = S.packageOrder(job, now).sort((a, b) => (S.STAGE_AT[b.pkg.stage] ?? 0) - (S.STAGE_AT[a.pkg.stage] ?? 0));
-  const w = items.length > 24 ? 2 : items.length > 12 ? 3 : 4;
-  return h_flex().id(`sky-${job.id}`).flex_none().h(SKY_H).items_end().gap(items.length > 20 ? 1 : 2)
-    .children(items.map(({ pkg, health: h }) => {
-      const at = S.STAGE_AT[pkg.stage] ?? 0;
-      const color = h === "landed" ? tint(tone(t, h), "aa") : tone(t, h);
-      return div().w(w).flex_none().rounded(1).h(pkg.stage === "queued" ? 2 : Math.max(3, Math.round(SKY_H * at))).bg(color);
-    }));
-}
-
-function skyTask(v, t, item, ctx) {
-  const { job, health: h } = item;
-  const quiet = h === "resting" || h === "landed";
-  const line = h_flex().gap(10).items_center().min_w(0)
-    .child(glyphSlot(t, h))
-    .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(quiet ? t.muted : t.foreground).child(job.title))
-    .when(h !== "landed" && job.packages.length > 0, (el) => el.child(skyline(t, job, ctx.now)));
-  const el = v_flex().id(`task-${job.id}`).flex_none().px(10).py(h === "landed" ? 6 : 9).gap(5).child(line)
-    .when(h === "needs", (x) => x.children(asks(t, job, 24)));
-  return reach(v, t, el, `task:${job.id}`, (cx) => v.openJob(job, { pkg: job.needs[0]?.pkgId ?? null }, cx), `${job.title}, ${h}`, h === "needs" ? tint(t.blocked, "10") : CLEAR);
-}
-
-// Four stops: build, checks, review, merge. Past stops are small and filled, the current one is
-// the package's colour, later ones are faint. A landed package is all past with a check.
-function ladder(t, pkg, h, CELL) {
-  const at = pkg.stage === "done" ? S.STEPS.length : S.STEPS.indexOf(pkg.stage);
-  const color = tone(t, h);
-  const reached = at < 0 ? 0 : Math.min(at, S.STEPS.length - 1);
-  const line = at < 0 ? null : div().absolute().top(7).left(CELL / 2).h(1.5).w(reached * CELL + (at >= S.STEPS.length ? CELL / 2 : 0)).bg(pkg.stage === "done" ? tint(color, "88") : t.muted);
-  return div().relative().flex_none().w(CELL * S.STEPS.length).h(16)
-    .child(div().absolute().top(7).left(CELL / 2).h(1.5).w(CELL * (S.STEPS.length - 1) + CELL / 2).bg(tint(t.foreground, "12")))
-    .when(Boolean(line), (el) => el.child(line))
-    .child(h_flex().absolute().left(0).top(0).h(16).children(S.STEPS.map((step, i) => h_flex().w(CELL).h(16).items_center().justify_center()
-      .child(i === at ? div().size(9).rounded(5).bg(color)
-        : i < at ? div().size(5).rounded(3).bg(pkg.stage === "done" ? color : t.muted)
-          : div().size(5).rounded(3).border(1).border_color(t.dim)))));
-}
-
-// The stops' names once, over the ladders: whole words when there is room.
-function ladderHead(t, CELL) {
-  return h_flex().id("ladder-head").flex_none().px(10).pt(4).pb(2).gap(10)
-    .child(div().w(14).flex_none()).child(div().flex_1())
-    .child(h_flex().flex_none().w(CELL * S.STEPS.length).children(S.STEPS.map((step) => div().w(CELL).flex().justify_center()
-      .text_size(9.5).font_family(MONO).text_color(t.dim).child(CELL >= 48 ? step : step.slice(0, 1).toUpperCase())))
-      .tooltip("Build · Checks · Review · Merge"));
-}
-
-function skyJob(v, t, job, ctx) {
-  const items = S.packageOrder(job, ctx.now);
-  const cell = v.compact ? 30 : 56;
-  const rows = items.flatMap((item) => pkgRow(v, t, job, item, ctx, (pkg, h) => h_flex().flex_none().px(10).py(7).gap(10).items_center()
-    .child(glyphSlot(t, h))
-    .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(h === "landed" || h === "queued" ? t.muted : t.foreground).child(pkg.title))
-    .child(ladder(t, pkg, h, cell)), 34));
-  return [...needsBlock(v, t, job), items.length ? ladderHead(t, cell) : empty(t, "Not sliced into packages yet"), ...rows];
-}
-
-// ---------- B · Track ----------
-// One rail per task: landed in green, then what is in flight to where the work has reached, and
-// a head that says how it is going. Packages in the drill-in sit on the same rail, at their stage.
-
-function head(t, h, at, id) {
-  const c = tone(t, h);
-  const base = div().absolute().left(pct(at)).top(0).ml(-5).size(10).flex_none();
-  if (h === "moving") return base.id(id).rounded(5).bg(c).loop("opacity", { from: 0.45, to: 1, period: 1800 });
-  if (h === "needs") return base.rounded(5).bg(c).border(2).border_color(tint(c, "55"));
-  if (h === "slowing") return base.rounded(2).bg(c);
-  if (h === "stuck") return base.rounded(5).border(1.5).border_color(t.muted).bg(t.chrome);
-  if (h === "queued" || h === "resting") return base.rounded(5).border(1.5).border_color(t.dim).bg(t.chrome);
-  return null;
-}
-
-function rail(t, id, landed, flight, h, { slim = false } = {}) {
-  const c = h === "stuck" ? t.muted : tone(t, h);
-  const reach = Math.min(1, landed + flight);
-  const done = tone(t, "landed");
-  return div().id(id).relative().w_full().h(10).flex_none()
-    .child(div().absolute().left(0).top(4).w_full().h(2).rounded(1).bg(tint(t.foreground, "14")))
-    .when(landed > 0, (el) => el.child(div().absolute().left(0).top(slim ? 4 : 3).h(slim ? 2 : 4).w(pct(landed)).rounded(2).bg(h === "landed" ? tint(done, "55") : done)))
-    .when(reach > landed, (el) => el.child(div().absolute().left(pct(landed)).top(slim ? 4 : 3).h(slim ? 2 : 4).w(pct(reach - landed)).rounded(2).bg(tint(c, h === "stuck" ? "aa" : "dd"))))
-    .when(h !== "landed", (el) => el.child(head(t, h, reach, `${id}-head`)));
-}
-
-function trackTask(v, t, item, ctx) {
-  const { job, health: h, progress: p } = item;
-  const quiet = h === "resting" || h === "landed";
-  const title = div().min_w(0).truncate().text_size(13).font_medium().text_color(quiet ? t.muted : t.foreground).child(job.title);
-  let el;
-  if (h === "landed") {
-    el = h_flex().id(`task-${job.id}`).flex_none().px(10).py(6).gap(10).items_center().child(glyphSlot(t, h)).child(title.flex_1());
-  } else if (v.compact) {
-    el = v_flex().id(`task-${job.id}`).flex_none().px(12).pt(9).pb(10).gap(7).child(title).child(rail(t, `rail-${job.id}`, p.landed, p.flight, h))
-      .when(h === "needs", (x) => x.children(asks(t, job, 0)));
-  } else {
-    el = v_flex().id(`task-${job.id}`).flex_none().px(12).py(10).gap(6)
-      .child(h_flex().gap(20).items_center().child(title.w(300).flex_none()).child(div().flex_1().min_w(0).child(rail(t, `rail-${job.id}`, p.landed, p.flight, h))))
-      .when(h === "needs", (x) => x.children(asks(t, job, 0)));
-  }
-  return reach(v, t, el, `task:${job.id}`, (cx) => v.openJob(job, { pkg: job.needs[0]?.pkgId ?? null }, cx), `${job.title}, ${h}`);
-}
-
-// Stage names once, placed where each stage sits on the rail.
-function ruler(t, wide) {
-  const marks = S.STEPS.map((s) => [s, S.STAGE_AT[s]]);
-  const scale = div().relative().h(14).w_full().children(marks.map(([name, at]) => div().absolute().top(0).left(pct(at)).ml(-(name.length * 3))
-    .text_size(9.5).font_family(MONO).text_color(t.dim).child(name)));
-  return wide ? h_flex().flex_none().px(12).pt(6).gap(20).child(div().w(300).flex_none()).child(div().flex_1().min_w(0).child(scale))
-    : div().flex_none().px(12).pt(6).child(scale);
-}
-
-function trackJob(v, t, job, ctx) {
-  const items = S.packageOrder(job, ctx.now);
+// The task's own words on top (the same ones its row shows), its questions, then every package in
+// planned order, each in its stage's column. Packages never move when they advance.
+function jobRows(v, t, job, ctx) {
+  const task = S.taskOf(job, ctx.now);
   const wide = !v.compact;
-  const rows = items.flatMap((item) => pkgRow(v, t, job, item, ctx, (pkg, h) => {
-    const at = S.STAGE_AT[pkg.stage] ?? 0;
-    const title = div().min_w(0).truncate().text_size(12.5).text_color(h === "landed" || h === "queued" ? t.muted : t.foreground).child(pkg.title);
-    const r = rail(t, `prail-${pkg.id}`, h === "landed" ? 1 : 0, h === "landed" ? 0 : at, h, { slim: true });
-    return wide ? h_flex().flex_none().px(12).py(8).gap(20).items_center().child(title.w(300).flex_none()).child(div().flex_1().min_w(0).child(r))
-      : v_flex().flex_none().px(12).pt(7).pb(8).gap(5).child(title).child(r);
-  }, 12));
-  return [...needsBlock(v, t, job), items.length ? ruler(t, wide) : empty(t, "Not sliced into packages yet"), ...rows];
-}
-
-// ---------- C · Sections ----------
-// Herdr's Agents list, for tasks: grouped by how they are doing, so where a task sits says it. Each
-// row ends in a short gauge of landed and in-flight work.
-
-const SECTION = { needs: "Needs you", stuck: "Stuck", slowing: "Slowing", moving: "Moving", resting: "Not started", landed: "Landed" };
-
-function sectionLabel(t, id, text, color) {
-  return h_flex().id(id).flex_none().h(28).px(10).pt(6).items_center().text_size(11).font_medium().text_color(color).child(text);
-}
-
-function gauge(t, p, h) {
-  const c = nativeTone(t, h);
-  return div().relative().flex_none().w(44).h(4).rounded(2).bg(tint(t.foreground, "14"))
-    .when(p.landed > 0, (el) => el.child(div().absolute().left(0).top(0).h(4).w(pct(p.landed)).rounded(2).bg(nativeTone(t, "landed"))))
-    .when(p.flight > 0, (el) => el.child(div().absolute().left(pct(p.landed)).top(0).h(4).w(pct(p.flight)).rounded(2).bg(c)));
-}
-
-// Herdr's own marks: a turning spinner while moving, a "!" box for the person, rings for still work.
-function nativeGlyph(t, h) {
-  if (h === "needs") return div().size(14).flex_none().rounded(4).bg(tint(t.blocked, "26")).text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-  if (h === "landed") return div().size(7).flex_none().rounded(4).bg(nativeTone(t, h));
-  if (h === "moving") return svg(icon("spinner")).size(12).flex_none().text_color(nativeTone(t, h)).spin(900);
-  return glyph(t, h);
-}
-
-function sectionTask(v, t, item, ctx) {
-  const { job, health: h, progress: p } = item;
-  const quiet = h === "resting" || h === "landed";
-  const el = v_flex().id(`task-${job.id}`).flex_none().px(8).py(h === "needs" ? 6 : 0).gap(3)
-    .child(h_flex().h(h === "needs" ? 20 : 30).gap(9).items_center().min_w(0)
-      .child(h_flex().w(14).flex_none().items_center().justify_center().child(nativeGlyph(t, h)))
-      .child(div().flex_1().min_w(0).truncate().text_size(12.8).text_color(quiet ? t.muted : t.foreground).child(job.title))
-      .when(h !== "landed" && p.total > 0, (x) => x.child(gauge(t, p, h))))
-    .when(h === "needs", (x) => x.children(asks(t, job, 23)));
-  return reach(v, t, el, `task:${job.id}`, (cx) => v.openJob(job, { pkg: job.needs[0]?.pkgId ?? null }, cx), `${job.title}, ${SECTION[h]}`);
-}
-
-function grouped(t, items, keyOf, labels, draw, colorOf) {
-  const out = [];
-  let last = null;
-  for (const item of items) {
-    const key = keyOf(item);
-    if (key !== last) out.push(sectionLabel(t, `sec-${key}`, labels[key], colorOf(key)));
-    last = key;
-    out.push(...[].concat(draw(item)));
-  }
-  return out;
-}
-
-const STAGE_SECTION = { needs: "Needs you", merge: "Ready to merge", review: "In review", checks: "Checks", build: "Building", queued: "Up next", done: "Landed" };
-const STAGE_ORDER = ["needs", "merge", "review", "checks", "build", "queued", "done"];
-
-function sectionJob(v, t, job, ctx) {
-  const items = S.packageOrder(job, ctx.now).map((item) => ({ ...item, key: item.health === "needs" ? "needs" : item.pkg.stage }))
-    .sort((a, b) => STAGE_ORDER.indexOf(a.key) - STAGE_ORDER.indexOf(b.key) || a.pkg.seq - b.pkg.seq);
-  const colorOf = (key) => (key === "needs" ? t.blocked : key === "done" || key === "queued" ? t.dim : t.muted);
-  const rows = grouped(t, items, (item) => item.key, STAGE_SECTION, (item) => pkgRow(v, t, job, item, ctx, (pkg, h) => h_flex().flex_none().h(30).px(8).gap(9).items_center()
-    .child(h_flex().w(14).flex_none().items_center().justify_center().child(nativeGlyph(t, h)))
-    .child(div().flex_1().min_w(0).truncate().text_size(12.8).text_color(h === "landed" || h === "queued" ? t.muted : t.foreground).child(pkg.title))
-    .when(pkg.stage === "review" && pkg.round > 1, (x) => x.child(div().flex_none().text_size(10.5).font_family(MONO).text_color(pkg.round >= 3 ? tone(t, "slowing") : t.dim).child(`R${pkg.round}`))), 31), colorOf);
-  return [...needsBlock(v, t, job), ...(items.length ? rows : [empty(t, "Not sliced into packages yet")])];
+  const titles = new Map(job.packages.map((pkg) => [pkg.id, pkg.title]));
+  const evidence = [...task.evidence].sort((a, b) => a.pkg.seq - b.pkg.seq);
+  return [
+    task.issues.length ? div().px(12).pt(2).pb(6).child(issueWords(t, task.issues, `issues-${job.id}`)) : null,
+    ...task.asks.map((ask) => askRow(v, t, job, ask, { pkgTitle: ask.pkgId ? titles.get(ask.pkgId) : null })),
+    evidence.length ? columnsHead(t, wide) : empty(t, "Not sliced into packages yet"),
+    ...evidence.flatMap((e) => pkgRow(v, t, job, e, ctx, wide)),
+  ];
 }
 
 // ---------- Levels ----------
 
-const SCOPE = { a: skyTask, b: trackTask, c: sectionTask };
-const JOB = { a: skyJob, b: trackJob, c: sectionJob };
-
-// ctx: { board, desk, path, bindings, level, now }. Returns the root's children.
+// ctx: { board, desk, path, bindings, terminals, level, now }. Returns the root's children.
 export function lensLevel(v, t, ctx) {
-  const lens = DIRECTIONS[v.given.lens] ? v.given.lens : "a";
   const { board, desk, path, bindings, now } = ctx;
   if (ctx.level === "job") {
     const job = board.jobs.find((j) => j.id === path.job);
     if (!job) return [bar(v, t, "New task", now, { create: false }), empty(t, "Reading the new task…")];
-    v.rowOrder = S.packageOrder(job, now).map((item) => item.pkg.id);
+    v.rowOrder = job.packages.filter((pkg) => pkg.outcome !== "dropped").sort((a, b) => a.seq - b.seq).map((pkg) => pkg.id);
     if (v.pkgSel && !v.rowOrder.includes(v.pkgSel)) v.pkgSel = null;
     const review = v.review?.jobId === job.id ? job.packages.find((pkg) => pkg.id === v.review.pkgId) ?? null : null;
     if (!review) v.review = null;
@@ -342,20 +227,10 @@ export function lensLevel(v, t, ctx) {
     v.agentWatch = { key: job.id, bindings: v.shown.bindings };
     v.currentJob = job;
     const jctx = { now, bindings, terminals: ctx.terminals, offline: board.offline === true, review };
-    return [bar(v, t, job.title, now, { create: false }), body(v, `lens-job-${lens}`, JOB[lens](v, t, job, jctx))];
+    return [bar(v, t, job.title, now, { create: false }), body(v, "lens-job", jobRows(v, t, job, jctx), 820)];
   }
   const title = S.scopeTitle(path, desk);
   if (v.intake) return [bar(v, t, title, now), O.intakeForm(v, t)];
-  const tasks = S.scopeTasks(path, desk, board.jobs, v.place);
-  const jctx = { now, bindings };
-  const rows = !tasks.length ? [empty(t, "Nothing running here")]
-    : lens === "c" ? grouped(t, tasks, (item) => item.health, SECTION, (item) => sectionTask(v, t, item, jctx),
-      (h) => (h === "needs" ? t.blocked : h === "slowing" ? tone(t, h) : h === "moving" ? t.muted : t.dim))
-      : tasks.map((item, i) => {
-        const row = SCOPE[lens](v, t, item, jctx);
-        // Landed work sits apart at the bottom, after a hairline.
-        const first = item.health === "landed" && tasks[i - 1]?.health !== "landed" && i > 0;
-        return first ? v_flex().id(`landed-${item.job.id}`).flex_none().child(div().mx(10).my(6).h(1).bg(t.border)).child(row) : row;
-      });
-  return [bar(v, t, title, now), body(v, `lens-scope-${lens}`, rows)];
+  const tasks = S.scopeTasks(path, desk, board.jobs, v.place, now);
+  return [bar(v, t, title, now), body(v, "lens-scope", scopeRows(v, t, tasks, `${path.topic}:${path.space ?? ""}`), 720)];
 }

@@ -94,15 +94,17 @@ export function boardPayload() {
 }
 
 // Board variants for design previews; the default board above stays as the tests know it.
-// "busy" adds tasks of every size: one package in one repository up to many across three, slowing,
-// stuck, landed and planned. "quiet" is the busy board with nothing waiting on the person and
-// every task moving well.
+// "busy" adds tasks of every size: one package in one repository up to many across three, in
+// trouble, stuck, without a recent report, landed and planned. "quiet" is the busy board with
+// nothing waiting on the person and nothing wrong. Live packages report current activity unless a
+// case says otherwise.
 export function variantPayload(variant) {
   const board = boardPayload();
   if (variant !== 'busy' && variant !== 'quiet') return board;
   const quiet = variant === 'quiet';
   const step = (id, title, sequence, stage, minutes, extra = {}) => pkg(id, title, sequence,
-    { stage, track: 'pr', delivered: stage === 'done', entered_at: at(minutes) }, { dispatched_at: at(minutes + 30), ...extra });
+    { stage, track: 'pr', delivered: stage === 'done', entered_at: at(minutes) },
+    { dispatched_at: at(minutes + 30), activity_signal: { observation_state: 'current' }, ...extra });
   board.work_request_details.push(
     {
       work_request: { id: 'wr-restore', title: 'Restore sessions after a reboot', repo: 'owner/web', status: 'sliced', inserted_at: at(2400) },
@@ -121,7 +123,7 @@ export function variantPayload(variant) {
     },
     {
       work_request: { id: 'wr-theme', title: 'Follow the system theme', repo: 'owner/web', status: 'sliced', inserted_at: at(80) },
-      work_packages: [step('t-1', 'Theme listener', 1, 'build', 40)],
+      work_packages: [step('t-1', 'Theme listener', 1, 'build', 40, quiet ? {} : { activity_signal: { observation_state: 'stale' } })],
     },
     {
       work_request: { id: 'wr-docs', title: 'Operator guide refresh', repo: 'owner/web', status: 'sliced', inserted_at: at(3000) },
@@ -138,6 +140,8 @@ export function variantPayload(variant) {
       work_packages: [pkg('k-1', 'Key table', 1, { stage: 'queued', track: 'pr' }), pkg('k-2', 'Help overlay', 2, { stage: 'queued', track: 'pr' })],
     },
   );
+  const tokenApi = board.work_request_details[3].work_packages.find((p) => p.id === 'x-api');
+  tokenApi.activity_signal = { observation_state: 'current' };
   if (quiet) {
     board.guidance_requests.guidance_requests = [];
     board.work_request_details[0].clarification_questions = [];
