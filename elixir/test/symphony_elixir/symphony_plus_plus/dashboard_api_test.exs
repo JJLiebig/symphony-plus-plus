@@ -2119,6 +2119,69 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
     end)
   end
 
+  test "native asks preserve unrecorded questions and route architect escalations to the chief" do
+    detail = %{
+      work_request: %{id: "wr-asks", operator_report: %{"human_escalation" => %{"question" => "Approve the scope?", "raised_at" => "2026-11-06T01:00:00Z", "resolved_at" => nil}}},
+      clarification_questions: [],
+      work_packages: [%{id: "wp-asks", activity_signal: %{next_actor: "human", waiting_reason: "Do not invent this as a question"}}]
+    }
+
+    assert [
+             %{id: "wp-asks", kind: "human_wait", text: nil, work_package_id: "wp-asks", answer_route: nil},
+             %{kind: "architect", text: "Approve the scope?", answer_route: nil}
+           ] = asks = LocalOperatorDashboard.native_asks(detail, %{})
+
+    assert LocalOperatorDashboard.native_asks(detail, %{}) == asks
+    resolved = put_in(detail, [:work_request, :operator_report, "human_escalation", "resolved_at"], "2026-11-06T02:00:00Z")
+    assert [%{kind: "human_wait"}] = LocalOperatorDashboard.native_asks(resolved, %{})
+  end
+
+  test "Herdr board exposes answerable asks and distinguishes prepared, fresh and stale workers", %{repo: repo} do
+    with_local_operator_endpoint(fn ->
+      request = create_work_request!(repo, id: "WR-LENS", status: "ready_for_slicing")
+      queued = create_work_package!(repo, id: "WP-LENS-QUEUED", work_request_id: request.id, status: "ready_for_worker")
+      live = create_work_package!(repo, id: "WP-LENS-LIVE", work_request_id: request.id, status: "implementing")
+      stale = create_work_package!(repo, id: "WP-LENS-STALE", work_request_id: request.id, status: "implementing")
+      assert {:ok, _run} = AgentRunRepository.start_run(repo, %{work_package_id: live.id, status: "running"})
+      assert {:ok, _run} = AgentRunRepository.start_run(repo, %{work_package_id: stale.id, status: "running", last_seen_at: DateTime.add(DateTime.utc_now(:microsecond), -600, :second)})
+      assert {:ok, question} = WorkRequestRepository.ask_question(repo, request.id, question_attrs(question: "Which region?"))
+      grant = create_claimed_worker_grant(repo, queued.id, "lens-worker")
+
+      assert {:ok, guidance} =
+               GuidanceRequestRepository.create(repo, %{
+                 work_package_id: queued.id,
+                 requester_grant_id: grant.id,
+                 requested_by: "lens-worker",
+                 idempotency_key: "lens-guidance",
+                 summary: "Choose region",
+                 question: "Use Europe?",
+                 context: "Deployment choice"
+               })
+
+      assert {:ok, _guidance} = GuidanceRequestRepository.escalate_human_info_needed(repo, guidance.id, %{human_info_reason: "Operator decides", recommended_language: "en"})
+
+      read = fn ->
+        board = build_conn() |> Map.put(:host, "localhost") |> Map.put(:remote_ip, {127, 0, 0, 1}) |> get("/api/v1/sympp/herdr/dashboard") |> json_response(200)
+        Enum.find(board["work_request_details"], &(&1["work_request"]["id"] == request.id))
+      end
+
+      detail = read.()
+      packages = Map.new(detail["work_packages"], &{&1["id"], &1})
+      assert packages[queued.id]["activity_signal"]["observation_state"] == "queued"
+      assert packages[live.id]["activity_signal"]["observation_state"] == "current"
+      assert packages[stale.id]["activity_signal"]["observation_state"] == "stale"
+      asks = Map.new(detail["asks"], &{&1["id"], &1})
+      assert asks[question.id]["text"] == "Which region?"
+      assert asks[question.id]["kind"] == "clarification"
+      assert asks[guidance.id]["text"] == "Use Europe?"
+      assert asks[guidance.id]["work_package_id"] == queued.id
+      assert asks[guidance.id]["kind"] == "guidance"
+      assert json_response(post(native_operator_conn(), asks[question.id]["answer_route"], Jason.encode!(%{answer: "Europe"})), 200)["ok"]
+      assert json_response(post(native_operator_conn(), asks[guidance.id]["answer_route"], Jason.encode!(%{answer: "Yes"})), 200)["ok"]
+      assert read.()["asks"] == []
+    end)
+  end
+
   test "Herdr reads the complete execution graph and current worker sessions over direct loopback", %{repo: repo} do
     with_local_operator_endpoint(fn ->
       work_request = create_work_request!(repo, id: "WR-HERDR-DETAIL", status: "ready_for_slicing")
