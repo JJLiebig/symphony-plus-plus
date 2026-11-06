@@ -1094,7 +1094,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.WorkRequests.ArchitectHandoff do
   end
 
   defp architect_claim_prompt_line(%{}),
-    do: "Claim first with `claim_local_architect_assignment` using `local_architect_claim_arguments`, even if this session already owns another WorkRequest. Creation does not switch the session's claim; explicitly claim the previous WorkRequest again to return to it."
+    do:
+      "Claim first with `claim_local_architect_assignment` using `local_architect_claim_arguments`, even if this session already owns another WorkRequest. Creation does not switch the session's claim; explicitly claim the previous WorkRequest again to return to it."
 
   defp architect_claim_prompt_line(nil),
     do: "Use the current MCP assignment or operator repair path; if a WorkRequest tool returns `claim_required`, stop and report it."
