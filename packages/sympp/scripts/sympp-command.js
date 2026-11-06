@@ -48,7 +48,7 @@ async function status() {
   process.stdout.write(`answers: ${answers}\n`);
   if (!answers) process.exitCode = 1;
 }
-function board() {
+async function board() {
   const file = path.join(os.homedir(), ".local", "share", "sympp", "connection.json");
   if (!fs.existsSync(file)) throw new Error("Run sympp setup first.");
   const saved = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -57,8 +57,16 @@ function board() {
   if (!endpoint && env.SYMPP_RUNTIME_FILE && fs.existsSync(env.SYMPP_RUNTIME_FILE)) endpoint = JSON.parse(fs.readFileSync(env.SYMPP_RUNTIME_FILE, "utf8")).backend?.url;
   if (!endpoint) throw new Error("Start the factory, then retry sympp board.");
   const url = new URL("/sympp/board", endpoint);
-  if (env.SYMPP_SERVER_TOKEN_FILE) url.hash = new URLSearchParams({ "sympp-token": fs.readFileSync(env.SYMPP_SERVER_TOKEN_FILE, "utf8").trim() }).toString();
-  // Never print the URL: its fragment carries the private sign-in credential.
+  if (env.SYMPP_SERVER_TOKEN_FILE) {
+    const token = fs.readFileSync(env.SYMPP_SERVER_TOKEN_FILE, "utf8").trim();
+    const response = await fetch(new URL("/api/v1/sympp/board-sign-in-code", endpoint), {
+      method: "POST", headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+    if (!response?.ok) throw new Error("Could not sign in to the factory. Check your connection and rerun setup if the token changed.");
+    const { code } = await response.json();
+    url.hash = new URLSearchParams({ "sympp-code": code }).toString();
+  }
+  // Never print the URL: its fragment carries a one-time sign-in code, valid for 60 seconds.
   const result = process.platform === "win32"
     ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Start-Process $env:SYMPP_BOARD_URL"], { env: { ...process.env, SYMPP_BOARD_URL: url.href }, stdio: "ignore", windowsHide: true })
     : spawnSync(process.platform === "darwin" ? "open" : "xdg-open", [url.href], { stdio: "ignore" });

@@ -15,7 +15,7 @@ defmodule SymphonyElixirWeb.FactoryAccessPlug do
     cond do
       not FactoryService.enabled?() or loopback?(conn.remote_ip) -> conn
       tailnet_board_read?(conn) -> Conn.put_private(conn, :sympp_board_read_only, true)
-      not (valid_token?(conn) or valid_board_cookie?(conn)) -> deny(conn, 401)
+      not (valid_token?(conn) or valid_board_code?(conn) or valid_board_cookie?(conn)) -> deny(conn, 401)
       forwarded?(conn) -> deny(conn, 403)
       true -> authenticate(conn)
     end
@@ -45,6 +45,16 @@ defmodule SymphonyElixirWeb.FactoryAccessPlug do
   defp tailnet?({0, 0, 0, 0, 0, 65_535, first, second}), do: tailnet?({div(first, 256), rem(first, 256), div(second, 256), rem(second, 256)})
   defp tailnet?(_), do: false
 
+  defp authenticate(%Conn{method: "POST", path_info: ["api", "v1", "sympp", "board-sign-in-code"]} = conn) do
+    code = SymphonyElixirWeb.BoardLoginCodes.issue(cookie_key())
+
+    conn
+    |> Conn.put_resp_content_type("application/json")
+    |> Conn.put_resp_header("cache-control", "no-store")
+    |> Conn.send_resp(200, Jason.encode!(%{code: code}))
+    |> Conn.halt()
+  end
+
   defp authenticate(%Conn{method: "POST", path_info: ["api", "v1", "sympp", "board-session"]} = conn) do
     cookie = Phoenix.Token.sign(cookie_key(), "sympp-board", "operator")
 
@@ -56,6 +66,15 @@ defmodule SymphonyElixirWeb.FactoryAccessPlug do
   end
 
   defp authenticate(conn), do: Conn.put_private(conn, :sympp_remote_authenticated, true)
+
+  defp valid_board_code?(%Conn{method: "POST", path_info: ["api", "v1", "sympp", "board-session"]} = conn) do
+    case Conn.get_req_header(conn, "authorization") do
+      ["Board " <> code] -> SymphonyElixirWeb.BoardLoginCodes.consume(code, cookie_key())
+      _ -> false
+    end
+  end
+
+  defp valid_board_code?(_conn), do: false
 
   defp valid_board_cookie?(conn) do
     board_cookie_path?(conn.path_info) and cookie_origin?(conn) and

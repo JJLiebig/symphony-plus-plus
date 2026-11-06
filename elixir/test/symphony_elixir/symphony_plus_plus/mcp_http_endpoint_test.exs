@@ -209,11 +209,16 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     end
 
     test "direct tailnet peers can read only the board without credentials", %{remote: remote} do
-      for ip <- [{100, 64, 0, 0}, {100, 127, 255, 255}, {0xFD7A, 0x115C, 0xA1E0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 65_535, 0x6440, 2}] do
+      ipv6 = {0xFD7A, 0x115C, 0xA1E0, 0, 0, 0, 0, 1}
+      mapped = {0, 0, 0, 0, 0, 65_535, 0x6440, 2}
+
+      for ip <- [{100, 64, 0, 0}, {100, 127, 255, 255}, ipv6, mapped] do
         opts = Keyword.put(remote, :remote_ip, ip)
         assert get_local("/api/v1/sympp/operator/dashboard/hydrated", [], opts) |> json_response(200) |> Map.has_key?("work_request_details")
 
-        for path <- ["/", "/sympp", "/sympp/board", "/assets/index.js", "/favicon.ico", "/splusplus-logo.png", "/api/v1/sympp/operator/dashboard/events"] do
+        events = "/api/v1/sympp/operator/dashboard/events"
+
+        for path <- ["/", "/sympp", "/sympp/board", "/assets/index.js", "/favicon.ico", "/splusplus-logo.png", events] do
           conn = Plug.Test.conn("GET", path) |> Map.put(:remote_ip, ip) |> SymphonyElixirWeb.FactoryAccessPlug.call([])
           refute conn.halted
           assert SymphonyElixirWeb.FactoryAccessPlug.board_read_only?(conn)
@@ -221,7 +226,9 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
         end
       end
 
-      for ip <- [{100, 63, 255, 255}, {100, 128, 0, 0}, {192, 168, 1, 5}, {8, 8, 8, 8}, {0xFD7A, 0x115C, 0xA1E1, 0, 0, 0, 0, 1}] do
+      outside_ipv6 = {0xFD7A, 0x115C, 0xA1E1, 0, 0, 0, 0, 1}
+
+      for ip <- [{100, 63, 255, 255}, {100, 128, 0, 0}, {192, 168, 1, 5}, {8, 8, 8, 8}, outside_ipv6] do
         assert get_local("/api/v1/sympp/operator/dashboard/hydrated", [], Keyword.put(remote, :remote_ip, ip)).status == 401
         assert get_local("/sympp", [], Keyword.put(remote, :remote_ip, ip)).status == 401
       end
@@ -242,7 +249,12 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCPHTTPEndpointTest do
     test "browser sign-in authorizes board writes but never MCP and token rotation revokes it", %{remote: remote, headers: headers} do
       login_path = "/api/v1/sympp/board-session"
       assert post_json(%{}, [], Keyword.put(remote, :path, login_path)).status == 401
-      login = post_json(%{}, headers, Keyword.put(remote, :path, login_path))
+      code_response = post_json(%{}, headers, Keyword.put(remote, :path, "/api/v1/sympp/board-sign-in-code"))
+      code = json_response(code_response, 200)["code"]
+      code_headers = [{"authorization", "Board " <> code}]
+      assert post_json(%{}, code_headers, remote).status == 401
+      login = post_json(%{}, code_headers, Keyword.put(remote, :path, login_path))
+      assert post_json(%{}, code_headers, Keyword.put(remote, :path, login_path)).status == 401
       assert login.status == 204
       [set_cookie] = get_resp_header(login, "set-cookie")
       assert set_cookie =~ "HttpOnly"
