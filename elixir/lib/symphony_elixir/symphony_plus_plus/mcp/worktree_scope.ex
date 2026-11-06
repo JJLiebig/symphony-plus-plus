@@ -59,17 +59,26 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeScope do
       {:ok, root}
     else
       {:tool_error, reason} when reason in ["target_repo_root_scope_mismatch", "target_repo_root_required"] ->
-        details = %{
-          "expected_repo" => public_repo_label(work_package.repo),
-          "target_repo_root" => explicit_root || config.repo_root,
-          "recovery" => "Pass target_repo_root pointing to a checkout whose origin matches expected_repo. An upstream remote alone is insufficient: preparation fetches the base from origin."
-        }
+        prepare_scope_error(reason, work_package.repo, explicit_root || config.repo_root)
 
-        {:tool_error, reason, Redactor.redact_output(details)}
+      {:error, {:target_repo_root_scope_mismatch, root}} ->
+        prepare_scope_error("target_repo_root_scope_mismatch", work_package.repo, root)
 
       error ->
         error
     end
+  end
+
+  defp prepare_scope_error(reason, repo, root) do
+    recovery =
+      if FactoryRepos.enabled?() do
+        "Use a checkout under SYMPP_REPOS_ROOT whose origin matches expected_repo. Factory mode selects the checkout on the server; target_repo_root does not override it."
+      else
+        "Pass target_repo_root pointing to a checkout whose origin matches expected_repo. An upstream remote alone is insufficient: preparation fetches the base from origin."
+      end
+
+    details = %{"expected_repo" => public_repo_label(repo), "target_repo_root" => root, "recovery" => recovery}
+    {:tool_error, reason, Redactor.redact_output(details)}
   end
 
   defp public_repo_label(repo) do

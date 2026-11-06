@@ -243,7 +243,19 @@ defmodule SymphonyElixir.SymphonyPlusPlus.MCP.WorktreeToolsLifecycleTest do
     {_, 0} = System.cmd("git", ["-C", checkout, "remote", "set-url", "origin", remote])
     File.mkdir_p!(Path.join(repos_root, name))
     refute FactoryRepos.matches?(checkout, String.replace(remote, "/factory/", "/other/"))
-    assert {:error, :target_repo_root_scope_mismatch} = FactoryRepos.resolve(String.replace(remote, "/factory/", "/other/"))
+    conflicting_remote = String.replace(remote, "/factory/", "/other/")
+    conflicting_root = Path.join(repos_root, name)
+    assert {:error, {:target_repo_root_scope_mismatch, ^conflicting_root}} = FactoryRepos.resolve(conflicting_remote)
+    conflict_package = %SymphonyElixir.SymphonyPlusPlus.WorkPackages.WorkPackage{repo: conflicting_remote}
+
+    assert {:tool_error, "target_repo_root_scope_mismatch", details} =
+             WorktreeScope.prepare_target_repo_root(nil, conflict_package, Config.default(repo: repo))
+
+    assert details["expected_repo"] == conflicting_remote
+    assert details["target_repo_root"] == conflicting_root
+    assert details["recovery"] =~ "SYMPP_REPOS_ROOT"
+    assert details["recovery"] =~ "does not override"
+
     assert {:error, :invalid_target_repo_root} = FactoryRepos.resolve("C:\\Code\\client")
     assert {:ok, package} = WorkPackageRepository.create(repo, WorkPackageFactory.attrs(repo: remote, base_branch: "beta"))
     config = Config.default(repo: repo)
