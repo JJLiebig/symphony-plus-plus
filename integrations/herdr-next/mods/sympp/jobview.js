@@ -364,7 +364,7 @@ function stageTone(t, tone) {
 }
 
 // Review Suite's stage in plain words, its step ladder, then each round newest first.
-function reviewPane(v, t, pkg, ctx, narrow) {
+export function reviewPane(v, t, pkg, ctx, narrow) {
   const d = Rv.reviewDetail(pkg, ctx.now);
   const late = d.total >= 3 && pkg.stage === "review";
   const stat = (label, value, hot) => v_flex().gap(2).min_w(0)

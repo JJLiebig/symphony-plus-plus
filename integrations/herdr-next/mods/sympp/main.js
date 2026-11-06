@@ -39,6 +39,7 @@ import { request, remoteRequest } from "./transport.js";
 import { button, message } from "./ui.js";
 import * as O from "./overview.js";
 import { jobView } from "./jobview.js";
+import * as Lv from "./scopeview.js";
 import { studioView } from "./studioview.js";
 import { ChiefStart, ChiefMenu } from "./chiefview.js";
 import { CHIEF_SESSIONS, FACTORY_ROOT, chiefSession, chiefRunning } from "./chief.js";
@@ -1089,6 +1090,8 @@ export default class Lens extends View {
     const needs = M.verdictCounts(board.jobs).needs;
     const names = new Map(desk.map((topic) => [topic.id, topic.name]));
 
+    // The redesign directions, chosen by the scratch-only `lens` prop, replace Topic, Space and Job.
+    if (this.given.lens && this.level !== "factory") return this.root(t, Lv.lensLevel(this, t, { board, desk, path, bindings, level: this.level, terminals: terminals(), now }));
     if (this.level === "job") {
       const job = board.jobs.find((j) => j.id === path.job);
       return this.root(t, [O.levelBar(this, t, trail, { now, needs, slim: true }),

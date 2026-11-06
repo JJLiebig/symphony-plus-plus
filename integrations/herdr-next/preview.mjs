@@ -22,7 +22,7 @@ export function previewMain(spec = {}) {
   return `import Lens from "./lens.js";
 import * as M from "./model.js";
 import * as J from "./job.js";
-import { NOW, boardPayload, detailPayload, deskFixture } from "./fixture.js";
+import { NOW, boardPayload, variantPayload, detailPayload, deskFixture } from "./fixture.js";
 const CASE = ${JSON.stringify(spec)};
 const SAMPLE = Object.assign(new Error("This preview runs on sample data; nothing is saved."), { userMessage: "This preview runs on sample data; nothing is saved." });
 export default class Preview extends Lens {
@@ -33,6 +33,7 @@ export default class Preview extends Lens {
     this.request = async () => { throw SAMPLE; };
     const now = Date.now();
     this.net = M.fetchSucceeded(this.net, M.parseBoard(boardPayload()), now);
+    if (CASE.board) this.net = M.fetchSucceeded(this.net, M.parseBoard(variantPayload(CASE.board)), now);
     if (CASE.error) this.net = M.fetchFailed(this.net, CASE.error, now);
     if (CASE.path) this.path = { topic: null, space: null, job: null, ...CASE.path };
     if (CASE.pin) this.pin = true;
