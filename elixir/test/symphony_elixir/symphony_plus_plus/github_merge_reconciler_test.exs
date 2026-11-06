@@ -6,7 +6,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.AccessGrant
   alias SymphonyElixir.SymphonyPlusPlus.AccessGrants.Service, as: AccessGrantService
 
-  alias SymphonyElixir.SymphonyPlusPlus.GitHub.{MergeReconciler, PullRequestProgress}
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.{ChecksBackstop, MergeReconciler, PullRequestProgress}
 
   alias SymphonyElixir.SymphonyPlusPlus.Lifecycle.Service, as: LifecycleService
   alias SymphonyElixir.SymphonyPlusPlus.Phases.Phase
@@ -20,6 +20,14 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
   alias SymphonyElixir.SymphonyPlusPlus.WorkRequests.WorkRequest
   alias SymphonyElixir.TestSupport
   alias SymphonyElixir.WorkPackageFactory
+
+  defmodule ConditionalChecksClient do
+    @spec auth_status(keyword()) :: :ok | {:error, atom()}
+    def auth_status(opts), do: Keyword.get(opts, :auth, :ok)
+
+    @spec conditional_json(String.t(), String.t() | nil, keyword()) :: term()
+    def conditional_json(path, etag, opts), do: Keyword.fetch!(opts, :request).(path, etag)
+  end
 
   setup_all do
     database_path = WorkPackageFactory.database_path()
@@ -139,6 +147,116 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
 
     assert {:error, :worker_cannot_mark_merged} =
              LifecycleService.transition(repo, package.id, "merged", Map.from_struct(assignment))
+  end
+
+  test "conditional CLI requests decode fresh responses and gh's nonzero 304 exit" do
+    alias SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient
+    path = "repos/nextide/repo/commits/head/check-runs"
+
+    fresh = fn "gh", _args, _opts ->
+      {:ok, "HTTP/2.0 200 OK\r\nEtag: W/\"first\"\r\n\r\n{\"check_runs\":[]}"}
+    end
+
+    assert {:ok, %{"check_runs" => []}, "W/\"first\""} = GhCliClient.conditional_json(path, nil, command_runner: fresh)
+
+    unchanged = fn "gh", args, _opts ->
+      assert "If-None-Match: W/\"first\"" in args
+      {:error, {1, "HTTP/2.0 304 Not Modified\r\nEtag: \"first\"\r\n\r\ngh: HTTP 304\n"}}
+    end
+
+    assert :not_modified == GhCliClient.conditional_json(path, "W/\"first\"", command_runner: unchanged)
+  end
+
+  test "pending checks finish without a worker, preserve 304 observations and stop polling", %{repo: repo} do
+    for conclusion <- ["success", "failure"] do
+      assert {:ok, package} = create_package(repo, id: "SYMPP-CHECKS-#{conclusion}", status: "implementing")
+      append_pr_evidence(repo, package, 70, "head-#{conclusion}")
+      assert {:ok, %{payload: attached}} = current_pr(repo, package.id)
+
+      assert {:ok, _} =
+               PlanningRepository.append_progress_event(repo, %{
+                 work_package_id: package.id,
+                 summary: "Checks running",
+                 payload: Map.merge(attached, %{"source_tool" => "sync_pr", "check_summary" => %{"status" => "pending"}})
+               })
+
+      request = fn path, etag ->
+        assert is_nil(etag)
+
+        body =
+          if String.contains?(path, "/check-runs"),
+            do: %{"check_runs" => [%{"status" => "in_progress", "conclusion" => nil}]},
+            else: %{"statuses" => []}
+
+        {:ok, body, "cached-etag"}
+      end
+
+      cache = ChecksBackstop.poll(repo, %{}, client: ConditionalChecksClient, request: request)
+      assert {:ok, events} = PlanningRepository.list_progress_events(repo, package.id)
+
+      unchanged = fn _path, etag ->
+        assert etag == "cached-etag"
+        :not_modified
+      end
+
+      cache = ChecksBackstop.poll(repo, cache, client: ConditionalChecksClient, request: unchanged)
+      assert {:ok, ^events} = PlanningRepository.list_progress_events(repo, package.id)
+
+      completed = fn path, etag ->
+        assert etag == "cached-etag"
+
+        if String.contains?(path, "/check-runs"),
+          do: {:ok, %{"check_runs" => [%{"status" => "completed", "conclusion" => conclusion}]}, "finished-etag"},
+          else: :not_modified
+      end
+
+      cache = ChecksBackstop.poll(repo, cache, client: ConditionalChecksClient, request: completed)
+      assert {:ok, %{payload: payload}} = current_pr(repo, package.id)
+      expected = if conclusion == "success", do: "passing", else: "failing"
+      assert payload["check_summary"] == %{"status" => expected}
+      assert payload["checks_changed_at"] != attached["checks_changed_at"]
+      assert payload["head_sha"] == "head-#{conclusion}"
+      assert repo.get!(WorkPackage, package.id).status == "implementing"
+
+      never = fn _, _ -> flunk("completed PR was polled") end
+      assert %{} == ChecksBackstop.poll(repo, cache, client: ConditionalChecksClient, request: never)
+    end
+  end
+
+  test "unauthenticated backstop skips all provider calls", %{repo: repo} do
+    never = fn _, _ -> flunk("unauthenticated provider call") end
+    assert %{} == ChecksBackstop.poll(repo, %{}, client: ConditionalChecksClient, auth: {:error, :unauthorized}, request: never)
+  end
+
+  test "a worker's newer report wins over an in-flight backstop request", %{repo: repo} do
+    assert {:ok, package} = create_package(repo, id: "SYMPP-CHECKS-RACE", status: "implementing")
+    append_pr_evidence(repo, package, 71, "head-race")
+    assert {:ok, %{payload: attached}} = current_pr(repo, package.id)
+    pending = Map.merge(attached, %{"source_tool" => "sync_pr", "check_summary" => %{"status" => "pending"}})
+    assert {:ok, _} = PlanningRepository.append_progress_event(repo, %{work_package_id: package.id, summary: "Running", payload: pending})
+
+    request = fn path, _etag ->
+      if String.contains?(path, "/check-runs") do
+        assert {:ok, _} =
+                 PlanningRepository.append_progress_event(repo, %{
+                   work_package_id: package.id,
+                   summary: "Worker reported failure",
+                   payload: Map.put(pending, "check_summary", %{"status" => "failing"})
+                 })
+
+        {:ok, %{"check_runs" => [%{"conclusion" => "success"}]}, "etag"}
+      else
+        {:ok, %{"statuses" => []}, "etag"}
+      end
+    end
+
+    ChecksBackstop.poll(repo, %{}, client: ConditionalChecksClient, request: request)
+    assert {:ok, %{payload: %{"check_summary" => %{"status" => "failing"}}}} = current_pr(repo, package.id)
+  end
+
+  defp current_pr(repo, package_id) do
+    {:ok, events} = PlanningRepository.list_progress_events(repo, package_id)
+    PullRequestProgress.current_pr_state(events, ["attach_pr", "sync_pr"])
   end
 
   defp create_package(repo, overrides) do
