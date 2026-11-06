@@ -92,3 +92,19 @@ test('a task shows its packages at work and the ones waiting on the person; land
   const pr = S.packageParts(task(variantPayload('busy'), 'wr-pr'));
   assert.ok(pr.active.some((e) => e.pkg.id === 'wp-review' && !e.needsYou), 'a textless human next actor never creates attention');
 });
+
+
+test('a recorded question keeps landed work visible and keeps its age across polls', () => {
+  const payload = variantPayload('busy');
+  const detail = payload.work_request_details[0];
+  detail.work_packages = detail.work_packages.map((p) => ({ ...p, board_state: { stage: 'done', track: 'pr', delivered: true } }));
+  detail.clarification_questions[0].inserted_at = new Date(NOW - 3600e3).toISOString();
+  const before = jobOf(payload, 'wr-pr');
+  payload.generated_at = new Date(NOW + 2 * 86400e3).toISOString();
+  const after = jobOf(payload, 'wr-pr');
+  assert.equal(after.lane, 'moving');
+  assert.equal(after.verdict, 'needs_you');
+  assert.equal(S.taskOf(after, NOW).asks[0].text, 'Which order should the levels land in?');
+  assert.equal(after.needs[0].since, NOW - 3600e3);
+  assert.equal(L.toastId(after.needs[0]), L.toastId(before.needs[0]));
+});

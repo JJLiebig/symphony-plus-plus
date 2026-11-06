@@ -189,9 +189,9 @@ function buildJob(detail, now, guidance, runs) {
   const queued = packages.filter((pkg) => pkg.stage === "queued");
   const createdAt = ms(request.inserted_at) ?? now;
   const closedAt = ms(request.completed_at);
-  const settled = request.execution_status === "closed" || (closedAt !== null && closedAt <= now) || (packages.length > 0 && done.length === packages.length && needs.length === 0);
   const recordedAsks = asksOf(detail.asks);
-  const attention = recordedAsks === null ? [...needs, ...questions.filter((q) => q.status === "open").map((q) => ({ ...q, label: "Needs you" }))] : recordedAsks.map((a) => ({ ...a, key: `ask:${a.id}`, label: "Needs you", since: now, jobId: request.id }));
+  const attention = recordedAsks === null ? [...needs, ...questions.filter((q) => q.status === "open").map((q) => ({ ...q, label: "Needs you" }))] : recordedAsks.map((a) => ({ ...a, key: `ask:${a.id}`, label: "Needs you", since: [...questions, ...guidanceQuestions].find((q) => q.id === a.id)?.since ?? (a.kind === "architect" ? ms(escalation?.raised_at) : null), jobId: request.id }));
+  const settled = request.execution_status === "closed" || (closedAt !== null && closedAt <= now) || (packages.length > 0 && done.length === packages.length && attention.length === 0);
   const job = {
     id: request.id,
     title: request.title || request.id,
@@ -217,7 +217,7 @@ function buildJob(detail, now, guidance, runs) {
     edges: (detail.product_tree?.execution_graph?.effective_edges ?? [])
       .map((edge) => [edge?.prerequisite_work_package_id, edge?.dependent_work_package_id]).filter(([pre, dep]) => pre && dep),
     counts: { live: live.length, queued: queued.length, done: done.length, dropped: done.filter((pkg) => pkg.outcome === "dropped").length, total: packages.length },
-    state: settled ? "settled" : live.length > 0 || needs.length > 0 ? "live" : "resting",
+    state: settled ? "settled" : live.length > 0 || attention.length > 0 ? "live" : "resting",
     lastMoveAt: Math.max(createdAt, ...packages.map((pkg) => pkg.since ?? 0)),
     deployFailed: deployFailed(request.deployments),
     phases,
@@ -384,7 +384,7 @@ function verdictOf(job, now) {
 
 function laneOf(job, now) {
   if (job.report.parked && job.needs.length === 0 && job.state !== "settled") return "parked";
-  if (job.state === "live") return "moving";
+  if (job.needs.length > 0 || job.state === "live") return "moving";
   if (job.state === "settled") return job.deployFailed ? "moving" : now - job.lastMoveAt < DAY ? "landed" : "settled";
   if (job.counts.done === 0) return "backlog";
   return now - job.lastMoveAt < DORMANT_AFTER ? "moving" : "dormant";
