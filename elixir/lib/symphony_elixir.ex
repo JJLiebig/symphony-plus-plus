@@ -19,8 +19,8 @@ defmodule SymphonyElixir.Application do
 
   use Application
 
-  alias SymphonyElixir.SymphonyPlusPlus.GitHub.ChecksBackstop
   alias SymphonyElixir.SymphonyPlusPlus.FactoryService
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.ChecksBackstop
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
   alias SymphonyElixir.SymphonyPlusPlus.OperatorSettings.Retention
   alias SymphonyElixir.SymphonyPlusPlus.Repo

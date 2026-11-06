@@ -173,11 +173,13 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
       append_pr_evidence(repo, package, 70, "head-#{conclusion}")
       assert {:ok, %{payload: attached}} = current_pr(repo, package.id)
 
+      pending = if conclusion == "success", do: %{"state" => "pending"}, else: %{"status" => "queued"}
+
       assert {:ok, _} =
                PlanningRepository.append_progress_event(repo, %{
                  work_package_id: package.id,
                  summary: "Checks running",
-                 payload: Map.merge(attached, %{"source_tool" => "sync_pr", "check_summary" => %{"status" => "pending"}})
+                 payload: Map.merge(attached, %{"source_tool" => "sync_pr", "check_summary" => pending})
                })
 
       request = fn path, etag ->
@@ -185,7 +187,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHubMergeReconcilerTest do
 
         body =
           if String.contains?(path, "/check-runs"),
-            do: %{"check_runs" => [%{"status" => "in_progress", "conclusion" => nil}]},
+            do: %{"check_runs" => [%{"status" => "in_progress", "conclusion" => nil}, %{"conclusion" => "failure"}]},
             else: %{"statuses" => []}
 
         {:ok, body, "cached-etag"}

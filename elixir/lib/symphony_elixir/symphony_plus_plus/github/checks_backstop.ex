@@ -34,26 +34,31 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.ChecksBackstop do
     with :ok <- OfflineSandbox.require_online(),
          :ok <- client.auth_status(Keyword.put(opts, :local_auth_only?, true)),
          {:ok, packages} <- WorkPackageRepository.list(repo) do
-      Enum.reduce(packages, %{}, fn package, next_cache ->
-        with {:ok, observation} <- pending_observation(repo, package.id) do
-          key = {observation.ref.repository, observation.ref.number, observation.payload["head_sha"]}
-          previous = Map.get(next_cache, key, Map.get(cache, key, %{}))
-          {summary, fetched} = fetch_checks(client, observation, previous, opts)
-          if summary, do: record_checks(repo, package.id, observation, summary)
-          Map.put(next_cache, key, fetched)
-        else
-          _not_pending -> next_cache
-        end
-      end)
+      Enum.reduce(packages, %{}, &poll_package(repo, &1, &2, cache, client, opts))
     else
       _unavailable -> %{}
+    end
+  end
+
+  defp poll_package(repo, package, next_cache, cache, client, opts) do
+    case pending_observation(repo, package.id) do
+      {:ok, observation} ->
+        key = {observation.ref.repository, observation.ref.number, observation.payload["head_sha"]}
+        previous = Map.get(next_cache, key, Map.get(cache, key, %{}))
+        {summary, fetched} = fetch_checks(client, observation, previous, opts)
+        if summary, do: record_checks(repo, package.id, observation, summary)
+        Map.put(next_cache, key, fetched)
+
+      _not_pending ->
+        next_cache
     end
   end
 
   defp pending_observation(repo, package_id) do
     with {:ok, events} <- PlanningRepository.list_progress_events(repo, package_id),
          {:ok, %{payload: payload} = observation} <- PullRequestProgress.current_pr_state(events, ["attach_pr", "sync_pr"]),
-         %{"status" => "pending"} <- payload["check_summary"],
+         %{} = summary <- payload["check_summary"],
+         "pending" <- PullRequestProgress.check_status(summary["conclusion"] || summary["state"] || summary["status"]),
          head when is_binary(head) and head != "" <- payload["head_sha"],
          false <- PullRequest.stale?(payload, PullRequestProgress.expected_head_sha(events, observation.ref)) do
       {:ok, observation}
@@ -72,8 +77,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.ChecksBackstop do
 
       status =
         cond do
-          "failing" in values -> "failing"
           "pending" in values -> "pending"
+          "failing" in values -> "failing"
           values != [] and Enum.all?(values, &(&1 == "passing")) -> "passing"
           true -> nil
         end

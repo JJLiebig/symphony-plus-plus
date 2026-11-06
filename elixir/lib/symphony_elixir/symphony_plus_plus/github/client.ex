@@ -4,6 +4,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.Client do
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.PullRequest
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
 
+  @type conditional_response :: {:ok, map(), String.t() | nil} | :not_modified | {:error, term()}
+
   @callback fetch_pull_request(PullRequest.ref(), keyword()) :: {:ok, term()} | {:error, term()}
 
   @spec fetch_pull_request(module(), PullRequest.ref(), keyword()) :: {:ok, term()} | {:error, term()}
@@ -30,6 +32,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.HttpClient do
   @moduledoc false
 
   @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.Client
 
   @default_receive_timeout 5_000
 
@@ -66,7 +70,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.HttpClient do
     end
   end
 
-  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: {:ok, map(), String.t() | nil} | :not_modified | {:error, term()}
+  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: Client.conditional_response()
   def conditional_json(path, etag, opts) do
     request_headers = if etag, do: [{"if-none-match", etag} | headers()], else: headers()
 
@@ -142,6 +146,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
 
   @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
 
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
   @default_timeout 5_000
   @json_fields [
     "id",
@@ -204,7 +210,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.GhCliClient do
     end
   end
 
-  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: {:ok, map(), String.t() | nil} | :not_modified | {:error, term()}
+  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: Client.conditional_response()
   def conditional_json(path, etag, opts) do
     args = ["api", "--hostname", "github.com", "--method", "GET", "--include", path]
     args = if etag, do: args ++ ["--header", "If-None-Match: " <> etag], else: args
@@ -399,6 +405,8 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
 
   @behaviour SymphonyElixir.SymphonyPlusPlus.GitHub.Client
 
+  alias SymphonyElixir.SymphonyPlusPlus.GitHub.Client
+
   alias SymphonyElixir.SymphonyPlusPlus.GitHub.{GhCliClient, HttpClient}
   alias SymphonyElixir.SymphonyPlusPlus.OfflineSandbox
 
@@ -444,7 +452,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.GitHub.DefaultClient do
     end
   end
 
-  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: {:ok, map(), String.t() | nil} | :not_modified | {:error, term()}
+  @spec conditional_json(String.t(), String.t() | nil, keyword()) :: Client.conditional_response()
   def conditional_json(path, etag, opts) do
     with :ok <- OfflineSandbox.require_online() do
       if HttpClient.authenticated?(),
