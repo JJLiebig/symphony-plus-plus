@@ -2266,7 +2266,7 @@ defmodule SymphonyElixir.SymphonyPlusPlus.DashboardApiTest do
                  assert Enum.any?(detail["product_tree"]["nodes"], &(&1["id"] == group.id))
                  signal = Enum.find(board["work_packages"], &(&1["id"] == active.id))
                  assert signal["active_agent_run"]["id"] == active_run.id
-                 assert board["runtime"] == %{"offline" => false}
+                 assert board["runtime"] == %{"offline" => false, "repos_root" => nil}
 
                  native_detail =
                    build_conn()

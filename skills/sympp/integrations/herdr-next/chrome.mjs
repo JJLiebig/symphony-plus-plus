@@ -45,9 +45,11 @@ export function revertPatch(text, patch) {
   return applyPatch(out, patch) === text ? out : null;
 }
 
-// The version of this patch a mod carries: the current one or an older one it lists, else null.
+// The version of this patch a mod carries: the current one or an older one it lists, else null. Of
+// versions sharing a mark, the one whose lines the mod still holds.
 function installedVersion(text, patch) {
-  return [patch, ...(patch.previous ?? [])].find((version) => text.includes(version.mark)) ?? null;
+  const marked = [patch, ...(patch.previous ?? [])].filter((version) => text.includes(version.mark));
+  return marked.find((version) => revertPatch(text, version) !== null) ?? marked[0] ?? null;
 }
 
 function walk(node, visit) {

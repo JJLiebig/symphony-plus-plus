@@ -27,7 +27,9 @@ backend's sandbox mode. A Copy-and-View snapshot reports `true` even though its
 request/package ids match the live ledger. Native clients must disable agent
 navigation when `runtime.offline` is true or unavailable; copied identities must
 not focus live sessions. An online backend reports `false`. This field reports
-context; it grants no mutation or session authority.
+context; it grants no mutation or session authority. The Herdr route's `runtime`
+also carries `repos_root`: the factory's `SYMPP_REPOS_ROOT`, or `null` without
+one. Herdr's Start chief uses it to place a chief on the factory's machine.
 
 Like the existing Herdr detail/event routes, this read requires a loopback peer,
 a local Host, and no `Forwarded`, `X-Forwarded-*` or `X-Real-IP` headers. Native

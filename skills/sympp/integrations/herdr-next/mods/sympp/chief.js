@@ -1,6 +1,6 @@
-// Pure Start chief logic: the chief's brief and command, the factory's machine, where the chief starts
-// and its place among Herdr's topics. No GPUI or Herdr imports; chiefview.js draws the dialog and runs
-// these against Herdr.
+// Pure chief logic: the chief's brief and command, resuming a stopped chief, the factory's machine,
+// where the chief starts and its place among Herdr's topics. No GPUI or Herdr imports; chiefview.js
+// draws the dialog and runs these against Herdr.
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1"]);
 // Agents that take their first message another way than as the last argument, as in Change anything.
@@ -15,6 +15,42 @@ export function chiefBrief(name, extra = "") {
 export const chiefArgv = (agent, brief) => [...agent.run, ...(MESSAGE[agent.key] ?? ((m) => [m]))(brief)];
 
 export const chiefSpaceName = (name) => `${name} chief`;
+
+// Agents whose saved session can be resumed, as herdr-core resumes them after a restart: the arguments
+// after the agent's own command.
+const RESUME = { codex: (id) => ["resume", id], claude: (id) => ["--resume", id] };
+
+// Each topic's latest chief: { [topic id]: { terminal, agent, session, cwd, started? } }. Start chief
+// records the terminal it started or resumed; while the chief runs, the sympp panel adds the session
+// Herdr saved for it, kept after its program ends (Herdr then forgets it) so the topic's mark can
+// resume it.
+export const CHIEF_SESSIONS = "sympp.chief.sessions";
+// How long a chief Start chief just started counts as running before its agent shows in its terminal.
+const STARTING = 30e3;
+
+// The factory's repos root as it reports it (its SYMPP_REPOS_ROOT), shared by the sympp panel; null
+// when it has none.
+export const FACTORY_ROOT = "sympp.factory.root";
+
+// A running chief's terminal as a CHIEF_SESSIONS entry, when its agent saved a session it can resume.
+export function chiefSession(term) {
+  const agent = term?.program?.key, session = term?.resume_session;
+  if (term?.state !== "live" || !RESUME[agent] || typeof session !== "string" || !session) return null;
+  return { terminal: term.address, agent, session, cwd: term.foreground?.cwd || term.cwd || "" };
+}
+
+export const machineOf = (address) => (address.includes("/") ? address.slice(0, address.indexOf("/")) : null);
+
+// The topic's latest chief runs in its terminal: its agent runs there, or Start chief has just started
+// it. That is the topic's chief from its start, before it registers or after it lost its registration.
+export const chiefRunning = (last, terminalList, now = Date.now()) => Boolean(last?.terminal) && terminalList.some((k) =>
+  k.address === last.terminal && k.state === "live" && (k.program?.key === last.agent || (last.started > 0 && now - last.started < STARTING)));
+
+export const canResume = (last) => Boolean(last && RESUME[last.agent] && typeof last.session === "string" && last.session);
+
+// Resumes the recorded session with the agent's own command, told again to register: a resumed
+// session's sympp connection is new, and only register_chief ties it to the topic.
+export const resumeArgv = (agent, last, name) => [...agent.run, ...RESUME[last.agent](last.session), chiefBrief(name)];
 
 // Where Start chief records the spaces it made: { [space id]: topic id }.
 export const CHIEF_SPACES = "sympp.chief.spaces";
@@ -43,28 +79,46 @@ export async function factoryMachine(endpoint, list, resolve) {
 }
 
 const trimmed = (path) => path.replace(/[\\/]+$/, "");
-const leaf = (path) => trimmed(path).split(/[\\/]/).pop();
 const parent = (path) => (/[\\/]/.test(trimmed(path)) ? trimmed(path).replace(/[\\/][^\\/]*$/, "") : "");
 const worktree = (path) => /[\\/]\.worktrees([\\/]|$)/.test(path);
+const parts = (path) => trimmed(path).split(/[\\/]/);
+const joined = (list, like) => list.join(like.includes("\\") && !like.includes("/") ? "\\" : "/");
+const common = (lists) => {
+  let n = 0;
+  while (lists.every((l) => n < l.length && l[n] === lists[0][n])) n++;
+  return lists[0].slice(0, n);
+};
+// A space showing a git checkout; worktrees don't count.
+const checkout = (s) => typeof s.folder === "string" && Boolean(s.folder) && Boolean(s.branch) && !worktree(s.folder);
 
-// Where the chief may start on its machine, best first: the folder of the topic's own space there;
-// else the topic's repository in that machine's repos root (the folder most of its spaces' checkouts
-// sit in); else that root. Worktree checkouts never count. Empty: the machine's home.
-export function chiefFolders(topicSpaces, allSpaces, machine) {
-  const checkout = (s) => typeof s.folder === "string" && s.folder && !worktree(s.folder);
-  const here = (s) => checkout(s) && (s.machine ?? null) === machine;
-  const own = topicSpaces.find(here);
-  if (own) return [own.folder];
-  const counts = new Map();
-  for (const s of allSpaces.filter(here)) {
-    const root = parent(s.folder);
-    if (root) counts.set(root, (counts.get(root) ?? 0) + 1);
+// A machine's repos root, from its own spaces: where the folders holding its checkouts meet. Null
+// when it shows no checkout, or they only meet at the top of the file system.
+export function reposRoot(spaceList, machine) {
+  const holders = spaceList.filter((s) => checkout(s) && (s.machine ?? null) === machine).map((s) => parent(s.folder)).filter(Boolean);
+  const root = holders.length ? common(holders.map(parts)) : [];
+  return root.length > 1 ? joined(root, holders[0]) : null;
+}
+
+// Where the chief starts on its machine, best first: the folder holding the topic's checkouts (where
+// those folders meet, on whichever machines they are), at the same place under the chief machine's
+// repos root as under their own; else that repos root. Empty: the machine's home. A machine's repos
+// roots, best first: the factory's own (factory: { machine, root }) on the factory's machine when it
+// reports one, then the one its spaces show; a checkout counts under the first that holds it.
+// topicSpaces leaves out the topic's chief spaces.
+export function chiefFolders(topicSpaces, allSpaces, machine, factory = null) {
+  const own = (m) => (factory?.root && factory.machine !== undefined && (factory.machine ?? null) === m ? [factory.root] : []);
+  const roots = (m) => [...own(m), reposRoot(allSpaces, m)].filter(Boolean);
+  const targets = roots(machine);
+  if (!targets.length) return [];
+  const places = [];
+  for (const s of topicSpaces.filter(checkout)) {
+    const holder = parts(parent(s.folder));
+    const base = roots(s.machine ?? null).map(parts).find((b) => holder.length >= b.length && b.every((p, i) => p === holder[i]));
+    if (base) places.push(holder.slice(base.length));
   }
-  const root = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
-  if (!root) return [];
-  const repo = topicSpaces.filter(checkout).map((s) => leaf(s.folder)).find(Boolean);
-  const sep = root.includes("/") || !root.includes("\\") ? "/" : "\\";
-  return repo ? [`${root}${sep}${repo}`, root] : [root];
+  const place = places.length ? common(places) : [];
+  const folders = targets.flatMap((root) => (place.length ? [joined([...parts(root), ...place], root), root] : [root]));
+  return folders.filter((f, i) => folders.indexOf(f) === i);
 }
 
 // Herdr's topics with the space added to the end of the topic and the topic unfolded; null when the

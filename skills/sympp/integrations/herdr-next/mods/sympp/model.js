@@ -115,7 +115,8 @@ export function parseBoard(payload) {
   const runs = new Map((Array.isArray(payload.work_packages) ? payload.work_packages : [])
     .filter((card) => card?.id && card.active_agent_run).map((card) => [card.id, card.active_agent_run]));
   const jobs = payload.work_request_details.filter((detail) => detail?.work_request?.id).map((detail) => buildJob(detail, now, guidance, runs));
-  return { now, jobs, chiefs: chiefsOf(payload.chiefs), offline: typeof payload.runtime?.offline === "boolean" ? payload.runtime.offline : null };
+  return { now, jobs, chiefs: chiefsOf(payload.chiefs), offline: typeof payload.runtime?.offline === "boolean" ? payload.runtime.offline : null,
+    reposRoot: typeof payload.runtime?.repos_root === "string" && payload.runtime.repos_root ? payload.runtime.repos_root : null };
 }
 
 // Current domain chiefs. A registration records a domain and where the session was, never authority

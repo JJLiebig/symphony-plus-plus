@@ -75,15 +75,23 @@ node integrations/herdr-next/install.mjs --endpoint $origin --chrome
   once it has been shown.
 - A UI studio tab shows the sympp glyph in a small window tucked behind its icon.
 - With a personal `desk-topics` sidebar, each topic header shows the sympp mark. With a running
-  chief, click peeks at it and Shift+click switches to its space and tab. Without one (greyed, or
-  dimmed while a registered chief isn't running), click opens **Start chief**: pick an agent and a
-  machine (the factory's by default), add anything for the chief to the line, and press Enter. The
-  agent starts as a normal tab in the topic's own "<topic> chief" space on that machine, in the
-  topic's checkout there (else its repos folder or home), told to register as the topic's chief.
-  Starting again reuses that space.
+  chief, click peeks at it and Shift+click switches to its space and tab. A chief started from the
+  mark counts as running from its start, before it registers. With no running chief the mark is
+  greyed:
+  - When the topic's last chief saved a Codex or Claude session, click resumes that session in its
+    own folder, as the chief tab in the topic's chief space, in place of the finished tab. The
+    resumed chief is told to register again.
+  - Otherwise, or when resuming fails, click opens **Start chief**: pick an agent and a machine (the
+    factory's by default), add anything for the chief to the line, and press Enter. The agent starts
+    as a normal tab in the topic's own "<topic> chief" space on that machine, told to register as the
+    topic's chief. It starts in the folder holding the topic's checkouts, at the same place under that
+    machine's repos root as under theirs; else in that repos root; else in its home. The factory's
+    machine uses the factory's `SYMPP_REPOS_ROOT`; other machines use the folder their spaces'
+    checkouts share. Starting again reuses that space.
   Right-click the mark for what applies: **Go to chief space**, **Add to composition** and **Start
-  new chief** (its registration replaces the current chief).
+  new chief** (always a fresh session; its registration replaces the current chief).
   The chief space isn't listed in the sidebar; while it's shown, its topic's header is highlighted.
+  A topic shows its header even with no spaces listed.
   With the sidebar collapsed, a running chief's mark replaces its topic's divider. A chief on another
   machine shows as running once that machine has the sympp skill installed (`sympp update` there).
   A desk without `desk-topics` gets the rest; an older `desk-topics` chrome upgrades in place.
