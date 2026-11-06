@@ -172,9 +172,9 @@ export function advanceMotion(v) {
   }
 }
 
-// One package's box: landed in a muted merge green; at work in its stage's colour, breathing slowly
-// (red while its checks fail); in Build with no worker yet as an outline in Build's colour; still to
-// come hollow. A changed look fades in.
+// One package's box: landed in a muted merge green; at work in its stage's full colour (red while its
+// checks fail); in Build with no worker yet as an outline in Build's colour; still to come hollow. A
+// changed look fades in. Boxes hold still: the running checks dot is what moves.
 function box(v, t, pkg, size, id) {
   const look = pkg.stage === "done" ? "done" : pkg.stage === "queued" ? "queued" : pkg.failed ? "failed" : S.unmanned(pkg) ? "empty" : pkg.stage;
   return marked(v, `box:${pkg.id}`, look, (k) => drawBox(t, k, size), id);
@@ -187,11 +187,11 @@ function drawBox(t, look, size) {
   if (look === "queued") return base.border(1).border_color(tint(t.foreground, "38"));
   if (look === "failed") return base.bg(c.fail);
   if (look === "empty") return base.border(1.5).border_color(c.build);
-  return base.bg(c[look] ?? t.muted).loop("opacity", { from: 0.5, to: 1, period: 3200 });
+  return base.bg(c[look] ?? t.muted);
 }
 
-// The PR's checks: a hollow ring before they start, a slow amber pulse while they run, green once
-// passed, red when failed. No words; the tooltip names it.
+// The PR's checks: a hollow ring before they start, a solid amber dot with a pulsing amber halo while
+// they run, green once passed, red when failed. No words; the tooltip names it.
 const CI_TIP = { waiting: "Checks not started", running: "Checks running", passed: "Checks passed", failed: "Checks failed" };
 function ciDot(v, t, key, state, id) {
   if (!state) return null;
@@ -203,7 +203,10 @@ function drawCi(t, state) {
   const c = signal();
   const base = div().size(8).flex_none().rounded(4);
   if (state === "waiting") return base.border(1.5).border_color(tint(t.foreground, "55"));
-  if (state === "running") return base.bg(c.checks).loop("opacity", { from: 0.25, to: 1, period: 1800 });
+  if (state === "running") return div().relative().size(8).flex_none()
+    .child(div().absolute().top(-3).left(-3).size(14).rounded(7).border(1.5).border_color(c.checks)
+      .loop("opacity", { from: 0, to: 0.9, period: 1600 }))
+    .child(base.bg(c.checks));
   return base.bg(state === "passed" ? c.merge : c.fail);
 }
 
