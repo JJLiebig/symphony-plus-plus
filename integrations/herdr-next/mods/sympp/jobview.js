@@ -52,7 +52,6 @@ function stageTone(t, tone) {
 // Review Suite's stage in plain words, its step ladder, then each round newest first.
 export function reviewPane(v, t, pkg, ctx, narrow) {
   const d = Rv.reviewDetail(pkg, ctx.now);
-  const late = d.total >= 3 && pkg.stage === "review";
   const stat = (label, value, hot) => v_flex().flex_none().gap(2)
     .child(div().text_size(11).text_color(t.muted).child(label))
     .child(div().text_size(narrow ? 15 : 18).font_family(MONO).font_medium().text_color(value === null ? t.dim : hot ? t.working : t.foreground).child(value ?? "—"));
@@ -68,7 +67,7 @@ export function reviewPane(v, t, pkg, ctx, narrow) {
         .child(stageMark(t, d.stage))
         .child(div().flex_1().min_w(0).text_size(13).font_medium().text_color(d.stage ? stageTone(t, d.stage.tone) : t.muted)
           .child(d.stage ? d.stage.text : d.reviewed ? "Stage not reported" : "No review recorded for this package")))
-      .when(Boolean(observed), (el) => el.child(div().pl(15).text_size(11.5).text_color(d.observation === "stale" ? t.working : t.muted).child(observed)))
+      .when(Boolean(observed), (el) => el.child(div().pl(15).text_size(11.5).text_color(t.muted).child(observed)))
       .when(d.observedAt !== null, (el) => el.child(div().pl(15).text_size(11).text_color(t.dim).child(`Reported ${M.ago(d.observedAt, ctx.now)}`))))
     .when(d.reviewed, (el) => el
       .child(h_flex().gap(narrow ? 18 : 28).items_start()
@@ -114,7 +113,7 @@ function rounds(v, t, pkg, d, ctx) {
     .children(d.rows.map((r) => h_flex().id(`review-round-${r.n}`).gap(10).px(8).py(6).rounded(5).items_center()
       .bg(r.n === focus ? t.selected : r.current ? tint(t.accent, "10") : CLEAR)
       .accessibility_label(`Round ${r.n}, ${[r.lane, r.step].filter(Boolean).join(", ") || "lane not reported"}, ${r.outcome}, ${when(r)}${r.took ? `, ${r.took}` : ""}`)
-      .child(div().w(30).flex_none().text_size(11.5).font_family(MONO).text_color(r.n >= 3 ? t.working : t.muted).child(`R${r.n}`))
+      .child(div().w(30).flex_none().text_size(11.5).font_family(MONO).text_color(t.muted).child(`R${r.n}`))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().truncate().text_size(12).text_color(r.lane || r.step ? t.foreground : t.muted).child([r.lane, r.step].filter(Boolean).join(" · ") || "Lane not reported"))
         .child(div().truncate().text_size(11).font_family(MONO).text_color(t.dim).child(when(r))))

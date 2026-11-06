@@ -6,7 +6,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
 import * as M from "./model.js";
 import * as L from "./levels.js";
-import { CLEAR, EXPAND, MONO, icon, tint, button, iconButton, field, mark, presence, section } from "./ui.js";
+import { CLEAR, EXPAND, icon, tint, button, iconButton, field, mark, presence, section } from "./ui.js";
 
 // ---------- Bar ----------
 
@@ -84,7 +84,7 @@ function reachable(v, t, el, key, open, label) {
 }
 
 // A desk scopes its rows' keys, since the same need can sit on two chiefs' desks.
-function needRow(v, t, need, names, now, scope = "") {
+function needRow(v, t, need, names, scope = "") {
   const job = need.job;
   const also = v.place.alsoIn(job).map((id) => names.get(id)).filter(Boolean);
   const where = [job.title, names.get(v.place.home(job)), also.length ? `also in ${also.join(", ")}` : null].filter(Boolean).join(" · ");
@@ -97,8 +97,7 @@ function needRow(v, t, need, names, now, scope = "") {
       .child(div().text_size(11.5).font_semibold().text_color(t.blocked).child(need.label))
       .child(div().flex_1())
       .when(need.unblocks > 0, (el) => el.child(div().id(`unblocks-${need.key}`).flex_none().text_size(11).font_medium().text_color(t.foreground)
-        .tooltip("Packages waiting on this answer").child(`Unblocks ${need.unblocks}`)))
-      .when(need.since !== null, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.muted).child(M.ago(need.since, now)))))
+        .tooltip("Packages waiting on this answer").child(`Unblocks ${need.unblocks}`))))
     .child(div().w_full().text_size(13.5).text_color(t.foreground).child(need.text))
     .child(div().w_full().truncate().text_size(11.5).text_color(t.muted).child(where));
 }
@@ -171,7 +170,7 @@ export function factoryLevel(v, t, jobs, rows, now) {
   const names = new Map(rows.map((r) => [r.id, r.name]));
   const needs = L.needsQueue(jobs);
   const main = [section(t, "Needs you", needs.length || null, needs.length ? t.blocked : t.dim),
-    needs.length ? v_flex().id("needs-queue").gap(8).children(needs.map((need) => needRow(v, t, need, names, now)))
+    needs.length ? v_flex().id("needs-queue").gap(8).children(needs.map((need) => needRow(v, t, need, names)))
       : div().px(4).text_size(12.5).text_color(t.muted).child("Nothing needs you.")];
   const aside = [section(t, "Topics", null), v_flex().id("topic-rows").gap(2).children(rows.map((row) => topicRow(v, t, row, now)))];
   return columns(v, "factory", main, aside, 400);
