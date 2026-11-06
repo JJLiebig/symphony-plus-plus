@@ -32,6 +32,11 @@ write authority.
 - Optional task-plan, finding, progress, comment, branch/PR, and readiness tools
   remain available to authenticated workers. Do not call them just to repeat
   native GitHub, review, or conversational evidence.
+- While watching your PR's CI, call `sync_pr` when checks start, pass, fail,
+  or restart, including after review pushes. Attach the current branch/head
+  first after a push. Each transition needs a fresh call (and a new idempotency
+  key if used). The factory fetches GitHub's `check_summary`; do not supply it
+  yourself. If scoped MCP access is unavailable or denied, tell the parent.
 - TOON is presentation only. Send schema-native JSON; `structuredContent` is the
   canonical result. Do not use business CLI commands or private ledger files.
 
